@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nomos"
+version = "0.10.0"
+description = "NOMOS Personal Agent Foundry — plataforma local-first que instala, configura, governa e executa o agente pessoal do usuário"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{name = "Se7enpay"}]
+readme = "README.md"
+dependencies = ["cryptography>=42.0", "argon2-cffi>=23.1"]
+
+[project.optional-dependencies]
+cerebro = ["llama-cpp-python>=0.2.0"]
+
+[project.scripts]
+nomos = "nomos.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B", "S110"]
+ignore = ["E731"]
