@@ -27,6 +27,19 @@ O NOMOS foi construído para uma coisa: **o que é seu fica com você**.
 | Sandbox | execução isolada; sem namespaces de rede ⇒ recusa rodar (não roda "aberto") |
 | Skills | checksum por arquivo, assinatura ed25519, trust store, pin TOFU |
 
+## Telemetria: nunca
+
+O NOMOS **não tem e não terá telemetria**, analytics, crash reporting remoto
+ou qualquer "ping" para servidores. Isso é verificado por teste automatizado
+(`test_egress_zero.py`): todo destino externo hardcoded no código precisa
+estar numa lista permitida e justificada — hoje, apenas `api.anthropic.com`
+(nuvem opcional), `huggingface.co` (download do cérebro, opt-in) e
+`api.github.com` (checagem de versão via `nomos atualizar`, opt-in). Todos
+atrás do gate A2 e do cadeado só-local.
+
+`nomos atualizar` envia zero dados seus: é um GET público que lê o número da
+última versão. E mesmo isso só acontece com o cadeado aberto e sua aprovação.
+
 ## O que fica na sua máquina (`~/.nomos`)
 
 Perfil do agente, memórias (SQLite), cofre de chaves, política, trilha de

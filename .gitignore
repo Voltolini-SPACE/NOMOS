@@ -10,3 +10,6 @@ venv*/
 *.gguf
 .nomos/
 cerebros/
+dist/
+build/
+*.egg-info/

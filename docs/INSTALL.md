@@ -22,19 +22,44 @@ python -m pytest -q      # suíte de testes
 ruff check src tests     # lint
 ```
 
-## Instalação por wheel (quando houver release publicada)
+## Instalação pela release (recomendado para quem não é dev)
 
-Se você baixou um arquivo `nomos-<versão>-py3-none-any.whl` de uma release:
+Na página de releases (https://github.com/Voltolini-SPACE/NOMOS/releases),
+baixe para a MESMA pasta: o instalador do seu sistema, o arquivo
+`nomos-<versão>-py3-none-any.whl` e o `SHA256SUMS`.
 
+**Mac/Linux:**
 ```bash
-pip install nomos-0.11.0-py3-none-any.whl
+bash install.sh
+```
+
+**Windows (PowerShell):**
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+O instalador confere a integridade (SHA256SUMS — aborta se divergir), exige
+Python 3.10+, faz backup da instalação anterior (com `rollback.sh` para
+voltar), instala num ambiente isolado e roda um smoke final. Seus dados em
+`~/.nomos` nunca são tocados; `uninstall.sh --purge` é o único caminho que os
+remove, e só com confirmação digitada.
+
+Ou, se preferir só o pip:
+```bash
+pip install nomos-0.12.0-py3-none-any.whl
 nomos
 ```
 
-> **Nota de maturidade**: o NOMOS está em desenvolvimento ativo. Enquanto uma
-> release com instaladores de um clique não estiver publicada na página de
-> releases do GitHub, o caminho suportado é a instalação a partir do código,
-> acima. Os scripts em `installer/` são a base desses instaladores.
+## Atualizar
+
+```bash
+nomos atualizar
+```
+
+Checa (com a sua aprovação — é uma saída à internet) se existe versão nova e
+mostra o caminho manual. O NOMOS **nunca se atualiza sozinho**: baixar e rodar
+o instalador é sempre uma ação sua. Atualizar preserva memórias, chaves e
+configurações.
 
 ## Primeiros passos depois de instalar
 

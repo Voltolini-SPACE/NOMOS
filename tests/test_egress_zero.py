@@ -20,7 +20,9 @@ def test_unico_destino_externo_e_a_nuvem_opcional():
                 continue                     # loopback ou placeholder de doc
             externos.add(host)
     permitidos = {"api.anthropic.com",   # nuvem opcional (atrás do cadeado)
-                  "huggingface.co"}      # baixar o cérebro embutido (opt-in consciente)
+                  "huggingface.co",      # baixar o cérebro embutido (opt-in consciente)
+                  "api.github.com",      # v0.12: `nomos atualizar` (atrás do gate A2)
+                  "github.com"}          # v0.12: URL humana da página de releases
     assert externos <= permitidos, f"destino externo inesperado: {externos}"
 
 

@@ -1,16 +1,30 @@
 #!/usr/bin/env bash
 # NOMOS installer — falha fechado em qualquer inconsistência.
+# Funciona em dois modos:
+#   1) release: um nomos-*.whl ao lado deste script (baixado do GitHub);
+#   2) desenvolvimento: rodado de dentro do repositório (instala o código-fonte).
 set -euo pipefail
 
-PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PKG_DIR="$(cd "$AQUI/.." 2>/dev/null && pwd || echo "$AQUI")"
 PREFIX="${NOMOS_PREFIX:-$HOME/.local/share/nomos}"
 BIN_DIR="${NOMOS_BIN:-$HOME/.local/bin}"
 VENV="$PREFIX/venv"
 BACKUPS="$PREFIX/backups"
 
+# fonte de instalação: wheel ao lado do script (release) > código-fonte (dev)
+WHEEL="$(ls -1 "$AQUI"/nomos-*.whl 2>/dev/null | sort | tail -1 || true)"
+if [[ -n "$WHEEL" ]]; then
+  FONTE="$WHEEL"
+  SUMS_DIR="$AQUI"
+else
+  FONTE="$PKG_DIR"
+  SUMS_DIR="$PKG_DIR"
+fi
+
 echo "[1/6] Verificando integridade (SHA256SUMS)..."
-if [[ -f "$PKG_DIR/SHA256SUMS" ]]; then
-  (cd "$PKG_DIR" && sha256sum --check --quiet SHA256SUMS) \
+if [[ -f "$SUMS_DIR/SHA256SUMS" ]]; then
+  (cd "$SUMS_DIR" && sha256sum --check --quiet --ignore-missing SHA256SUMS) \
     || { echo "FALHA: checksums divergentes — instalação abortada (fail-closed)." >&2; exit 1; }
   echo "      checksums OK."
 else
@@ -34,9 +48,10 @@ else
 fi
 
 echo "[4/6] Criando ambiente isolado e instalando..."
+echo "      fonte: $FONTE"
 python3 -m venv --clear "$VENV"
 "$VENV/bin/pip" install --quiet --upgrade pip
-"$VENV/bin/pip" install --quiet "$PKG_DIR"
+"$VENV/bin/pip" install --quiet "$FONTE"
 
 echo "[5/6] Publicando comando 'nomos'..."
 mkdir -p "$BIN_DIR"

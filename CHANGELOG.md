@@ -2,6 +2,30 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [0.12.0] — 2026-07-03
+
+### Adicionado
+- **CI no GitHub Actions**: pytest + ruff em ubuntu/macos/windows × Python
+  3.10–3.13 (`.github/workflows/ci.yml`); badge no README.
+- **Release automatizada** (`.github/workflows/release.yml`): em tag `v*`,
+  valida a suíte, constrói wheel+sdist, gera `SHA256SUMS`, faz smoke do wheel
+  e publica a release com os instaladores anexados.
+- **Instaladores Windows**: `installer/install.ps1` e `uninstall.ps1` com os
+  mesmos princípios fail-closed do Unix (checksum, backup, purge só com
+  confirmação digitada). `install.sh` agora também instala a partir do wheel
+  baixado da release (modo release) além do código-fonte (modo dev).
+- **`nomos atualizar`**: checa a última versão publicada (api.github.com)
+  apenas com o cadeado aberto + sua aprovação (gate A2); compara versões,
+  mostra as novidades e o caminho manual. **Nunca baixa nem instala sozinho.**
+- **Política anti-telemetria explícita** em docs/PRIVACIDADE.md, garantida
+  por teste estático (allowlist de destinos externos justificada).
+- Extra `dev` no pyproject (`pip install -e ".[dev]"`) e `[project.urls]`.
+
+### Segurança
+- Novo destino externo (`api.github.com`) adicionado à allowlist do teste
+  fortaleza com justificativa — atrás do gate A2 e do cadeado só-local, como
+  todos os demais. Nenhum caminho novo de autorização.
+
 ## [0.11.0] — 2026-07-03
 
 ### Adicionado

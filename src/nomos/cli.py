@@ -320,6 +320,11 @@ def cmd_doutor(ctx, args) -> int:
     return EXIT_OK
 
 
+def cmd_atualizar(ctx, args) -> int:
+    from nomos.simple import atualizar as at
+    return at.verificar(ctx, _approver_for(ctx, args))
+
+
 def cmd_local(ctx, args) -> int:
     home = ctx["home"]
     sub = getattr(args, "local_cmd", None)
@@ -733,6 +738,10 @@ def build_parser() -> argparse.ArgumentParser:
     cb.set_defaults(fn=cmd_cerebro)
     ce.set_defaults(fn=cmd_cerebro, cerebro_cmd=None)
     sub.add_parser("doutor", help="check-up: o que está pronto e o próximo passo").set_defaults(fn=cmd_doutor)
+    at = sub.add_parser("atualizar",
+                        help="checa se há versão nova (opt-in; nunca atualiza sozinho)")
+    at.add_argument("--panel", action="store_true")
+    at.set_defaults(fn=cmd_atualizar)
     te = sub.add_parser("tema", help="personalizar as cores do NOMOS")
     tesub = te.add_subparsers(dest="tema_cmd")
     tp = tesub.add_parser("paleta")

@@ -1,5 +1,7 @@
 # NOMOS
 
+[![CI](https://github.com/Voltolini-SPACE/NOMOS/actions/workflows/ci.yml/badge.svg)](https://github.com/Voltolini-SPACE/NOMOS/actions/workflows/ci.yml)
+
 **Seu agente. Sua máquina. Suas regras.** — *local por lei.*
 
 NOMOS é um agente pessoal de IA que roda **100% no seu computador**. Cérebro,
@@ -42,9 +44,9 @@ pip install .
 nomos            # 1ª vez: assistente guiado; depois: menu principal
 ```
 
-Detalhes (wheel, desenvolvimento, desinstalação): [docs/INSTALL.md](docs/INSTALL.md).
-Instaladores de um clique estão planejados sobre a base em `installer/` e
-serão anexados às releases do GitHub quando publicados.
+Ou pelos **instaladores de 1 clique** anexados a cada release do GitHub
+(`install.sh` para Mac/Linux, `install.ps1` para Windows) — com verificação de
+integridade, backup automático e rollback. Detalhes: [docs/INSTALL.md](docs/INSTALL.md).
 
 ## Comece por aqui
 
@@ -59,6 +61,7 @@ serão anexados às releases do GitHub quando publicados.
 | `nomos motores auto on` | roteamento automático local-first (padrão: ligado) |
 | `nomos local status` | o cadeado que mantém tudo local |
 | `nomos chaves` | guarda chaves com segurança, sem digitar no chat |
+| `nomos atualizar` | checa se há versão nova (com sua aprovação; **nunca** atualiza sozinho) |
 
 Dentro da conversa: `/ajuda`, `/cerebro`, `/chaves`, `/motores`, `/tema`,
 `/local`, `/doutor`, `/sair`.
@@ -89,7 +92,7 @@ Python puro, multiplataforma.
 
 ## Maturidade
 
-Projeto em desenvolvimento ativo (v0.11.0). Suíte com 290+ testes cobrindo
+Projeto em desenvolvimento ativo (v0.12.0). Suíte com 349 testes cobrindo
 segurança (fail-closed, não-vazamento de segredo, opt-in de nuvem) e UX.
 API interna pode mudar; os comandos da tabela acima são estáveis.
 

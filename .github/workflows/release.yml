@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  validar:
+    name: Suíte completa antes de publicar
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Lint
+        run: python -m ruff check src tests
+      - name: Testes
+        run: python -m pytest -q
+
+  publicar:
+    name: Construir e publicar release
+    needs: validar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Construir wheel + sdist
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - name: Anexar instaladores e gerar SHA256SUMS
+        run: |
+          cp installer/install.sh installer/uninstall.sh installer/rollback.sh dist/
+          cp installer/install.ps1 installer/uninstall.ps1 dist/
+          cd dist
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Smoke do wheel construído
+        run: |
+          python -m venv /tmp/venv-release
+          /tmp/venv-release/bin/pip install --quiet dist/*.whl
+          /tmp/venv-release/bin/nomos --version
+          NOMOS_HOME=/tmp/nomos-release-smoke /tmp/venv-release/bin/nomos doutor
+
+      - name: Criar release no GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*
+          generate_release_notes: true
+          body: |
+            Consulte o `CHANGELOG.md` para as novidades desta versão.
+
+            **Instalação rápida** (detalhes em `docs/INSTALL.md`):
+            - Mac/Linux: baixe `install.sh` + o `.whl`, rode `bash install.sh`
+            - Windows: baixe `install.ps1` + o `.whl`, rode no PowerShell
+            - ou apenas: `pip install nomos-*.whl`
+
+            Verifique a integridade dos artefatos com `SHA256SUMS`
+            (`sha256sum --check SHA256SUMS`).
+
+            O NOMOS **nunca** se atualiza sozinho: para checar novidades,
+            rode `nomos atualizar` (opt-in, com sua aprovação).
