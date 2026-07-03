@@ -1,0 +1,19 @@
+{
+  "name": "lembrete",
+  "version": "1.0.0",
+  "description": "formata um lembrete estruturado para a memoria do NOMOS",
+  "entrypoint": "main.py",
+  "entry": "main.py",
+  "permissions": [
+    "A0_READ_LOCAL"
+  ],
+  "compatible_nomos_version": ">=0.11",
+  "modalities": [
+    "texto"
+  ],
+  "local_only_capable": true,
+  "cloud_required": false,
+  "files": {
+    "main.py": "a22e54849e825f56ed59b11b4732369a066beb6e5bc8416cb20addf3ff45ed4a"
+  }
+}

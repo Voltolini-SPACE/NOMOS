@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import json
 import os
 import sys
+from pathlib import Path
 
 from nomos import __version__
 from nomos.kernel import config
@@ -579,8 +581,16 @@ def cmd_skills(ctx, args) -> int:
             print(f"'{args.nome}' está desativada — reative com: "
                   f"nomos skills ativar {args.nome}", file=sys.stderr)
             return EXIT_DENIED
+        argumentos = None
+        if getattr(args, "args_json", None):
+            try:
+                argumentos = json.loads(args.args_json)
+            except ValueError as exc:
+                print(f"--args precisa ser JSON válido: {exc}", file=sys.stderr)
+                return EXIT_ERROR
         rc, saida = reg.executar(args.nome, ctx["skills"], ctx["policy"],
-                                 _approver_for(ctx, args), audit=ctx["audit"])
+                                 _approver_for(ctx, args), audit=ctx["audit"],
+                                 argumentos=argumentos)
         if rc == 0:
             st.marcar_uso(ctx["home"], args.nome)
         sys.stdout.write(saida if saida.endswith("\n") or not saida else saida + "\n")
@@ -588,6 +598,34 @@ def cmd_skills(ctx, args) -> int:
             print("(negado — nenhuma permissão além do declarado e aprovado)",
                   file=sys.stderr)
         return rc
+    if sub == "criar":
+        from nomos.ext import skill_sdk
+        try:
+            destino = skill_sdk.criar_skill(args.nome, Path(args.pasta))
+        except skill_sdk.SdkError as exc:
+            print(f"não criei: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        ctx["audit"].append("skill.esqueleto.criado", name=args.nome)
+        print(f"skill '{args.nome}' criada em {destino}")
+        print("próximos passos: edite main.py → atualize checksums (README) → "
+              f"nomos skills instalar {destino}")
+        return EXIT_OK
+    if sub == "atualizar":
+        skills_novas, assinado, publicador = reg.catalogo_info(ctx["home"], trust)
+        origem = (f"catálogo assinado por {publicador} ✓" if assinado
+                  else "catálogo local NÃO assinado" if skills_novas
+                  else "nenhum catálogo local")
+        print(f"fonte: {origem}")
+        novidades = reg.atualizacoes_disponiveis(ctx["home"], ctx["skills"])
+        if not novidades:
+            print("suas skills estão em dia com o catálogo local.")
+            return EXIT_OK
+        for n in novidades:
+            print(f"  ↑ {n['name']}: {n['instalada']} → {n['disponivel']} "
+                  f"(risco {n['risco']})")
+        print("atualizar é manual e passa pelo gate: "
+              "nomos skills instalar <pasta-da-nova-versão>")
+        return EXIT_OK
     return EXIT_ERROR
 
 
@@ -878,8 +916,15 @@ def build_parser() -> argparse.ArgumentParser:
         sp = skssub.add_parser(nome_cmd)
         sp.add_argument("nome")
         if nome_cmd == "rodar":
+            sp.add_argument("--args", dest="args_json",
+                            help="argumentos JSON para a skill")
             sp.add_argument("--panel", action="store_true")
         sp.set_defaults(fn=cmd_skills)
+    sc = skssub.add_parser("criar")
+    sc.add_argument("nome")
+    sc.add_argument("--pasta", default=".")
+    sc.set_defaults(fn=cmd_skills)
+    skssub.add_parser("atualizar").set_defaults(fn=cmd_skills)
     skssub.add_parser("diagnostico").set_defaults(fn=cmd_skills)
     sks.set_defaults(fn=cmd_skills, skills_cmd=None)
     sub.add_parser("init").set_defaults(fn=cmd_init)

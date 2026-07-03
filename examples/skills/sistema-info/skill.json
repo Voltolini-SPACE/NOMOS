@@ -1,0 +1,19 @@
+{
+  "name": "sistema-info",
+  "version": "1.0.0",
+  "description": "mostra Python, sistema e espaco em disco (so leitura)",
+  "entrypoint": "main.py",
+  "entry": "main.py",
+  "permissions": [
+    "A0_READ_LOCAL"
+  ],
+  "compatible_nomos_version": ">=0.11",
+  "modalities": [
+    "texto"
+  ],
+  "local_only_capable": true,
+  "cloud_required": false,
+  "files": {
+    "main.py": "d4a918f61745a7159810b00230ae2dd0333be5c15181beb76469c3fc21be341a"
+  }
+}

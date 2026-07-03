@@ -109,15 +109,50 @@ def _caminho_catalogo(home: Path) -> Path:
 
 def catalogo(home: Path) -> list[dict]:
     """Skills DISPONÍVEIS no catálogo local (lista vazia se não houver)."""
+    return catalogo_info(home)[0]
+
+
+def catalogo_info(home: Path, trust=None) -> tuple[list[dict], bool, str]:
+    """(skills, assinado, publicador). Catálogo com assinatura INVÁLIDA é
+    descartado inteiro (fail-closed) — melhor nada do que catálogo adulterado."""
     p = _caminho_catalogo(home)
     if not p.exists():
-        return []
+        return [], False, ""
     try:
         data = json.loads(p.read_text())
         itens = data.get("skills", [])
-        return [normalizar_manifesto(i) for i in itens if isinstance(i, dict)]
+        skills = [normalizar_manifesto(i) for i in itens if isinstance(i, dict)]
     except Exception:
-        return []   # catálogo corrompido: fail-closed, nada disponível
+        return [], False, ""   # corrompido: fail-closed
+    if "signature" in data:
+        if trust is None:
+            from nomos.ext.signing import TrustStore
+            trust = TrustStore(Path(home) / "trust.json")
+        try:
+            from nomos.ext.signing import verify_signed_manifest
+            publicador = verify_signed_manifest(data, trust)
+            return skills, True, publicador
+        except Exception:
+            return [], False, ""   # assinatura ruim: catálogo inteiro fora
+    return skills, False, ""
+
+
+def atualizacoes_disponiveis(home: Path, skills_dir: Path) -> list[dict]:
+    """Skills instaladas com versão mais nova no catálogo local.
+
+    Só INFORMA — instalar continua sendo decisão manual, com gate."""
+    from nomos.simple.atualizar import comparar_versoes
+    instaladas = {i["name"]: i["version"]
+                  for i in _skills.list_installed(Path(skills_dir))}
+    novidades = []
+    for entrada in catalogo(home):
+        nome = entrada.get("name")
+        if nome in instaladas and comparar_versoes(
+                instaladas[nome], entrada.get("version", "0")) < 0:
+            novidades.append({"name": nome, "instalada": instaladas[nome],
+                              "disponivel": entrada.get("version"),
+                              "risco": entrada.get("risk_level", "?")})
+    return novidades
 
 
 def adicionar_ao_catalogo(home: Path, entrada: dict) -> dict:
@@ -219,7 +254,8 @@ def preparar_execucao(mf: dict, engine: PolicyEngine, approver) -> tuple[bool, s
 
 
 def executar(name: str, skills_dir: Path, engine: PolicyEngine, approver,
-             audit=None, timeout: int = 30, sandbox_run=None) -> tuple[int, str]:
+             audit=None, timeout: int = 30, sandbox_run=None,
+             argumentos: dict | None = None) -> tuple[int, str]:
     """Executa a skill instalada de forma governada.
 
     Regras:
@@ -255,13 +291,51 @@ def executar(name: str, skills_dir: Path, engine: PolicyEngine, approver,
     if sandbox_run is None:
         from nomos.runtime import sandbox as _sb
         sandbox_run = lambda cmd, **kw: _sb.run(cmd, **kw)
+
+    cmd = f'python3 "{entry}"'
+    args_path = None
+    if argumentos is not None:
+        import os
+        import time as _t
+        args_dir = Path(skills_dir).parent / "sandbox"
+        args_dir.mkdir(parents=True, exist_ok=True)
+        args_path = args_dir / f"skill-args-{name}-{os.getpid()}-{int(_t.time())}.json"
+        args_path.write_text(json.dumps(argumentos, ensure_ascii=False))
+        cmd = f'python3 "{entry}" "{args_path}"'
     try:
-        r = sandbox_run(f'python3 "{entry}"', timeout=timeout, allow_network=quer_rede)
+        r = sandbox_run(cmd, timeout=timeout, allow_network=quer_rede)
     except Exception as exc:
         if audit is not None:
             audit.append("skill.execucao.falhou", name=name, motivo=type(exc).__name__)
         return 1, f"execução indisponível: {exc}"
+    finally:
+        if args_path is not None:
+            try:
+                args_path.unlink()
+            except OSError:
+                pass   # arquivo de args é efêmero; sobra é inofensiva e local
     if audit is not None:
         audit.append("skill.executada", name=name, rc=r.rc,
-                     permissions=mfn.get("permissions", []))
+                     permissions=mfn.get("permissions", []),
+                     com_argumentos=argumentos is not None)
     return r.rc, r.stdout
+
+
+def executar_json(name: str, skills_dir: Path, engine: PolicyEngine, approver,
+                  argumentos: dict | None = None, **kw) -> tuple[int, dict | None, str]:
+    """Executa e tenta interpretar a ÚLTIMA linha JSON do stdout.
+
+    Devolve (rc, resultado|None, saida_bruta). JSON ausente/ilegível não é
+    erro fatal: resultado=None e a saída bruta fica disponível."""
+    rc, saida = executar(name, skills_dir, engine, approver,
+                         argumentos=argumentos, **kw)
+    resultado = None
+    for linha in reversed([ln for ln in saida.splitlines() if ln.strip()]):
+        try:
+            candidato = json.loads(linha)
+            if isinstance(candidato, dict):
+                resultado = candidato
+            break
+        except ValueError:
+            break
+    return rc, resultado, saida

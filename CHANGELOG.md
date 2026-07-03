@@ -2,6 +2,36 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [0.15.0] — 2026-07-03
+
+### Adicionado
+- **SDK de skills**: `nomos skills criar <nome>` gera esqueleto completo e
+  válido (main.py com I/O JSON, skill.json v2 com checksums, README com
+  assinatura e publicação). Nome validado; nunca sobrescreve.
+- **I/O estruturado**: `nomos skills rodar <nome> --args '<json>'` — os
+  argumentos chegam à skill por arquivo efêmero (limpo após a execução) e a
+  resposta JSON é interpretável (`executar_json`).
+- **Catálogo assinado**: catálogo local pode ser assinado (ed25519) por um
+  publicador do trust store; assinatura inválida descarta o catálogo INTEIRO
+  (fail-closed). `nomos skills atualizar` compara versões instaladas com o
+  catálogo e informa — instalar continua manual, com gate.
+- **3 skills oficiais de exemplo** em `examples/skills/` (organizador,
+  lembrete, sistema-info): todas A0/risco baixo, validadas por teste.
+
+## [0.14.0] — 2026-07-03
+
+### Adicionado
+- **Busca híbrida** (`memory search` e `/memoria buscar`): palavras-chave
+  (comportamento clássico) + similaridade por significado via `semantica.py`
+  — hashing local de n-gramas, zero dependência, zero rede, determinístico.
+  Stopwords não dominam mais a fase de palavra-chave.
+- **Backup cifrado de memórias**: `nomos memory exportar/importar <arquivo>`
+  (Fernet + PBKDF2-SHA256 600k, sal por arquivo, 0600). Senha errada ou
+  arquivo adulterado ⇒ nada importado; importar nunca apaga (deduplica).
+- **Consolidação**: `nomos memory consolidar` extrai fatos, preferências e
+  tarefas explícitas das conversas para notas duráveis (heurística local
+  transparente, idempotente).
+
 ## [0.13.0] — 2026-07-03
 
 ### Adicionado
@@ -17,20 +47,6 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 - Pipeline de arquivos usa o EnginePipeline: etapas pela política, falha
   honesta, auditoria só com metadados e explicação final ("Nada saiu da sua
   máquina.").
-
-## [0.14.0] — 2026-07-03
-
-### Adicionado
-- **Busca híbrida** (`memory search` e `/memoria buscar`): palavras-chave
-  (comportamento clássico) + similaridade por significado via `semantica.py`
-  — hashing local de n-gramas, zero dependência, zero rede, determinístico.
-  Stopwords não dominam mais a fase de palavra-chave.
-- **Backup cifrado de memórias**: `nomos memory exportar/importar <arquivo>`
-  (Fernet + PBKDF2-SHA256 600k, sal por arquivo, 0600). Senha errada ou
-  arquivo adulterado ⇒ nada importado; importar nunca apaga (deduplica).
-- **Consolidação**: `nomos memory consolidar` extrai fatos, preferências e
-  tarefas explícitas das conversas para notas duráveis (heurística local
-  transparente, idempotente).
 
 ## [0.12.0] — 2026-07-03
 

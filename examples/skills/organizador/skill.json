@@ -1,0 +1,19 @@
+{
+  "name": "organizador",
+  "version": "1.0.0",
+  "description": "relata os arquivos de uma pasta (contagem por tipo e maiores)",
+  "entrypoint": "main.py",
+  "entry": "main.py",
+  "permissions": [
+    "A0_READ_LOCAL"
+  ],
+  "compatible_nomos_version": ">=0.11",
+  "modalities": [
+    "arquivo"
+  ],
+  "local_only_capable": true,
+  "cloud_required": false,
+  "files": {
+    "main.py": "e6088273d24ef7e322d8700326125faab7ef72582ae06c5283a89a279b058dec"
+  }
+}
