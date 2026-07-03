@@ -28,8 +28,10 @@ AJUDA = """comandos:
   /cod <pedido>             programo usando o motor de código
   /arquivo <caminho>        leio e resumo um arquivo seu (tudo local)
   /ouvir <audio>            transcrevo um áudio (whisper local) e resumo
+  /ver <imagem>             descrevo uma imagem (modelo de visão local)
   /imagem <descrição>       gero uma imagem (se houver motor de imagem)
   /audio <texto>            falo em voz alta num arquivo .wav (via piper)
+  /bem · /mal               avalio minha última resposta (aprendo localmente)
   /nuvem <pergunta>         respondo usando a nuvem (peço permissão antes)
   /status                   como estou por dentro
   /ajuda                    esta lista
@@ -75,6 +77,7 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                                                 ask=ask, say=say)
     tobj = tema_mod.carregar(perfil)
     demo = perfil.get("modo_cerebro") == "demo"
+    ultima_rota = {"motor": None}   # para /bem e /mal (feedback local)
     say(c("fraco", f"({nome} pronto — /ajuda mostra os comandos)"))
     while True:
         try:
@@ -234,6 +237,36 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                 mem.remember("note", f"áudio {caminho}: " +
                              "; ".join(_arq.extrair_pontos(transcricao, 3)))
             continue
+        if linha in {"/bem", "/mal"}:
+            from nomos.cognition import feedback as _fb
+            motor = ultima_rota.get("motor")
+            if not motor:
+                say(f"{nome}: ainda não respondi nada nesta conversa para você avaliar.")
+                continue
+            _fb.registrar(ctx["home"], motor, linha == "/bem")
+            say(f"{nome}: obrigado! Anotei ({'👍' if linha == '/bem' else '👎'} "
+                f"para o motor '{motor}') — isso fica só na sua máquina e me "
+                "ajuda a escolher melhor da próxima vez.")
+            continue
+        if linha.startswith("/ver"):
+            caminho = linha[4:].strip()
+            if not caminho:
+                say("uso: /ver <caminho da imagem>")
+                continue
+            from nomos.cognition import visao as _vis
+            mapa_v = motores.detectar()
+            m = next((x for x in mapa_v["imagem"]
+                      if x["id"] == "visao-ollama" and x["disponivel"]), None)
+            if not m:
+                say(f"{nome}: ainda não tenho um modelo de visão. Dica: {_vis.DICA}")
+                continue
+            try:
+                descricao = _vis.descrever(caminho, m["detalhe"])
+                say(f"{nome} (visão local): {descricao}")
+                mem.remember("note", f"imagem {caminho}: {descricao[:120]}")
+            except _vis.VisaoError as exc:
+                say(f"{nome}: {exc}")
+            continue
         if linha.startswith("/imagem"):
             prompt = linha[7:].strip()
             if not prompt:
@@ -310,6 +343,7 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
         out = router.chat(contexto)
         if out.ok:
             say(f"{nome}: {out.text}")
+            ultima_rota["motor"] = out.provider or out.route
             mem.remember("user", linha)
             mem.remember("assistant", out.text)
         else:

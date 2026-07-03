@@ -16,7 +16,8 @@ def test_ram_positiva():
 
 @pytest.mark.parametrize("ram,esperado", [
     (1.5, "nomos-mini"), (2.0, "nomos-mini"), (3.9, "nomos-mini"),
-    (4.0, "nomos-base"), (7.0, "nomos-base"), (8.0, "nomos-plus"), (32.0, "nomos-plus"),
+    (4.0, "nomos-base"), (7.0, "nomos-base"), (8.0, "nomos-plus"), (32.0, "nomos-max"),    # v0.18: catálogo estendido — 32 GB usa o maior
+    (12.0, "nomos-plus"),
 ])
 def test_recomendado_por_ram(ram, esperado):
     assert emb.recomendado(ram).id == esperado

@@ -56,6 +56,21 @@ CATALOGO = [
         "qwen2.5-3b-instruct-q4_k_m.gguf",
         "nomos-plus-q4.gguf",
     ),
+    # v0.18: modelos maiores para máquinas com mais RAM (mesmo fluxo opt-in)
+    ModeloGGUF(
+        "nomos-pro", "NOMOS Pro (Qwen2.5 7B) — raciocínio forte, PCs com 16 GB",
+        4700, 16.0,
+        "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/"
+        "qwen2.5-7b-instruct-q4_k_m.gguf",
+        "nomos-pro-q4.gguf",
+    ),
+    ModeloGGUF(
+        "nomos-max", "NOMOS Max (Llama 3.1 8B) — o mais capaz, PCs com 16+ GB",
+        4900, 16.0,
+        "https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/"
+        "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+        "nomos-max-q4.gguf",
+    ),
 ]
 PADRAO = "nomos-mini"
 

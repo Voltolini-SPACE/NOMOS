@@ -552,6 +552,16 @@ def cmd_motores(ctx, args) -> int:
             print(f"  sem motor: {', '.join(faltando)}")
         print(f"  modo só-local: {'LIGADO 🔒' if localidade.esta_ligado(ctx['home']) else 'DESLIGADO 🔌'}")
         return EXIT_OK
+    if sub == "feedback":
+        from nomos.cognition import feedback as fb
+        if getattr(args, "voto", None) not in {"bom", "ruim"}:
+            print("uso: nomos motores feedback <motor> bom|ruim", file=sys.stderr)
+            return EXIT_ERROR
+        contagem = fb.registrar(ctx["home"], args.motor, args.voto == "bom")
+        ctx["audit"].append("motor.feedback", motor=args.motor, bom=args.voto == "bom")
+        print(f"anotado: {args.motor} agora tem {contagem['bom']}x 👍 e "
+              f"{contagem['ruim']}x 👎 (só na sua máquina; o roteador usa isso).")
+        return EXIT_OK
     if sub == "usar":
         try:
             motores_mod.escolher(args.modalidade, args.motor)
@@ -995,6 +1005,10 @@ def build_parser() -> argparse.ArgumentParser:
     mt = mosub.add_parser("testar")
     mt.add_argument("motor")
     mt.set_defaults(fn=cmd_motores)
+    mf = mosub.add_parser("feedback")
+    mf.add_argument("motor")
+    mf.add_argument("voto", choices=["bom", "ruim"])
+    mf.set_defaults(fn=cmd_motores)
     mosub.add_parser("diagnostico").set_defaults(fn=cmd_motores)
     mu = mosub.add_parser("usar")
     mu.add_argument("modalidade")

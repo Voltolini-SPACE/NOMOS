@@ -2,6 +2,23 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [0.18.0] — 2026-07-03
+
+### Adicionado
+- **O roteador aprende com você, localmente**: `/bem` e `/mal` no chat (ou
+  `nomos motores feedback <motor> bom|ruim`) registram votos por motor em
+  `feedback.json` (0600). Motor mal avaliado é rebaixado na escolha; a
+  confiança da decisão reflete sua experiência. Zero telemetria — o voto
+  nunca sai da máquina, e a razão da escolha explica o efeito.
+- **Visão no chat** (`/ver <imagem>`): descreve imagens com modelo de visão
+  LOCAL (Ollama/llava, loopback apenas — host externo é recusado por
+  projeto). Sem modelo: instrução honesta de 1 linha.
+- **Catálogo do cérebro estendido**: nomos-pro (Qwen2.5 7B) e nomos-max
+  (Llama 3.1 8B) para máquinas com 16+ GB — mesmo fluxo opt-in de download.
+- **Pipeline paralelo** (`run_parallel`): etapas independentes em threads,
+  com TODOS os gates decididos antes (uma negação cancela o lote inteiro
+  antes de qualquer execução).
+
 ## [0.17.0] — 2026-07-03
 
 ### Adicionado

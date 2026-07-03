@@ -103,9 +103,19 @@ def rotear(tarefa: Tarefa, home=None, catalogo: cat_mod.Catalogo | None = None,
         else:
             motivos.append(f"{m.id}: {e.motivo}")
 
-    # locais primeiro, depois qualidade (regra: privacidade > qualidade > custo)
+    # locais primeiro, depois SEU feedback local (v0.18), depois qualidade
+    # (regra: privacidade > sua experiência > qualidade > custo)
+    from nomos.cognition import feedback as fb
     ordem_q = {"alta": 0, "boa": 1, "básica": 2}
+
+    def _voto(m):
+        t = fb.taxa(home, m.id)
+        if t is None:
+            return 1          # sem sinal: neutro
+        return 0 if t >= 0.5 else 2   # bem avaliado sobe; mal avaliado desce
+
     elegiveis.sort(key=lambda pair: (not pair[0].local,
+                                     _voto(pair[0]),
                                      ordem_q.get(pair[0].qualidade, 3)))
 
     if not elegiveis:
@@ -151,16 +161,23 @@ def rotear(tarefa: Tarefa, home=None, catalogo: cat_mod.Catalogo | None = None,
     if tarefa.precisa_ferramenta:
         steps = ("verificar permissões da skill no gate",) + steps
 
+    taxa_votos = fb.taxa(home, escolhido.id)
+    confianca = 0.9 if escolhido.local and escolhido.pronto else 0.6
+    nota_fb = ""
+    if taxa_votos is not None:
+        confianca = round(min(0.99, max(0.3, confianca * (0.6 + 0.4 * taxa_votos))), 2)
+        nota_fb = f" · seu feedback local: {int(taxa_votos * 100)}% positivo"
+
     return EngineRouteDecision(
         selected_engine=escolhido.id,
         fallback_engine=fallback.id if fallback else None,
         reason=(f"{'local-first' if escolhido.local else 'nuvem (opt-in)'}: "
-                f"{eleg.motivo}{aviso}"),
+                f"{eleg.motivo}{aviso}{nota_fb}"),
         privacy_level=pol.nivel_privacidade(escolhido),
         approval_required=eleg.exige_aprovacao or escolhido.requer_aprovacao,
         estimated_cost=_custo(escolhido),
         local_only_preserved=escolhido.local,
-        confidence=0.9 if escolhido.local and escolhido.pronto else 0.6,
+        confidence=confianca,
         steps=steps)
 
 

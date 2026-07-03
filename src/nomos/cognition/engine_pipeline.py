@@ -125,3 +125,63 @@ class EnginePipeline:
         return PipelineResult(True, tuple(executadas), None, "pipeline concluído",
                               saida=valor,
                               explicacao=self._explicacao(executadas, tudo_local))
+
+    def run_parallel(self, entrada=None) -> PipelineResult:
+        """Etapas INDEPENDENTES em paralelo (v0.18) — gates primeiro, sempre.
+
+        1) todos os gates são decididos em sequência, fail-closed: UMA negação
+           aborta o lote inteiro ANTES de qualquer execução (nada parcial);
+        2) só então as etapas executam em threads, cada uma sobre a MESMA
+           entrada (por isso 'independentes');
+        3) qualquer exceção => resultado falho honesto, com as demais saídas
+           descartadas.
+        """
+        for step in self.steps:
+            cat = step.categoria if isinstance(step.categoria, Category) \
+                else str(step.categoria)
+            decision = self.policy.decide(cat, target=f"pipeline:{step.nome}")
+            self.audit.registrar("etapa.decidida", etapa=step.nome,
+                                 motor=step.motor_id,
+                                 categoria=str(getattr(cat, "value", cat)),
+                                 efeito=decision.effect.value, paralelo=True)
+            if not _gate(decision, self.approver):
+                self.audit.registrar("etapa.negada", etapa=step.nome,
+                                     motor=step.motor_id, motivo=decision.reason)
+                return PipelineResult(
+                    False, (), step.nome,
+                    f"etapa '{step.nome}' negada antes do lote paralelo: "
+                    f"{decision.reason}",
+                    explicacao=("Nada executou: no modo paralelo, uma negação "
+                                "cancela o lote inteiro antes de começar."))
+
+        import concurrent.futures as cf
+        resultados: dict[str, object] = {}
+        erro: list[tuple[str, str]] = []
+        with cf.ThreadPoolExecutor(max_workers=min(4, len(self.steps) or 1)) as ex:
+            futuros = {ex.submit(s.executar or (lambda x: x), entrada): s
+                       for s in self.steps}
+            for fut in cf.as_completed(futuros):
+                s = futuros[fut]
+                try:
+                    resultados[s.nome] = fut.result()
+                    self.audit.registrar("etapa.concluida", etapa=s.nome,
+                                         motor=s.motor_id, paralelo=True)
+                except Exception as exc:
+                    erro.append((s.nome, type(exc).__name__))
+                    self.audit.registrar("etapa.falhou", etapa=s.nome,
+                                         motor=s.motor_id,
+                                         erro=type(exc).__name__, paralelo=True)
+        if erro:
+            nome_falha, tipo = erro[0]
+            return PipelineResult(False, tuple(sorted(resultados)), nome_falha,
+                                  f"etapa '{nome_falha}' falhou: {tipo}",
+                                  explicacao="Uma etapa paralela falhou; "
+                                             "descartei o lote para não entregar "
+                                             "resultado pela metade.")
+        executadas = [f"{s.nome} ({s.motor_id}{', local' if s.local else ', NUVEM'})"
+                      for s in self.steps]
+        tudo_local = all(s.local for s in self.steps)
+        self.audit.registrar("concluido", etapas=len(executadas), paralelo=True)
+        return PipelineResult(True, tuple(executadas), None,
+                              "lote paralelo concluído", saida=resultados,
+                              explicacao=self._explicacao(executadas, tudo_local))
