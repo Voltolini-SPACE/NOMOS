@@ -2,6 +2,21 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.0.0rc1] — 2026-07-03
+
+### Adicionado
+- **Modelo de ameaças formal** (docs/THREAT_MODEL.md): STRIDE → mitigação →
+  teste que prova; riscos residuais declarados, não mascarados.
+- **Cobertura no CI**: job dedicado com `--cov-fail-under=80`. Medição atual:
+  kernel ≥92% (policy e localidade 100%), geral 83%.
+- **Empacotamento**: templates prontos de Homebrew (`packaging/homebrew`) e
+  winget (`packaging/winget`) para preencher na release final.
+
+### Pendente para o 1.0.0 final (fora do código)
+- Auditoria de segurança independente do kernel; CI verde no GitHub
+  (pós-push); release pública; publicação nas lojas. Ver
+  docs/missions/NOMOS_ROADMAP_EXECUTION_REPORT.md.
+
 ## [0.18.0] — 2026-07-03
 
 ### Adicionado

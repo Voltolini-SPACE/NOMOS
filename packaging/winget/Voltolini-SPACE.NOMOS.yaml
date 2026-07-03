@@ -1,0 +1,17 @@
+# Manifesto winget do NOMOS — TEMPLATE (preencher hash/URL na release final)
+# Publicação: PR em microsoft/winget-pkgs após a release com instalador .exe/.msi
+PackageIdentifier: Voltolini-SPACE.NOMOS
+PackageVersion: 1.0.0
+PackageLocale: pt-BR
+Publisher: Se7enpay
+PackageName: NOMOS
+License: MIT
+ShortDescription: Agente pessoal de IA 100% local — local por lei, fail-closed
+PackageUrl: https://github.com/Voltolini-SPACE/NOMOS
+Installers:
+  - Architecture: x64
+    InstallerType: portable
+    InstallerUrl: https://github.com/Voltolini-SPACE/NOMOS/releases/download/v1.0.0/install.ps1
+    InstallerSha256: PREENCHER_NA_RELEASE
+ManifestType: singleton
+ManifestVersion: 1.6.0

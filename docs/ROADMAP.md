@@ -1,5 +1,9 @@
 # NOMOS — Plano de Evolução (v0.12 → v1.0)
 
+> **Execução (2026-07-03)**: v0.12–v0.18 e v1.0-rc1 entregues e commitadas
+> (410 testes, kernel intocado). Pendências externas do 1.0.0 final em
+> [missions/NOMOS_ROADMAP_EXECUTION_REPORT.md](missions/NOMOS_ROADMAP_EXECUTION_REPORT.md).
+
 Base: v0.11.0 (commit 877ca7a, 341 testes, ruff limpo).
 Cada versão é uma missão executável com `implementation-loop-100`: spec →
 implementar → testar → validar → evidenciar. Nenhuma fase pode enfraquecer os

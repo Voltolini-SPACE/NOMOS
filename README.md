@@ -77,6 +77,7 @@ Ações destrutivas são negadas por padrão. Detalhes e mecanismos:
 ## Documentação
 
 - [Guia do iniciante](docs/USUARIO_INICIANTE.md) — sem jargão
+- [Modelo de ameaças](docs/THREAT_MODEL.md) — cada garantia com o teste que a prova
 - [Instalação](docs/INSTALL.md) · [Privacidade](docs/PRIVACIDADE.md)
 - [Motores](docs/MOTORES.md) · [Roteador automático](docs/ROTEADOR.md)
 - [Skills](docs/SKILLS.md) · [Changelog](CHANGELOG.md)
@@ -93,7 +94,7 @@ Python puro, multiplataforma.
 
 ## Maturidade
 
-Projeto em desenvolvimento ativo (v0.18.0). Suíte com 410 testes cobrindo
+Release candidate (v1.0.0rc1). Suíte com 410 testes cobrindo
 segurança (fail-closed, não-vazamento de segredo, opt-in de nuvem) e UX.
 API interna pode mudar; os comandos da tabela acima são estáveis.
 

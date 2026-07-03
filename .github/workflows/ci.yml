@@ -37,3 +37,19 @@ jobs:
 
       - name: Testes (pytest)
         run: python -m pytest -q
+
+  cobertura:
+    name: cobertura (informativa)
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: "Testes com cobertura (metas — kernel >=90%, geral >=80%)"
+        run: python -m pytest -q --cov=nomos --cov-report=term --cov-fail-under=80
