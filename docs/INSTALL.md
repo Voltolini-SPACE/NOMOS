@@ -9,7 +9,7 @@
 
 ```bash
 git clone https://github.com/Voltolini-SPACE/NOMOS
-cd NOMOS/nomos
+cd NOMOS
 pip install .
 nomos            # abre o assistente na primeira vez
 ```

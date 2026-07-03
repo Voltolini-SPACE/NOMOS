@@ -39,7 +39,7 @@ Requer **Python 3.10+**. Instalação a partir do código:
 
 ```bash
 git clone https://github.com/Voltolini-SPACE/NOMOS
-cd NOMOS/nomos
+cd NOMOS
 pip install .
 nomos            # 1ª vez: assistente guiado; depois: menu principal
 ```
