@@ -61,6 +61,7 @@ integridade, backup automático e rollback. Detalhes: [docs/INSTALL.md](docs/INS
 | `nomos motores auto on` | roteamento automático local-first (padrão: ligado) |
 | `nomos local status` | o cadeado que mantém tudo local |
 | `nomos chaves` | guarda chaves com segurança, sem digitar no chat |
+| `nomos arquivo <caminho>` | lê e resume um arquivo seu, tudo local (PDF com extra opcional) |
 | `nomos atualizar` | checa se há versão nova (com sua aprovação; **nunca** atualiza sozinho) |
 
 Dentro da conversa: `/ajuda`, `/cerebro`, `/chaves`, `/motores`, `/tema`,
@@ -92,7 +93,7 @@ Python puro, multiplataforma.
 
 ## Maturidade
 
-Projeto em desenvolvimento ativo (v0.12.0). Suíte com 349 testes cobrindo
+Projeto em desenvolvimento ativo (v0.13.0). Suíte com 363 testes cobrindo
 segurança (fail-closed, não-vazamento de segredo, opt-in de nuvem) e UX.
 API interna pode mudar; os comandos da tabela acima são estáveis.
 

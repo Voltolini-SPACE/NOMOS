@@ -325,6 +325,29 @@ def cmd_atualizar(ctx, args) -> int:
     return at.verificar(ctx, _approver_for(ctx, args))
 
 
+def cmd_arquivo(ctx, args) -> int:
+    from nomos.cognition import arquivos as arq
+    router = _router(ctx) if not args.sem_motor else None
+    try:
+        resultado, estado = arq.processar(args.caminho, ctx,
+                                          _approver_for(ctx, args),
+                                          router=router, salvar=args.salvar)
+    except arq.ArquivoError as exc:
+        print(f"não deu: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if not resultado.ok:
+        # etapa de leitura/salvamento negada ou falhou — mensagem honesta
+        print(resultado.explicacao or resultado.motivo, file=sys.stderr)
+        if estado.get("pontos") or estado.get("resumo"):
+            print(arq.render_resultado(args.caminho, estado))
+        return EXIT_DENIED if "negada" in resultado.motivo else EXIT_ERROR
+    print(arq.render_resultado(args.caminho, estado))
+    if estado.get("salvo_em"):
+        print(f"\n(resumo salvo em {estado['salvo_em']} — com sua aprovação)")
+    print(f"\n{resultado.explicacao}")
+    return EXIT_OK
+
+
 def cmd_local(ctx, args) -> int:
     home = ctx["home"]
     sub = getattr(args, "local_cmd", None)
@@ -742,6 +765,14 @@ def build_parser() -> argparse.ArgumentParser:
                         help="checa se há versão nova (opt-in; nunca atualiza sozinho)")
     at.add_argument("--panel", action="store_true")
     at.set_defaults(fn=cmd_atualizar)
+    aq = sub.add_parser("arquivo", help="ler e resumir um arquivo, tudo local")
+    aq.add_argument("caminho")
+    aq.add_argument("--salvar", action="store_true",
+                    help="salva o resumo ao lado do arquivo (pede aprovação)")
+    aq.add_argument("--sem-motor", dest="sem_motor", action="store_true",
+                    help="só extração heurística, sem chamar o cérebro")
+    aq.add_argument("--panel", action="store_true")
+    aq.set_defaults(fn=cmd_arquivo)
     te = sub.add_parser("tema", help="personalizar as cores do NOMOS")
     tesub = te.add_subparsers(dest="tema_cmd")
     tp = tesub.add_parser("paleta")

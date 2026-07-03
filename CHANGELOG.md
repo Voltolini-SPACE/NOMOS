@@ -2,6 +2,22 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [0.13.0] — 2026-07-03
+
+### Adicionado
+- **`nomos arquivo <caminho>`** e **`/arquivo`** no chat: lê txt/md/csv/json/
+  log (e PDF com o extra opcional `nomos[arquivos]`), extrai pontos por
+  heurística local transparente, resume com o motor local quando presente e
+  — só com sua aprovação (A1) — salva o resumo ao lado do arquivo
+  (`--salvar`). Sem cérebro: entrega os pontos e orienta, sem fingir resumo.
+- **`/ouvir <áudio>`** no chat: transcreve com o whisper local, resume com o
+  motor local e guarda na memória; sem whisper, orientação honesta em 1 linha.
+- Limite de 5 MB por arquivo com mensagem clara; PDF escaneado (sem texto) é
+  detectado e explicado.
+- Pipeline de arquivos usa o EnginePipeline: etapas pela política, falha
+  honesta, auditoria só com metadados e explicação final ("Nada saiu da sua
+  máquina.").
+
 ## [0.12.0] — 2026-07-03
 
 ### Adicionado

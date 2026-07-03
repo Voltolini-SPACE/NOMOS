@@ -26,6 +26,8 @@ AJUDA = """comandos:
   /motores                  mostro meus motores (texto·código·imagem·áudio)
   /motor <modal> <id>       troco de motor  ex.: /motor codigo ollama-coder
   /cod <pedido>             programo usando o motor de código
+  /arquivo <caminho>        leio e resumo um arquivo seu (tudo local)
+  /ouvir <audio>            transcrevo um áudio (whisper local) e resumo
   /imagem <descrição>       gero uma imagem (se houver motor de imagem)
   /audio <texto>            falo em voz alta num arquivo .wav (via piper)
   /nuvem <pergunta>         respondo usando a nuvem (peço permissão antes)
@@ -189,6 +191,48 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                 mem.remember("assistant", r.text)
             except ProviderUnavailable as exc:
                 say(f"{nome}: o motor de código não respondeu ({exc}).")
+            continue
+        if linha.startswith("/arquivo"):
+            caminho = linha[8:].strip()
+            if not caminho:
+                say("uso: /arquivo <caminho do arquivo>")
+                continue
+            from nomos.cognition import arquivos as _arq
+            try:
+                resultado, estado = _arq.processar(caminho, ctx, aprovador,
+                                                   router=router)
+            except _arq.ArquivoError as exc:
+                say(f"{nome}: {exc}")
+                continue
+            if estado.get("resumo") or estado.get("pontos"):
+                say(_arq.render_resultado(caminho, estado))
+                say(c("fraco", f"({resultado.explicacao})"))
+                mem.remember("note", f"resumi o arquivo {caminho}")
+            else:
+                say(f"{nome}: não consegui extrair nada útil — {resultado.motivo}")
+            continue
+        if linha.startswith("/ouvir"):
+            caminho = linha[6:].strip()
+            if not caminho:
+                say("uso: /ouvir <caminho do áudio> — transcrevo com o whisper local")
+                continue
+            from nomos.cognition import arquivos as _arq
+            try:
+                transcricao = _arq.transcrever(caminho)
+            except _arq.ArquivoError as exc:
+                say(f"{nome}: {exc}")
+                continue
+            say(f"{nome}: transcrevi ({len(transcricao)} caracteres, tudo local).")
+            resumo = _arq.resumir_com_motor(transcricao, router)
+            if resumo:
+                say(f"resumo: {resumo}")
+                mem.remember("note", f"áudio {caminho}: {resumo}")
+            else:
+                for p in _arq.extrair_pontos(transcricao, 5):
+                    say(f"  · {p}")
+                say(c("fraco", "(sem cérebro para resumo completo — guardei os pontos)"))
+                mem.remember("note", f"áudio {caminho}: " +
+                             "; ".join(_arq.extrair_pontos(transcricao, 3)))
             continue
         if linha.startswith("/imagem"):
             prompt = linha[7:].strip()
