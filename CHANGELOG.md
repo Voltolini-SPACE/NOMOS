@@ -2,6 +2,20 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [0.16.0] — 2026-07-03
+
+### Adicionado
+- **Rotinas locais** (`nomos rotinas`): criar (com aprovação humana no gate
+  A1 — rotina roda sozinha depois, então nasce só com seu sim), listar,
+  pausar/retomar, remover, executar. Ações permitidas: registro fixo seguro
+  (briefing, doutor, consolidar-memoria) ou `skill:<nome>` — skills que pedem
+  aprovação NÃO rodam em rotina (fail-closed, por design).
+- **Briefing do dia** (`nomos rotinas briefing`): tarefas e datas anotadas,
+  rotinas configuradas e o próximo passo do doutor — 100% local.
+- **`nomos rotinas agendar`**: mostra a linha de crontab/Agendador para VOCÊ
+  colar — o NOMOS nunca altera o agendador do sistema sozinho.
+- Cada rotina roda no máximo 1x por dia; arquivo corrompido ⇒ nada roda.
+
 ## [0.15.0] — 2026-07-03
 
 ### Adicionado

@@ -93,7 +93,7 @@ Python puro, multiplataforma.
 
 ## Maturidade
 
-Projeto em desenvolvimento ativo (v0.15.0). Suíte com 384 testes cobrindo
+Projeto em desenvolvimento ativo (v0.16.0). Suíte com 393 testes cobrindo
 segurança (fail-closed, não-vazamento de segredo, opt-in de nuvem) e UX.
 API interna pode mudar; os comandos da tabela acima são estáveis.
 

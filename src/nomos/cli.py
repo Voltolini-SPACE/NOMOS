@@ -327,6 +327,63 @@ def cmd_atualizar(ctx, args) -> int:
     return at.verificar(ctx, _approver_for(ctx, args))
 
 
+def cmd_rotinas(ctx, args) -> int:
+    from nomos.simple import rotinas as rot
+    sub = getattr(args, "rotinas_cmd", None)
+    if sub in (None, "listar"):
+        itens = rot.listar(ctx["home"])
+        if not itens:
+            print("nenhuma rotina ainda. Crie com:")
+            print('  nomos rotinas criar "Briefing da manhã" 08:00 briefing')
+            return EXIT_OK
+        for r in itens:
+            marca = "✓" if r.get("ativa", True) else "·"
+            ultima = ("nunca rodou" if not r.get("ultima_execucao")
+                      else "já rodou hoje/antes")
+            print(f"[{marca}] #{r['id']} {r['hora']} — {r['nome']} "
+                  f"({r['acao']}) · {ultima}")
+        print("\nexecutar as devidas agora:  nomos rotinas executar")
+        return EXIT_OK
+    if sub == "criar":
+        try:
+            nova = rot.criar(ctx["home"], args.nome, args.hora, args.acao,
+                             ctx["policy"], _approver_for(ctx, args),
+                             audit=ctx["audit"], skills_dir=ctx["skills"])
+        except rot.RotinaError as exc:
+            print(f"não criei: {exc}", file=sys.stderr)
+            return EXIT_DENIED if "aprovada" in str(exc) else EXIT_ERROR
+        print(f"rotina #{nova['id']} criada: {nova['hora']} — {nova['nome']}")
+        print("ela roda quando você chamar `nomos rotinas executar` (ou agende "
+              "no seu sistema: nomos rotinas agendar)")
+        return EXIT_OK
+    if sub == "remover":
+        ok = rot.remover(ctx["home"], args.id, audit=ctx["audit"])
+        print("removida." if ok else "id não encontrado.")
+        return EXIT_OK if ok else EXIT_ERROR
+    if sub in {"pausar", "retomar"}:
+        ok = rot.pausar(ctx["home"], args.id, sub == "retomar")
+        print(("retomada." if sub == "retomar" else "pausada.") if ok
+              else "id não encontrado.")
+        return EXIT_OK if ok else EXIT_ERROR
+    if sub == "executar":
+        resultados = rot.executar_devidas(ctx)
+        if not resultados:
+            print("nada devido agora — tudo em dia.")
+            return EXIT_OK
+        falhas = [r for r in resultados if not r["ok"]]
+        for r in resultados:
+            print(f"{'✓' if r['ok'] else '✗'} {r['nome']}: {r['detalhe']}")
+        return EXIT_OK if not falhas else EXIT_ERROR
+    if sub == "briefing":
+        print(rot.briefing(ctx))
+        return EXIT_OK
+    if sub == "agendar":
+        print(rot.linha_agendador(ctx["home"]))
+        print("\n(o NOMOS nunca altera seu agendador sozinho — colar é com você)")
+        return EXIT_OK
+    return EXIT_ERROR
+
+
 def cmd_arquivo(ctx, args) -> int:
     from nomos.cognition import arquivos as arq
     router = _router(ctx) if not args.sem_motor else None
@@ -853,6 +910,23 @@ def build_parser() -> argparse.ArgumentParser:
                         help="checa se há versão nova (opt-in; nunca atualiza sozinho)")
     at.add_argument("--panel", action="store_true")
     at.set_defaults(fn=cmd_atualizar)
+    ro = sub.add_parser("rotinas", help="rotinas locais: briefing, check-up e mais")
+    rosub = ro.add_subparsers(dest="rotinas_cmd")
+    rosub.add_parser("listar").set_defaults(fn=cmd_rotinas)
+    rc_ = rosub.add_parser("criar")
+    rc_.add_argument("nome")
+    rc_.add_argument("hora")
+    rc_.add_argument("acao")
+    rc_.add_argument("--panel", action="store_true")
+    rc_.set_defaults(fn=cmd_rotinas)
+    for nome_r in ("remover", "pausar", "retomar"):
+        rp = rosub.add_parser(nome_r)
+        rp.add_argument("id", type=int)
+        rp.set_defaults(fn=cmd_rotinas)
+    rosub.add_parser("executar").set_defaults(fn=cmd_rotinas)
+    rosub.add_parser("briefing").set_defaults(fn=cmd_rotinas)
+    rosub.add_parser("agendar").set_defaults(fn=cmd_rotinas)
+    ro.set_defaults(fn=cmd_rotinas, rotinas_cmd=None)
     aq = sub.add_parser("arquivo", help="ler e resumir um arquivo, tudo local")
     aq.add_argument("caminho")
     aq.add_argument("--salvar", action="store_true",
