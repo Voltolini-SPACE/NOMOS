@@ -316,7 +316,7 @@ def cmd_cerebro(ctx, args) -> int:
 
 
 def cmd_doutor(ctx, args) -> int:
-    print(doutor_mod.texto_relatorio(ctx["home"]))
+    print(doutor_mod.texto_relatorio_v011(ctx["home"], ctx))
     return EXIT_OK
 
 
@@ -375,10 +375,76 @@ def cmd_chaves(ctx, args) -> int:
 
 
 def cmd_motores(ctx, args) -> int:
-    if args.motores_cmd == "listar" or args.motores_cmd is None:
-        print(motores_mod.tabela())
+    from nomos.cognition import engine_catalog as cat_mod
+    from nomos.cognition import engine_policy as epol
+    from nomos.cognition import engine_router as erouter
+    sub = args.motores_cmd
+    if sub is None:
+        print(motores_mod.tabela())   # compatível com v0.10
         return EXIT_OK
-    if args.motores_cmd == "usar":
+    if sub == "listar" or sub == "status":
+        print(cat_mod.tabela_v011(home=ctx["home"]))
+        auto = "LIGADO" if epol.auto_ligado() else "DESLIGADO"
+        print(f"\nroteador automático: {auto} "
+              f"(nomos motores auto {'off' if auto == 'LIGADO' else 'on'})")
+        return EXIT_OK
+    if sub == "menu":
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            print(cat_mod.tabela_v011(home=ctx["home"]))
+            return EXIT_OK
+        return _motores_menu(ctx)
+    if sub == "recomendar":
+        modalidade = getattr(args, "modalidade", None) or "texto"
+        if modalidade not in cat_mod.MODALIDADES_V011:
+            print(f"erro: modalidade desconhecida: {modalidade} "
+                  f"(use: {', '.join(cat_mod.MODALIDADES_V011)})", file=sys.stderr)
+            return EXIT_ERROR
+        tarefa = erouter.Tarefa(tipo=modalidade, modalidade=modalidade)
+        dec = erouter.rotear(tarefa, home=ctx["home"],
+                             chave_configurada=epol.chave_cloud_configurada(ctx["vault"]))
+        if dec.selected_engine:
+            print(f"recomendado para {modalidade}: {dec.selected_engine}")
+            print(f"  por quê: {dec.reason}")
+            print(f"  privacidade: {dec.privacy_level} · custo: {dec.estimated_cost}"
+                  + (" · pede sua aprovação" if dec.approval_required else ""))
+            if dec.fallback_engine:
+                print(f"  reserva: {dec.fallback_engine}")
+        else:
+            print(f"nenhum motor pronto para {modalidade}.")
+            print(f"  {dec.reason}")
+            return EXIT_ERROR
+        return EXIT_OK
+    if sub == "auto":
+        estado = getattr(args, "estado", None)
+        if estado not in {"on", "off"}:
+            print("uso: nomos motores auto on|off", file=sys.stderr)
+            return EXIT_ERROR
+        epol.definir_auto(estado == "on")
+        ctx["audit"].append("motores.auto", ligado=estado == "on")
+        print("roteador automático " + ("LIGADO — escolho o melhor motor local "
+              "para cada tarefa." if estado == "on" else
+              "DESLIGADO — uso sempre o motor que você escolher."))
+        return EXIT_OK
+    if sub == "testar":
+        cat = cat_mod.construir(ctx["home"])
+        m = cat.por_id(args.motor)
+        if m is None:
+            print(f"erro: motor desconhecido: {args.motor}", file=sys.stderr)
+            return EXIT_ERROR
+        print(f"{m.id}: {'PRONTO ✓' if m.pronto else 'não está pronto'}"
+              f" — {m.status or m.rotulo}")
+        return EXIT_OK if m.pronto else EXIT_ERROR
+    if sub == "diagnostico":
+        cat = cat_mod.construir(ctx["home"])
+        faltando = [mod for mod in cat_mod.MODALIDADES_V011 if not cat.prontos(mod)]
+        prontas = [mod for mod in cat_mod.MODALIDADES_V011 if cat.prontos(mod)]
+        print("Diagnóstico de motores")
+        print(f"  modalidades prontas: {', '.join(prontas) or 'nenhuma'}")
+        if faltando:
+            print(f"  sem motor: {', '.join(faltando)}")
+        print(f"  modo só-local: {'LIGADO 🔒' if localidade.esta_ligado(ctx['home']) else 'DESLIGADO 🔌'}")
+        return EXIT_OK
+    if sub == "usar":
         try:
             motores_mod.escolher(args.modalidade, args.motor)
         except ValueError as exc:
@@ -387,6 +453,113 @@ def cmd_motores(ctx, args) -> int:
         ctx["audit"].append("motor.escolhido", modalidade=args.modalidade, motor=args.motor)
         print(f"{args.modalidade} agora usa '{args.motor}'.")
         return EXIT_OK
+    return EXIT_ERROR
+
+
+def _motores_menu(ctx, ask=input, say=print) -> int:
+    from nomos.cognition import engine_catalog as cat_mod
+    from nomos.cognition import engine_policy as epol
+    while True:
+        say("\nNOMOS Motores\n"
+            "1. Ver todos os motores\n"
+            "2. Recomendação para uma tarefa\n"
+            "3. Ligar/desligar modo automático\n"
+            "4. Diagnóstico\n"
+            "5. Voltar")
+        op = ask("escolha> ").strip()
+        if op in {"5", "", "voltar"}:
+            return EXIT_OK
+        if op == "1":
+            say(cat_mod.tabela_v011(home=ctx["home"]))
+        elif op == "2":
+            mod = ask("modalidade (texto, codigo, resumo, imagem...)> ").strip() or "texto"
+            ns = argparse.Namespace(motores_cmd="recomendar", modalidade=mod)
+            cmd_motores(ctx, ns)
+        elif op == "3":
+            ligado = epol.auto_ligado()
+            say(f"modo automático está {'LIGADO' if ligado else 'DESLIGADO'}.")
+            r = ask("inverter? (sim/não)> ").strip().casefold()
+            if r == "sim":
+                epol.definir_auto(not ligado)
+                say("feito.")
+        elif op == "4":
+            cmd_motores(ctx, argparse.Namespace(motores_cmd="diagnostico"))
+        else:
+            say("opção desconhecida — digite um número de 1 a 5.")
+
+
+def cmd_skills(ctx, args) -> int:
+    """Modo amigável de skills (o técnico `nomos skill` continua igual)."""
+    from nomos.ext import skill_registry as reg
+    from nomos.ext import skill_status as st
+    from nomos.ext.signing import TrustStore
+    from nomos.simple import skills_menu as smenu
+    sub = getattr(args, "skills_cmd", None)
+    trust = TrustStore(ctx["home"] / "trust.json")
+    interativo = sys.stdin.isatty() and sys.stdout.isatty()
+
+    def _confirmar_experimental(mf) -> bool:
+        if not interativo:
+            return False   # CI/non-interactive nega sempre (fail-closed)
+        print(f"⚠️  '{mf['name']}' é experimental (risco {mf['risk_level']}"
+              f"{', não assinada' if 'signature' not in mf else ''}).")
+        return input('digite "ACEITO O RISCO" para continuar> ').strip() == "ACEITO O RISCO"
+
+    if sub is None:
+        sub = "menu" if interativo else "listar"
+    if sub == "menu":
+        if not interativo:
+            sub = "listar"
+        else:
+            return smenu.menu(
+                ctx, instalar_fn=lambda caminho: smenu.instalar_amigavel(
+                    ctx, caminho, _approver_for(ctx, args), _confirmar_experimental))
+    if sub == "listar":
+        print(smenu.render_lista(st.status_todas(ctx["home"], ctx["skills"], trust),
+                                 reg.disponiveis(ctx["home"], ctx["skills"])))
+        return EXIT_OK
+    if sub == "instalar":
+        msg = smenu.instalar_amigavel(ctx, args.caminho, _approver_for(ctx, args),
+                                      _confirmar_experimental)
+        print(msg)
+        return EXIT_OK if "instalada" in msg else EXIT_DENIED
+    if sub == "remover":
+        ok = skills_mod.remove(args.nome, ctx["skills"])
+        ctx["audit"].append("skill.removida", name=args.nome, existia=ok)
+        print("removida." if ok else "não estava instalada.")
+        return EXIT_OK
+    if sub == "info":
+        alvo = ctx["skills"] / args.nome
+        if not alvo.exists():
+            print(f"'{args.nome}' não está instalada.", file=sys.stderr)
+            return EXIT_ERROR
+        print(smenu.render_info(st.status_skill(ctx["home"], alvo, trust)))
+        return EXIT_OK
+    if sub in {"ativar", "desativar"}:
+        if not (ctx["skills"] / args.nome).exists():
+            print(f"'{args.nome}' não está instalada.", file=sys.stderr)
+            return EXIT_ERROR
+        st.ativar(ctx["home"], args.nome, sub == "ativar")
+        ctx["audit"].append(f"skill.{sub}", name=args.nome)
+        print(f"'{args.nome}' {'ativada' if sub == 'ativar' else 'desativada'}.")
+        return EXIT_OK
+    if sub == "diagnostico":
+        print(smenu.diagnostico_texto(ctx["home"], ctx["skills"], trust))
+        return EXIT_OK
+    if sub == "rodar":
+        if not st.esta_ativa(ctx["home"], args.nome):
+            print(f"'{args.nome}' está desativada — reative com: "
+                  f"nomos skills ativar {args.nome}", file=sys.stderr)
+            return EXIT_DENIED
+        rc, saida = reg.executar(args.nome, ctx["skills"], ctx["policy"],
+                                 _approver_for(ctx, args), audit=ctx["audit"])
+        if rc == 0:
+            st.marcar_uso(ctx["home"], args.nome)
+        sys.stdout.write(saida if saida.endswith("\n") or not saida else saida + "\n")
+        if rc == 3:
+            print("(negado — nenhuma permissão além do declarado e aprovado)",
+                  file=sys.stderr)
+        return rc
     return EXIT_ERROR
 
 
@@ -581,14 +754,43 @@ def build_parser() -> argparse.ArgumentParser:
     cksub = ck.add_subparsers(dest="chaves_cmd")
     cksub.add_parser("listar").set_defaults(fn=cmd_chaves)
     ck.set_defaults(fn=cmd_chaves, chaves_cmd=None)
-    mo = sub.add_parser("motores", help="ver e escolher motores por modalidade")
+    mo = sub.add_parser("motores", help="ver, escolher e rotear motores por modalidade")
     mosub = mo.add_subparsers(dest="motores_cmd")
     mosub.add_parser("listar").set_defaults(fn=cmd_motores)
+    mosub.add_parser("menu").set_defaults(fn=cmd_motores)
+    mosub.add_parser("status").set_defaults(fn=cmd_motores)
+    mr = mosub.add_parser("recomendar")
+    mr.add_argument("modalidade", nargs="?")
+    mr.set_defaults(fn=cmd_motores)
+    ma = mosub.add_parser("auto")
+    ma.add_argument("estado", choices=["on", "off"])
+    ma.set_defaults(fn=cmd_motores)
+    mt = mosub.add_parser("testar")
+    mt.add_argument("motor")
+    mt.set_defaults(fn=cmd_motores)
+    mosub.add_parser("diagnostico").set_defaults(fn=cmd_motores)
     mu = mosub.add_parser("usar")
     mu.add_argument("modalidade")
     mu.add_argument("motor")
     mu.set_defaults(fn=cmd_motores)
     mo.set_defaults(fn=cmd_motores, motores_cmd=None)
+
+    sks = sub.add_parser("skills", help="suas habilidades, do jeito fácil")
+    skssub = sks.add_subparsers(dest="skills_cmd")
+    skssub.add_parser("menu").set_defaults(fn=cmd_skills)
+    skssub.add_parser("listar").set_defaults(fn=cmd_skills)
+    s_i = skssub.add_parser("instalar")
+    s_i.add_argument("caminho")
+    s_i.add_argument("--panel", action="store_true")
+    s_i.set_defaults(fn=cmd_skills)
+    for nome_cmd in ("remover", "info", "ativar", "desativar", "rodar"):
+        sp = skssub.add_parser(nome_cmd)
+        sp.add_argument("nome")
+        if nome_cmd == "rodar":
+            sp.add_argument("--panel", action="store_true")
+        sp.set_defaults(fn=cmd_skills)
+    skssub.add_parser("diagnostico").set_defaults(fn=cmd_skills)
+    sks.set_defaults(fn=cmd_skills, skills_cmd=None)
     sub.add_parser("init").set_defaults(fn=cmd_init)
 
     ag = sub.add_parser("agent").add_subparsers(dest="agent_cmd", required=True)
@@ -684,14 +886,35 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def cmd_menu(ctx, args) -> int:
+    """Menu principal amigável (v0.11): 1ª vez => onboarding; depois => menu."""
+    from nomos.simple.menu_principal import menu_principal
+    perfil = config.load_agent() or {}
+    if not perfil.get("onboarding_completo"):
+        return cmd_start(ctx, args)   # onboarding + chat, como sempre foi
+    ns = lambda **kw: argparse.Namespace(**kw)
+    acoes = {
+        "1": lambda: cmd_start(ctx, ns()),
+        "2": lambda: cmd_status(ctx, ns()),
+        "3": lambda: cmd_cerebro(ctx, ns(cerebro_cmd=None)),
+        "4": lambda: cmd_motores(ctx, ns(motores_cmd="menu")),
+        "5": lambda: cmd_skills(ctx, ns(skills_cmd="menu")),
+        "6": lambda: cmd_chaves(ctx, ns(chaves_cmd=None)),
+        "7": lambda: cmd_local(ctx, ns(local_cmd=None)),
+        "8": lambda: cmd_doutor(ctx, ns()),
+        "9": lambda: cmd_tema(ctx, ns(tema_cmd=None)),
+    }
+    return menu_principal(ctx, perfil, acoes)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     ctx = _paths()
     fn = getattr(args, "fn", None)
     if fn is None:
-        # `nomos` sem comando: abre o assistente amigável (ou ajuda, se não houver TTY)
+        # `nomos` sem comando: menu amigável (ou ajuda, se não houver TTY)
         if sys.stdin.isatty() and sys.stdout.isatty():
-            return cmd_start(ctx, args)
+            return cmd_menu(ctx, args)
         build_parser().print_help()
         return EXIT_OK
     try:
