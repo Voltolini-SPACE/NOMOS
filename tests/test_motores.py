@@ -126,7 +126,8 @@ def test_imagem_gera_png_de_verdade_com_gate(srv, tmp_path, nomos_home):
     assert cam.exists() and cam.suffix == ".png"
     assert cam.read_bytes().startswith(b"\x89PNG")
     assert "gato-astronauta" in cam.name
-    assert oct(cam.stat().st_mode & 0o777) == "0o600"
+    if os.name == "posix":   # bits POSIX
+        assert oct(cam.stat().st_mode & 0o777) == "0o600"
     assert _Srv.ultimo_prompt == "um gato astronauta"
 
 
@@ -164,6 +165,7 @@ printf 'RIFF....WAVEfmt ' > "$out"
     return exe
 
 
+@__import__("pytest").mark.skipif(os.name == "nt", reason="fixture piper_fake usa /bin/sh (POSIX)")
 def test_audio_fala_gera_wav(piper_fake, tmp_path, nomos_home):
     pol = PolicyEngine(tmp_path / "p.json")
     cam = criacao.falar("olá, eu sou a Luna", tmp_path, pol, gate, aprova)

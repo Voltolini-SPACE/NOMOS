@@ -1,6 +1,8 @@
 """C3 — memória local persistente (SQLite/FTS5)."""
 from nomos.cognition.memory import Memory
 
+import os
+
 import pytest
 
 
@@ -55,6 +57,7 @@ def test_role_invalido(mem):
         mem.remember("hacker", "x")
 
 
+@__import__("pytest").mark.skipif(os.name == "nt", reason="permissões POSIX (0600) não se aplicam ao Windows")
 def test_arquivo_0600(tmp_path):
     p = tmp_path / "m.db"
     Memory(p)

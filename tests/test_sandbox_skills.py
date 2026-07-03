@@ -9,17 +9,29 @@ from nomos.runtime import sandbox
 
 
 # ---------------- sandbox ----------------
+# Gate de capacidade (mesmo padrão de test_redaction_pipe): sem user+net
+# namespaces (macOS, Windows, kernels restritos) o sandbox recusa rodar por
+# projeto — aqui isso vira SKIP explícito, nunca falso-verde nem falso-vermelho.
 
+_netns = pytest.mark.skipif(not sandbox.netns_available(),
+                            reason="exige user+net namespaces (unshare -rn)")
+_posix = pytest.mark.skipif(__import__("os").name != "posix",
+                            reason="sandbox usa /bin/sh (POSIX)")
+
+
+@_netns
 def test_execucao_basica():
     r = sandbox.run("echo ola-nomos", timeout=10)
     assert r.rc == 0 and "ola-nomos" in r.stdout
 
 
+@_netns
 def test_timeout_mata_processo():
     r = sandbox.run("sleep 30", timeout=1)
     assert r.timed_out is True
 
 
+@_netns
 def test_ambiente_nao_herda_segredos(monkeypatch):
     monkeypatch.setenv("SEGREDO_DO_HOST", "sk-nunca-vazar-000111")
     r = sandbox.run('echo "${SEGREDO_DO_HOST:-ausente}"', timeout=10)
@@ -44,6 +56,7 @@ def test_rede_negada_por_padrao_ou_recusa_fail_closed():
             sandbox.run(probe, timeout=15)
 
 
+@_posix
 def test_allow_network_explicito_dispensa_namespace():
     r = sandbox.run("echo com-rede-aprovada", timeout=10, allow_network=True)
     assert r.rc == 0 and r.network_isolated is False

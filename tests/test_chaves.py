@@ -1,5 +1,7 @@
 """Ciclo Acolhedor — área de chaves: guiada + arquivo, sem expor valores."""
 
+import os
+
 import pytest
 
 from nomos.kernel import config
@@ -72,6 +74,7 @@ def test_absorver_sem_arquivo_orienta(home):
         chaves.absorver_arquivo(home, "k", SENHA)
 
 
+@__import__("pytest").mark.skipif(os.name == "nt", reason="permissões POSIX (0600) não se aplicam ao Windows")
 def test_arquivo_modelo_0600(home):
     p = chaves.criar_arquivo_modelo(home)
     assert oct(p.stat().st_mode & 0o777) == "0o600"

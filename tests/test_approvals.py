@@ -68,7 +68,8 @@ def test_pending_filtra_e_expira_sozinho(q):
 def test_arquivos_0600_e_token_fora_do_log(q, tmp_path):
     rid, token = q.request("A3", "cred", "m")
     f = q.dir / f"{rid}.json"
-    assert oct(f.stat().st_mode & 0o777) == "0o600"
+    if __import__("os").name == "posix":   # bits POSIX
+        assert oct(f.stat().st_mode & 0o777) == "0o600"
     log = (tmp_path / "a.jsonl").read_text()
     assert "approval.solicitada" in log and token not in log
 

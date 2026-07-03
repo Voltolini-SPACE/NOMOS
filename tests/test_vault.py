@@ -1,5 +1,7 @@
 import stat
 
+import os
+
 import pytest
 
 from nomos.kernel.vault import Vault, VaultError, VaultLocked
@@ -42,6 +44,7 @@ def test_passphrase_minima(tmp_path):
         _vault(tmp_path).init("curta")
 
 
+@__import__("pytest").mark.skipif(os.name == "nt", reason="permissões POSIX (0600) não se aplicam ao Windows")
 def test_permissoes_0600(tmp_path):
     v = _vault(tmp_path)
     v.init(PW)

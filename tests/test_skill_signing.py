@@ -2,6 +2,8 @@
 import hashlib
 import json
 
+import os
+
 import pytest
 
 from nomos.ext import signing, skills as skills_mod
@@ -113,5 +115,6 @@ def test_trust_store_corrompido_fail_closed(base, tmp_path):
         skills_mod.install(src, base["skills"], base["engine"], aprova, trust=base["trust"])
 
 
+@__import__("pytest").mark.skipif(os.name == "nt", reason="permissões POSIX (0600) não se aplicam ao Windows")
 def test_chave_privada_0600(base):
     assert oct(base["priv"].stat().st_mode & 0o777) == "0o600"
