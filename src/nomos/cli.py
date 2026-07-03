@@ -693,7 +693,8 @@ def cmd_status(ctx, args) -> int:
     agent = config.load_agent()
     intact, bad = ctx["audit"].verify()
     print(f"NOMOS {__version__} | home: {ctx['home']}")
-    print(f"agente: {agent['agent_name'] if agent else '— (crie com nomos agent create)'}")
+    nome_agente = (agent or {}).get("agent_name")
+    print(f"agente: {nome_agente or '— (crie com nomos agent create)'}")
     print(f"cofre: {'presente' if ctx['vault'].exists() else 'ausente'} "
           f"({len(ctx['vault'].names())} entrada(s))")
     print("política: read-only por padrão, fail-closed ativo")

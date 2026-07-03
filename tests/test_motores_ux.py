@@ -117,3 +117,15 @@ def test_usar_continua_funcionando(monkeypatch, capsys):
     _com_ollama(monkeypatch)
     assert run("motores", "usar", "codigo", "texto") == 0
     assert run("motores", "usar", "video", "x") == 1
+
+
+def test_status_sobrevive_a_perfil_parcial(monkeypatch, capsys):
+    """Regressão: 'motores usar'/'auto' antes do onboarding cria perfil sem
+    agent_name — 'nomos status' não pode quebrar por isso."""
+    run("init")
+    _com_ollama(monkeypatch)
+    assert run("motores", "usar", "codigo", "texto") == 0   # perfil parcial
+    assert run("status") == 0
+    assert "crie com nomos agent create" in capsys.readouterr().out
+    assert run("motores", "auto", "off") == 0               # também parcial
+    assert run("status") == 0
