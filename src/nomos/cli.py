@@ -693,11 +693,61 @@ def cmd_chat(ctx, args) -> int:
     return rc
 
 
+def _senha_backup() -> str | None:
+    env = os.environ.get("NOMOS_BACKUP_SENHA")
+    if env:
+        print("aviso: senha do backup lida de NOMOS_BACKUP_SENHA "
+              "(uso restrito a automação).", file=sys.stderr)
+        return env
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return None
+    return getpass.getpass("senha do backup (mín. 8 caracteres): ")
+
+
 def cmd_memory(ctx, args) -> int:
     mem = Memory(ctx["home"] / "memory.db")
     if args.mem_cmd == "search":
-        for it in mem.recall(" ".join(args.query), k=args.k):
+        for it in mem.recall_hibrido(" ".join(args.query), k=args.k):
             print(f"[{it.id}] ({it.role}) {it.text}")
+        return EXIT_OK
+    if args.mem_cmd == "exportar":
+        from nomos.cognition import backup as bkp
+        senha = _senha_backup()
+        if senha is None:
+            print("exportar exige terminal interativo (ou NOMOS_BACKUP_SENHA).",
+                  file=sys.stderr)
+            return EXIT_ERROR
+        try:
+            n = bkp.exportar(mem, args.arquivo, senha)
+        except bkp.BackupError as exc:
+            print(f"não exportei: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        ctx["audit"].append("memoria.exportada", quantidade=n)
+        print(f"{n} memória(s) exportada(s) cifrada(s) para {args.arquivo}")
+        print("guarde a senha: sem ela, o arquivo é ilegível (de propósito).")
+        return EXIT_OK
+    if args.mem_cmd == "importar":
+        from nomos.cognition import backup as bkp
+        senha = _senha_backup()
+        if senha is None:
+            print("importar exige terminal interativo (ou NOMOS_BACKUP_SENHA).",
+                  file=sys.stderr)
+            return EXIT_ERROR
+        try:
+            novas, ignoradas = bkp.importar(mem, args.arquivo, senha)
+        except bkp.BackupError as exc:
+            print(f"não importei: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        ctx["audit"].append("memoria.importada", novas=novas, ignoradas=ignoradas)
+        print(f"{novas} memória(s) nova(s); {ignoradas} já existiam (nada apagado).")
+        return EXIT_OK
+    if args.mem_cmd == "consolidar":
+        criadas = mem.consolidar()
+        ctx["audit"].append("memoria.consolidada", notas=len(criadas))
+        if not criadas:
+            print("nada novo para consolidar — suas notas já estão em dia.")
+        for n in criadas:
+            print(f"  + {n}")
         return EXIT_OK
     if args.mem_cmd == "recent":
         for it in mem.recent(args.k):
@@ -918,7 +968,12 @@ def build_parser() -> argparse.ArgumentParser:
     m4 = me.add_parser("forget")
     m4.add_argument("id", type=int)
     m5 = me.add_parser("stats")
-    for mp in (m1, m2, m3, m4, m5):
+    m6 = me.add_parser("exportar")
+    m6.add_argument("arquivo")
+    m7 = me.add_parser("importar")
+    m7.add_argument("arquivo")
+    m8 = me.add_parser("consolidar")
+    for mp in (m1, m2, m3, m4, m5, m6, m7, m8):
         mp.set_defaults(fn=cmd_memory)
 
     sub.add_parser("status").set_defaults(fn=cmd_status)

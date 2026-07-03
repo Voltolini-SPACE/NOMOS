@@ -118,5 +118,66 @@ class Memory:
             ).fetchall()
         return [MemoryItem(*r) for r in rows]
 
+    def recall_hibrido(self, query: str, k: int = 5,
+                       janela_semantica: int = 500) -> list[MemoryItem]:
+        """Busca híbrida (v0.14): palavras-chave (FTS/LIKE) + significado.
+
+        1º os acertos por palavra-chave (comportamento clássico preservado,
+        mas sem deixar palavrinhas vazias tipo "da/de/em" dominarem a busca);
+        depois completa com os mais parecidos POR SIGNIFICADO (semântica local,
+        sem rede) dentre as memórias recentes. Nunca devolve duplicado.
+        """
+        _stop = {"da", "de", "do", "das", "dos", "em", "no", "na", "nos", "nas",
+                 "um", "uma", "o", "a", "os", "as", "e", "ou", "que", "com",
+                 "por", "para", "pra", "pelo", "pela", "meu", "minha", "se"}
+        relevantes = [w for w in re.findall(r"\w+", query, flags=re.UNICODE)
+                      if w.lower() not in _stop]
+        consulta_kw = " ".join(relevantes) if relevantes else query
+        exatos = self.recall(consulta_kw, k)
+        if len(exatos) >= k or not query.strip():
+            return exatos[:k]
+        vistos = {i.id for i in exatos}
+        candidatos = [i for i in self.recent(janela_semantica)
+                      if i.id not in vistos]
+        if candidatos:
+            from nomos.cognition import semantica
+            ordem = semantica.ranquear(query, [c.text for c in candidatos],
+                                       k=k - len(exatos))
+            exatos += [candidatos[i] for i, _ in ordem]
+        return exatos[:k]
+
+    def consolidar(self, limite: int = 500) -> list[str]:
+        """Extrai fatos/preferências/tarefas duráveis das conversas → notas.
+
+        Heurística LOCAL e transparente (sem IA): padrões explícitos do
+        usuário viram notas prefixadas, deduplicadas. Devolve as notas criadas.
+        """
+        padroes = [
+            (re.compile(r"\bprefiro\b(.{4,80})", re.I), "preferência:"),
+            (re.compile(r"\bmeu aniversário\b(.{2,40})", re.I), "data:"),
+            (re.compile(r"\bmeu (nome|email|telefone|endereço) (?:é|eh)(.{2,60})", re.I),
+             "fato:"),
+            (re.compile(r"\bminha (cor|comida|música|musica) favorita (?:é|eh)(.{2,60})",
+                        re.I), "preferência:"),
+            (re.compile(r"\b(?:preciso|tenho que|não posso esquecer de)(.{4,90})",
+                        re.I), "tarefa:"),
+        ]
+        ja_notado = {i.text for i in self.recent(10_000) if i.role == "note"}
+        criadas: list[str] = []
+        for item in self.recent(limite):
+            if item.role != "user":
+                continue
+            for pat, prefixo in padroes:
+                m = pat.search(item.text)
+                if not m:
+                    continue
+                trecho = m.group(m.lastindex or 1).strip(" .,;")
+                nota = f"{prefixo} {trecho}"[:160]
+                if nota not in ja_notado and len(trecho) > 3:
+                    self.remember("note", nota)
+                    ja_notado.add(nota)
+                    criadas.append(nota)
+        return criadas
+
     def close(self) -> None:
         self.conn.close()

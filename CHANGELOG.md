@@ -18,6 +18,20 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
   honesta, auditoria só com metadados e explicação final ("Nada saiu da sua
   máquina.").
 
+## [0.14.0] — 2026-07-03
+
+### Adicionado
+- **Busca híbrida** (`memory search` e `/memoria buscar`): palavras-chave
+  (comportamento clássico) + similaridade por significado via `semantica.py`
+  — hashing local de n-gramas, zero dependência, zero rede, determinístico.
+  Stopwords não dominam mais a fase de palavra-chave.
+- **Backup cifrado de memórias**: `nomos memory exportar/importar <arquivo>`
+  (Fernet + PBKDF2-SHA256 600k, sal por arquivo, 0600). Senha errada ou
+  arquivo adulterado ⇒ nada importado; importar nunca apaga (deduplica).
+- **Consolidação**: `nomos memory consolidar` extrai fatos, preferências e
+  tarefas explícitas das conversas para notas duráveis (heurística local
+  transparente, idempotente).
+
 ## [0.12.0] — 2026-07-03
 
 ### Adicionado

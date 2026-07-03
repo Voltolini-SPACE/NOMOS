@@ -284,7 +284,7 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                 mem.remember("note", partes[2])
                 say(f"{nome}: anotado! ({mem.count()} lembranças no total)")
             elif sub == "buscar" and len(partes) > 2:
-                achados = mem.recall(partes[2])
+                achados = mem.recall_hibrido(partes[2])
                 if not achados:
                     say(f"{nome}: não achei nada sobre isso ainda.")
                 for it in achados:
