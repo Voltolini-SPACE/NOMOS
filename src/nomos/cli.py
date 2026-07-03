@@ -327,6 +327,27 @@ def cmd_atualizar(ctx, args) -> int:
     return at.verificar(ctx, _approver_for(ctx, args))
 
 
+def cmd_painel(ctx, args) -> int:
+    from nomos.interface.painel_web import DashboardServer
+    srv = DashboardServer(ctx, port=getattr(args, "port", 0) or 0)
+    url = srv.start()
+    print(f"painel local (somente leitura): {url}")
+    print("só funciona neste computador (127.0.0.1). Ctrl+C encerra.")
+    try:
+        import webbrowser
+        webbrowser.open(url)
+    except Exception:
+        print("(não consegui abrir o navegador — copie a URL acima)")
+    try:
+        import signal as _sig
+        _sig.pause()
+    except (KeyboardInterrupt, AttributeError):
+        pass
+    finally:
+        srv.stop()
+    return EXIT_OK
+
+
 def cmd_rotinas(ctx, args) -> int:
     from nomos.simple import rotinas as rot
     sub = getattr(args, "rotinas_cmd", None)
@@ -910,6 +931,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="checa se há versão nova (opt-in; nunca atualiza sozinho)")
     at.add_argument("--panel", action="store_true")
     at.set_defaults(fn=cmd_atualizar)
+    pn = sub.add_parser("painel", help="painel local no navegador (somente leitura)")
+    pn.add_argument("--port", type=int, default=0)
+    pn.set_defaults(fn=cmd_painel)
     ro = sub.add_parser("rotinas", help="rotinas locais: briefing, check-up e mais")
     rosub = ro.add_subparsers(dest="rotinas_cmd")
     rosub.add_parser("listar").set_defaults(fn=cmd_rotinas)

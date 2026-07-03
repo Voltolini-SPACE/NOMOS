@@ -2,6 +2,17 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [0.17.0] — 2026-07-03
+
+### Adicionado
+- **Painel local** (`nomos painel`): o NOMOS inteiro numa página do navegador
+  — STATUS GERAL, check-up, motores por modalidade, skills, rotinas e os
+  últimos eventos da auditoria. **Somente leitura** (POST ⇒ 405): agir
+  continua no terminal e no painel de aprovações, com gate.
+- Mesmas garantias do painel de aprovações: bind exclusivo em 127.0.0.1
+  (outro host ⇒ recusa), URL com segmento secreto (sem ele ⇒ 404), HTML
+  autossuficiente sem assets externos, erro interno nunca vaza detalhes.
+
 ## [0.16.0] — 2026-07-03
 
 ### Adicionado
