@@ -21,6 +21,16 @@ OPCOES = """O que vamos fazer?
 10. Sair"""
 
 
+# F4/ISSUE-022: no modo iniciante o menu esconde o que é avançado.
+OPCOES_INICIANTE = """O que vamos fazer?
+ 1. Conversar com meu agente
+ 2. Ver status do NOMOS
+ 3. Instalar/gerenciar cérebro
+ 8. Rodar doutor/check-up
+10. Sair
+ (modo iniciante — digite 'avancado' para ver tudo)"""
+
+
 def cabecalho(perfil: dict, home) -> str:
     nome = perfil.get("agent_name", "seu agente")
     if localidade.esta_ligado(home):
@@ -38,9 +48,10 @@ def menu_principal(ctx, perfil: dict, acoes: dict, ask=input, say=print) -> int:
     derrubam o menu — mostram mensagem amigável e voltam ao menu.
     """
     say(cabecalho(perfil, ctx["home"]))
+    iniciante = bool(perfil.get("modo_iniciante"))
     while True:
         say("")
-        say(OPCOES)
+        say(OPCOES_INICIANTE if iniciante else OPCOES)
         try:
             op = ask("escolha> ").strip()
         except (EOFError, KeyboardInterrupt):
@@ -49,6 +60,14 @@ def menu_principal(ctx, perfil: dict, acoes: dict, ask=input, say=print) -> int:
         if op in {"10", "sair", "q", ""}:
             say("até logo! Suas memórias e chaves ficam guardadas aqui.")
             return 0
+        if op == "avancado" and iniciante:
+            iniciante = False
+            say("modo avançado ligado — todas as opções à mostra.")
+            continue
+        if op == "iniciante" and not iniciante:
+            iniciante = True
+            say("modo iniciante ligado — só o essencial.")
+            continue
         fn = acoes.get(op)
         if fn is None:
             say("opção desconhecida — digite um número de 1 a 10.")

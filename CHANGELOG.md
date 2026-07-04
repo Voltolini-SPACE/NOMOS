@@ -2,6 +2,19 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.3.0rc3] — 2026-07-04 (F4 do plano de validação — UX)
+
+### Adicionado
+- **Memória tipada** (ISSUE-019): `remember_typed` com tipo (fato/preferência/
+  tarefa/projeto/contato/decisão/regra), fonte e confiança; migração automática
+  de bancos antigos sem perder nada; detecção de contradições.
+- **Memórias candidatas** (ISSUE-020): "você quer que eu lembre disso?" —
+  candidata não vira memória sem aprovação (propor/aprovar/descartar).
+- **Erro humano** (ISSUE-021): `erros.explicar(codigo)` dá uma frase clara + o
+  próximo passo para cada `[NOMOS-Exx]`; teste garante uma explicação por código.
+- **Modo iniciante** (ISSUE-022): menu principal esconde o avançado; alterna
+  com "avancado"/"iniciante".
+
 ## [1.3.0rc2] — 2026-07-04 (F3 do plano de validação — agentes locais)
 
 ### Adicionado

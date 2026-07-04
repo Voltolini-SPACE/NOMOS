@@ -62,9 +62,25 @@ class Memory:
                 END;
                 """
             )
+        self._migrar_tipos()   # F4: colunas tipo/fonte/confianca (aditivo)
         self.conn.commit()
         if not existed:
             chmod_privado(self.path, 0o600)
+
+    def _migrar_tipos(self) -> None:
+        """F4/ISSUE-019: memória tipada. Colunas novas com padrão seguro; bancos
+        antigos migram sem perder nada (turnos viram tipo 'conversa')."""
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(memories)")}
+        for nome, ddl in (("tipo", "TEXT DEFAULT ''"),
+                          ("fonte", "TEXT DEFAULT ''"),
+                          ("confianca", "REAL DEFAULT 1.0")):
+            if nome not in cols:
+                self.conn.execute(f"ALTER TABLE memories ADD COLUMN {nome} {ddl}")
+        # tabela de candidatas aguardando aprovação (ISSUE-020)
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS mem_candidatas("
+            "id INTEGER PRIMARY KEY, ts REAL NOT NULL, tipo TEXT NOT NULL, "
+            "text TEXT NOT NULL, fonte TEXT DEFAULT '')")
 
     # ---------- escrita ----------
     def remember(self, role: str, text: str) -> int:
@@ -76,6 +92,56 @@ class Memory:
         )
         self.conn.commit()
         return int(cur.lastrowid)
+
+    def remember_typed(self, text: str, tipo: str = "fato", fonte: str = "usuario",
+                       confianca: float = 1.0) -> int:
+        """F4: memória tipada (fato/preferencia/tarefa/projeto/contato/decisao/
+        regra). Guardada como role='note' para compat total com a busca."""
+        tipos_ok = {"fato", "preferencia", "tarefa", "projeto", "contato",
+                    "decisao", "regra", "conversa"}
+        if tipo not in tipos_ok:
+            raise ValueError(f"tipo de memória inválido: {tipo!r}")
+        cur = self.conn.execute(
+            "INSERT INTO memories(ts, role, text, tipo, fonte, confianca) "
+            "VALUES (?, 'note', ?, ?, ?, ?)",
+            (time.time(), text, tipo, fonte, float(confianca)))
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def contradicoes(self, text: str, k: int = 3) -> list:
+        """Memórias existentes muito parecidas — candidatas a contradição."""
+        return [i for i in self.recall_hibrido(text, k=k)
+                if i.role == "note" and i.text != text]
+
+    # candidatas (ISSUE-020): "você quer que eu lembre disso?"
+    def propor_candidata(self, text: str, tipo: str = "fato",
+                         fonte: str = "conversa") -> int:
+        cur = self.conn.execute(
+            "INSERT INTO mem_candidatas(ts, tipo, text, fonte) VALUES (?, ?, ?, ?)",
+            (time.time(), tipo, text, fonte))
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def candidatas(self) -> list[dict]:
+        return [{"id": r[0], "tipo": r[1], "text": r[2], "fonte": r[3]}
+                for r in self.conn.execute(
+                    "SELECT id, tipo, text, fonte FROM mem_candidatas ORDER BY ts")]
+
+    def aprovar_candidata(self, cid: int) -> int | None:
+        r = self.conn.execute(
+            "SELECT tipo, text, fonte FROM mem_candidatas WHERE id=?", (cid,)
+        ).fetchone()
+        if not r:
+            return None
+        mid = self.remember_typed(r[1], tipo=r[0], fonte=r[2])
+        self.conn.execute("DELETE FROM mem_candidatas WHERE id=?", (cid,))
+        self.conn.commit()
+        return mid
+
+    def descartar_candidata(self, cid: int) -> bool:
+        c = self.conn.execute("DELETE FROM mem_candidatas WHERE id=?", (cid,))
+        self.conn.commit()
+        return c.rowcount > 0
 
     def forget(self, item_id: int) -> bool:
         cur = self.conn.execute("DELETE FROM memories WHERE id = ?", (item_id,))
