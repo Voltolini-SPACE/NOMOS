@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nomos"
-version = "1.3.0rc3"
+version = "1.3.0rc4"
 description = "NOMOS Personal Agent Foundry — plataforma local-first que instala, configura, governa e executa o agente pessoal do usuário"
 requires-python = ">=3.10"
 license = "MIT"
@@ -37,4 +37,4 @@ select = ["E4", "E7", "E9", "F", "B", "S110"]
 ignore = ["E731"]
 
 [tool.setuptools.package-data]
-"*" = ["examples/agents/*.json"]
+"nomos.agents" = ["oficiais/*.json"]

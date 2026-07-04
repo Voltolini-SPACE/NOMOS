@@ -341,9 +341,8 @@ def _conv_store(ctx):
 
 def _agent_registry(ctx):
     from nomos.agents.registry import AgentRegistry
-    from pathlib import Path as _P
-    exemplos = _P(__file__).resolve().parent.parent.parent / "examples" / "agents"
-    return AgentRegistry(ctx["home"], extras_dir=exemplos)
+    # extras_dir=None => usa os agentes oficiais empacotados (vêm no wheel)
+    return AgentRegistry(ctx["home"])
 
 
 def cmd_agentes(ctx, args) -> int:
@@ -590,10 +589,13 @@ def cmd_rotinas(ctx, args) -> int:
               else "id não encontrado.")
         return EXIT_OK if ok else EXIT_ERROR
     if sub == "executar":
-        resultados = rot.executar_devidas(ctx)
+        simular = getattr(args, "simular", False)
+        resultados = rot.executar_devidas(ctx, simular=simular)
         if not resultados:
             print("nada devido agora — tudo em dia.")
             return EXIT_OK
+        if simular:
+            print("(simulação: nada foi executado nem marcado como feito)")
         falhas = [r for r in resultados if not r["ok"]]
         for r in resultados:
             print(f"{'✓' if r['ok'] else '✗'} {r['nome']}: {r['detalhe']}")
@@ -1232,7 +1234,10 @@ def build_parser() -> argparse.ArgumentParser:
         rp = rosub.add_parser(nome_r)
         rp.add_argument("id", type=int)
         rp.set_defaults(fn=cmd_rotinas)
-    rosub.add_parser("executar").set_defaults(fn=cmd_rotinas)
+    rex = rosub.add_parser("executar")
+    rex.add_argument("--simular", action="store_true",
+                     help="mostra o que faria, sem executar (dry-run)")
+    rex.set_defaults(fn=cmd_rotinas)
     rosub.add_parser("briefing").set_defaults(fn=cmd_rotinas)
     rosub.add_parser("agendar").set_defaults(fn=cmd_rotinas)
     ro.set_defaults(fn=cmd_rotinas, rotinas_cmd=None)

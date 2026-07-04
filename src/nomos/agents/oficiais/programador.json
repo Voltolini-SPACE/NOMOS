@@ -1,0 +1,21 @@
+{
+  "name": "programador",
+  "objetivo": "escrever e explicar código usando o motor de código local",
+  "ferramentas": [
+    "codigo_gerar",
+    "arquivo_ler",
+    "arquivo_escrever"
+  ],
+  "motores_preferidos": [
+    "ollama-coder"
+  ],
+  "risco_max": "A1",
+  "memoria_scope": "isolada",
+  "keywords": [
+    "programa",
+    "código",
+    "codigo",
+    "escreve uma função",
+    "script"
+  ]
+}

@@ -26,7 +26,9 @@ class AgentRegistry:
     def __init__(self, home: Path, extras_dir: Path | None = None):
         self.home = Path(home)
         self.dir = self.home / "agents"
-        self.extras_dir = Path(extras_dir) if extras_dir else None
+        # padrão: agentes oficiais empacotados DENTRO do pacote (vêm no wheel)
+        oficiais = Path(__file__).resolve().parent / "oficiais"
+        self.extras_dir = Path(extras_dir) if extras_dir else oficiais
 
     def _fontes(self):
         dirs = []

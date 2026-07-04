@@ -1,0 +1,22 @@
+{
+  "name": "pesquisador-local",
+  "objetivo": "achar coisas nas suas memórias, conversas e arquivos indexados",
+  "ferramentas": [
+    "memoria_buscar",
+    "arquivo_ler",
+    "arquivo_resumir"
+  ],
+  "motores_preferidos": [
+    "embutido",
+    "ollama"
+  ],
+  "risco_max": "A0",
+  "memoria_scope": "compartilhada",
+  "keywords": [
+    "pesquisa",
+    "pesquisar",
+    "procura nas minhas",
+    "onde falamos",
+    "resumo do que"
+  ]
+}

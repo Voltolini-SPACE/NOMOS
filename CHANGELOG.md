@@ -2,6 +2,21 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.3.0rc4] — 2026-07-04 (F5+F6 do plano de validação)
+
+### Adicionado
+- **Rotina dry-run** (F5/ISSUE-023): `nomos rotinas executar --simular` mostra
+  o que faria SEM executar nem marcar como feito; auditoria registra
+  `rotina.simulada`. `prever_acao` descreve cada ação.
+- **Smoke pós-instalação no CI** (F6/ISSUE-024): job que constrói o wheel,
+  instala em ambiente limpo nos 3 SOs e roda `nomos doutor` como relatório de
+  saúde.
+
+### Corrigido
+- **Agentes oficiais não vinham no wheel** (defeito pego pelo smoke da F6):
+  movidos de `examples/` para `src/nomos/agents/oficiais/` e empacotados;
+  `nomos agentes listar` agora funciona na instalação por wheel.
+
 ## [1.3.0rc3] — 2026-07-04 (F4 do plano de validação — UX)
 
 ### Adicionado

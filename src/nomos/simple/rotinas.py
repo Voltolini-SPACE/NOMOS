@@ -168,8 +168,28 @@ def briefing(ctx) -> str:
     return "\n".join(linhas)
 
 
-def executar_acao(ctx, acao: str, say=print) -> tuple[bool, str]:
-    """Executa UMA ação de rotina. Sem aprovador: sensível é negado na hora."""
+def prever_acao(acao: str) -> str:
+    """F5/ISSUE-023: descreve o que a ação FARIA, sem executar nada."""
+    if acao == "briefing":
+        return "geraria o briefing do dia (tarefas + rotinas + próximo passo), só leitura"
+    if acao == "doutor":
+        return "rodaria o check-up (doutor), só leitura"
+    if acao == "consolidar-memoria":
+        return "extrairia fatos/tarefas das conversas para notas (idempotente)"
+    if acao.startswith("skill:"):
+        nome = acao.split(":", 1)[1]
+        return (f"tentaria rodar a skill '{nome}' — mas só se ela for A0 "
+                "(skills que pedem aprovação nunca rodam em rotina)")
+    return f"ação desconhecida: {acao}"
+
+
+def executar_acao(ctx, acao: str, say=print, simular: bool = False) -> tuple[bool, str]:
+    """Executa UMA ação de rotina. `simular=True` só descreve, não executa.
+    Sem aprovador: sensível é negado na hora."""
+    if simular:
+        prev = prever_acao(acao)
+        say(f"[simulação] {prev}")
+        return True, f"simulado: {prev}"
     if acao == "briefing":
         texto = briefing(ctx)
         say(texto)
@@ -199,15 +219,19 @@ def executar_acao(ctx, acao: str, say=print) -> tuple[bool, str]:
     return False, f"ação desconhecida: {acao}"
 
 
-def executar_devidas(ctx, agora: datetime | None = None, say=print) -> list[dict]:
-    """Roda todas as rotinas devidas. Devolve [{id, nome, ok, detalhe}]."""
+def executar_devidas(ctx, agora: datetime | None = None, say=print,
+                     simular: bool = False) -> list[dict]:
+    """Roda (ou simula) as rotinas devidas. Em simulação: nada executa, nada
+    é marcado como executado, e a auditoria registra apenas o dry-run."""
     resultados = []
     for r in devidas(Path(ctx["home"]), agora):
-        ok, detalhe = executar_acao(ctx, r["acao"], say=say)
-        _marcar_execucao(Path(ctx["home"]), r["id"])
+        ok, detalhe = executar_acao(ctx, r["acao"], say=say, simular=simular)
+        if not simular:
+            _marcar_execucao(Path(ctx["home"]), r["id"])
         if ctx.get("audit") is not None:
-            ctx["audit"].append("rotina.executada", id=r["id"], nome=r["nome"],
-                                acao=r["acao"], ok=ok)
+            ctx["audit"].append(
+                "rotina.simulada" if simular else "rotina.executada",
+                id=r["id"], nome=r["nome"], acao=r["acao"], ok=ok)
         resultados.append({"id": r["id"], "nome": r["nome"], "ok": ok,
                            "detalhe": detalhe})
     return resultados

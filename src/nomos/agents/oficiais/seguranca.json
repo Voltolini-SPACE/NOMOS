@@ -1,0 +1,19 @@
+{
+  "name": "seguranca",
+  "objetivo": "rodar check-up, verificar auditoria e diagnosticar skills",
+  "ferramentas": [
+    "doutor",
+    "logs_verificar",
+    "memoria_buscar"
+  ],
+  "motores_preferidos": [],
+  "risco_max": "A0",
+  "memoria_scope": "isolada",
+  "keywords": [
+    "segurança",
+    "seguranca",
+    "está tudo seguro",
+    "auditoria",
+    "diagnóstico de segurança"
+  ]
+}
