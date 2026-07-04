@@ -1,0 +1,27 @@
+{
+  "name": "busca-arquivos",
+  "version": "1.0.0",
+  "description": "procura arquivos por nome e conteúdo numa pasta (só leitura)",
+  "entrypoint": "main.py",
+  "entry": "main.py",
+  "permissions": [
+    "A0_READ_LOCAL"
+  ],
+  "keywords": [
+    "onde está",
+    "onde esta",
+    "encontra o arquivo",
+    "procura o arquivo",
+    "acha o arquivo",
+    "procura na pasta"
+  ],
+  "compatible_nomos_version": ">=1.2",
+  "modalities": [
+    "arquivo"
+  ],
+  "local_only_capable": true,
+  "cloud_required": false,
+  "files": {
+    "main.py": "03f8ca1bbce3f0550942ed5a965c6b80c18a091453115807147f9c8fd27de1d3"
+  }
+}

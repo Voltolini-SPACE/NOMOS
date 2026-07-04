@@ -73,6 +73,7 @@ def normalizar_manifesto(mf: dict) -> dict:
                    if isinstance(sig, dict) else "desconhecido")
     out.setdefault("compatible_nomos_version", ">=0.10")
     out.setdefault("modalities", ["texto"])
+    out.setdefault("keywords", [])
     out.setdefault("local_only_capable", True)
     out.setdefault("cloud_required", False)
     return out
@@ -96,6 +97,10 @@ def validar_manifesto(mf: dict) -> list[str]:
         for m in mf["modalities"]:
             if m not in MODALIDADES_SKILL:
                 problemas.append(f"modalidade desconhecida: {m}")
+    if "keywords" in mf:
+        if not isinstance(mf["keywords"], list) or \
+                any(not isinstance(k, str) for k in mf["keywords"]):
+            problemas.append("keywords deve ser uma lista de textos")
     if mf.get("cloud_required") and mf.get("local_only_capable"):
         problemas.append("manifesto contraditório: cloud_required com local_only_capable")
     return problemas

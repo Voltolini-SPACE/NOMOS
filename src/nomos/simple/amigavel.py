@@ -33,6 +33,7 @@ AJUDA = """comandos:
   /audio <texto>            falo em voz alta num arquivo .wav (via piper)
   /bem · /mal               avalio minha última resposta (aprendo localmente)
   /contexto                 mostro exatamente o que enviei ao motor (com redação)
+  /skills usar <nome> [json] executo uma skill instalada (com seu aval)
   /nuvem <pergunta>         respondo usando a nuvem (peço permissão antes)
   /status                   como estou por dentro
   /ajuda                    esta lista
@@ -67,6 +68,29 @@ def resposta_demo(texto: str, nome: str) -> str:
             "permissões e fico pronto para o dia em que você conectar um "
             "modelo (instale o Ollama e rode: ollama pull hermes3). "
             "O que eu NÃO faço é fingir uma resposta de IA — regra da casa.")
+
+
+def _rodar_skill_conversa(ctx, nome_skill: str, argumentos, aprovador,
+                          origem: str) -> tuple[bool, str]:
+    """Executa skill a partir da conversa: gate de sempre + auditoria da cadeia."""
+    from nomos.ext import skill_intencao as intencao
+    from nomos.ext import skill_registry as reg
+    from nomos.ext import skill_status as st
+    policy = ctx["policy"]
+    skills_dir = ctx.get("skills") or (ctx["home"] / "skills")
+    rc, resultado, bruto = reg.executar_json(nome_skill, skills_dir, policy,
+                                             aprovador, argumentos=argumentos)
+    audit = ctx.get("audit")
+    if audit is not None:
+        audit.append("skill.conversa", name=nome_skill, origem=origem,
+                     rc=rc, ok=rc == 0)
+    if rc == 0:
+        st.marcar_uso(ctx["home"], nome_skill)
+        return True, intencao.render_resultado_skill(nome_skill, resultado, bruto)
+    if rc == 3:
+        return False, (f"a skill '{nome_skill}' não rodou: alguma permissão "
+                       "foi negada (nada além do aprovado aconteceu)")
+    return False, f"a skill '{nome_skill}' falhou (rc={rc})"
 
 
 def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool = True,
@@ -239,6 +263,25 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                 mem.remember("note", f"áudio {caminho}: " +
                              "; ".join(_arq.extrair_pontos(transcricao, 3)))
             continue
+        if linha.startswith("/skills usar"):
+            resto = linha[len("/skills usar"):].strip()
+            if not resto:
+                say("uso: /skills usar <nome> [argumentos JSON]")
+                continue
+            partes = resto.split(maxsplit=1)
+            nome_skill = partes[0]
+            argumentos = None
+            if len(partes) > 1:
+                import json as _json
+                try:
+                    argumentos = _json.loads(partes[1])
+                except ValueError as exc:
+                    say(f"{nome}: os argumentos precisam ser JSON válido ({exc})")
+                    continue
+            ok, msg = _rodar_skill_conversa(ctx, nome_skill, argumentos,
+                                            aprovador, origem="explicito")
+            say(f"{nome}: {msg}")
+            continue
         if linha == "/contexto":
             if not ultima_troca["mensagens"]:
                 say(f"{nome}: ainda não enviei nada ao motor nesta conversa.")
@@ -348,6 +391,21 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                 say(resposta_demo(linha, nome))
                 mem.remember("user", linha)
             continue
+        from nomos.ext import skill_intencao as intencao
+        sugestao = intencao.sugerir_skill(linha, ctx["home"],
+                                          ctx.get("skills") or (ctx["home"] / "skills"))
+        if sugestao:
+            say(f"{nome}: posso usar a skill '{sugestao['name']}' para isso"
+                + (f" — {sugestao['description']}" if sugestao["description"] else "")
+                + ". Quer? (sim/não)")
+            resp = ask("> ").strip().casefold()
+            if resp == "sim":
+                ok, msg = _rodar_skill_conversa(ctx, sugestao["name"], None,
+                                                aprovador, origem="oferta")
+                say(f"{nome}: {msg}")
+                mem.remember("note", f"skill {sugestao['name']} usada na conversa")
+                continue
+            say(c("fraco", "(ok, sigo eu mesmo)"))
         from nomos.cognition import rag
         bloco_rag, n_lembrancas = rag.contexto_relevante(mem, linha)
         contexto = [{"role": "system", "content": system_prompt(perfil)}]

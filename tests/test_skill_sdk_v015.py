@@ -149,7 +149,7 @@ def test_atualizacoes_disponiveis_e_cli(tmp_path, nomos_home, capsys):
 def test_exemplos_oficiais_validos_e_baixo_risco():
     base = RAIZ / "examples" / "skills"
     pastas = sorted(p for p in base.iterdir() if p.is_dir())
-    assert len(pastas) == 3
+    assert len(pastas) == 4   # v1.2: + busca-arquivos
     for pasta in pastas:
         mf = json.loads((pasta / "skill.json").read_text())
         assert reg.validar_manifesto(mf) == [], pasta.name

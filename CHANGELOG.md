@@ -2,6 +2,22 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.2.0rc1] — 2026-07-04 (fase v1.2 do ROADMAP_2)
+
+### Adicionado
+- **O agente age na conversa**: skills instaladas declaram `keywords` no
+  manifesto e o chat OFERECE a skill certa quando a intenção bate — "posso
+  usar a skill 'X' para isso? (sim/não)". "sim" executa pelo gate de sempre e
+  o JSON vira resposta legível; "não" segue a conversa normal. Heurística
+  local e determinística: nenhuma IA decide, skills desativadas/quebradas
+  nunca são oferecidas.
+- **`/skills usar <nome> [json]`** no chat: invocação explícita com o mesmo
+  gate; JSON inválido tem erro claro.
+- **Skill oficial nº 4 — `busca-arquivos`** (A0, só leitura): "onde está o
+  contrato?" procura por nome e conteúdo com limites de varredura.
+- **Auditoria da cadeia**: evento `skill.conversa` (nome, origem
+  oferta/explicito, rc) — metadados, nunca o conteúdo do resultado.
+
 ## [1.1.0rc1] — 2026-07-04 (fase v1.1 do ROADMAP_2)
 
 ### Adicionado

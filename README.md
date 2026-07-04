@@ -96,7 +96,7 @@ Python puro, multiplataforma.
 
 ## Maturidade
 
-Release candidate (v1.1.0rc1). Suíte com 437 testes cobrindo
+Release candidate (v1.2.0rc1). Suíte com 448 testes cobrindo
 segurança (fail-closed, não-vazamento de segredo, opt-in de nuvem) e UX.
 API interna pode mudar; os comandos da tabela acima são estáveis.
 
