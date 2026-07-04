@@ -290,6 +290,14 @@ def executar(name: str, skills_dir: Path, engine: PolicyEngine, approver,
         return 3, motivo
 
     entry = dest / mfn["entry"]
+    # Defesa em profundidade: mesmo que o skill.json instalado seja editado
+    # depois, o entry NUNCA pode escapar do diretório da skill (traversal/absoluto).
+    try:
+        entry.resolve().relative_to(dest.resolve())
+    except ValueError:
+        if audit is not None:
+            audit.append("skill.execucao.negada", name=name, motivo="entry fora do diretório")
+        return 3, f"entry inseguro (fora do diretório da skill): {mfn['entry']!r}"
     if not entry.exists():
         return 3, f"entry ausente: {mfn['entry']}"
     quer_rede = Category.NET_EGRESS.value in mfn.get("permissions", [])

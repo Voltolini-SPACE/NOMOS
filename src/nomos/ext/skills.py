@@ -31,6 +31,25 @@ class SkillError(Exception):
     pass
 
 
+def _rel_segura(rel: str) -> bool:
+    """True só se `rel` é um caminho relativo seguro DENTRO da skill.
+
+    Bloqueia o vetor de path traversal / caminho absoluto no manifesto: um
+    `entry` ou chave de `files` como '/tmp/x', '../x' ou 'C:\\x' faria
+    `dest / rel` escapar do diretório da skill (no caso de caminho absoluto,
+    o pathlib descarta o lado esquerdo). Fail-closed: qualquer dúvida = inseguro.
+    """
+    from pathlib import PurePosixPath
+    if not isinstance(rel, str) or not rel or rel != rel.strip():
+        return False
+    if "\\" in rel or ":" in rel:            # backslash/drive (Windows/UNC)
+        return False
+    p = PurePosixPath(rel)
+    if p.is_absolute():
+        return False
+    return not any(part in ("..", "") for part in p.parts)
+
+
 def _sha256(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as fh:
@@ -51,6 +70,18 @@ def load_manifest(src: Path) -> dict:
     for perm in mf["permissions"]:
         if perm not in known:
             raise SkillError(f"permissão desconhecida no manifesto: {perm}")
+    # Anti path-traversal: entry e toda chave de files têm de ser caminhos
+    # relativos seguros dentro da skill (nada de '..', absoluto ou drive).
+    if not isinstance(mf["files"], dict) or not mf["files"]:
+        raise SkillError("manifesto inválido: 'files' deve mapear arquivo->sha256")
+    for rel in list(mf["files"].keys()) + [mf["entry"]]:
+        if not _rel_segura(rel):
+            raise SkillError(f"caminho inseguro no manifesto (traversal/absoluto): {rel!r}")
+    # entry tem de ser um arquivo verificado por checksum (constar em files),
+    # senão rodaria código sem integridade garantida.
+    if mf["entry"] not in mf["files"]:
+        raise SkillError(
+            f"entry '{mf['entry']}' precisa estar em 'files' (para ter checksum)")
     return mf
 
 
