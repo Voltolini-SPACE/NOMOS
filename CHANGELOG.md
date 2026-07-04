@@ -2,6 +2,28 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.3.0rc11] — 2026-07-04 (Motor Council — Fase MC3: contrato de provedor local)
+
+### Adicionado (interno, sem wiring de runtime)
+- `nomos.council.local_provider`: contrato refinado de provedor de candidatos
+  LOCAIS — `LocalCandidateProvider` (Protocol), `DeterministicLocalCandidate
+  Provider`, `LocalEngineDescriptor`, `LocalCandidateRequest/Result`,
+  `LocalProviderFailure`, e `run_offline_council_with_local_provider`.
+- Códigos de falha distintos por causa: cloud/rede ⇒
+  `CLOUD_BLOCKED_BY_LOCAL_LOCK`; dado sensível sem motor capaz ⇒
+  `SENSITIVE_DATA_CLOUD_DENIED`; sem motor local ⇒ `NO_ELIGIBLE_LOCAL_ENGINE`.
+  `supports_sensitive_data` bloqueia prompts sensíveis em motor incapaz.
+- **Sem motor real, sem Ollama/cloud/rede/SDK remoto, sem FS/env, sem tempo/
+  random, sem policy/vault/audit reais, sem persistência, sem CLI/chat.** Juízes/
+  árbitro/gate seguem simulados (MC2). Prompt nunca vaza (repr/to_dict/resultado).
+- 31 testes novos (contratos + segurança, incl. prova AST de pureza e
+  determinismo). Suíte: 608.
+
+### Alterado
+- Consolidação: `local_engine.py` (MC3 anterior) foi **superseded** por
+  `local_provider.py` (contrato desta fase, com códigos de falha distintos) e
+  removido, junto de seus testes, para não manter dois provedores paralelos.
+
 ## [1.3.0rc10] — 2026-07-04 (Motor Council — Fase MC3: integração de motor local)
 
 ### Adicionado (interno, sem wiring de runtime)
