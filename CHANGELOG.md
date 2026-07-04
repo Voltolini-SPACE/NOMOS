@@ -2,6 +2,26 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.3.0rc1] — 2026-07-04 (F2 do plano de validação — histórico de conversas)
+
+### Adicionado
+- **Histórico de conversas** (ISSUE 006–012), lacuna confirmada na validação:
+  conversas viram cidadãs de primeira classe (SQLite local 0600), com título e
+  tags gerados localmente, busca híbrida (palavra-chave + significado), fixar,
+  "não usar como memória", reabrir e continuar com contexto.
+- **Modo privado/efêmero** (`/privado`): a conversa roda em store `:memory:` e
+  **não toca o disco** — provado por teste que inspeciona o FS.
+- **Retenção** configurável: conversas não fixadas expiram após N dias, só
+  localmente, com aviso; fixadas nunca expiram.
+- **Export/import cifrado** (Fernet + PBKDF2 600k): `nomos conversas
+  exportar/importar`; senha errada/adulterado ⇒ nada importado.
+- Comandos: `nomos conversas listar|abrir|buscar|esquecer|fixar|exportar|
+  importar|retencao`. Chat: `/conversas /continuar <id> /fixar /privado`.
+
+### Segurança
+- Conversa privada não persiste; logs guardam só metadados (id/contagem),
+  nunca texto; export exige aprovação (senha via TTY ou NOMOS_BACKUP_SENHA).
+
 ## [1.2.0rc2] — 2026-07-04 (F1 do plano de validação — endurecimento)
 
 ### Segurança

@@ -34,6 +34,10 @@ AJUDA = """comandos:
   /bem · /mal               avalio minha última resposta (aprendo localmente)
   /contexto                 mostro exatamente o que enviei ao motor (com redação)
   /skills usar <nome> [json] executo uma skill instalada (com seu aval)
+  /conversas                listo o histórico das nossas conversas
+  /continuar <id>           retomo uma conversa antiga com o contexto dela
+  /fixar                    marco esta conversa como importante (não expira)
+  /privado                  modo efêmero: esta conversa NÃO é gravada em disco
   /nuvem <pergunta>         respondo usando a nuvem (peço permissão antes)
   /status                   como estou por dentro
   /ajuda                    esta lista
@@ -104,6 +108,12 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
     demo = perfil.get("modo_cerebro") == "demo"
     ultima_rota = {"motor": None}   # para /bem e /mal (feedback local)
     ultima_troca = {"mensagens": None}   # para /contexto (transparência total)
+    # F2: histórico. Modo privado (perfil) => store em memória, não toca o disco.
+    from nomos.conversations.store import ConversationStore
+    privado0 = bool(perfil.get("conversa_privada"))
+    conv_store = ConversationStore(ctx["home"] / "conversas.db", privado=privado0)
+    conversa_id = conv_store.nova_conversa()
+    estado_privado = {"on": privado0}
     say(c("fraco", f"({nome} pronto — /ajuda mostra os comandos)"))
     while True:
         try:
@@ -115,7 +125,10 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
         if not linha:
             continue
         if linha == "/sair":
-            say(f"{nome}: até logo! Suas memórias ficam guardadas aqui.")
+            conv_store.close()
+            extra = (" (modo privado: esta conversa não foi gravada)"
+                     if estado_privado["on"] else "")
+            say(f"{nome}: até logo! Suas memórias ficam guardadas aqui.{extra}")
             return 0
         if linha == "/ajuda":
             say(AJUDA)
@@ -282,6 +295,49 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                                             aprovador, origem="explicito")
             say(f"{nome}: {msg}")
             continue
+        if linha == "/privado":
+            estado_privado["on"] = not estado_privado["on"]
+            conv_store.close()
+            conv_store = ConversationStore(ctx["home"] / "conversas.db",
+                                           privado=estado_privado["on"])
+            conversa_id = conv_store.nova_conversa()
+            if estado_privado["on"]:
+                say(f"{nome}: modo privado LIGADO 🕶️ — esta conversa NÃO será "
+                    "gravada em disco. Nada fica quando você sair.")
+            else:
+                say(f"{nome}: modo privado desligado — volto a guardar o histórico "
+                    "(local, só seu).")
+            continue
+        if linha == "/conversas":
+            convs = conv_store.listar(20)
+            if not convs:
+                say(f"{nome}: ainda não há conversas guardadas.")
+            for c in convs:
+                fix = "📌 " if c.fixada else ""
+                say(f"  {fix}#{c.id} {c.titulo or '(sem título)'} ({c.n_turnos} turnos)")
+            continue
+        if linha == "/fixar":
+            conv_store.fixar(conversa_id, True)
+            say(f"{nome}: conversa fixada 📌 — não expira na retenção.")
+            continue
+        if linha.startswith("/continuar"):
+            arg = linha[len("/continuar"):].strip()
+            if not arg.isdigit():
+                say("uso: /continuar <id> — veja os ids em /conversas")
+                continue
+            conv, _ = conv_store.abrir(int(arg))
+            if not conv:
+                say(f"{nome}: não achei a conversa #{arg}.")
+                continue
+            if not conv.usar_como_memoria:
+                say(f"{nome}: a conversa #{arg} está marcada como 'não usar' — "
+                    "não vou trazer o contexto dela.")
+                continue
+            retomado = conv_store.turnos_para_contexto(int(arg), n=6)
+            say(f"{nome}: retomando a conversa #{arg} ({conv.titulo}). "
+                f"Trouxe {len(retomado)} mensagem(ns) de contexto.")
+            estado_privado["retomado"] = retomado
+            continue
         if linha == "/contexto":
             if not ultima_troca["mensagens"]:
                 say(f"{nome}: ainda não enviei nada ao motor nesta conversa.")
@@ -446,6 +502,8 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
             ultima_rota["motor"] = out.provider or out.route
             mem.remember("user", linha)
             mem.remember("assistant", out.text)
+            conv_store.add_turno(conversa_id, "user", linha)
+            conv_store.add_turno(conversa_id, "assistant", out.text)
             if n_lembrancas:
                 say(c("fraco", f"(usei {n_lembrancas} lembrança(s) suas para "
                                "contextualizar)"))

@@ -334,6 +334,93 @@ def cmd_doutor(ctx, args) -> int:
     return EXIT_OK
 
 
+def _conv_store(ctx):
+    from nomos.conversations.store import ConversationStore
+    return ConversationStore(ctx["home"] / "conversas.db")
+
+
+def cmd_conversas(ctx, args) -> int:
+    from nomos.simple.erros import fmt
+    sub = getattr(args, "conversas_cmd", None)
+    store = _conv_store(ctx)
+    if sub in (None, "listar"):
+        convs = store.listar()
+        if not convs:
+            print("nenhuma conversa guardada ainda. Elas aparecem sozinhas "
+                  "conforme você conversa (a menos que use modo privado).")
+            return EXIT_OK
+        for c in convs:
+            import datetime as _dt
+            data = _dt.datetime.fromtimestamp(c.ultima_ts).strftime("%d/%m %H:%M")
+            fix = "📌 " if c.fixada else ""
+            mem = "" if c.usar_como_memoria else " · [não usada como memória]"
+            print(f"{fix}#{c.id} {data} — {c.titulo or '(sem título)'} "
+                  f"({c.n_turnos} turnos){mem}")
+        return EXIT_OK
+    if sub == "abrir":
+        conv, turnos = store.abrir(args.id)
+        if not conv:
+            print(fmt("E003", f"conversa #{args.id} não encontrada"), file=sys.stderr)
+            return EXIT_ERROR
+        print(f"Conversa #{conv.id} — {conv.titulo}  "
+              f"(tags: {', '.join(conv.tags) or '—'})")
+        for t in turnos:
+            print(f"  [{t.role}] {t.text}")
+        return EXIT_OK
+    if sub == "buscar":
+        termo = " ".join(args.termo)
+        achados = store.buscar(termo)
+        if not achados:
+            print("não achei conversa sobre isso.")
+        for conv, trecho in achados:
+            print(f"#{conv.id} {conv.titulo or '(sem título)'} → …{trecho}…")
+        return EXIT_OK
+    if sub == "esquecer":
+        ok = store.esquecer(args.id)
+        ctx["audit"].append("conversa.esquecida", id=args.id, existia=ok)
+        print("esquecida." if ok else "id não encontrado.")
+        return EXIT_OK if ok else EXIT_ERROR
+    if sub == "fixar":
+        store.fixar(args.id, True)
+        print(f"conversa #{args.id} fixada 📌 (não expira na retenção).")
+        return EXIT_OK
+    if sub in {"exportar", "importar"}:
+        from nomos.conversations import retention as ret
+        senha = _senha_backup()
+        if senha is None:
+            print(fmt("E002", f"{sub} exige terminal interativo "
+                      "(ou NOMOS_BACKUP_SENHA)."), file=sys.stderr)
+            return EXIT_ERROR
+        try:
+            if sub == "exportar":
+                n = ret.exportar(store, Path(args.arquivo), senha)
+                ctx["audit"].append("conversa.exportada", quantidade=n)
+                print(f"{n} conversa(s) exportada(s) cifrada(s) em {args.arquivo}")
+            else:
+                n = ret.importar(store, Path(args.arquivo), senha)
+                ctx["audit"].append("conversa.importada", quantidade=n)
+                print(f"{n} conversa(s) importada(s).")
+        except ret.ConversaBackupError as exc:
+            print(fmt("E005", f"não deu: {exc}"), file=sys.stderr)
+            return EXIT_ERROR
+        return EXIT_OK
+    if sub == "retencao":
+        from nomos.conversations import retention as ret
+        from nomos.simple.onboarding import salvar_perfil
+        if getattr(args, "dias", None) is not None:
+            salvar_perfil({ret.CAMPO_RETENCAO: max(0, args.dias)})
+            print(f"retenção: conversas não fixadas expiram após {args.dias} "
+                  f"dia(s)." if args.dias > 0 else "retenção desligada (guardo tudo).")
+            apagadas = ret.aplicar_retencao(store, args.dias)
+            if apagadas:
+                print(f"(apliquei agora: {apagadas} conversa(s) antiga(s) apagada(s))")
+        else:
+            d = ret.dias_retencao()
+            print(f"retenção atual: {'sem expiração' if d == 0 else f'{d} dia(s)'}")
+        return EXIT_OK
+    return EXIT_ERROR
+
+
 def cmd_backup(ctx, args) -> int:
     from nomos.simple import backup_total as bt
     from nomos.simple.erros import fmt
@@ -1037,6 +1124,25 @@ def build_parser() -> argparse.ArgumentParser:
     dr.add_argument("--consertar", action="store_true",
                     help="aplica correções seguras (com sua confirmação)")
     dr.set_defaults(fn=cmd_doutor)
+    cv = sub.add_parser("conversas", help="histórico de conversas (local, cifrável)")
+    cvsub = cv.add_subparsers(dest="conversas_cmd")
+    cvsub.add_parser("listar").set_defaults(fn=cmd_conversas)
+    for nome_c in ("abrir", "esquecer", "fixar"):
+        cp = cvsub.add_parser(nome_c)
+        cp.add_argument("id", type=int)
+        cp.set_defaults(fn=cmd_conversas)
+    cvb = cvsub.add_parser("buscar")
+    cvb.add_argument("termo", nargs="+")
+    cvb.set_defaults(fn=cmd_conversas)
+    for nome_c in ("exportar", "importar"):
+        cp = cvsub.add_parser(nome_c)
+        cp.add_argument("arquivo")
+        cp.set_defaults(fn=cmd_conversas)
+    cvr = cvsub.add_parser("retencao")
+    cvr.add_argument("dias", type=int, nargs="?")
+    cvr.set_defaults(fn=cmd_conversas)
+    cv.set_defaults(fn=cmd_conversas, conversas_cmd=None)
+
     bk = sub.add_parser("backup", help="seu NOMOS inteiro num arquivo cifrado")
     bksub = bk.add_subparsers(dest="backup_cmd", required=True)
     for nome_b in ("criar", "restaurar", "inspecionar"):
