@@ -29,7 +29,7 @@ def _instala(nomos_home, tmp_path, name="organiza-pasta",
     src = tmp_path / f"src-{name}"
     src.mkdir()
     corpo = 'import json\nprint(json.dumps({"ok": True, "feito": "varredura"}))\n'
-    (src / "main.py").write_text(corpo)
+    (src / "main.py").write_text(corpo, encoding="utf-8", newline="\n")
     (src / "skill.json").write_text(json.dumps({
         "name": name, "version": "1.0.0", "entry": "main.py",
         "permissions": list(permissions), "keywords": list(keywords),

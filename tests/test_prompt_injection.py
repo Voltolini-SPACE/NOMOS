@@ -63,7 +63,7 @@ def test_oferta_de_skill_nao_dispara_por_conteudo_de_memoria(nomos_home, tmp_pat
     src = tmp_path / "src"
     src.mkdir()
     corpo = 'print("{}")\n'
-    (src / "main.py").write_text(corpo)
+    (src / "main.py").write_text(corpo, encoding="utf-8", newline="\n")
     (src / "skill.json").write_text(json.dumps({
         "name": "organiza-pasta", "version": "1.0.0", "entry": "main.py",
         "permissions": ["A0_READ_LOCAL"],
@@ -100,7 +100,7 @@ def test_texto_confiavel_e_a_unica_fonte_de_intencao(nomos_home, tmp_path):
     src = tmp_path / "src"
     src.mkdir()
     corpo = 'print("{}")\n'
-    (src / "main.py").write_text(corpo)
+    (src / "main.py").write_text(corpo, encoding="utf-8", newline="\n")
     (src / "skill.json").write_text(json.dumps({
         "name": "organiza-pasta", "version": "1.0.0", "entry": "main.py",
         "permissions": ["A0_READ_LOCAL"], "keywords": ["organiza a pasta"],

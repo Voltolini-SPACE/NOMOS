@@ -57,7 +57,7 @@ def test_skill_executada_audita_metadados_sem_stdout(tmp_path, nomos_home):
     corpo = f'print("{SEGREDO}")\n'   # a skill imprime um segredo do usuário
     src = tmp_path / "src"
     src.mkdir()
-    (src / "main.py").write_text(corpo)
+    (src / "main.py").write_text(corpo, encoding="utf-8", newline="\n")
     (src / "skill.json").write_text(json.dumps({
         "name": "tagarela", "version": "1.0.0", "entry": "main.py",
         "permissions": ["A0_READ_LOCAL"],

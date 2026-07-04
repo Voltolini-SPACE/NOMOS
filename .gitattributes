@@ -1,0 +1,17 @@
+# Fins-de-linha determinísticos em TODAS as plataformas.
+# Motivo: skills declaram sha256 dos próprios arquivos; no Windows um checkout
+# com CRLF mudaria os bytes e quebraria a verificação de integridade. Forçar LF
+# mantém os checksums válidos no Linux, macOS e Windows.
+* text=auto eol=lf
+
+# Arquivos binários: nunca normalizar.
+*.gguf binary
+*.bin binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.gz binary
+*.zip binary
+*.whl binary
+*.sig binary

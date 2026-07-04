@@ -13,7 +13,7 @@ def _skill(tmp_path, name="exemplo", permissions=None, extras=None, corpo=None):
     src = tmp_path / f"src-{name}"
     src.mkdir()
     corpo = corpo or 'print("ola da skill")\n'
-    (src / "main.py").write_text(corpo)
+    (src / "main.py").write_text(corpo, encoding="utf-8", newline="\n")
     mf = {"name": name, "version": "1.0.0",
           "permissions": permissions or ["A0_READ_LOCAL"],
           "entry": "main.py",

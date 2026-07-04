@@ -105,7 +105,9 @@ def criar_skill(nome: str, pasta: Path) -> Path:
         raise SdkError(f"já existe uma pasta '{destino}' — não vou sobrescrever")
     destino.mkdir(parents=True)
     corpo = _MAIN_TEMPLATE.format(nome=nome)
-    (destino / "main.py").write_text(corpo)
+    # LF explícito e sem tradução de newline: os bytes gravados têm de ser
+    # exatamente os que entram no sha256 abaixo, em qualquer SO (Windows incluso).
+    (destino / "main.py").write_text(corpo, encoding="utf-8", newline="\n")
     manifesto = {
         "name": nome,
         "version": "0.1.0",
@@ -126,6 +128,8 @@ def criar_skill(nome: str, pasta: Path) -> Path:
     if problemas:   # nunca deve acontecer; proteção contra template quebrado
         raise SdkError("template gerou manifesto inválido: " + "; ".join(problemas))
     (destino / "skill.json").write_text(
-        json.dumps(manifesto, indent=2, ensure_ascii=False))
-    (destino / "README.md").write_text(_README_TEMPLATE.format(nome=nome))
+        json.dumps(manifesto, indent=2, ensure_ascii=False),
+        encoding="utf-8", newline="\n")
+    (destino / "README.md").write_text(_README_TEMPLATE.format(nome=nome),
+                                       encoding="utf-8", newline="\n")
     return destino

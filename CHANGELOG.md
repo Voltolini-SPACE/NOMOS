@@ -2,6 +2,21 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.3.0rc5] — 2026-07-04 (correção de CI — fins-de-linha no Windows)
+
+### Corrigido
+- **CI vermelho no Windows** (35 testes, todos "checksum divergente em main.py"):
+  causa-raiz de fim-de-linha. Skills declaram sha256 dos próprios arquivos e a
+  verificação lê bytes crus; no Windows, `write_text` grava CRLF, mudando os
+  bytes e quebrando a integridade. Correções:
+  - `.gitattributes` força LF (`* text=auto eol=lf`) — mantém as skills oficiais
+    versionadas válidas no checkout Windows;
+  - `skill_sdk.criar_skill` grava main.py/skill.json/README com `newline="\n"`
+    (skill criada no Windows agora passa a própria verificação);
+  - testes que geram main.py em runtime gravam LF determinístico.
+  Provado localmente simulando CRLF (diverge) vs LF (confere). Sem afrouxar a
+  verificação de integridade — os bytes seguem exatos, só determinísticos.
+
 ## [1.3.0rc4] — 2026-07-04 (F5+F6 do plano de validação)
 
 ### Adicionado

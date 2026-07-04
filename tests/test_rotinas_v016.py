@@ -83,7 +83,7 @@ def test_skill_sensivel_nao_roda_em_rotina(tmp_path, nomos_home):
     corpo = 'print("nao deveria rodar")\n'
     src = tmp_path / "src"
     src.mkdir()
-    (src / "main.py").write_text(corpo)
+    (src / "main.py").write_text(corpo, encoding="utf-8", newline="\n")
     (src / "skill.json").write_text(json.dumps({
         "name": "gravadora", "version": "1.0.0", "entry": "main.py",
         "permissions": ["A1_WRITE_LOCAL"],

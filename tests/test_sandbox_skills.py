@@ -68,7 +68,7 @@ def _fabrica_skill(tmp_path, corromper=False, com_assinatura=False):
     src = tmp_path / "skill-src"
     src.mkdir()
     corpo = 'print("skill de exemplo")\n'
-    (src / "main.py").write_text(corpo)
+    (src / "main.py").write_text(corpo, encoding="utf-8", newline="\n")
     digest = hashlib.sha256(corpo.encode()).hexdigest()
     manifest = {
         "name": "exemplo",

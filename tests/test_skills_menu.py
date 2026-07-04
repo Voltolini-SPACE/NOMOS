@@ -12,7 +12,7 @@ def _instala(tmp_path, nomos_home, name="exemplo", permissions=None):
     src = tmp_path / f"src-{name}"
     src.mkdir()
     corpo = 'print("oi")\n'
-    (src / "main.py").write_text(corpo)
+    (src / "main.py").write_text(corpo, encoding="utf-8", newline="\n")
     (src / "skill.json").write_text(json.dumps({
         "name": name, "version": "1.0.0",
         "permissions": permissions or ["A0_READ_LOCAL"], "entry": "main.py",

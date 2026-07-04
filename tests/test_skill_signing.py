@@ -19,7 +19,7 @@ def _skill(tmp_path, name="exemplo", corpo='print("oi")\n'):
     h = hashlib.sha256(corpo.encode()).hexdigest()[:6]
     src = tmp_path / f"src-{name}-{h}"
     src.mkdir()
-    (src / "main.py").write_text(corpo)
+    (src / "main.py").write_text(corpo, encoding="utf-8", newline="\n")
     mf = {"name": name, "version": "1.0.0", "permissions": ["A0_READ_LOCAL"],
           "entry": "main.py",
           "files": {"main.py": hashlib.sha256(corpo.encode()).hexdigest()}}
