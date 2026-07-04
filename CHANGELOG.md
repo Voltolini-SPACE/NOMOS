@@ -2,6 +2,24 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.3.0rc9] — 2026-07-04 (Motor Council — Fase MC2: simulador offline)
+
+### Adicionado (interno, sem wiring de runtime)
+- `nomos.council.simulator`: simulador OFFLINE determinístico do pipeline do
+  Council (Risk → Policy → Candidatos(fixtures) → Reviews(fixtures) →
+  Divergência → Árbitro → Gate simulado → Audit), puro sobre os modelos MC1.
+  `OfflineCouncilSimulator/Input/Result`, `SimulatedEngineFixture/JudgeFixture/
+  PolicyGateResult`.
+- **Sem motor real, sem LLM, sem rede, sem persistência, sem policy/audit/vault
+  reais, sem CLI/chat.** Fixtures obrigam prefixo `fixture:`. Failure codes
+  determinísticos (sem candidatos, gate negado, divergência alta, alerta crítico,
+  autojulgamento/juízes insuficientes, conselho desligado, falha de motor).
+  Invariantes MC1 preservadas (paranoid→local-only, sensível→sem cloud,
+  privado→sem persistência). Prompt nunca vaza em repr/serialização.
+- 26 testes novos (contratos + segurança, incluindo prova AST de que o módulo
+  não importa rede/subprocess/threading/asyncio/motor e não toca FS/policy/vault/
+  audit). Suíte: 577. Determinismo provado (mesma entrada ⇒ mesma saída).
+
 ## [1.3.0rc8] — 2026-07-04 (Motor Council — Fase MC1: modelos de dados)
 
 ### Adicionado (interno, sem wiring de runtime)

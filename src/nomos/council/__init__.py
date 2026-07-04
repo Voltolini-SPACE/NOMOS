@@ -30,9 +30,23 @@ from nomos.council.models import (
     RiskAssessment,
 )
 
+from nomos.council.simulator import (
+    OfflineCouncilInput,
+    OfflineCouncilResult,
+    OfflineCouncilSimulator,
+    SimulatedEngineFixture,
+    SimulatedJudgeFixture,
+    SimulatedPolicyGateResult,
+    SimulatorError,
+)
+
 __all__ = [
     "AnswerCandidate", "ArbiterDecision", "BlindReview", "CouncilAuditRecord",
     "CouncilConfidence", "CouncilDisagreementLevel", "CouncilFailureCode",
     "CouncilMode", "CouncilModelError", "CouncilPolicy", "CouncilRiskLevel",
     "CouncilSession", "DisagreementReport", "JudgeScore", "RiskAssessment",
+    # MC2 — simulador offline
+    "OfflineCouncilInput", "OfflineCouncilResult", "OfflineCouncilSimulator",
+    "SimulatedEngineFixture", "SimulatedJudgeFixture", "SimulatedPolicyGateResult",
+    "SimulatorError",
 ]
