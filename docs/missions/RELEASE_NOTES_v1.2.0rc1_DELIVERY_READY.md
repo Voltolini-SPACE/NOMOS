@@ -1,7 +1,9 @@
 # NOMOS v1.2.0rc1 — Delivery Ready
 
 ## Status
-STATUS_FINAL=PASS (código local; CI remoto: ver seção "CI remoto")
+STATUS_FINAL=PASS (local + CI remoto verde nos 3 SOs; tag criada)
+CI_RUN=28706064138 (d465f08) · CONCLUSION=success · 17/17 jobs
+TAG=v1.2.0rc1-delivery-ready (aponta para d465f08)
 
 ## Resumo
 Esta entrega fecha as fases F1–F6 do plano de validação crítica, com histórico
@@ -45,10 +47,19 @@ leva o código a v1.3.0rc4.
 - `git fsck --full`: PASS · árvore: CLEAN
 
 ## CI remoto
-- Status: preenchido no relatório final da promoção (após push).
-- Jobs esperados: testes (3 SOs), cobertura, tipos (mypy informativo),
-  smoke pós-install (wheel + doutor, 3 SOs).
-- Link: https://github.com/Voltolini-SPACE/NOMOS/actions
+- Status: **PASS** — run 28706064138, conclusion=success, **17/17 jobs**.
+- Jobs: testes em ubuntu/macos/windows × py3.10–3.13; cobertura (informativa);
+  mypy (informativo); smoke pós-install (wheel + doutor) nos 3 SOs.
+- Link: https://github.com/Voltolini-SPACE/NOMOS/actions/runs/28706064138
+
+### Correções de CI aplicadas nesta promoção (commits separados)
+O CI estava vermelho no Windows **desde antes** desta entrega (o base
+e3c4ca9 já falhava). Diagnóstico e correção sem mascarar:
+- **1.3.0rc5 (46d07c7)** — fins-de-linha: 35 falhas "checksum divergente"
+  no Windows. `.gitattributes` força LF; SDK e testes gravam LF determinístico.
+  35 → 1.
+- **1.3.0rc6 (d465f08)** — gate POSIX: `test_lockout_arquivo_0600` verificava
+  modo `0600` (inaplicável no Windows); recebeu o `skipif(nt)` padrão. 1 → 0.
 
 ## Correções críticas
 - **Anti prompt-injection (F1)**: conteúdo recuperado (RAG/memória) é
