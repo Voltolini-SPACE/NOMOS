@@ -2,43 +2,54 @@
 
 ## Summary
 
-This release candidate includes the delivery-ready NOMOS v1.2.0rc1 work plus a
-post-audit security fix for skill manifest path safety.
+This is a technical release candidate for controlled adoption and security review.
+
+It includes the delivery-ready NOMOS v1.2.0rc1 work plus a post-audit security fix for skill manifest path safety.
 
 ## Security Fix
 
-Fixed skill manifest path traversal / unsafe absolute entry path issue. A skill
-manifest could declare an absolute or traversal `entry` (e.g. `/tmp/evil`) that,
-at execution time, escaped the skill directory and pointed to an external file
-outside the checksum-verified file set. The installer now rejects absolute
-paths, `..`, and Windows drive paths, requires `entry` to be listed in `files`
-(so it is checksum-covered), and adds a defense-in-depth check at execution.
+Fixed a skill manifest path safety issue where an unsafe absolute `entry` path could point outside the installed skill directory and outside the checksummed file set.
+
+### Mitigation
+
+- Absolute paths are rejected.
+- `..` traversal is rejected.
+- Windows drive paths are rejected.
+- `entry` must be present in `files`.
+- `entry` must be covered by checksum.
+- Runtime execution includes defense-in-depth path validation.
 
 ## Validation
 
-- 503 tests passing
-- CI green on Linux, macOS and Windows
-- Wheel build validated
-- Post-install smoke validated
-- `nomos doutor` validated
-- official agents included in wheel and validated
+- 503 tests passing.
+- CI green on Linux, macOS and Windows.
+- 17/17 CI jobs passing.
+- Wheel build validated.
+- Post-install smoke validated.
+- `nomos doutor` validated.
+- `python -m nomos doutor` validated.
+- Official agents included in wheel and validated.
 
 ## Known Gaps
 
-Audit log tail truncation remains a known limitation of the current unkeyed
-hash-chain design. The chain detects modification, reordering, and middle
-removal, but not removal of the final lines. Future mitigation should use HMAC
-anchored in the vault.
+### Audit log tail truncation
+
+The current unkeyed hash-chain detects modification, reordering and removal from the middle of the log, but it does not detect truncation of the last entries.
+
+Future mitigation should use HMAC anchored in the vault, signed checkpoints, or another keyed integrity anchor.
 
 ## Not Included
+
+This release does not include:
 
 - Motor Council
 - PyPI publication
 - read-write panel
 - Obsidian integration
-- new features
+- new features beyond the audited fix and release documentation
 
 ## Recommended Use
 
-Technical release candidate for security review and controlled adoption.
-Suggested tag: `v1.2.0rc2-security-audited`.
+Use as a technical pre-release for security review and controlled adoption.
+
+Do not treat this as the final stable release.
