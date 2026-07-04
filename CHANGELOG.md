@@ -2,6 +2,15 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.3.0rc6] — 2026-07-04 (correção de CI — gate POSIX no Windows)
+
+### Corrigido
+- **Último teste vermelho no Windows**: `test_vault2.py::test_lockout_arquivo_0600`
+  verificava modo de arquivo `0600` (POSIX), que o Windows não aplica. Recebeu o
+  mesmo gate `skipif(os.name=="nt")` já usado nos outros testes de permissão
+  (vault, chaves, memory, skill_signing). Depois do rc5, as falhas do Windows
+  caíram de 35 para 1; esta fecha a última.
+
 ## [1.3.0rc5] — 2026-07-04 (correção de CI — fins-de-linha no Windows)
 
 ### Corrigido

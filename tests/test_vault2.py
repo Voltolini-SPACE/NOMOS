@@ -109,6 +109,9 @@ def test_lockout_estado_corrompido_fail_closed_recuperavel(vault, clock):
     assert vault.get("pos", PASS) == "recuperado-000"
 
 
+@__import__("pytest").mark.skipif(
+    __import__("os").name == "nt",
+    reason="permissões POSIX (0600) não se aplicam ao Windows")
 def test_lockout_arquivo_0600(vault):
     with pytest.raises(VaultLocked):
         vault.get("n", "errada-000000")
