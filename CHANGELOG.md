@@ -2,6 +2,23 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.3.0rc13] — 2026-07-04 (Motor Council — Fase MC5: harness fail-closed)
+
+### Adicionado (interno, sem wiring de runtime)
+- `nomos.council.local_harness`: harness de execução local **FAIL-CLOSED**.
+  Constante literal `REAL_LOCAL_ENGINE_EXECUTION_ENABLED = False` (não vem de
+  env/config/argumento; sem API de enable/activate/unlock/set_enabled).
+  `LocalExecutionHarness`, `LocalExecutionRequest/Result/AttemptRecord`,
+  `LocalExecutionFailure`, `ExecutionFailureCode`.
+- Qualquer tentativa de execução real ⇒ `executed=false` e `candidate=null`
+  SEMPRE; código `REAL_EXECUTION_DISABLED` (ou `REAL_EXECUTION_ENGINE_NOT_LOCAL`
+  para motor não-local). Modo privado ⇒ `persist_allowed=false`. Env não ativa
+  (módulo não lê variáveis do sistema). O dry-run do MC4 continua intacto.
+- **Sem motor real, Ollama, subprocess, HTTP, cloud, SDK remoto, FS, env, tempo
+  ou random**; prompt nunca é armazenado (só `prompt_chars`) nem vaza.
+- 26 testes novos (fail-closed, flag literal via AST, env-não-ativa, sem API de
+  ativação, dry-run intacto, provas de pureza). Suíte: 663.
+
 ## [1.3.0rc12] — 2026-07-04 (Motor Council — Fase MC4: adaptador local dry-run)
 
 ### Adicionado (interno, sem wiring de runtime)

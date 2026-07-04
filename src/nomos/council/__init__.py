@@ -30,6 +30,17 @@ from nomos.council.models import (
     RiskAssessment,
 )
 
+from nomos.council.local_harness import (
+    REAL_LOCAL_ENGINE_EXECUTION_ENABLED,
+    ExecutionFailureCode,
+    HarnessError,
+    LocalExecutionAttemptRecord,
+    LocalExecutionFailure,
+    LocalExecutionHarness,
+    LocalExecutionRequest,
+    LocalExecutionResult,
+    real_execution_enabled,
+)
 from nomos.council.local_adapter import (
     AdapterError,
     AdapterFailureCode,
@@ -81,4 +92,8 @@ __all__ = [
     "DryRunLocalEngineAdapter", "LocalAdapterFailure", "LocalEngineAdapter",
     "LocalEngineAdapterPolicy", "LocalEngineDryRunResult",
     "LocalEngineExecutionPlan", "LocalEngineIsolationProfile",
+    # MC5 — harness de execução local FAIL-CLOSED
+    "REAL_LOCAL_ENGINE_EXECUTION_ENABLED", "ExecutionFailureCode", "HarnessError",
+    "LocalExecutionAttemptRecord", "LocalExecutionFailure", "LocalExecutionHarness",
+    "LocalExecutionRequest", "LocalExecutionResult", "real_execution_enabled",
 ]
