@@ -59,3 +59,18 @@ jobs:
           python -m pip install -e ".[dev]"
       - name: "Testes com cobertura (metas — kernel >=90%, geral >=80%)"
         run: python -m pytest -q --cov=nomos --cov-report=term --cov-fail-under=80
+
+  tipos:
+    name: mypy (informativo)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip mypy
+          python -m pip install -e .
+      - name: "Checagem de tipos (kernel; nao bloqueante)"
+        run: python -m mypy src/nomos/kernel --ignore-missing-imports || true

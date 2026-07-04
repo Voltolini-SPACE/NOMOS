@@ -13,3 +13,7 @@ cerebros/
 dist/
 build/
 *.egg-info/
+.coverage
+.cov*
+htmlcov/
+.mypy_cache/

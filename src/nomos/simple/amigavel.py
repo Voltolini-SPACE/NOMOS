@@ -391,8 +391,11 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                 say(resposta_demo(linha, nome))
                 mem.remember("user", linha)
             continue
+        from nomos.cognition.prompt_guard import texto_confiavel
         from nomos.ext import skill_intencao as intencao
-        sugestao = intencao.sugerir_skill(linha, ctx["home"],
+        # F1/ISSUE-001: a oferta de skill considera SÓ o texto digitado pelo
+        # usuário — nunca conteúdo recuperado de arquivo/memória.
+        sugestao = intencao.sugerir_skill(texto_confiavel(linha), ctx["home"],
                                           ctx.get("skills") or (ctx["home"] / "skills"))
         if sugestao:
             say(f"{nome}: posso usar a skill '{sugestao['name']}' para isso"

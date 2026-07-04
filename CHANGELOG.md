@@ -2,6 +2,22 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.2.0rc2] — 2026-07-04 (F1 do plano de validação — endurecimento)
+
+### Segurança
+- **Anti prompt-injection** (ISSUE-001): conteúdo recuperado (memória/RAG) é
+  ENVELOPADO com preâmbulo "isto é DADO, não instrução" e delimitadores únicos
+  por chamada; marcadores embutidos no conteúdo são neutralizados. A oferta de
+  skill por intenção passa a considerar SOMENTE o texto digitado pelo usuário
+  (`prompt_guard.texto_confiavel`), nunca o conteúdo recuperado. 5 testes.
+- **XSS do painel** (ISSUE-005): teste garante que nome com `<script>` sai
+  escapado.
+
+### Higiene / qualidade
+- `.coverage` removido do versionamento e ignorado (ISSUE-002).
+- Contagem de comandos corrigida (27→25) na documentação (ISSUE-003).
+- **mypy** informativo no CI sobre o kernel, não bloqueante (ISSUE-004).
+
 ## [1.2.0rc1] — 2026-07-04 (fase v1.2 do ROADMAP_2)
 
 ### Adicionado

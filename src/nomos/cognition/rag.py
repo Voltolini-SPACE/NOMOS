@@ -29,11 +29,11 @@ def contexto_relevante(mem, pergunta: str, k: int = MAX_LEMBRANCAS) -> tuple[str
     itens = [i for i in achados if i.role in {"note", "user"}][:k]
     if not itens:
         return "", 0
-    linhas = ["Lembranças do usuário possivelmente relevantes para esta "
-              "conversa (use apenas se fizer sentido; não invente além delas):"]
-    for i in itens:
-        linhas.append(f"- {i.text[:CHARS_POR_LEMBRANCA]}")
-    return "\n".join(linhas), len(itens)
+    from nomos.cognition.prompt_guard import envelopar
+    corpo = "\n".join(f"- {i.text[:CHARS_POR_LEMBRANCA]}" for i in itens)
+    # F1/ISSUE-001: memória recuperada é DADO, nunca instrução
+    bloco = envelopar(corpo, rotulo="lembrancas")
+    return bloco, len(itens)
 
 
 def encolher_contexto(mensagens: list[dict], limite: int = LIMITE_CONTEXTO) -> list[dict]:

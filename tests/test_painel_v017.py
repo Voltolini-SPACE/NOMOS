@@ -98,3 +98,15 @@ def test_painel_nunca_derruba_com_erro_interno(nomos_home, monkeypatch):
         assert "boom" not in str(e.value.read())   # sem detalhes internos
     finally:
         srv.stop()
+
+
+def test_painel_escapa_html_de_skill_e_rotina(nomos_home):
+    """F1/ISSUE-005: nome com <script> sai escapado, nunca cru."""
+    from nomos.interface.painel_web import dados_dashboard, render_html
+    from nomos.simple import rotinas as rot
+    ctx = _ctx(nomos_home)
+    rot.criar(nomos_home, "<script>alert(1)</script>", "08:00", "briefing",
+              ctx["policy"], approver=lambda d: True)
+    corpo = render_html(dados_dashboard(ctx))
+    assert "<script>alert(1)</script>" not in corpo      # nunca cru
+    assert "&lt;script&gt;" in corpo                      # escapado
