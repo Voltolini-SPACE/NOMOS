@@ -2,6 +2,22 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.3.0rc14] — 2026-07-04 (Motor Council — Fase MC6: policy gate dry-run)
+
+### Adicionado (interno, sem wiring de runtime)
+- `nomos.council.policy_gate`: integração SPEC/DRY-RUN com o Policy Gate A0–A6.
+  `CouncilPolicyGateDryRun`, `CouncilGateRequest/Decision`,
+  `FinalResponseEnvelope`, `CouncilGateFailure`/`GateFailureCode`,
+  `CouncilGateRisk`, e `run_offline_council_with_policy_gate`.
+- Toda resposta final simulada só é liberada se o gate devolver `allowed=true`.
+  `dry_run=true`, `would_call_real_policy=false`, `would_request_approval=false`
+  SEMPRE. Fail-closed determinístico: arbiter bloqueado, conteúdo vazio, A6,
+  aprovação humana exigida, dado sensível e A3+ ⇒ negado; A0/A1/A2 liberados.
+  Gate negado ⇒ envelope sem conteúdo; modo privado ⇒ `persist_allowed=false`.
+- **Sem policy/approval/vault/audit reais, sem motor, HTTP, subprocess, cloud,
+  SDK, FS, env, tempo ou random**; conteúdo final nunca vaza (repr/serialização).
+- 30 testes novos (decisões, envelope, integração, segurança AST). Suíte: 693.
+
 ## [1.3.0rc13] — 2026-07-04 (Motor Council — Fase MC5: harness fail-closed)
 
 ### Adicionado (interno, sem wiring de runtime)

@@ -30,6 +30,18 @@ from nomos.council.models import (
     RiskAssessment,
 )
 
+from nomos.council.policy_gate import (
+    CouncilGateDecision,
+    CouncilGateFailure,
+    CouncilGateRequest,
+    CouncilGateRisk,
+    CouncilPolicyGateDryRun,
+    FinalResponseEnvelope,
+    GateError,
+    GateFailureCode,
+    gate_risk_of,
+    run_offline_council_with_policy_gate,
+)
 from nomos.council.local_harness import (
     REAL_LOCAL_ENGINE_EXECUTION_ENABLED,
     ExecutionFailureCode,
@@ -96,4 +108,9 @@ __all__ = [
     "REAL_LOCAL_ENGINE_EXECUTION_ENABLED", "ExecutionFailureCode", "HarnessError",
     "LocalExecutionAttemptRecord", "LocalExecutionFailure", "LocalExecutionHarness",
     "LocalExecutionRequest", "LocalExecutionResult", "real_execution_enabled",
+    # MC6 — policy gate (dry-run)
+    "CouncilGateDecision", "CouncilGateFailure", "CouncilGateRequest",
+    "CouncilGateRisk", "CouncilPolicyGateDryRun", "FinalResponseEnvelope",
+    "GateError", "GateFailureCode", "gate_risk_of",
+    "run_offline_council_with_policy_gate",
 ]
