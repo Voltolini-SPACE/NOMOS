@@ -112,6 +112,34 @@ class Router:
             return local
         return self._degraded(extra="")
 
+    def chat_stream(self, messages: list[dict], on_token) -> ChatOutcome:
+        """Streaming local-first (v1.1). Cloud NÃO tem stream (segue opt-in
+        pelo chat normal). Backend sem stream => resposta completa emitida de
+        uma vez pelo mesmo callback (fallback honesto, nunca quebra)."""
+        for backend, rotulo in ((self.embutido, "chat.embutido"),
+                                (self.ollama, "chat.local")):
+            if backend is None:
+                continue
+            pronto = backend.disponivel() if hasattr(backend, "disponivel") \
+                else backend.available()
+            if not pronto:
+                continue
+            try:
+                if hasattr(backend, "chat_stream"):
+                    r = backend.chat_stream(messages, on_token)
+                else:
+                    r = backend.chat(messages)
+                    on_token(r.text)
+            except KeyboardInterrupt:
+                raise                     # decisão do usuário sobe intacta
+            except Exception as exc:
+                self.audit.append(f"{rotulo}.falhou", motivo=type(exc).__name__)
+                continue
+            self.audit.append(rotulo, model=r.model, egress="nenhum",
+                              stream=True)
+            return ChatOutcome(True, "local", r.text, r.provider, r.model)
+        return self._degraded(extra="")
+
     def _degraded(self, extra: str) -> ChatOutcome:
         reason = (
             "nenhum backend de modelo disponível: Ollama não respondeu em "

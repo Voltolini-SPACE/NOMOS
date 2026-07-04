@@ -2,6 +2,24 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.1.0rc1] — 2026-07-04 (fase v1.1 do ROADMAP_2)
+
+### Adicionado
+- **Streaming de tokens**: a resposta aparece enquanto o motor local gera
+  (Ollama via NDJSON e cérebro embutido via llama.cpp stream). Backend sem
+  stream faz fallback honesto (resposta completa de uma vez); Ctrl+C no meio
+  interrompe limpo e a resposta parcial NÃO vira memória. Nuvem continua
+  não-stream (opt-in como sempre).
+- **RAG local**: antes de responder, a busca híbrida puxa até 3 memórias
+  relevantes para o contexto — com rodapé honesto "(usei N lembrança(s)
+  suas)" no chat e no `nomos chat`. Instrução explícita ao motor: usar só se
+  fizer sentido, nunca inventar além delas.
+- **`/contexto`**: mostra EXATAMENTE o que foi enviado ao motor na última
+  resposta, com segredos redigidos (padrões sk-/AKIA/JWT viram [REDIGIDO]).
+- **Janela adaptativa**: conversa acima de 8k chars encolhe — o miolo antigo
+  vira um resumo heurístico LOCAL (determinístico, sem custo de inferência);
+  as mensagens recentes seguem intactas.
+
 ## [1.0.0rc2] — 2026-07-03 (fase v1.0.1 do ROADMAP_2)
 
 ### Adicionado

@@ -219,6 +219,21 @@ class EmbeddedProvider:
         texto = out["choices"][0]["message"]["content"]
         return ChatReply(text=texto, provider=self.name, model=self.modelo.id)
 
+    def chat_stream(self, messages: list[dict], on_token):
+        """Streaming do cérebro embutido (v1.1): token a token, tudo local."""
+        from nomos.cognition.providers import ChatReply
+        self._carregar()
+        pedacos: list[str] = []
+        for evento in self._llm.create_chat_completion(messages=messages,
+                                                       max_tokens=512, stream=True):
+            delta = (evento.get("choices") or [{}])[0].get("delta") or {}
+            tok = delta.get("content", "")
+            if tok:
+                pedacos.append(tok)
+                on_token(tok)
+        return ChatReply(text="".join(pedacos), provider=self.name,
+                         model=self.modelo.id)
+
 
 def instalar_motor() -> tuple[bool, str]:
     """Instala o llama-cpp-python via pip (roda na máquina do usuário)."""

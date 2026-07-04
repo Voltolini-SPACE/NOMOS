@@ -67,7 +67,7 @@ integridade, backup automático e rollback. Detalhes: [docs/INSTALL.md](docs/INS
 | `nomos atualizar` | checa se há versão nova (com sua aprovação; **nunca** atualiza sozinho) |
 
 Dentro da conversa: `/ajuda`, `/cerebro`, `/chaves`, `/motores`, `/tema`,
-`/local`, `/doutor`, `/sair`.
+`/local`, `/doutor`, `/contexto` (transparência do que vai ao motor), `/sair`.
 
 ## O que o NOMOS nunca faz sem a sua permissão
 
@@ -96,7 +96,7 @@ Python puro, multiplataforma.
 
 ## Maturidade
 
-Release candidate (v1.0.0rc2). Suíte com 425 testes cobrindo
+Release candidate (v1.1.0rc1). Suíte com 437 testes cobrindo
 segurança (fail-closed, não-vazamento de segredo, opt-in de nuvem) e UX.
 API interna pode mudar; os comandos da tabela acima são estáveis.
 

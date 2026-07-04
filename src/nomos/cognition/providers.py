@@ -82,6 +82,37 @@ class OllamaProvider:
             raise ProviderUnavailable("resposta do ollama sem message.content")
         return ChatReply(text=msg, provider=self.name, model=data.get("model", self.model))
 
+    def chat_stream(self, messages: list[dict], on_token) -> ChatReply:
+        """Streaming NDJSON do Ollama (v1.1): cada token vai ao callback na
+        hora; devolve a resposta completa acumulada. Loopback apenas."""
+        body = json.dumps({"model": self.model, "messages": messages,
+                           "stream": True}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self.host}/api/chat", data=body,
+            headers={"Content-Type": "application/json"})
+        pedacos: list[str] = []
+        try:
+            with _abrir_http(req, self.timeout) as resp:
+                for linha in resp:
+                    linha = linha.strip()
+                    if not linha:
+                        continue
+                    evento = json.loads(linha)
+                    tok = (evento.get("message") or {}).get("content", "")
+                    if tok:
+                        pedacos.append(tok)
+                        on_token(tok)
+                    if evento.get("done"):
+                        break
+        except KeyboardInterrupt:
+            raise                                   # interrupção é do usuário
+        except Exception as exc:
+            raise ProviderUnavailable(
+                f"stream do ollama falhou: {type(exc).__name__}") from None
+        if not pedacos:
+            raise ProviderUnavailable("stream do ollama sem conteúdo")
+        return ChatReply(text="".join(pedacos), provider=self.name, model=self.model)
+
 
 class AnthropicProvider:
     name = "anthropic"

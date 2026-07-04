@@ -32,6 +32,7 @@ AJUDA = """comandos:
   /imagem <descrição>       gero uma imagem (se houver motor de imagem)
   /audio <texto>            falo em voz alta num arquivo .wav (via piper)
   /bem · /mal               avalio minha última resposta (aprendo localmente)
+  /contexto                 mostro exatamente o que enviei ao motor (com redação)
   /nuvem <pergunta>         respondo usando a nuvem (peço permissão antes)
   /status                   como estou por dentro
   /ajuda                    esta lista
@@ -69,7 +70,7 @@ def resposta_demo(texto: str, nome: str) -> str:
 
 
 def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool = True,
-                 aprovador=None) -> int:
+                 aprovador=None, say_token=None) -> int:
     c = lambda n, t: cor(n, t, colorido)
     nome = perfil.get("agent_name", "Agente")
     mem = Memory(ctx["home"] / "memory.db")
@@ -78,6 +79,7 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
     tobj = tema_mod.carregar(perfil)
     demo = perfil.get("modo_cerebro") == "demo"
     ultima_rota = {"motor": None}   # para /bem e /mal (feedback local)
+    ultima_troca = {"mensagens": None}   # para /contexto (transparência total)
     say(c("fraco", f"({nome} pronto — /ajuda mostra os comandos)"))
     while True:
         try:
@@ -237,6 +239,16 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                 mem.remember("note", f"áudio {caminho}: " +
                              "; ".join(_arq.extrair_pontos(transcricao, 3)))
             continue
+        if linha == "/contexto":
+            if not ultima_troca["mensagens"]:
+                say(f"{nome}: ainda não enviei nada ao motor nesta conversa.")
+                continue
+            from nomos.kernel.audit import redact_text
+            say("O que foi para o motor na última resposta (segredos redigidos):")
+            for m in ultima_troca["mensagens"]:
+                say(f"  [{m.get('role')}] {redact_text(str(m.get('content', '')))}")
+            say(c("fraco", "(isto nunca sai da sua máquina — é só transparência)"))
+            continue
         if linha in {"/bem", "/mal"}:
             from nomos.cognition import feedback as _fb
             motor = ultima_rota.get("motor")
@@ -336,16 +348,46 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                 say(resposta_demo(linha, nome))
                 mem.remember("user", linha)
             continue
-        contexto = [{"role": "system", "content": system_prompt(perfil)}] + [
+        from nomos.cognition import rag
+        bloco_rag, n_lembrancas = rag.contexto_relevante(mem, linha)
+        contexto = [{"role": "system", "content": system_prompt(perfil)}]
+        if bloco_rag:
+            contexto.append({"role": "system", "content": bloco_rag})
+        contexto += [
             {"role": ("assistant" if m.role == "assistant" else "user"), "content": m.text}
             for m in reversed(mem.recent(6)) if m.role in {"user", "assistant"}
         ] + [{"role": "user", "content": linha}]
-        out = router.chat(contexto)
+        contexto = rag.encolher_contexto(contexto)
+        ultima_troca["mensagens"] = contexto
+
+        if hasattr(router, "chat_stream"):
+            # streaming: a resposta aparece enquanto o motor gera (v1.1)
+            emitir = say_token or (lambda t: (sys.stdout.write(t),
+                                              sys.stdout.flush()))
+            import sys
+            try:
+                if say_token is None:
+                    sys.stdout.write(f"{nome}: ")
+                    sys.stdout.flush()
+                out = router.chat_stream(contexto, emitir)
+                if say_token is None:
+                    sys.stdout.write("\n")
+            except KeyboardInterrupt:
+                say("")
+                say(c("fraco", f"({nome} parou a resposta a seu pedido — "
+                               "não guardei o rascunho)"))
+                continue
+        else:
+            out = router.chat(contexto)
+            if out.ok:
+                say(f"{nome}: {out.text}")
         if out.ok:
-            say(f"{nome}: {out.text}")
             ultima_rota["motor"] = out.provider or out.route
             mem.remember("user", linha)
             mem.remember("assistant", out.text)
+            if n_lembrancas:
+                say(c("fraco", f"(usei {n_lembrancas} lembrança(s) suas para "
+                               "contextualizar)"))
         else:
             say(resposta_demo(linha, nome))
             say(c("fraco", f"(detalhe técnico: {out.reason})"))

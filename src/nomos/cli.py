@@ -870,13 +870,19 @@ def cmd_chat(ctx, args) -> int:
         return EXIT_ERROR
 
     def one_turn(user_text: str) -> int:
+        from nomos.cognition import rag
+        bloco_rag, n_lembrancas = rag.contexto_relevante(mem, user_text)
         context = list(reversed(mem.recent(6)))
         messages = (
             [{"role": "system", "content": "Você é o agente pessoal do usuário no NOMOS. Responda em português, direto."}]
+            + ([{"role": "system", "content": bloco_rag}] if bloco_rag else [])
             + [{"role": ("assistant" if m.role == "assistant" else "user"), "content": m.text}
                for m in context if m.role in {"user", "assistant"}]
             + [{"role": "user", "content": user_text}]
         )
+        messages = rag.encolher_contexto(messages)
+        if n_lembrancas:
+            print(f"(usei {n_lembrancas} lembrança(s) suas)", file=sys.stderr)
         pw = None
         if args.cloud and sys.stdin.isatty():
             pw = _passphrase()
