@@ -228,10 +228,17 @@ def instalar_motor() -> tuple[bool, str]:
     if not py:
         return False, "não achei o Python para instalar o motor."
     try:
-        r = subprocess.run([py, "-m", "pip", "install", "llama-cpp-python"],  # nosec B603
+        # --prefer-binary: usa wheel pré-compilada quando existir para o seu
+        # sistema — sem exigir compilador (v1.0.1)
+        r = subprocess.run([py, "-m", "pip", "install", "--prefer-binary",
+                           "llama-cpp-python"],  # nosec B603
                           capture_output=True, text=True, timeout=1800)
     except Exception as exc:
         return False, f"falha ao instalar: {type(exc).__name__}"
     if r.returncode == 0:
         return True, "motor do cérebro instalado."
-    return False, "não consegui instalar o motor (llama-cpp-python)."
+    return False, ("não consegui instalar o motor (llama-cpp-python). "
+                   "Provável causa: não há wheel pronta para o seu sistema e "
+                   "falta um compilador C. Caminhos: instale as ferramentas de "
+                   "build do seu SO, ou use o Ollama (ollama.com) que dispensa "
+                   "compilação — o NOMOS detecta sozinho.")

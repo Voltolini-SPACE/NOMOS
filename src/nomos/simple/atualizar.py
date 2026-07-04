@@ -64,7 +64,8 @@ def verificar(ctx, approver, fetcher=None, say=print) -> int:
                                    "(só versão e notas públicas; nada seu é enviado)")
     if not gate(pedido, approver):
         ctx["audit"].append("atualizar.negado", motivo=original.reason[:80])
-        say("Não fui checar a internet — e isso é uma proteção, não um erro.")
+        from nomos.simple.erros import fmt
+        say(fmt("E002", "Não fui checar a internet — e isso é uma proteção, não um erro."))
         if "só-local" in original.reason:
             say("O cadeado só-local está LIGADO 🔒. Para permitir esta checagem "
                 "pontual: nomos local off (e depois volte com nomos local on).")
@@ -76,7 +77,8 @@ def verificar(ctx, approver, fetcher=None, say=print) -> int:
         info = fetcher()
     except Exception as exc:
         ctx["audit"].append("atualizar.falhou", motivo=type(exc).__name__)
-        say(f"Não consegui consultar a última versão ({type(exc).__name__}). "
+        from nomos.simple.erros import fmt
+        say(fmt("E008", f"Não consegui consultar a última versão ({type(exc).__name__}). ") +
             f"Tente de novo mais tarde ou veja manualmente: {URL_RELEASES_HUMANA}")
         return 1
 

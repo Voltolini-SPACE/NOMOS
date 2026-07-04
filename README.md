@@ -62,6 +62,8 @@ integridade, backup automático e rollback. Detalhes: [docs/INSTALL.md](docs/INS
 | `nomos local status` | o cadeado que mantém tudo local |
 | `nomos chaves` | guarda chaves com segurança, sem digitar no chat |
 | `nomos arquivo <caminho>` | lê e resume um arquivo seu, tudo local (PDF com extra opcional) |
+| `nomos backup criar <arquivo>` | seu NOMOS inteiro num arquivo cifrado (memórias, chaves, tudo) |
+| `nomos doutor --consertar` | aplica correções seguras com a sua confirmação |
 | `nomos atualizar` | checa se há versão nova (com sua aprovação; **nunca** atualiza sozinho) |
 
 Dentro da conversa: `/ajuda`, `/cerebro`, `/chaves`, `/motores`, `/tema`,
@@ -94,7 +96,7 @@ Python puro, multiplataforma.
 
 ## Maturidade
 
-Release candidate (v1.0.0rc1). Suíte com 410 testes cobrindo
+Release candidate (v1.0.0rc2). Suíte com 425 testes cobrindo
 segurança (fail-closed, não-vazamento de segredo, opt-in de nuvem) e UX.
 API interna pode mudar; os comandos da tabela acima são estáveis.
 

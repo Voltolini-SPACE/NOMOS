@@ -246,6 +246,104 @@ def proximo_passo(itens: list[dict]) -> str:
     return "nada pendente — rode  nomos  e aproveite"
 
 
+# ------------------------- consertar (v1.0.1) -------------------------
+
+def diagnosticar_consertos(home) -> list[dict]:
+    """SOMENTE consertos seguros: nada aqui apaga dado do usuário.
+
+    Cada item: {id, problema, acao} — arquivo corrompido é RENOMEADO para
+    .corrompido (preservado) e recriado com o padrão mais seguro."""
+    import json as _json
+    from pathlib import Path
+    home = Path(home)
+    achados: list[dict] = []
+
+    for sub in ("logs", "skills", "sandbox", "backups"):
+        if not (home / sub).is_dir():
+            achados.append({"id": f"pasta:{sub}",
+                            "problema": f"pasta '{sub}/' ausente no NOMOS home",
+                            "acao": f"criar {sub}/ (vazia, 0700)"})
+
+    def _ilegivel(nome: str) -> bool:
+        p = home / nome
+        if not p.exists():
+            return False
+        try:
+            _json.loads(p.read_text())
+            return False
+        except Exception:
+            return True
+
+    if _ilegivel("localidade.json"):
+        achados.append({"id": "arquivo:localidade.json",
+                        "problema": "localidade.json corrompido (hoje ele já "
+                                    "falha-seguro como LIGADO)",
+                        "acao": "preservar como .corrompido e recriar LIGADO 🔒"})
+    if _ilegivel("policy.json"):
+        achados.append({"id": "arquivo:policy.json",
+                        "problema": "policy.json ilegível (hoje nega tudo)",
+                        "acao": "preservar como .corrompido e recriar padrão "
+                                "read-only/fail-closed"})
+    for nome, oque in (("skills_estado.json", "estado das skills"),
+                       ("rotinas.json", "rotinas")):
+        if _ilegivel(nome):
+            achados.append({"id": f"arquivo:{nome}",
+                            "problema": f"{nome} corrompido ({oque} não carrega)",
+                            "acao": "preservar como .corrompido e recriar vazio"})
+    return achados
+
+
+def consertar(home, confirmar, say=print, audit=None) -> tuple[int, list[str]]:
+    """Aplica os consertos seguros. `confirmar()` deve devolver True (humano).
+
+    Devolve (exit_code, lista_do_que_foi_feito). Sem confirmação => nada muda
+    (fail-closed). Originais corrompidos são preservados, nunca apagados."""
+    from pathlib import Path
+    home = Path(home)
+    achados = diagnosticar_consertos(home)
+    if not achados:
+        say("nada para consertar — está tudo íntegro. ✓")
+        return 0, []
+    say(f"Encontrei {len(achados)} conserto(s) seguro(s):")
+    for a in achados:
+        say(f"  · {a['problema']}\n    → {a['acao']}")
+    say("Nenhum dado seu é apagado: arquivos corrompidos viram '.corrompido'.")
+    try:
+        ok = bool(confirmar())
+    except Exception:
+        ok = False
+    if not ok:
+        say("ok, não mexi em nada.")
+        return 3, []
+
+    feitos: list[str] = []
+    from nomos.kernel.plataforma import chmod_privado
+    for a in achados:
+        tipo, _, alvo = a["id"].partition(":")
+        if tipo == "pasta":
+            (home / alvo).mkdir(parents=True, exist_ok=True)
+            chmod_privado(home / alvo, 0o700)
+            feitos.append(f"pasta {alvo}/ criada")
+        elif tipo == "arquivo":
+            p = home / alvo
+            p.rename(p.with_suffix(p.suffix + ".corrompido"))
+            if alvo == "localidade.json":
+                localidade.definir(home, True)          # o padrão mais seguro
+            elif alvo == "policy.json":
+                from nomos.kernel.policy import PolicyEngine as _PE
+                _PE(p)                                   # recria default fail-closed
+            else:
+                p.write_text('{"rotinas": []}' if alvo == "rotinas.json" else "{}")
+                chmod_privado(p, 0o600)
+            feitos.append(f"{alvo} recriado com padrão seguro (original preservado)")
+        if audit is not None:
+            audit.append("doutor.consertado", item=a["id"])
+    say(f"pronto: {len(feitos)} conserto(s) aplicado(s).")
+    for f in feitos:
+        say(f"  ✓ {f}")
+    return 0, feitos
+
+
 def texto_relatorio_v011(home=None, ctx: dict | None = None) -> str:
     itens = diagnostico_v011(home, ctx)
     geral = status_geral(itens)

@@ -2,6 +2,28 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.0.0rc2] — 2026-07-03 (fase v1.0.1 do ROADMAP_2)
+
+### Adicionado
+- **Boot instantâneo**: módulos pesados (cryptography/argon2/cognição) só
+  carregam no comando que os usa — `nomos --version` caiu de 53 módulos
+  pesados no boot para zero (~40 ms); teste determinístico garante que não
+  regride.
+- **`nomos doutor --consertar`**: aplica correções SEGURAS (pastas ausentes;
+  localidade/policy/rotinas/estado corrompidos → recriados com padrão seguro,
+  original preservado como `.corrompido`) com confirmação digitada
+  ("CONSERTAR"); sem TTY lista e nega. Nada destrutivo, tudo auditado.
+- **`nomos backup criar|restaurar|inspecionar`**: o NOMOS inteiro num arquivo
+  cifrado (tar → Fernet + PBKDF2 600k; exclui `modelos/` re-baixáveis, com
+  aviso). Restaurar em home com conteúdo exige "RESTAURAR" em TTY e preserva
+  o atual em `.antes-restauro-<ts>/`; senha errada/adulterado ⇒ nada muda;
+  caminhos do tar validados contra escape.
+- **Códigos de erro pesquisáveis** `[NOMOS-Exx]` nos caminhos de erro
+  principais + docs/ERROS.md; teste garante que todo código usado está
+  catalogado E documentado.
+- **Motor sem compilador**: `cerebro instalar` usa `--prefer-binary` e, ao
+  falhar, explica o caminho (ferramentas de build ou Ollama).
+
 ## [1.0.0rc1] — 2026-07-03
 
 ### Adicionado

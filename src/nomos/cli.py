@@ -15,32 +15,20 @@ import sys
 from pathlib import Path
 
 from nomos import __version__
-from nomos.kernel import config
-from nomos.kernel.approvals import ApprovalQueue, panel_approver
-from nomos.kernel import localidade
+from nomos.kernel import config, localidade
 from nomos.kernel.audit import AuditLog
-from nomos.ext import signing
-from nomos.interface.panel import PanelServer
-from nomos.cognition import motores as motores_mod
-from nomos.simple import chaves as chaves_mod
-from nomos.simple import doutor as doutor_mod
-from nomos.simple import tema as tema_mod
-from nomos.simple.amigavel import iniciar_chat
-from nomos.simple.onboarding import run_onboarding
-from nomos.simple.traducao import aprovador_amigavel
 from nomos.kernel.consent import ConsentRegistry, DEVICES
 from nomos.kernel.policy import Category, Decision, PolicyEngine, gate
-from nomos.kernel.vault import Vault, VaultError, VaultLocked
-from nomos.cognition.memory import Memory
-from nomos.cognition.router import Router
-from nomos.cognition.providers import OllamaProvider
-from nomos.runtime import sandbox
-from nomos.ext import skills as skills_mod
+
+# v1.0.1: módulos pesados (cryptography/argon2/cognição/UX) são importados
+# DENTRO do comando que os usa — `nomos --version` e a ajuda ficam instantâneos
+# e nenhum trabalho desnecessário acontece no boot.
 
 EXIT_OK, EXIT_ERROR, EXIT_DENIED = 0, 1, 3
 
 
 def _paths():
+    from nomos.kernel.vault import Vault
     home = config.ensure_home()
     return {
         "home": home,
@@ -54,7 +42,9 @@ def _paths():
 
 def interactive_approver(decision: Decision) -> bool:
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
-        print("NEGADO (fail-closed): aprovação exige terminal interativo.", file=sys.stderr)
+        from nomos.simple.erros import fmt
+        print(fmt("E002", "NEGADO (fail-closed): aprovação exige terminal interativo."),
+              file=sys.stderr)
         return False
     print("--- APROVAÇÃO NECESSÁRIA ---")
     print(f"categoria: {decision.category}")
@@ -74,6 +64,7 @@ def _passphrase(confirm: bool = False) -> str:
     if confirm:
         p2 = getpass.getpass("confirme a passphrase: ")
         if p1 != p2:
+            from nomos.kernel.vault import VaultError
             raise VaultError("passphrases não conferem")
     return p1
 
@@ -95,7 +86,7 @@ def cmd_agent_create(ctx, args) -> int:
 
 
 def cmd_vault(ctx, args) -> int:
-    v: Vault = ctx["vault"]
+    v = ctx["vault"]
     if args.vault_cmd == "init":
         v.init(_passphrase(confirm=sys.stdin.isatty()))
         ctx["audit"].append("vault.init")
@@ -166,6 +157,7 @@ def cmd_panic(ctx, args) -> int:
 
 
 def cmd_run(ctx, args) -> int:
+    from nomos.runtime import sandbox
     approver = _approver_for(ctx, args)
     decision = ctx["policy"].decide(Category.CODE_EXEC, target=args.cmd[:120])
     if not gate(decision, approver):
@@ -177,7 +169,8 @@ def cmd_run(ctx, args) -> int:
                              allow_network=args.allow_network)
     except sandbox.IsolationUnavailable as exc:
         ctx["audit"].append("sandbox.recusado_isolamento", motivo=str(exc))
-        print(f"RECUSADO: {exc}", file=sys.stderr)
+        from nomos.simple.erros import fmt
+        print(fmt("E002", f"RECUSADO: {exc}"), file=sys.stderr)
         return EXIT_DENIED
     ctx["audit"].append("sandbox.executado", rc=result.rc, timeout=result.timed_out,
                         rede_isolada=result.network_isolated)
@@ -187,6 +180,8 @@ def cmd_run(ctx, args) -> int:
 
 
 def cmd_skill(ctx, args) -> int:
+    from nomos.ext import signing
+    from nomos.ext import skills as skills_mod
     if args.skill_cmd == "keygen":
         path, pub = signing.keygen(ctx["home"] / "keys")
         print(f"chave privada: {path} (0600 — NÃO compartilhe)")
@@ -244,6 +239,7 @@ def cmd_skill(ctx, args) -> int:
 
 
 def cmd_tema(ctx, args) -> int:
+    from nomos.simple import tema as tema_mod
     sub = getattr(args, "tema_cmd", None)
     try:
         if sub == "paleta":
@@ -318,8 +314,74 @@ def cmd_cerebro(ctx, args) -> int:
 
 
 def cmd_doutor(ctx, args) -> int:
+    from nomos.simple import doutor as doutor_mod
+    if getattr(args, "consertar", False):
+        from nomos.simple.erros import fmt
+        interativo = sys.stdin.isatty() and sys.stdout.isatty()
+
+        def _confirmar() -> bool:
+            if not interativo:
+                print(fmt("E009", "consertar exige terminal interativo — acima "
+                          "está a lista do que EU consertaria; nada foi alterado."),
+                      file=sys.stderr)
+                return False
+            return input('digite "CONSERTAR" para aplicar> ').strip() == "CONSERTAR"
+
+        rc, _feitos = doutor_mod.consertar(ctx["home"], _confirmar,
+                                           audit=ctx["audit"])
+        return rc
     print(doutor_mod.texto_relatorio_v011(ctx["home"], ctx))
     return EXIT_OK
+
+
+def cmd_backup(ctx, args) -> int:
+    from nomos.simple import backup_total as bt
+    from nomos.simple.erros import fmt
+    senha = _senha_backup()
+    if senha is None:
+        print(fmt("E002", "backup exige terminal interativo "
+                  "(ou NOMOS_BACKUP_SENHA para automação)."), file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        if args.backup_cmd == "criar":
+            n, excluidas = bt.criar(ctx["home"], Path(args.arquivo), senha)
+            ctx["audit"].append("backup.total.criado", arquivos=n)
+            print(f"{n} arquivo(s) do seu NOMOS guardados cifrados em {args.arquivo}")
+            if excluidas:
+                print(f"(fora do backup, por serem re-baixáveis: {', '.join(excluidas)})")
+            print("guarde a senha: sem ela o arquivo é ilegível — de propósito.")
+            return EXIT_OK
+        if args.backup_cmd == "inspecionar":
+            for nome in bt.inspecionar(Path(args.arquivo), senha):
+                print(f"  · {nome}")
+            return EXIT_OK
+        if args.backup_cmd == "restaurar":
+            interativo = sys.stdin.isatty() and sys.stdout.isatty()
+            tem_conteudo = any(ctx["home"].iterdir()) if ctx["home"].is_dir() else False
+            permitir = False
+            if tem_conteudo:
+                if not interativo:
+                    print(fmt("E002", "o NOMOS home atual tem conteúdo — restaurar "
+                              "por cima exige confirmação em terminal interativo."),
+                          file=sys.stderr)
+                    return EXIT_DENIED
+                print("Seu NOMOS atual será movido para uma pasta de segurança "
+                      "antes do restauro (nada é apagado).")
+                permitir = input('digite "RESTAURAR" para continuar> ').strip() == "RESTAURAR"
+                if not permitir:
+                    print("ok, nada foi alterado.")
+                    return EXIT_DENIED
+            n, guardado = bt.restaurar(ctx["home"], Path(args.arquivo), senha,
+                                       permitir_sobrescrever=permitir or not tem_conteudo)
+            ctx["audit"].append("backup.total.restaurado", arquivos=n)
+            print(f"{n} arquivo(s) restaurados.")
+            if guardado:
+                print(f"(seu NOMOS anterior está preservado em {guardado})")
+            return EXIT_OK
+    except bt.BackupTotalError as exc:
+        print(fmt("E005", f"não deu: {exc}"), file=sys.stderr)
+        return EXIT_ERROR
+    return EXIT_ERROR
 
 
 def cmd_atualizar(ctx, args) -> int:
@@ -371,7 +433,8 @@ def cmd_rotinas(ctx, args) -> int:
                              ctx["policy"], _approver_for(ctx, args),
                              audit=ctx["audit"], skills_dir=ctx["skills"])
         except rot.RotinaError as exc:
-            print(f"não criei: {exc}", file=sys.stderr)
+            from nomos.simple.erros import fmt
+            print(fmt("E006", f"não criei: {exc}"), file=sys.stderr)
             return EXIT_DENIED if "aprovada" in str(exc) else EXIT_ERROR
         print(f"rotina #{nova['id']} criada: {nova['hora']} — {nova['nome']}")
         print("ela roda quando você chamar `nomos rotinas executar` (ou agende "
@@ -413,7 +476,8 @@ def cmd_arquivo(ctx, args) -> int:
                                           _approver_for(ctx, args),
                                           router=router, salvar=args.salvar)
     except arq.ArquivoError as exc:
-        print(f"não deu: {exc}", file=sys.stderr)
+        from nomos.simple.erros import fmt
+        print(fmt("E003", f"não deu: {exc}"), file=sys.stderr)
         return EXIT_ERROR
     if not resultado.ok:
         # etapa de leitura/salvamento negada ou falhou — mensagem honesta
@@ -467,6 +531,7 @@ def cmd_local(ctx, args) -> int:
 
 
 def cmd_chaves(ctx, args) -> int:
+    from nomos.simple import chaves as chaves_mod
     if getattr(args, "chaves_cmd", None) == "listar":
         nomes = chaves_mod.nomes_guardados()   # só nomes: seguro sem TTY
         if not nomes:
@@ -483,6 +548,7 @@ def cmd_chaves(ctx, args) -> int:
 
 
 def cmd_motores(ctx, args) -> int:
+    from nomos.cognition import motores as motores_mod
     from nomos.cognition import engine_catalog as cat_mod
     from nomos.cognition import engine_policy as epol
     from nomos.cognition import engine_router as erouter
@@ -539,9 +605,12 @@ def cmd_motores(ctx, args) -> int:
         if m is None:
             print(f"erro: motor desconhecido: {args.motor}", file=sys.stderr)
             return EXIT_ERROR
-        print(f"{m.id}: {'PRONTO ✓' if m.pronto else 'não está pronto'}"
-              f" — {m.status or m.rotulo}")
-        return EXIT_OK if m.pronto else EXIT_ERROR
+        if not m.pronto:
+            from nomos.simple.erros import fmt
+            print(fmt("E007", f"{m.id}: não está pronto — {m.status or m.rotulo}"))
+            return EXIT_ERROR
+        print(f"{m.id}: PRONTO ✓ — {m.status or m.rotulo}")
+        return EXIT_OK
     if sub == "diagnostico":
         cat = cat_mod.construir(ctx["home"])
         faltando = [mod for mod in cat_mod.MODALIDADES_V011 if not cat.prontos(mod)]
@@ -639,9 +708,14 @@ def cmd_skills(ctx, args) -> int:
     if sub == "instalar":
         msg = smenu.instalar_amigavel(ctx, args.caminho, _approver_for(ctx, args),
                                       _confirmar_experimental)
-        print(msg)
-        return EXIT_OK if "instalada" in msg else EXIT_DENIED
+        if "instalada" in msg:
+            print(msg)
+            return EXIT_OK
+        from nomos.simple.erros import fmt
+        print(fmt("E004", msg))
+        return EXIT_DENIED
     if sub == "remover":
+        from nomos.ext import skills as skills_mod
         ok = skills_mod.remove(args.nome, ctx["skills"])
         ctx["audit"].append("skill.removida", name=args.nome, existia=ok)
         print("removida." if ok else "não estava instalada.")
@@ -674,7 +748,9 @@ def cmd_skills(ctx, args) -> int:
             try:
                 argumentos = json.loads(args.args_json)
             except ValueError as exc:
-                print(f"--args precisa ser JSON válido: {exc}", file=sys.stderr)
+                from nomos.simple.erros import fmt
+                print(fmt("E010", f"--args precisa ser JSON válido: {exc}"),
+                      file=sys.stderr)
                 return EXIT_ERROR
         rc, saida = reg.executar(args.nome, ctx["skills"], ctx["policy"],
                                  _approver_for(ctx, args), audit=ctx["audit"],
@@ -718,6 +794,9 @@ def cmd_skills(ctx, args) -> int:
 
 
 def cmd_start(ctx, args) -> int:
+    from nomos.simple.amigavel import iniciar_chat
+    from nomos.simple.onboarding import run_onboarding
+    from nomos.simple.traducao import aprovador_amigavel
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         print("O modo simples precisa de um terminal interativo.\n"
               "Abra um terminal de verdade e rode:  nomos start", file=sys.stderr)
@@ -731,12 +810,14 @@ def cmd_start(ctx, args) -> int:
     return iniciar_chat(ctx, perfil, router)
 
 
-def _queue(ctx) -> ApprovalQueue:
+def _queue(ctx):
+    from nomos.kernel.approvals import ApprovalQueue
     return ApprovalQueue(ctx["home"] / "approvals", audit=ctx["audit"])
 
 
 def _approver_for(ctx, args):
     if getattr(args, "panel", False):
+        from nomos.kernel.approvals import panel_approver
         return panel_approver(_queue(ctx))
     return interactive_approver
 
@@ -744,6 +825,7 @@ def _approver_for(ctx, args):
 def cmd_approvals(ctx, args) -> int:
     q = _queue(ctx)
     if args.appr_cmd == "serve":
+        from nomos.interface.panel import PanelServer
         srv = PanelServer(q, port=args.port)
         url = srv.start()
         print(f"painel local de aprovações: {url}")
@@ -766,7 +848,9 @@ def cmd_approvals(ctx, args) -> int:
     return EXIT_ERROR
 
 
-def _router(ctx) -> Router:
+def _router(ctx):
+    from nomos.cognition.providers import OllamaProvider
+    from nomos.cognition.router import Router
     host = os.environ.get("NOMOS_OLLAMA_HOST", "http://127.0.0.1:11434")
     model = os.environ.get("NOMOS_OLLAMA_MODEL", "llama3.2")
     from nomos.cognition.embutido import EmbeddedProvider
@@ -777,6 +861,7 @@ def _router(ctx) -> Router:
 
 
 def cmd_chat(ctx, args) -> int:
+    from nomos.cognition.memory import Memory
     mem = Memory(ctx["home"] / "memory.db")
     router = _router(ctx)
     prompt = " ".join(args.prompt).strip() if args.prompt else ""
@@ -831,6 +916,7 @@ def _senha_backup() -> str | None:
 
 
 def cmd_memory(ctx, args) -> int:
+    from nomos.cognition.memory import Memory
     mem = Memory(ctx["home"] / "memory.db")
     if args.mem_cmd == "search":
         for it in mem.recall_hibrido(" ".join(args.query), k=args.k):
@@ -840,13 +926,15 @@ def cmd_memory(ctx, args) -> int:
         from nomos.cognition import backup as bkp
         senha = _senha_backup()
         if senha is None:
-            print("exportar exige terminal interativo (ou NOMOS_BACKUP_SENHA).",
+            from nomos.simple.erros import fmt
+            print(fmt("E002", "exportar exige terminal interativo (ou NOMOS_BACKUP_SENHA)."),
                   file=sys.stderr)
             return EXIT_ERROR
         try:
             n = bkp.exportar(mem, args.arquivo, senha)
         except bkp.BackupError as exc:
-            print(f"não exportei: {exc}", file=sys.stderr)
+            from nomos.simple.erros import fmt
+            print(fmt("E005", f"não exportei: {exc}"), file=sys.stderr)
             return EXIT_ERROR
         ctx["audit"].append("memoria.exportada", quantidade=n)
         print(f"{n} memória(s) exportada(s) cifrada(s) para {args.arquivo}")
@@ -856,13 +944,15 @@ def cmd_memory(ctx, args) -> int:
         from nomos.cognition import backup as bkp
         senha = _senha_backup()
         if senha is None:
-            print("importar exige terminal interativo (ou NOMOS_BACKUP_SENHA).",
+            from nomos.simple.erros import fmt
+            print(fmt("E002", "importar exige terminal interativo (ou NOMOS_BACKUP_SENHA)."),
                   file=sys.stderr)
             return EXIT_ERROR
         try:
             novas, ignoradas = bkp.importar(mem, args.arquivo, senha)
         except bkp.BackupError as exc:
-            print(f"não importei: {exc}", file=sys.stderr)
+            from nomos.simple.erros import fmt
+            print(fmt("E005", f"não importei: {exc}"), file=sys.stderr)
             return EXIT_ERROR
         ctx["audit"].append("memoria.importada", novas=novas, ignoradas=ignoradas)
         print(f"{novas} memória(s) nova(s); {ignoradas} já existiam (nada apagado).")
@@ -904,6 +994,7 @@ def cmd_status(ctx, args) -> int:
     print("política: read-only por padrão, fail-closed ativo")
     for dev, ok in ctx["consent"].status().items():
         print(f"consentimento {dev}: {'CONCEDIDO' if ok else 'desligado'}")
+    from nomos.ext import skills as skills_mod
     print(f"skills instaladas: {len(skills_mod.list_installed(ctx['skills']))}")
     print(f"auditoria: {'ÍNTEGRA' if intact else f'VIOLADA na linha {bad}'}")
     return EXIT_OK
@@ -936,7 +1027,16 @@ def build_parser() -> argparse.ArgumentParser:
     cb.add_argument("qual", nargs="?")
     cb.set_defaults(fn=cmd_cerebro)
     ce.set_defaults(fn=cmd_cerebro, cerebro_cmd=None)
-    sub.add_parser("doutor", help="check-up: o que está pronto e o próximo passo").set_defaults(fn=cmd_doutor)
+    dr = sub.add_parser("doutor", help="check-up: o que está pronto e o próximo passo")
+    dr.add_argument("--consertar", action="store_true",
+                    help="aplica correções seguras (com sua confirmação)")
+    dr.set_defaults(fn=cmd_doutor)
+    bk = sub.add_parser("backup", help="seu NOMOS inteiro num arquivo cifrado")
+    bksub = bk.add_subparsers(dest="backup_cmd", required=True)
+    for nome_b in ("criar", "restaurar", "inspecionar"):
+        bp = bksub.add_parser(nome_b)
+        bp.add_argument("arquivo")
+        bp.set_defaults(fn=cmd_backup)
     at = sub.add_parser("atualizar",
                         help="checa se há versão nova (opt-in; nunca atualiza sozinho)")
     at.add_argument("--panel", action="store_true")
@@ -1162,23 +1262,24 @@ def cmd_menu(ctx, args) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    ctx = _paths()
     fn = getattr(args, "fn", None)
     if fn is None:
         # `nomos` sem comando: menu amigável (ou ajuda, se não houver TTY)
         if sys.stdin.isatty() and sys.stdout.isatty():
-            return cmd_menu(ctx, args)
+            return cmd_menu(_paths(), args)
         build_parser().print_help()
         return EXIT_OK
+    ctx = _paths()
     try:
         return fn(ctx, args)
-    except (VaultError, VaultLocked, config.ConfigError) as exc:
-        print(f"ERRO: {exc}", file=sys.stderr)
-        return EXIT_ERROR
     except KeyboardInterrupt:
         print("\n(encerrado por você)", file=sys.stderr)
         return EXIT_ERROR
     except Exception as exc:  # nunca despejar traceback na cara do iniciante
+        from nomos.kernel.vault import VaultError, VaultLocked
+        if isinstance(exc, (VaultError, VaultLocked, config.ConfigError)):
+            print(f"ERRO: {exc}", file=sys.stderr)
+            return EXIT_ERROR
         print("Algo deu errado do meu lado, mas nada foi perdido. "
               "Você pode tentar de novo.", file=sys.stderr)
         print(f"(detalhe técnico para suporte: {type(exc).__name__}: {exc})",
