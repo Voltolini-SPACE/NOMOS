@@ -2,6 +2,24 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.3.0rc2] — 2026-07-04 (F3 do plano de validação — agentes locais)
+
+### Adicionado
+- **Agentes locais governados** (ISSUE 013–018), lacuna confirmada na
+  validação. Regra inegociável **provada por teste**: agente NÃO é atalho para
+  burlar política.
+  - `AgentManifest`: ferramentas de uma **allowlist fechada**; o manifesto não
+    pode declarar risco menor do que suas ferramentas exigem (fail-closed).
+  - `AgentToolBoundary`: agente só acessa ferramenta do seu manifesto e toda
+    ação passa pelo MESMO `policy.gate` A0–A6 do kernel — sem gate novo, sem
+    herança de permissão entre agentes.
+  - `AgentRegistry`: instalar/listar/ativar + sugestão por keyword (só do texto
+    digitado).
+  - **3 agentes oficiais** (examples/agents): pesquisador-local (A0),
+    programador (A1), seguranca (A0), validados por teste.
+- Comandos: `nomos agentes listar|info|ativar|desativar|diagnostico`.
+- Auditoria por agente: uso e negação de ferramenta.
+
 ## [1.3.0rc1] — 2026-07-04 (F2 do plano de validação — histórico de conversas)
 
 ### Adicionado

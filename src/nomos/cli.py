@@ -339,6 +339,59 @@ def _conv_store(ctx):
     return ConversationStore(ctx["home"] / "conversas.db")
 
 
+def _agent_registry(ctx):
+    from nomos.agents.registry import AgentRegistry
+    from pathlib import Path as _P
+    exemplos = _P(__file__).resolve().parent.parent.parent / "examples" / "agents"
+    return AgentRegistry(ctx["home"], extras_dir=exemplos)
+
+
+def cmd_agentes(ctx, args) -> int:
+    from nomos.simple.erros import fmt
+    reg = _agent_registry(ctx)
+    sub = getattr(args, "agentes_cmd", None)
+    if sub in (None, "listar"):
+        ags = reg.listar()
+        if not ags:
+            print("nenhum agente. Os oficiais vêm em examples/agents/.")
+        for m in ags:
+            estado = "ativo" if reg.ativo(m.name) else "inativo"
+            print(f"[{'✓' if estado == 'ativo' else '·'}] {m.name} — {m.objetivo}")
+            print(f"      risco máx {m.risco_max} · ferramentas: "
+                  f"{', '.join(m.ferramentas)}")
+        return EXIT_OK
+    if sub == "info":
+        m = reg.obter(args.nome)
+        if not m:
+            print(fmt("E003", f"agente '{args.nome}' não existe"), file=sys.stderr)
+            return EXIT_ERROR
+        print(f"Agente: {m.name}\nobjetivo: {m.objetivo}\nrisco máximo: {m.risco_max}")
+        print(f"ferramentas: {', '.join(m.ferramentas)}")
+        print(f"motores preferidos: {', '.join(m.motores_preferidos) or '—'}")
+        print(f"escopo de memória: {m.memoria_scope}")
+        print(f"pode chamar outro agente: {'sim' if m.pode_chamar_agente else 'não'}")
+        print(f"pode executar skill: {'sim' if m.pode_executar_skill else 'não'}")
+        return EXIT_OK
+    if sub in {"ativar", "desativar"}:
+        if not reg.obter(args.nome):
+            print(fmt("E003", f"agente '{args.nome}' não existe"), file=sys.stderr)
+            return EXIT_ERROR
+        reg.definir_ativo(args.nome, sub == "ativar")
+        ctx["audit"].append(f"agente.{sub}", nome=args.nome)
+        print(f"'{args.nome}' {'ativado' if sub == 'ativar' else 'desativado'}.")
+        return EXIT_OK
+    if sub == "diagnostico":
+        ags = reg.listar()
+        print(f"agentes válidos: {len(ags)}")
+        for m in ags:
+            from nomos.agents.manifest import risco_exigido
+            print(f"  {m.name}: risco declarado {m.risco_max}, exigido pelas "
+                  f"ferramentas {risco_exigido(m.ferramentas)} · "
+                  f"{'ATIVO' if reg.ativo(m.name) else 'inativo'}")
+        return EXIT_OK
+    return EXIT_ERROR
+
+
 def cmd_conversas(ctx, args) -> int:
     from nomos.simple.erros import fmt
     sub = getattr(args, "conversas_cmd", None)
@@ -1124,6 +1177,16 @@ def build_parser() -> argparse.ArgumentParser:
     dr.add_argument("--consertar", action="store_true",
                     help="aplica correções seguras (com sua confirmação)")
     dr.set_defaults(fn=cmd_doutor)
+    ag2 = sub.add_parser("agentes", help="agentes locais especializados (governados)")
+    ag2sub = ag2.add_subparsers(dest="agentes_cmd")
+    ag2sub.add_parser("listar").set_defaults(fn=cmd_agentes)
+    for nome_a in ("info", "ativar", "desativar"):
+        ap2 = ag2sub.add_parser(nome_a)
+        ap2.add_argument("nome")
+        ap2.set_defaults(fn=cmd_agentes)
+    ag2sub.add_parser("diagnostico").set_defaults(fn=cmd_agentes)
+    ag2.set_defaults(fn=cmd_agentes, agentes_cmd=None)
+
     cv = sub.add_parser("conversas", help="histórico de conversas (local, cifrável)")
     cvsub = cv.add_subparsers(dest="conversas_cmd")
     cvsub.add_parser("listar").set_defaults(fn=cmd_conversas)
