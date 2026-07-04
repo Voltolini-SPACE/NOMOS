@@ -95,6 +95,17 @@ from nomos.council.simulator import (
     SimulatedPolicyGateResult,
     SimulatorError,
 )
+from nomos.council.orchestrator import (
+    CouncilOrchestrationFailure,
+    CouncilOrchestrationInput,
+    CouncilOrchestrationResult,
+    CouncilOrchestrationStep,
+    CouncilOrchestrationStepName,
+    CouncilOrchestrationTrace,
+    CouncilOrchestratorDryRun,
+    OrchestrationFailureCode,
+    OrchestratorError,
+)
 
 __all__ = [
     "AnswerCandidate", "ArbiterDecision", "BlindReview", "CouncilAuditRecord",
@@ -129,4 +140,9 @@ __all__ = [
     "CouncilAuditEnvelope", "CouncilAuditEnvelopeBuilder",
     "CouncilAuditEnvelopeFailure", "CouncilAuditEventType",
     "CouncilAuditRedactionProfile", "run_offline_council_with_audit_envelope",
+    # MC8 — orquestrador (dry-run, compõe provider+simulador+gate+audit envelope)
+    "CouncilOrchestrationFailure", "CouncilOrchestrationInput",
+    "CouncilOrchestrationResult", "CouncilOrchestrationStep",
+    "CouncilOrchestrationStepName", "CouncilOrchestrationTrace",
+    "CouncilOrchestratorDryRun", "OrchestrationFailureCode", "OrchestratorError",
 ]
