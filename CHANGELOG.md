@@ -2,6 +2,25 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.3.0rc12] — 2026-07-04 (Motor Council — Fase MC4: adaptador local dry-run)
+
+### Adicionado (interno, sem wiring de runtime)
+- `nomos.council.local_adapter`: contrato de adaptador de motor local em
+  **SPEC/DRY-RUN** — `LocalEngineAdapter` (Protocol), `DryRunLocalEngineAdapter`,
+  `LocalEngineExecutionPlan`, `LocalEngineDryRunResult`,
+  `LocalEngineIsolationProfile`, `LocalEngineAdapterPolicy`,
+  `DryRunAdapterCandidateProvider`, `LocalAdapterFailure` e `AdapterFailureCode`.
+- **Não executa nada**: `would_execute=false` e `dry_run=true` SEMPRE. Perfil de
+  isolamento nega tudo por padrão (network/subprocess/filesystem/env/cloud/
+  loopback) e qualquer permissão ⇒ erro. Política `dry_run_only`/`local_only`
+  obrigatórias. Motor não-local/cloud/rede/prompt-grande ⇒ bloqueado com código
+  próprio (ADAPTER_*), mapeado a CouncilFailureCode no provider.
+- **Sem motor real, Ollama, subprocess, HTTP, cloud, SDK remoto, FS, env, tempo
+  ou random**; juízes/árbitro/gate seguem simulados. Prompt nunca entra no plano,
+  resultado, warnings, conteúdo ou repr. Determinístico.
+- 29 testes novos (contratos + dry-run + provider + segurança AST, incl. ausência
+  de mutação global). Suíte: 637.
+
 ## [1.3.0rc11] — 2026-07-04 (Motor Council — Fase MC3: contrato de provedor local)
 
 ### Adicionado (interno, sem wiring de runtime)

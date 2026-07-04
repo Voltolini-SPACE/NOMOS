@@ -30,6 +30,18 @@ from nomos.council.models import (
     RiskAssessment,
 )
 
+from nomos.council.local_adapter import (
+    AdapterError,
+    AdapterFailureCode,
+    DryRunAdapterCandidateProvider,
+    DryRunLocalEngineAdapter,
+    LocalAdapterFailure,
+    LocalEngineAdapter,
+    LocalEngineAdapterPolicy,
+    LocalEngineDryRunResult,
+    LocalEngineExecutionPlan,
+    LocalEngineIsolationProfile,
+)
 from nomos.council.local_provider import (
     DeterministicLocalCandidateProvider,
     LocalCandidateProvider,
@@ -64,4 +76,9 @@ __all__ = [
     "LocalCandidateRequest", "LocalCandidateResult", "LocalEngineDescriptor",
     "LocalProviderError", "LocalProviderFailure",
     "run_offline_council_with_local_provider",
+    # MC4 — adaptador de motor local (dry-run)
+    "AdapterError", "AdapterFailureCode", "DryRunAdapterCandidateProvider",
+    "DryRunLocalEngineAdapter", "LocalAdapterFailure", "LocalEngineAdapter",
+    "LocalEngineAdapterPolicy", "LocalEngineDryRunResult",
+    "LocalEngineExecutionPlan", "LocalEngineIsolationProfile",
 ]
