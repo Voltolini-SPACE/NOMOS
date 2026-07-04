@@ -2,6 +2,24 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.3.0rc10] — 2026-07-04 (Motor Council — Fase MC3: integração de motor local)
+
+### Adicionado (interno, sem wiring de runtime)
+- `nomos.council.local_engine`: camada por CONTRATO que troca só a origem dos
+  candidatos — `LocalCandidateProvider` (Protocol) + `DeterministicLocalCandidate
+  Provider` (fake determinístico), `LocalEngineDescriptor/Eligibility/Failure`,
+  `LocalCandidateRequest/Result`, e `run_offline_council_with_local_candidates`.
+- Motores exigem prefixo `local:`; um motor com cloud/rede/não-local é
+  **inelegível** (nunca usado). **Sem cloud, sem rede, sem SDK remoto
+  (OpenAI/Anthropic/Ollama), sem FS, sem env, sem policy/vault/audit reais, sem
+  persistência, sem CLI/chat.** Juízes/árbitro/gate continuam simulados (MC2).
+- `simulator`: refatorado para expor `run_with_candidates(...)` (reutilizado
+  pela integração local); `run()` delega — comportamento MC2 idêntico.
+- Fail-closed: sem motor local elegível ⇒ `NO_ELIGIBLE_LOCAL_ENGINE` bloqueado;
+  gate simulado negado ⇒ bloqueado. Invariantes MC1 preservadas (paranoid/
+  sensível/privado). Prompt nunca vaza no repr/serialização.
+- 29 testes novos (contratos + segurança, incl. prova AST de pureza). Suíte: 606.
+
 ## [1.3.0rc9] — 2026-07-04 (Motor Council — Fase MC2: simulador offline)
 
 ### Adicionado (interno, sem wiring de runtime)

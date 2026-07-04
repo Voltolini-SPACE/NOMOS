@@ -30,6 +30,17 @@ from nomos.council.models import (
     RiskAssessment,
 )
 
+from nomos.council.local_engine import (
+    DeterministicLocalCandidateProvider,
+    LocalCandidateProvider,
+    LocalCandidateRequest,
+    LocalCandidateResult,
+    LocalEngineDescriptor,
+    LocalEngineEligibility,
+    LocalEngineError,
+    LocalEngineFailure,
+    run_offline_council_with_local_candidates,
+)
 from nomos.council.simulator import (
     OfflineCouncilInput,
     OfflineCouncilResult,
@@ -49,4 +60,9 @@ __all__ = [
     "OfflineCouncilInput", "OfflineCouncilResult", "OfflineCouncilSimulator",
     "SimulatedEngineFixture", "SimulatedJudgeFixture", "SimulatedPolicyGateResult",
     "SimulatorError",
+    # MC3 — motor local (por contrato)
+    "DeterministicLocalCandidateProvider", "LocalCandidateProvider",
+    "LocalCandidateRequest", "LocalCandidateResult", "LocalEngineDescriptor",
+    "LocalEngineEligibility", "LocalEngineError", "LocalEngineFailure",
+    "run_offline_council_with_local_candidates",
 ]

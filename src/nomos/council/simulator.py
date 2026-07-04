@@ -1,16 +1,19 @@
-"""NOMOS Motor Council — simulador OFFLINE determinístico (Fase MC2).
+"""NOMOS Motor Council — simulador OFFLINE determinístico (Fase MC2/MC3).
 
 Exercita o pipeline conceitual do Council **sem motor real, sem rede, sem
-persistência, sem policy/audit/vault reais**. Tudo é função pura sobre fixtures
-estáticas e os modelos puros do MC1 (`nomos.council.models`).
+persistência, sem policy/audit/vault reais**. Tudo é função pura sobre os
+modelos puros do MC1 (`nomos.council.models`).
 
-    RiskAssessment → CouncilPolicy → AnswerCandidate(fixtures) →
-    BlindReview(fixtures) → DisagreementReport → ArbiterDecision →
-    SimulatedPolicyGateResult → CouncilAuditRecord(s)
+    RiskAssessment → CouncilPolicy → AnswerCandidate → BlindReview(fixtures) →
+    DisagreementReport → ArbiterDecision → SimulatedPolicyGateResult →
+    CouncilAuditRecord(s)
+
+MC2: candidatos vêm de `SimulatedEngineFixture`.
+MC3: `run_with_candidates(...)` aceita candidatos JÁ construídos (ex.: de um
+provedor de motores LOCAIS), mantendo juízes/árbitro/gate simulados.
 
 Determinismo: mesma entrada ⇒ mesma saída (sem tempo real, sem random, sem I/O).
 Fail-closed: caminhos inseguros/insuficientes viram `failure_code`, nunca crash.
-As mesmas invariantes de segurança do MC1 continuam valendo por construção.
 """
 from __future__ import annotations
 
@@ -130,11 +133,8 @@ class OfflineCouncilInput:
             raise SimulatorError("prompt obrigatório")
         self.mode = _coerce_enum(CouncilMode, self.mode, "mode")
         self.risk_level = _coerce_enum(CouncilRiskLevel, self.risk_level, "risk_level")
-        # invariantes de segurança (fail-closed) — coerentes com o MC1
         if self.mode is CouncilMode.PARANOID:
             self.local_only = True
-        if self.local_only or self.contains_sensitive_data:
-            pass  # cloud negada é derivada em policy/risk, nunca aqui
 
     def __repr__(self) -> str:   # nunca vaza o prompt
         return (f"OfflineCouncilInput(mode={self.mode.value}, "
@@ -185,25 +185,9 @@ _DISAGREEMENT_MED = 2       # spread >= 2 ⇒ média
 
 
 class OfflineCouncilSimulator:
-    """Pipeline puro e determinístico. `run(input)` não toca disco/rede/motor."""
+    """Pipeline puro e determinístico. Nada de disco/rede/motor."""
 
     def run(self, entrada: OfflineCouncilInput) -> OfflineCouncilResult:
-        # --- risco e política (derivam invariantes de segurança) ---
-        risk = RiskAssessment(
-            risk_level=entrada.risk_level,
-            contains_sensitive_data=entrada.contains_sensitive_data,
-        )
-        policy = CouncilPolicy(
-            mode=entrada.mode,
-            local_only=entrada.local_only,
-            persist_candidates=not entrada.private_mode,
-            persist_reviews=not entrada.private_mode,
-        )
-        if entrada.private_mode:
-            policy.persist_candidates = False
-            policy.persist_reviews = False
-
-        # --- candidatos (fixtures, nunca motor) ---
         candidates: list[AnswerCandidate] = []
         alias_por_candidato: dict[str, str] = {}
         engine_por_alias: dict[str, str] = {}
@@ -214,43 +198,66 @@ class OfflineCouncilSimulator:
                 content=fx.content, failure_code=fx.failure_code))
             alias_por_candidato[fx.candidate_id] = alias
             engine_por_alias[alias] = fx.engine_id
+        return self.run_with_candidates(
+            mode=entrada.mode, risk_level=entrada.risk_level,
+            local_only=entrada.local_only, private_mode=entrada.private_mode,
+            contains_sensitive_data=entrada.contains_sensitive_data,
+            council_enabled=entrada.council_enabled, candidates=candidates,
+            alias_por_candidato=alias_por_candidato, engine_por_alias=engine_por_alias,
+            judge_fixtures=entrada.judge_fixtures, gate=entrada.gate)
 
-        elegiveis = [c for c in candidates
-                     if c.failure_code is None and c.content]
+    def run_with_candidates(self, *, candidates, alias_por_candidato, engine_por_alias,
+                            judge_fixtures, mode=CouncilMode.BALANCED,
+                            risk_level=CouncilRiskLevel.A1, local_only=True,
+                            private_mode=False, contains_sensitive_data=False,
+                            council_enabled=True, gate=None,
+                            provider_failure=None) -> OfflineCouncilResult:
+        """Núcleo do pipeline sobre candidatos JÁ construídos (AnswerCandidate).
+
+        Reutilizado pela integração de motores LOCAIS (MC3): só os candidatos
+        mudam de origem; juízes, árbitro e gate continuam simulados."""
+        mode = _coerce_enum(CouncilMode, mode, "mode")
+        risk_level = _coerce_enum(CouncilRiskLevel, risk_level, "risk_level")
+        if mode is CouncilMode.PARANOID:
+            local_only = True
+
+        risk = RiskAssessment(risk_level=risk_level,
+                              contains_sensitive_data=contains_sensitive_data)
+        policy = CouncilPolicy(mode=mode, local_only=local_only,
+                               persist_candidates=not private_mode,
+                               persist_reviews=not private_mode)
+        if private_mode:
+            policy.persist_candidates = False
+            policy.persist_reviews = False
+
+        elegiveis = [c for c in candidates if c.failure_code is None and c.content]
         anon = [c.anonymized(alias=alias_por_candidato[c.candidate_id])
                 for c in elegiveis]
-
         session = CouncilSession(
-            session_id="offline-sim", mode=entrada.mode, risk_level=entrada.risk_level,
-            local_only=entrada.local_only, private_mode=entrada.private_mode,
-            candidate_count=len(candidates), judge_count=len(entrada.judge_fixtures))
+            session_id="offline-sim", mode=mode, risk_level=risk_level,
+            local_only=local_only, private_mode=private_mode,
+            candidate_count=len(candidates), judge_count=len(judge_fixtures))
+        gate = gate or SimulatedPolicyGateResult()
 
-        gate = entrada.gate or SimulatedPolicyGateResult()
-
-        # helper p/ montar resultado com decisão bloqueada
-        def _bloqueado(fc: CouncilFailureCode, motivo: str, reviews=None,
-                       disagreement=None):
+        def _bloqueado(fc, motivo, reviews=None, disagreement=None):
             decisao = ArbiterDecision(
                 decision_id="dec-offline", blocked=True, final_content="",
                 confidence=CouncilConfidence.LOW, requires_policy_gate=True,
                 reasons=[motivo])
             return self._montar(session, policy, risk, candidates, anon,
-                                reviews or [], disagreement
-                                or DisagreementReport(), decisao, gate,
-                                entrada.private_mode, fc)
+                                reviews or [], disagreement or DisagreementReport(),
+                                decisao, gate, private_mode, fc)
 
-        # --- caminhos de falha determinísticos (ordem fixa) ---
-        if not entrada.council_enabled:
+        if not council_enabled:
             return _bloqueado(CouncilFailureCode.COUNCIL_DISABLED, "conselho desligado")
         if not elegiveis:
             falhou = next((c.failure_code for c in candidates
                            if c.failure_code is not None), None)
-            fc = falhou or CouncilFailureCode.NO_ELIGIBLE_LOCAL_ENGINE
+            fc = provider_failure or falhou or CouncilFailureCode.NO_ELIGIBLE_LOCAL_ENGINE
             return _bloqueado(fc, "sem candidato elegível")
 
-        # --- reviews (fixtures), com exclusão de autojulgamento ---
         reviews: list[BlindReview] = []
-        for j, jf in enumerate(entrada.judge_fixtures):
+        for j, jf in enumerate(judge_fixtures):
             reviews.append(BlindReview(
                 review_id=f"rev-{j}", judge_engine_id=jf.judge_engine_id,
                 candidate_alias=jf.candidate_alias,
@@ -259,25 +266,17 @@ class OfflineCouncilSimulator:
                 blocked=jf.blocked))
 
         nao_conflito = [r for r in reviews if not r.is_self_judging]
-        # exclui autojulgamento quando sobra ao menos um juiz sem conflito
         efetivas = nao_conflito if nao_conflito else reviews
-        if entrada.judge_fixtures and not efetivas:
-            return _bloqueado(CouncilFailureCode.INSUFFICIENT_JUDGES,
-                              "juízes insuficientes sem conflito", reviews)
-        # se todos os juízes eram autojulgamento e havia alternativa exigida
-        if reviews and not nao_conflito and len(reviews) >= 1:
-            # todos em conflito e sem juiz limpo ⇒ insuficiente (fail-closed)
+        # todos os juízes são autores (sem juiz limpo) ⇒ fail-closed
+        if judge_fixtures and not nao_conflito:
             return _bloqueado(CouncilFailureCode.INSUFFICIENT_JUDGES,
                               "todos os juízes são autores (conflito)", reviews)
 
-        # --- alerta crítico ⇒ bloqueia/escala ---
-        jf_criticos = [jf for jf in entrada.judge_fixtures if jf.has_critical_alert]
-        if jf_criticos:
+        if any(jf.has_critical_alert for jf in judge_fixtures):
             return _bloqueado(CouncilFailureCode.ARBITER_UNSAFE_OUTPUT,
                               "alerta crítico de juiz", efetivas)
 
-        # --- divergência ---
-        overalls = [jf.overall for jf in entrada.judge_fixtures]
+        overalls = [jf.overall for jf in judge_fixtures]
         spread = (max(overalls) - min(overalls)) if overalls else 0
         nivel = (CouncilDisagreementLevel.HIGH if spread >= _DISAGREEMENT_HIGH
                  else CouncilDisagreementLevel.MEDIUM if spread >= _DISAGREEMENT_MED
@@ -287,13 +286,11 @@ class OfflineCouncilSimulator:
             return _bloqueado(CouncilFailureCode.JUDGE_DISAGREEMENT_HIGH,
                               "divergência alta entre juízes", efetivas, disagreement)
 
-        # --- gate simulado ---
         if gate.allowed is False:
             return _bloqueado(CouncilFailureCode.POLICY_GATE_DENIED,
                               f"gate negou: {gate.reason}", efetivas, disagreement)
 
-        # --- decisão feliz (seleção determinística) ---
-        melhor_alias = self._melhor_alias(entrada.judge_fixtures, anon)
+        melhor_alias = self._melhor_alias(judge_fixtures, anon)
         confianca = (CouncilConfidence.HIGH if nivel is CouncilDisagreementLevel.LOW
                      else CouncilConfidence.MEDIUM)
         decisao = ArbiterDecision(
@@ -301,7 +298,7 @@ class OfflineCouncilSimulator:
             final_content=f"[simulado] resposta do candidato {melhor_alias}",
             confidence=confianca, requires_policy_gate=True, blocked=False)
         return self._montar(session, policy, risk, candidates, anon, efetivas,
-                            disagreement, decisao, gate, entrada.private_mode, None)
+                            disagreement, decisao, gate, private_mode, None)
 
     @staticmethod
     def _melhor_alias(judge_fixtures, anon) -> str | None:
@@ -311,7 +308,6 @@ class OfflineCouncilSimulator:
         for jf in judge_fixtures:
             soma[jf.candidate_alias] = soma.get(jf.candidate_alias, 0) + jf.overall
         if soma:
-            # maior soma; empate ⇒ menor alias (determinístico)
             return sorted(soma.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
         return anon[0].candidate_id
 
