@@ -30,6 +30,17 @@ from nomos.council.models import (
     RiskAssessment,
 )
 
+from nomos.council.audit_envelope import (
+    AuditEnvelopeError,
+    AuditEnvelopeFailureCode,
+    CouncilAuditDryRunResult,
+    CouncilAuditEnvelope,
+    CouncilAuditEnvelopeBuilder,
+    CouncilAuditEnvelopeFailure,
+    CouncilAuditEventType,
+    CouncilAuditRedactionProfile,
+    run_offline_council_with_audit_envelope,
+)
 from nomos.council.policy_gate import (
     CouncilGateDecision,
     CouncilGateFailure,
@@ -113,4 +124,9 @@ __all__ = [
     "CouncilGateRisk", "CouncilPolicyGateDryRun", "FinalResponseEnvelope",
     "GateError", "GateFailureCode", "gate_risk_of",
     "run_offline_council_with_policy_gate",
+    # MC7 — audit envelope (dry-run, private mode)
+    "AuditEnvelopeError", "AuditEnvelopeFailureCode", "CouncilAuditDryRunResult",
+    "CouncilAuditEnvelope", "CouncilAuditEnvelopeBuilder",
+    "CouncilAuditEnvelopeFailure", "CouncilAuditEventType",
+    "CouncilAuditRedactionProfile", "run_offline_council_with_audit_envelope",
 ]

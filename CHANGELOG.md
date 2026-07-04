@@ -2,6 +2,24 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.3.0rc15] — 2026-07-04 (Motor Council — Fase MC7: audit envelope privado)
+
+### Adicionado (interno, sem wiring de runtime)
+- `nomos.council.audit_envelope`: envelope de auditoria SPEC/DRY-RUN.
+  `CouncilAuditEnvelope/Builder`, `CouncilAuditEventType`,
+  `CouncilAuditRedactionProfile`, `CouncilAuditDryRunResult`,
+  `CouncilAuditEnvelopeFailure`, e `run_offline_council_with_audit_envelope`.
+- `dry_run=true` e `would_write_audit=false` SEMPRE (sem escrita real no audit,
+  sem disco). **`private_mode=true` ⇒ `persist_allowed=false`** em todos os
+  envelopes, com redação máxima. Metadata é **só contagens/failure_code**;
+  chaves/valores sensíveis (prompt/content/api_key/token/bearer/engine_id…) são
+  bloqueados (`AUDIT_ENVELOPE_SENSITIVE_METADATA`) e nunca aparecem em to_dict/
+  to_json/repr/warnings. Envelope com escrita real ou não-redigido ⇒ negado.
+- **Sem audit/vault/policy/approval reais, sem motor, HTTP, subprocess, cloud,
+  SDK, FS, env, tempo ou random.** Determinístico.
+- 31 testes novos (redação, private, no-write, metadata sensível, builder nunca
+  inclui conteúdo, integração, segurança AST). Suíte: 724.
+
 ## [1.3.0rc14] — 2026-07-04 (Motor Council — Fase MC6: policy gate dry-run)
 
 ### Adicionado (interno, sem wiring de runtime)
