@@ -2,6 +2,35 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.3.0rc16] — 2026-07-04 (Motor Council — Fase MC8: orquestrador dry-run)
+
+### Adicionado (interno, sem wiring de runtime)
+- `nomos.council.orchestrator`: orquestrador **SPEC/DRY-RUN** que compõe, em
+  memória, provider local (MC3/MC4) → simulador offline (MC2) → policy gate
+  (MC6) → audit envelope (MC7) num único fluxo. `CouncilOrchestratorDryRun`,
+  `CouncilOrchestrationInput/Result/Step/Trace/Failure`,
+  `CouncilOrchestrationStepName`, `OrchestrationFailureCode`.
+- Trace metadata-only prova a ordem determinística: `INPUT_VALIDATED` →
+  `LOCAL_PROVIDER_EVALUATED` → `CANDIDATES_CREATED` → `SIMULATOR_RAN` →
+  `POLICY_GATE_EVALUATED` → `FINAL_ENVELOPE_CREATED` → `AUDIT_ENVELOPE_CREATED`
+  → `ORCHESTRATION_COMPLETED`/`ORCHESTRATION_BLOCKED` — o gate **sempre** antes
+  do envelope final, o audit envelope **sempre** depois do gate, mesmo quando
+  bloqueado. `private_mode=true` propaga `persist_allowed=false` para o
+  envelope final e para todos os envelopes de auditoria.
+- `dry_run=true`, `would_execute=false`, `would_write_audit=false` SEMPRE.
+  Fail-closed de ponta a ponta: A6, dado sensível, sem candidatos elegíveis ou
+  exceção de um componente plugável (provider/simulador/gate/audit builder)
+  todos resultam em `allowed=false`, com trace completo e conteúdo nulo no
+  envelope final. Códigos `ORCH_*` (9) cobrindo entrada inválida, provider,
+  simulador, gate, audit envelope e invariantes de modo privado/dry-run.
+- **O módulo não importa o harness de execução real (MC5)** — nenhum caminho,
+  direto ou indireto, para execução real. Provider padrão usa o adaptador
+  dry-run (MC4). **Sem motor real, Ollama, subprocess, HTTP, cloud, SDK, FS,
+  env, tempo ou random; sem policy/vault/audit/approval reais.**
+- 54 testes novos (contratos, comportamentos obrigatórios, ordem do trace,
+  fail-closed por exceção plugável, invariantes de modo privado/dry-run,
+  segurança AST). Suíte: 778.
+
 ## [1.3.0rc15] — 2026-07-04 (Motor Council — Fase MC7: audit envelope privado)
 
 ### Adicionado (interno, sem wiring de runtime)
