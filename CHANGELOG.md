@@ -2,6 +2,21 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.3.0rc8] — 2026-07-04 (Motor Council — Fase MC1: modelos de dados)
+
+### Adicionado (interno, sem wiring de runtime)
+- `nomos.council.models`: modelos de dados puros do Motor Council (stdlib-only),
+  conforme docs/architecture/MOTOR_COUNCIL_SPEC_v1.md. 12 modelos (session,
+  policy, risk, candidate, blind_review, judge_score, arbiter_decision,
+  disagreement, audit_record + enums de modo/risco/confiança/divergência/falha).
+- Invariantes de segurança por construção (fail-closed): paranoid⇒local-only,
+  local_only⇒sem cloud, private_mode⇒sem persistência, dado sensível⇒cloud negada.
+  `repr` de modelos com texto do usuário não vaza conteúdo; anonimização remove
+  autoria; autojulgamento é detectável; scores 0–5 validados.
+- **Sem execução de motor, sem I/O, sem rede, sem persistência, sem CLI/chat.**
+  31 testes novos (contratos + segurança, incluindo prova de que o módulo não
+  importa rede nem motor/LLM). Suíte: 551.
+
 ## [1.3.0rc7] — 2026-07-04 (hardening do audit log — âncora HMAC no cofre)
 
 ### Adicionado
