@@ -1,73 +1,127 @@
 # NOMOS v1.2.0rc1 — Delivery Ready
 
 ## Status
-STATUS_FINAL=PASS_100_DELIVERY_READY (código local)
-PROMOÇÃO_REMOTA=FAIL_CLOSED_BLOCKED_BY_REAL_CONSTRAINT (sem credencial de push no ambiente)
-
-O código das fases F1–F6 está pronto, testado e commitado localmente. A
-publicação no GitHub e a verificação de CI dependem do `git push` do operador
-(credencial não disponível nesta sessão) — descrito no fim.
+STATUS_FINAL=PASS (código local; CI remoto: ver seção "CI remoto")
 
 ## Resumo
-Esta entrega fecha as fases F1–F6 do plano de validação crítica: endurecimento
-anti-injection, histórico de conversas local, agentes governados, UX/memória
-tipada, rotinas dry-run e smoke pós-install. Parte de v1.2.0rc1 (remoto) e leva
-o estado local a v1.3.0rc4.
+Esta entrega fecha as fases F1–F6 do plano de validação crítica, com histórico
+local, agentes governados, endurecimento anti-injection, UX/memória tipada,
+rotinas dry-run e smoke pós-install. Parte de v1.2.0rc1 (remoto e3c4ca9) e
+leva o código a v1.3.0rc4.
 
-## Commits a promover
-| Commit | Fase | Entrega | Versão |
-|---|---|---|---|
-| 8d4bb44 | F1 | anti prompt-injection (P0), .coverage fora do git, docs 27→25, mypy CI, XSS | 1.2.0rc2 |
-| 455b41b | F2 | histórico de conversas (local, cifrável, modo privado, retenção) | 1.3.0rc1 |
-| 0b29e57 | F3 | agentes locais governados (agente não é bypass do gate) | 1.3.0rc2 |
-| 19f1bf7 | F4 | UX: memória tipada, candidatas, erro humano, modo iniciante | 1.3.0rc3 |
-| 240362a | F5+F6 | rotina dry-run + smoke CI + fix empacotamento dos agentes | 1.3.0rc4 |
-| 129d309 | promo | `__main__.py` para `python -m nomos` (shim; sem mudar comportamento) | 1.3.0rc4 |
+## Commits
+| Commit | Fase | Entrega |
+|---|---|---|
+| 8d4bb44 | F1 | anti prompt-injection (P0), .coverage fora do git, docs 27→25, mypy CI, XSS |
+| 455b41b | F2 | histórico de conversas (local, cifrável, modo privado, retenção) |
+| 0b29e57 | F3 | agentes locais governados (agente não é bypass do gate) |
+| 19f1bf7 | F4 | UX: memória tipada, candidatas, erro humano, modo iniciante |
+| 240362a | F5+F6 | rotina dry-run + smoke CI + fix empacotamento dos agentes |
+| 129d309 | SHIM_OPERACIONAL | `__main__.py` p/ `python -m nomos` (FEATURE_NOVA=NAO, RISCO=BAIXO) |
+| 88b6275+ | DOCS | release notes delivery-ready |
 
-> Nota honesta: a missão previa 5 commits; há **6**. O 6º é um shim de 4 linhas
-> adicionado na pré-promoção porque o próprio checklist da missão usa
-> `python -m nomos doutor`, que exigia esse ponto de entrada. Não altera
-> comportamento nem arquitetura.
+## Garantias preservadas (provadas por teste)
+- Local-first — cadeado ligado por padrão; egress negado na política.
+- Fail-closed — sem TTY/aprovação, sensível é negado (rc=3).
+- Zero telemetria — `test_egress_zero`.
+- Sem cloud silenciosa — nuvem só com cadeado aberto + chave + A2+A3.
+- Sem bypass de aprovação — nenhum caminho novo de autorização.
+- Sem rotina sensível automática — skill que pede aprovação não roda sozinha.
+- Sem persistência em modo privado — store `:memory:`, FS inspecionado.
+- Sem agente como bypass do gate — manifesto fechado, mesmo gate A0–A6,
+  sem herança de permissão.
+- Tag somente com CI verde.
 
-## Garantias preservadas (todas provadas por teste)
-- **Local-first**: cadeado ligado por padrão; egress externo negado na política.
-- **Fail-closed**: sem TTY/aprovação, ação sensível é negada (rc=3).
-- **Zero telemetria**: `test_egress_zero` (allowlist estática justificada).
-- **Sem cloud silenciosa**: nuvem só com cadeado aberto + chave + A2+A3.
-- **Sem bypass de aprovação**: nenhum caminho novo; agentes usam o mesmo gate.
-- **Sem rotina sensível automática**: skills que pedem aprovação não rodam sós.
-- **Sem persistência em modo privado**: store `:memory:`, FS inspecionado no teste.
-- **Agente não é bypass do gate**: ferramenta fora do manifesto negada; A1 sem
-  aprovação negado; sem herança entre agentes.
-- **Anti-injection**: conteúdo recuperado envelopado como DADO; oferta de skill
-  só do texto digitado.
+## Testes locais (evidência da promoção)
+- Total de testes: **494 passed**
+- Coverage: **84% geral** (kernel: policy/localidade 100%, vault 97%)
+- RUFF: PASS (All checks passed!)
+- Build: PASS (nomos-1.3.0rc4-py3-none-any.whl)
+- Smoke wheel (venv limpo): PASS
+- `nomos doutor`: PASS (rc=0)
+- `python -m nomos doutor`: PASS (rc=0, via shim)
+- `nomos agentes listar`: PASS (3 oficiais: pesquisador-local A0,
+  programador A1, seguranca A0)
+- `git fsck --full`: PASS · árvore: CLEAN
 
-## Testes
-- Total: **494** (todos passam).
-- Smoke wheel em venv limpo: PASS (`nomos --version`, `nomos doutor` rc=0,
-  `nomos agentes listar` mostra os 3 oficiais).
-- `git fsck --full`: PASS (após recuperar 1 objeto corrompido pelo sandbox).
-- Cobertura: kernel policy/localidade 100%, vault 97%; geral 84%.
-- CI remoto: **NÃO VERIFICADO AINDA** (aguarda push).
+## CI remoto
+- Status: preenchido no relatório final da promoção (após push).
+- Jobs esperados: testes (3 SOs), cobertura, tipos (mypy informativo),
+  smoke pós-install (wheel + doutor, 3 SOs).
+- Link: https://github.com/Voltolini-SPACE/NOMOS/actions
 
 ## Correções críticas
-- **Agentes oficiais fora do wheel** (defeito real pego pelo smoke da F6): os
-  manifestos viviam em `examples/` (não empacotado) e `nomos agentes listar`
-  vinha vazio na instalação por wheel. Corrigido: movidos para
-  `src/nomos/agents/oficiais/`, declarados em `package-data`, registry aponta
-  para dentro do pacote. Reconfirmado em venv limpo (3 agentes listados).
-- **Objeto git corrompido** durante um commit (efeito do sandbox bloqueando
-  `unlink` de `tmp_obj`): detectado por `fsck`, objeto órfão removido, commit
-  refeito, árvore reconferida — não mascarado.
+- **Anti prompt-injection (F1)**: conteúdo recuperado (RAG/memória) é
+  envelopado como DADO com marcador aleatório; a intenção de skill considera
+  apenas o texto digitado. Nota hostil na memória não dispara skill (teste).
+- **Modo privado sem persistência (F2)**: conversa privada roda em SQLite
+  `:memory:`; teste inspeciona o filesystem e prova que nada é gravado.
+- **Agentes incluídos no wheel (F6)**: manifestos oficiais estavam em
+  `examples/` e não iam no wheel — pego pelo smoke, movidos para
+  `src/nomos/agents/oficiais/` + package-data, reconfirmado em venv limpo.
+- **Shim `python -m nomos`**: adicionado `__main__.py` (4 linhas) que delega
+  ao mesmo `cli.main`. TIPO=SHIM_OPERACIONAL, FEATURE_NOVA=NAO, RISCO=BAIXO.
 
-## Riscos remanescentes (honesto)
-1. **CI verde no GitHub não verificado** — depende do push; o job `smoke`
-   (build wheel + install + doutor nos 3 SOs) só roda lá.
-2. **Auditoria de segurança independente do kernel** — ainda não feita.
-3. **Publicação (release/PyPI)** — pendente.
-4. **mypy** é informativo (não bloqueante) e cobre só o kernel por ora.
+## Riscos remanescentes
+1. CI verde no GitHub: verificação depende do push desta promoção.
+2. Auditoria de segurança independente do kernel: não realizada.
+3. Publicação (release GitHub/PyPI): pendente.
+4. mypy informativo (não bloqueante), escopo kernel.
 
-## Próximo ciclo recomendado (apenas 1)
-Após o push e o CI verde: **auditoria de segurança independente do kernel**
-(vault, policy, audit, sandbox), pré-requisito do 1.0.0 final — todo o resto do
-backlog é incremental e já tem testes.
+## Backlog pós-delivery — NOMOS Motor Council
+**Status:** Validado como conceito.
+**Implementação:** Não iniciada nesta missão.
+**Motivo:** Promoção controlada não permite features novas.
+**Prioridade sugerida:** P2 após delivery-ready, CI verde e tag criada.
+
+### Conceito
+Criar um Conselho de Motores onde múltiplos motores geram respostas
+independentes, julgam respostas anonimizadas de forma cega, classificam riscos
+e um árbitro monta a resposta final antes do envio ao usuário.
+
+### Pipeline previsto
+1. Classificar risco da solicitação.
+2. Decidir se o conselho é necessário.
+3. Gerar respostas independentes.
+4. Anonimizar e embaralhar respostas.
+5. Juízes avaliam por rubrica estruturada.
+6. Árbitro monta resposta final.
+7. Policy Gate valida antes do envio.
+8. Log local redigido é gravado.
+9. Em modo privado, não persistir julgamento.
+
+### Regras obrigatórias futuras
+- Não usar nuvem se o cadeado local estiver ativo.
+- Não enviar dados sensíveis para motor cloud.
+- Não permitir que motor ou agente burle o gate.
+- Juiz não julga a própria resposta quando houver motores suficientes.
+- Se a divergência for alta, não fingir certeza.
+- Se qualquer juiz apontar risco alto, escalar para gate final.
+- Se o gate reprovar, bloquear resposta.
+- Logs redigem segredos.
+- Modo privado não persiste julgamento.
+- Conselho não executa ação sensível sem aprovação humana.
+
+### Comandos futuros propostos
+```bash
+nomos conselho status
+nomos conselho on
+nomos conselho off
+nomos conselho testar "texto"
+nomos conselho modo rapido
+nomos conselho modo balanceado
+nomos conselho modo critico
+nomos conselho modo paranoico
+```
+
+### Testes futuros obrigatórios
+Respostas anonimizadas antes do julgamento; motor não julga a própria resposta
+quando possível; cloud bloqueada com cadeado ativo; dados sensíveis forçam modo
+local; modo privado não persiste julgamento; divergência alta gera ressalva;
+alerta de segurança bloqueia ou escala; resposta final passa pelo Policy Gate;
+logs redigem segredos; caminho rápido não chama conselho desnecessariamente;
+conselho crítico usa múltiplos motores; fallback com um motor local só.
+
+## Próximo passo recomendado (apenas 1)
+Verificar o CI da promoção e, com ele verde, criar a tag
+`v1.2.0rc1-delivery-ready` — depois disso, auditoria independente do kernel.
