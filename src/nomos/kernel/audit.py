@@ -99,6 +99,40 @@ class AuditLog:
             fh.write(_canonical(record) + "\n")
         return record
 
+    def estado(self) -> tuple[int, str]:
+        """(nº de entradas, hash da última). Base para a âncora HMAC (audit_anchor)."""
+        count, tip = 0, GENESIS
+        if not self.path.exists():
+            return 0, GENESIS
+        with self.path.open() as fh:
+            for line in fh:
+                if line.strip():
+                    count += 1
+                    try:
+                        tip = json.loads(line).get("hash", tip)
+                    except json.JSONDecodeError:
+                        return count, tip
+        return count, tip
+
+    def tip_em(self, n: int) -> str | None:
+        """Hash da n-ésima entrada (1-based); GENESIS se n<=0; None se n além do fim."""
+        if n <= 0:
+            return GENESIS
+        if not self.path.exists():
+            return None
+        i = 0
+        with self.path.open() as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                i += 1
+                if i == n:
+                    try:
+                        return json.loads(line).get("hash", GENESIS)
+                    except json.JSONDecodeError:
+                        return None
+        return None
+
     def verify(self) -> tuple[bool, int]:
         """Retorna (íntegro, índice_da_primeira_violação|-1)."""
         if not self.path.exists():

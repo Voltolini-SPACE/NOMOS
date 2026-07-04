@@ -2,6 +2,29 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [1.3.0rc7] — 2026-07-04 (hardening do audit log — âncora HMAC no cofre)
+
+### Adicionado
+- **Âncora HMAC da cadeia de auditoria** (`kernel/audit_anchor.py`), mitigando a
+  lacuna divulgada na auditoria: a hash-chain (sem chave) não detectava
+  **truncamento de cauda** nem reescrita completa por quem tem escrita.
+  - HMAC-SHA256 sobre {schema, entries_count, chain_tip, log_id, created_at};
+    a **chave vive no cofre** (Argon2id) — nunca em claro, nunca logada, nunca
+    impressa em erro; acessada fail-closed. Não é defesa-teatro: quem não tem a
+    passphrase não forja a âncora, mesmo com escrita no NOMOS_HOME.
+  - `nomos logs verify` reporta o estado: LEGACY_UNANCHORED (WARN),
+    ANCHORED_VALID (PASS), ANCHORED_INVALID / TAIL_TRUNCATED / ANCHOR_MISSING /
+    CHAIN_CORRUPTED (FAIL), ANCHOR_UNVERIFIED (WARN, sem passphrase).
+    `--cofre` valida o HMAC.
+  - `nomos logs anchor` cria/atualiza a âncora (gate A3 + passphrase),
+    idempotente; avisa que logs antigos não provam ausência de truncamento
+    anterior; audita `audit.ancorado` (só metadados).
+- `AuditLog.estado()` e `AuditLog.tip_em(n)` para a âncora.
+
+### Segurança
+- Logs legados sem âncora nunca passam em silêncio (WARN, não PASS). Cadeia já
+  corrompida não é ancorada (não mascara corrupção pré-existente).
+
 ## [1.3.0rc6] — 2026-07-04 (correção de CI — gate POSIX no Windows)
 
 ### Corrigido

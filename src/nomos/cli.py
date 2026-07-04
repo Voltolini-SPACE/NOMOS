@@ -1149,12 +1149,44 @@ def cmd_status(ctx, args) -> int:
 
 
 def cmd_logs(ctx, args) -> int:
-    intact, bad = ctx["audit"].verify()
-    if intact:
-        print("cadeia de auditoria ÍNTEGRA.")
+    from nomos.kernel import audit_anchor as anchor
+    sub = getattr(args, "logs_cmd", "verify")
+
+    if sub == "anchor":
+        # ancorar exige o cofre (chave HMAC) — ação sensível A3 (uso de credencial)
+        decision = ctx["policy"].decide(Category.CRED_USE, target="audit:hmac_anchor")
+        if not gate(decision, interactive_approver):
+            from nomos.simple.erros import fmt
+            print(fmt("E002", "ancoragem não aprovada (fail-closed)."), file=sys.stderr)
+            return EXIT_ERROR
+        try:
+            corpo = anchor.criar_ancora(ctx["audit"], ctx["vault"], _passphrase())
+        except anchor.AnchorError as exc:
+            from nomos.simple.erros import fmt
+            print(fmt("E009", str(exc)), file=sys.stderr)
+            return EXIT_ERROR
+        except Exception as exc:
+            print(f"não consegui ancorar: {type(exc).__name__}", file=sys.stderr)
+            return EXIT_ERROR
+        ctx["audit"].append("audit.ancorado", entries=corpo["entries_count"],
+                            log_id=corpo["log_id"])   # metadados; nunca a chave
+        print(f"âncora criada: {corpo['entries_count']} entrada(s) ancorada(s) "
+              "com HMAC do cofre.")
+        print("nota: logs antigos sem HMAC não provam a ausência de truncamento "
+              "anterior; a âncora cobre o estado ATUAL em diante.")
         return EXIT_OK
-    print(f"cadeia de auditoria VIOLADA na linha {bad}.", file=sys.stderr)
-    return EXIT_ERROR
+
+    # verify
+    usar_cofre = getattr(args, "cofre", False)
+    senha = _passphrase() if usar_cofre else None
+    status, detalhe = anchor.verificar(ctx["audit"], vault=ctx["vault"], passphrase=senha)
+    sev = anchor.status_severidade(status)
+    linha = f"[{sev}] {status}: {detalhe}"
+    if sev == "FAIL":
+        print(linha, file=sys.stderr)
+        return EXIT_ERROR
+    print(linha)
+    return EXIT_OK
 
 
 # ------------------------- parser -------------------------
@@ -1415,7 +1447,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("status").set_defaults(fn=cmd_status)
     lg = sub.add_parser("logs").add_subparsers(dest="logs_cmd", required=True)
-    lg.add_parser("verify").set_defaults(fn=cmd_logs)
+    lgv = lg.add_parser("verify", help="verifica a cadeia e a âncora HMAC do audit log")
+    lgv.add_argument("--cofre", action="store_true",
+                     help="também valida o HMAC da âncora (pede a passphrase do cofre)")
+    lgv.set_defaults(fn=cmd_logs)
+    lg.add_parser("anchor", help="ancora o audit log com HMAC do cofre (mitiga truncamento)"
+                  ).set_defaults(fn=cmd_logs)
     return p
 
 

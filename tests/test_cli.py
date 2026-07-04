@@ -57,7 +57,9 @@ def test_panic_e_logs_verify(capsys):
     run("init")
     assert run("panic") == 0
     assert run("logs", "verify") == 0
-    assert "ÍNTEGRA" in capsys.readouterr().out
+    # cadeia íntegra; sem âncora ainda => estado LEGACY (WARN), nunca FAIL
+    out = capsys.readouterr().out
+    assert "LOG_LEGACY_UNANCHORED" in out and "íntegra" in out
 
 
 def test_memory_ciclo_completo(capsys):
