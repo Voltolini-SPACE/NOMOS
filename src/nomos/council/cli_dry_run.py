@@ -30,6 +30,7 @@ provado por AST em `tests/council/test_cli_conselho_dry_run.py`.
 from __future__ import annotations
 
 from nomos.council.cli_disabled import run_disabled
+from nomos.council.forbidden_flags import FORBIDDEN_FLAGS, is_forbidden_flag
 from nomos.council.safe_output import build_safe_output, render_json_output
 
 # --------------------------------------------------------------------------
@@ -60,10 +61,13 @@ _MODE_MAP = {
 _MODE_DEFAULT = "balanceado"
 
 _BOOL_FLAGS = {"--privado", "--json", "--iniciante", "--avancado"}
-_FORBIDDEN_FLAGS = {
-    "--real", "--enable", "--ativar", "--force", "--unsafe", "--cloud",
-    "--audit-real", "--policy-real",
-}
+
+# MC24: contrato ÚNICO de flags proibidas — fonte única em
+# `nomos.council.forbidden_flags`, reconciliado com o chat no MESMO conjunto de
+# 10 (decisão A). Antes da MC24 a CLI listava só 8 (sem `--vault-real`/
+# `--engine-real`); agora as duas superfícies compartilham o mesmo objeto. O
+# alias preserva o nome interno usado no parser.
+_FORBIDDEN_FLAGS = FORBIDDEN_FLAGS
 
 # MC22: a ESTRUTURA segura e o JSON vêm do helper compartilhado
 # (`safe_output`). As mensagens HUMANAS abaixo são específicas do CLI e
@@ -149,7 +153,7 @@ def simular(tokens: list) -> int:
     n = len(tokens)
     while i < n:
         tok = tokens[i]
-        if tok in _FORBIDDEN_FLAGS:
+        if is_forbidden_flag(tok):
             # nunca ativa execução real; nem ecoa a flag/valor
             return _deny("Este comando não pode ser usado com essa opção.")
         if tok == "--modo":

@@ -29,6 +29,7 @@ resultado bruto.
 from __future__ import annotations
 
 from nomos.council.chat_disabled import disabled_message, is_conselho_command
+from nomos.council.forbidden_flags import FORBIDDEN_FLAGS, is_forbidden_flag
 from nomos.council.safe_output import build_safe_output, render_json_output
 
 # --------------------------------------------------------------------------
@@ -51,10 +52,12 @@ _MODE_MAP = {
 }
 _MODE_DEFAULT = "balanceado"
 
-_FORBIDDEN_FLAGS = {
-    "--real", "--enable", "--ativar", "--force", "--unsafe", "--cloud",
-    "--audit-real", "--policy-real", "--vault-real", "--engine-real",
-}
+# MC24: contrato ÚNICO de flags proibidas — fonte única em
+# `nomos.council.forbidden_flags`, o MESMO objeto usado pela CLI (decisão A). O
+# chat já listava as 10; agora ambas as superfícies compartilham a fonte única,
+# eliminando a divergência (a CLI passou de 8 para 10). O alias preserva o nome
+# interno usado no parser.
+_FORBIDDEN_FLAGS = FORBIDDEN_FLAGS
 
 # MC23: a ESTRUTURA segura e o JSON vêm do helper compartilhado
 # (`safe_output`). As mensagens HUMANAS abaixo são específicas do chat e
@@ -130,7 +133,7 @@ def _simular(tokens: list) -> str:
     n = len(tokens)
     while i < n:
         tok = tokens[i]
-        if tok in _FORBIDDEN_FLAGS:
+        if is_forbidden_flag(tok):
             return _deny("Este comando não pode ser usado com essa opção.")
         if tok == "--modo":
             if i + 1 >= n:
