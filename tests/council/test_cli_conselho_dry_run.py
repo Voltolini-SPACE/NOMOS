@@ -323,3 +323,160 @@ def test_cli_conselho_dry_run_module_does_not_use_time_or_random():
     assert ".now(" not in src
     assert "random." not in src
     assert "time." not in src
+
+
+# --------------------------------------------------------------------------
+# MC22 — migração ao helper compartilhado + UX simples
+# --------------------------------------------------------------------------
+
+import json as _json  # noqa: E402
+
+_JARGAO = ("orchestrator", "orquestrador", "envelope", "scalar", "payload",
+           "safe output", "safe_output", "policy dry-run", "failure_code",
+           "to_dict", "CouncilSafeOutput")
+
+
+def test_cli_conselho_uses_safe_output_helper(capsys, monkeypatch):
+    chamadas = {"n": 0}
+    real = cli_dry_run.build_safe_output
+
+    def _spy(*a, **k):
+        chamadas["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(cli_dry_run, "build_safe_output", _spy)
+    _run(capsys, "conselho", "simular", "uma pergunta")
+    assert chamadas["n"] == 1
+
+
+def test_cli_conselho_module_imports_safe_output_helper():
+    assert "nomos.council.safe_output" in _imports()
+
+
+def test_cli_conselho_json_uses_safe_output_shape(capsys):
+    rc, out = _run(capsys, "conselho", "simular", "texto", "--json")
+    payload = _json.loads(out.strip())
+    assert set(payload.keys()) == {
+        "interface", "dry_run", "allowed", "blocked", "would_execute",
+        "would_write_audit", "private_mode", "persist_allowed", "failure_code",
+        "mode",
+    }
+
+
+def test_cli_conselho_json_contains_interface_and_mode(capsys):
+    rc, out = _run(capsys, "conselho", "simular", "texto", "--modo", "critico", "--json")
+    payload = _json.loads(out.strip())
+    assert payload["interface"] == "cli"
+    assert payload["mode"] == "critical"
+
+
+def test_cli_conselho_default_mode_json_balanced(capsys):
+    rc, out = _run(capsys, "conselho", "simular", "texto", "--json")
+    payload = _json.loads(out.strip())
+    assert payload["mode"] == "balanced"
+
+
+def test_cli_conselho_human_output_is_user_friendly(capsys):
+    rc, out = _run(capsys, "conselho", "simular", "texto")
+    assert "Simulação segura concluída." in out
+    assert "Nada foi executado de verdade." in out
+    assert "Nada foi salvo." in out
+    assert "Nenhum dado sensível foi exibido." in out
+
+
+def test_cli_conselho_human_output_avoids_internal_jargon(capsys):
+    rc, out = _run(capsys, "conselho", "simular", "texto")
+    baixo = out.lower()
+    for termo in _JARGAO:
+        assert termo.lower() not in baixo, termo
+
+
+def test_cli_conselho_prompt_still_not_echoed_after_migration(capsys):
+    rc, out = _run(capsys, "conselho", "simular", _SENSIVEL)
+    assert _SENSIVEL not in out
+    rc2, out2 = _run(capsys, "conselho", "simular", _SENSIVEL, "--json")
+    assert _SENSIVEL not in out2
+
+
+def test_cli_conselho_gate_blocked_safe_after_migration(capsys, monkeypatch):
+    from nomos.council import orchestrator as orch
+
+    class _Blocked:
+        allowed = False
+        blocked = True
+        failure_code = orch.OrchestrationFailureCode.ORCH_POLICY_GATE_DENIED
+
+    monkeypatch.setattr(orch.CouncilOrchestratorDryRun, "run",
+                        lambda self, entrada: _Blocked())
+    rc, out = _run(capsys, "conselho", "simular", _SENSIVEL)
+    assert cli_dry_run.GATE_BLOCKED_CODE in out
+    assert "bloqueada por segurança" in out
+    assert _SENSIVEL not in out
+
+
+def test_cli_conselho_denied_safe_after_migration(capsys):
+    rc, out = _run(capsys, "conselho", "simular", _SENSIVEL, "--real")
+    assert cli_dry_run.DENIED_CODE in out
+    assert _SENSIVEL not in out
+    assert "--real" not in out
+    assert rc == cli_dry_run.DENIED_EXIT_CODE
+
+
+def test_cli_conselho_exception_safe_after_migration(capsys, monkeypatch):
+    from nomos.council import orchestrator as orch
+
+    def boom(self, entrada):
+        raise RuntimeError("falha simulada")
+
+    monkeypatch.setattr(orch.CouncilOrchestratorDryRun, "run", boom)
+    rc, out = _run(capsys, "conselho", "simular", _SENSIVEL)
+    assert cli_dry_run.BLOCKED_CODE in out
+    assert _SENSIVEL not in out
+    assert "Traceback" not in out
+
+
+def test_cli_conselho_still_no_result_to_dict_after_migration(capsys, monkeypatch):
+    from nomos.council import orchestrator as orch
+
+    def boom(self):
+        raise AssertionError("o CLI não pode usar result.to_dict() após a migração")
+
+    monkeypatch.setattr(orch.CouncilOrchestrationResult, "to_dict", boom)
+    rc, out = _run(capsys, "conselho", "simular", "texto", "--json")
+    assert '"dry_run": true' in out
+
+
+def test_cli_conselho_module_no_result_dump_after_migration():
+    src = _fonte()
+    assert ".to_dict(" not in src
+    assert "repr(" not in src
+    assert "vars(" not in src
+    assert "asdict" not in src
+    assert "json.dumps(result" not in src
+
+
+def test_cli_conselho_json_no_forbidden_keys_after_migration(capsys):
+    rc, out = _run(capsys, "conselho", "simular", _SENSIVEL, "--json")
+    for chave in ("prompt", "content", "final_content", "candidate_content",
+                  "engine_id", "secret", "token", "api_key", "trace",
+                  "audit_envelope"):
+        assert chave not in out, chave
+
+
+def test_chat_dry_run_untouched(capsys):
+    # Não-migração do Chat: o módulo do chat NÃO importa o helper compartilhado
+    # (segue com seu código próprio até MC23).
+    import ast as _ast
+
+    from nomos.council import chat_dry_run
+    src = open(chat_dry_run.__file__, encoding="utf-8").read()
+    nomes = set()
+    for node in _ast.walk(_ast.parse(src)):
+        if isinstance(node, _ast.Import):
+            nomes.update(a.name for a in node.names)
+        elif isinstance(node, _ast.ImportFrom) and node.module:
+            nomes.add(node.module)
+    assert "nomos.council.safe_output" not in nomes
+    # e o chat continua respondendo em dry-run normalmente
+    rc, out = _run(capsys, "conselho", "simular", "só para CLI")  # sanity CLI
+    assert cli_dry_run.DRY_RUN_CODE in out

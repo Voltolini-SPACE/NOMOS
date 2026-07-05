@@ -1,30 +1,36 @@
-"""CLI do Motor Council — comando dry-run `nomos conselho simular` (MC15-UX).
+"""CLI do Motor Council — comando dry-run `nomos conselho simular` (MC15-UX,
+migrado ao helper compartilhado de saída segura na MC22).
 
 Único subcomando que sai do esqueleto desabilitado da MC14: `simular`. Ele chama
-**apenas** o `CouncilOrchestratorDryRun` (dry-run puro, já provado em MC8) e
-imprime um resultado **redigido**. Continua:
+**apenas** o `CouncilOrchestratorDryRun` (dry-run puro, já provado em MC8).
+Continua:
 
     REAL_ENGINE_EXECUTION=false   REAL_POLICY=false   REAL_AUDIT=false
     REAL_VAULT=false   CLOUD=false   NETWORK=false   SUBPROCESS=false
     PERSISTENCE=false
 
-Nunca ecoa o prompt (nem em texto, JSON, erro ou log — só é usado para
-alimentar o orquestrador, cujo resultado é metadata-only). Todos os outros
-usos de `conselho` (raiz, `perguntar`, `revisar`, `status`, `modos`,
-`diagnostico`, `explicar`, desconhecidos) continuam roteados para o handler
-DESABILITADO (`cli_disabled.run_disabled`).
+A ESTRUTURA segura e o JSON de saída vêm do helper compartilhado
+`nomos.council.safe_output` (MC22): o CLI chama `build_safe_output` e
+`render_json_output`, então **nunca** serializa o resultado do orquestrador nem
+lê dele além de `allowed`/`blocked`/`failure_code` (isolado dentro do helper).
+As mensagens **humanas** são específicas do CLI e simples/amigáveis (sem
+jargão), montadas só a partir dos campos escalares seguros — nunca do prompt.
 
-Pureza: este módulo importa só stdlib (`json`) + o orquestrador dry-run + o
-handler desabilitado. Não importa rede, subprocess, threading, asyncio, SDK de
-nuvem, motor, harness de execução real, nem policy/audit/vault reais do kernel.
-Não lê variáveis de ambiente, não abre arquivos, não usa relógio nem
-aleatoriedade — provado por AST em `tests/council/test_cli_conselho_dry_run.py`.
+Todos os outros usos de `conselho` (raiz, `perguntar`, `revisar`, `status`,
+`modos`, `diagnostico`, `explicar`, desconhecidos) continuam roteados para o
+handler DESABILITADO (`cli_disabled.run_disabled`).
+
+Pureza: este módulo importa só o handler desabilitado, o helper de saída segura
+e (tardiamente) o orquestrador dry-run. Não importa rede, subprocess, threading,
+asyncio, SDK de nuvem, motor, harness de execução real, nem policy/audit/vault
+reais do kernel. Não lê variáveis de ambiente, não abre arquivos, não usa
+relógio nem aleatoriedade, e não serializa/representa o resultado bruto —
+provado por AST em `tests/council/test_cli_conselho_dry_run.py`.
 """
 from __future__ import annotations
 
-import json
-
 from nomos.council.cli_disabled import run_disabled
+from nomos.council.safe_output import build_safe_output, render_json_output
 
 # --------------------------------------------------------------------------
 # Códigos legíveis (estáveis para logs/testes do usuário)
@@ -59,8 +65,17 @@ _FORBIDDEN_FLAGS = {
     "--audit-real", "--policy-real",
 }
 
-_DRY_RUN_MESSAGE = (
-    "[NOMOS-MC-DRY-RUN] Motor Council simulado com sucesso.\n"
+# MC22: a ESTRUTURA segura e o JSON vêm do helper compartilhado
+# (`safe_output`). As mensagens HUMANAS abaixo são específicas do CLI e
+# **simples/amigáveis** (sem jargão técnico), montadas só a partir dos campos
+# escalares seguros — nunca do resultado bruto. O bloco de flags técnicas
+# (`DRY_RUN=true`/`REAL_*`) fica sob "Status:" para quem quiser conferir.
+_SUCESSO_MESSAGE = (
+    "[NOMOS-MC-DRY-RUN] Simulação segura concluída.\n"
+    "Nada foi executado de verdade.\n"
+    "Nada foi salvo.\n"
+    "Nenhum dado sensível foi exibido.\n"
+    "Status:\n"
     "DRY_RUN=true\n"
     "REAL_ENGINE_EXECUTION=false\n"
     "REAL_POLICY=false\n"
@@ -70,10 +85,16 @@ _DRY_RUN_MESSAGE = (
 )
 
 _GATE_BLOCKED_MESSAGE = (
-    "[NOMOS-MC-GATE-BLOCKED] Resposta bloqueada pelo Policy Gate dry-run.\n"
+    "[NOMOS-MC-GATE-BLOCKED] A simulação foi bloqueada por segurança.\n"
     "Nada foi executado.\n"
-    "Nada foi persistido.\n"
-    "Conteúdo bloqueado não será exibido."
+    "Nada foi salvo.\n"
+    "O conteúdo bloqueado não será exibido."
+)
+
+_BLOQUEIO_MESSAGE = (
+    "[NOMOS-MC-BLOCKED] Não consegui simular com segurança agora.\n"
+    "Nada foi executado.\n"
+    "Nada foi salvo."
 )
 
 
@@ -91,43 +112,25 @@ def route_conselho(tokens: list) -> int:
 
 
 def _deny(motivo: str) -> int:
-    """Recusa fail-closed. `motivo` é um texto FIXO interno; nunca inclui o
-    prompt ou qualquer token digitado pelo usuário."""
-    print(f"{DENIED_CODE} {motivo}\nNada foi executado. Nada foi persistido.")
+    """Recusa fail-closed, com mensagem simples e amigável. `motivo` é um texto
+    FIXO interno; nunca inclui o prompt ou qualquer token digitado pelo
+    usuário."""
+    print(f"{DENIED_CODE} {motivo}\nNada foi executado.\nNada foi salvo.")
     return DENIED_EXIT_CODE
 
 
-def _render_json(allowed: bool, blocked: bool, private_mode: bool,
-                 failure_code) -> int:
-    # Payload MÍNIMO montado só de escalares — nunca serializa
-    # trace/final_envelope/audit_result, então não há como vazar
-    # prompt/conteúdo/engine_id.
-    payload = {
-        "dry_run": True,
-        "allowed": bool(allowed),
-        "blocked": bool(blocked),
-        "would_execute": False,
-        "would_write_audit": False,
-        "private_mode": bool(private_mode),
-        "persist_allowed": (not private_mode),
-        "failure_code": failure_code,
-    }
-    print(json.dumps(payload, sort_keys=True, ensure_ascii=False))
-    return DRY_RUN_EXIT_CODE
-
-
-def _render_human(allowed: bool, failure_code) -> int:
-    if allowed:
-        print(_DRY_RUN_MESSAGE)
+def _render_human(output) -> int:
+    """Saída humana simples/amigável, lendo SÓ os campos escalares seguros do
+    `CouncilSafeOutput` — nunca o resultado bruto do orquestrador."""
+    if output.allowed:
+        print(_SUCESSO_MESSAGE)
         return DRY_RUN_EXIT_CODE
-    if failure_code == "ORCH_POLICY_GATE_DENIED":
+    if output.failure_code == "ORCH_POLICY_GATE_DENIED":
         print(_GATE_BLOCKED_MESSAGE)
         return DRY_RUN_EXIT_CODE
-    # Outro bloqueio (sem candidatos, provider, etc.): mensagem segura, sem
-    # conteúdo bruto; só o código de falha (um enum, nunca prompt/conteúdo).
-    print(f"{BLOCKED_CODE} Simulação bloqueada (fail-closed).\n"
-          "Nada foi executado. Nada foi persistido.\n"
-          f"failure_code={failure_code}")
+    # Outro bloqueio (sem motor elegível, etc.): mensagem simples e segura, sem
+    # conteúdo bruto e sem jargão (o código técnico fica só no --json).
+    print(_BLOQUEIO_MESSAGE)
     return DRY_RUN_EXIT_CODE
 
 
@@ -148,10 +151,10 @@ def simular(tokens: list) -> int:
         tok = tokens[i]
         if tok in _FORBIDDEN_FLAGS:
             # nunca ativa execução real; nem ecoa a flag/valor
-            return _deny("flag não permitida nesta fase (dry-run only).")
+            return _deny("Este comando não pode ser usado com essa opção.")
         if tok == "--modo":
             if i + 1 >= n:
-                return _deny("--modo exige um valor: rapido|balanceado|critico|paranoico.")
+                return _deny("Diga qual modo: rapido, balanceado, critico ou paranoico.")
             modo_pt = tokens[i + 1]
             i += 2
             continue
@@ -169,13 +172,13 @@ def simular(tokens: list) -> int:
             continue
         if tok.startswith("--"):
             # qualquer outra flag desconhecida: fail-closed, sem ecoar o token
-            return _deny("flag desconhecida (dry-run only).")
+            return _deny("Essa opção não existe para este comando.")
         prompt_parts.append(tok)
         i += 1
 
     if modo_pt not in _MODE_MAP:
         # não ecoa o valor inválido
-        return _deny("modo inválido. Use: rapido|balanceado|critico|paranoico.")
+        return _deny("Esse modo não existe. Use: rapido, balanceado, critico ou paranoico.")
     modo_interno = _MODE_MAP[modo_pt]
     if modo_pt == "paranoico":
         # paranoico implica modo privado (contrato de UX)
@@ -183,7 +186,7 @@ def simular(tokens: list) -> int:
 
     prompt = " ".join(prompt_parts).strip()
     if not prompt:
-        return _deny('simular exige um texto entre aspas, ex.: conselho simular "sua pergunta".')
+        return _deny('Escreva o que você quer simular. Ex.: conselho simular "sua pergunta".')
 
     # Import tardio: mantém o boot da CLI leve e o import do orquestrador só
     # acontece no caminho realmente usado. O orquestrador é dry-run puro (MC8).
@@ -199,16 +202,17 @@ def simular(tokens: list) -> int:
         resultado = CouncilOrchestratorDryRun().run(entrada)
     except Exception:
         # Nunca vaza traceback nem prompt; falha do orquestrador vira bloqueio
-        # seguro fail-closed.
-        print(f"{BLOCKED_CODE} Não foi possível simular com segurança (fail-closed).\n"
-              "Nada foi executado. Nada foi persistido.")
+        # seguro fail-closed (mensagem simples e amigável).
+        print(_BLOQUEIO_MESSAGE)
         return DENIED_EXIT_CODE
 
-    allowed = bool(getattr(resultado, "allowed", False))
-    blocked = bool(getattr(resultado, "blocked", not allowed))
-    fc = getattr(resultado, "failure_code", None)
-    failure_code = fc.value if fc is not None and hasattr(fc, "value") else fc
+    # MC22: a estrutura segura e o JSON vêm do helper compartilhado. O `output`
+    # só carrega escalares seguros; o resultado bruto nunca é serializado nem
+    # lido além de allowed/blocked/failure_code (feito dentro do helper).
+    output = build_safe_output(
+        resultado, interface="cli", mode=modo_interno, private_mode=privado)
 
     if as_json:
-        return _render_json(allowed, blocked, privado, failure_code)
-    return _render_human(allowed, failure_code)
+        print(render_json_output(output))
+        return DRY_RUN_EXIT_CODE
+    return _render_human(output)
