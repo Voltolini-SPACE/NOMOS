@@ -2,7 +2,35 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC23: índice, tag, release, CLI/chat dry-run, alinhamento, helper e migração de CLI+chat)
+## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC24: índice, tag, release, CLI/chat dry-run, alinhamento, helper, migração de CLI+chat e contrato único de flags proibidas)
+
+### Changed (MC24)
+- Reconciled the Motor Council dry-run **forbidden flags** contract between CLI
+  and chat (decisão **A** — unificar): as duas superfícies passam a consumir o
+  **mesmo** conjunto de 10 flags de uma fonte única testável,
+  `src/nomos/council/forbidden_flags.py` (`FORBIDDEN_FLAGS` +
+  `is_forbidden_flag`/`find_forbidden`). A CLI, que listava 8, passou a 10
+  (`--vault-real`/`--engine-real` deixam de ser tratadas como *desconhecidas* e
+  passam a ser *proibidas*, como no chat); `cli_dry_run.py` e `chat_dry_run.py`
+  agora referenciam o **mesmo objeto** do contrato, eliminando a divergência
+  herdada (documentada em MC20/MC22/MC23). Comportamento observável para o
+  usuário: recusa fail-closed idêntica (mensagem, exit code, sem eco) nas duas
+  superfícies para as 10 flags.
+
+### Security (MC24)
+- Detecção por **igualdade estrita** (nunca prefixo/substring): flags parecidas
+  mas legítimas (`--realmente`, `--enabled`, `--cloudy`) não geram falso
+  positivo; seguem recusadas como *desconhecidas* pelo parser. O dry-run segue
+  fail-closed; o prompt e a flag nunca são ecoados; a mensagem humana não usa
+  jargão; o JSON técnico preserva a estrutura segura. 72 testes novos
+  (contrato + paridade CLI/chat + comportamento + pureza AST + guarda
+  anti-divergência que impede hardcodar a lista fora da fonte única). Suíte:
+  952 → 1024.
+
+### Not changed (MC24)
+- `safe_output.py` **não** foi alterado (o contrato de flags é ortogonal à saída
+  segura); nenhuma execução real habilitada; `.github/` e `pyproject.toml`
+  intocados; nenhuma tag, release ou publicação PyPI.
 
 ### Changed (MC23)
 - Migrated the Motor Council chat dry-run output to the shared safe output

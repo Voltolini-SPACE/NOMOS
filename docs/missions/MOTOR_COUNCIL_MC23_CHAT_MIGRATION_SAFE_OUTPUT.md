@@ -197,6 +197,9 @@ segurança).
   unificar o texto, se desejado, seria uma decisão futura.
 - **Divergência das flags proibidas** (8 na CLI, 10 no chat) permanece — o
   chat manteve as 10 nesta fase. Reconciliação reservada para MC24.
+  **→ Resolvido em MC24 (decisão A):** CLI e chat passaram a compartilhar o
+  mesmo conjunto de 10 via fonte única `src/nomos/council/forbidden_flags.py`
+  (ver `docs/missions/MC24_FORBIDDEN_FLAGS_CONTRACT_RECONCILIATION.md`).
 - **Contrato público do JSON do chat** mudou de 8 para 10 campos (adição
   compatível de `interface`/`mode`), alinhando com o CLI (MC22). Documentado
   aqui e no CHANGELOG.

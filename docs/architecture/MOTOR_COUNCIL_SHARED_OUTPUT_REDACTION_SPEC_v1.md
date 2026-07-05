@@ -66,6 +66,11 @@ real (a CLI trata flags desconhecidas como fail-closed de qualquer forma), mas
 correção **não** é feita nesta missão (SPEC-only); fica registrada para o
 refactor.
 
+> **Resolvido em MC24 (decisão A — unificar).** A divergência foi eliminada:
+> CLI e chat passaram a consumir o **mesmo** conjunto de 10 flags de uma fonte
+> única testável, `src/nomos/council/forbidden_flags.py` (a CLI foi de 8 → 10).
+> Ver `docs/missions/MC24_FORBIDDEN_FLAGS_CONTRACT_RECONCILIATION.md`.
+
 ## 4. Non-goals
 
 - Não implementar o helper (é MC21+).
