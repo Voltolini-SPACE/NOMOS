@@ -23,16 +23,30 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ### Achado (MC11-RC4)
 - `.github/workflows/release.yml` publica um GitHub Release automaticamente
-  em qualquer push de tag `v*`; a criação/push da tag `v1.3.0rc4-motor-
-  council-dry-run` foi pausada nesta fase para decisão explícita do usuário
-  antes de prosseguir (ver `docs/missions/
-  MOTOR_COUNCIL_MC11_RC4_TAG_PREPARATION.md`, seções 8–9).
+  em qualquer push de tag `v*`. Reportado ao usuário antes de qualquer push
+  de tag (ver `docs/missions/MOTOR_COUNCIL_MC11_RC4_TAG_PREPARATION.md`,
+  seção 8); a decisão explícita do usuário foi prosseguir com a tag e
+  corrigir o release automático depois, em vez de segurá-la.
+
+### Publicado (MC11-RC4, pós-decisão do usuário)
+- Tag anotada `v1.3.0rc4-motor-council-dry-run` criada e enviada, apontando
+  para o commit já validado com CI 17/17.
+- O push da tag disparou `release.yml`, que publicou um GitHub Release
+  automaticamente. Ele saiu inicialmente `prerelease=false` e marcado como
+  "latest" (diferente do padrão dos 4 releases anteriores, todos
+  `prerelease=true`); corrigido via API para `prerelease=true` /
+  `make_latest=false` — sem criação, edição de conteúdo ou remoção manual,
+  apenas correção das duas flags de um release que o workflow já havia
+  criado sozinho. Corpo do release permanece o texto genérico do template;
+  melhorá-lo fica para `MC12-RC4`, assim como ajustar `release.yml` para não
+  precisar dessa correção pós-hoc na próxima tag.
 
 ### Não alterado
 - Nenhum código de runtime alterado (`src/**` intocado).
 - Nenhum teste alterado (`tests/**` intocado); suíte permanece em 778.
 - Nenhum comando CLI ou chat implementado.
-- Nenhuma tag ou GitHub Release criada; nenhuma publicação no PyPI.
+- Nenhuma tag ou release criados **manualmente**; nenhuma publicação no
+  PyPI. `.github/workflows/release.yml` não foi alterado.
 
 ## [1.3.0rc16] — 2026-07-04 (Motor Council — Fase MC8: orquestrador dry-run)
 

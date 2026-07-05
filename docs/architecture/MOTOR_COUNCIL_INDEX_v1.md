@@ -421,10 +421,11 @@ Consolidado das seções "riscos remanescentes" de cada relatório de fase:
 | Release notes RC4 (rascunho) preparadas | ✅ (ver `RELEASE_NOTES_v1.3.0rc4_MOTOR_COUNCIL_DRY_RUN.md`) |
 | GitHub Release RC4 (rascunho) preparado | ✅ (ver `GITHUB_RELEASE_v1.3.0rc4_MOTOR_COUNCIL_DRY_RUN.md`) |
 | CHANGELOG atualizado com a preparação | ✅ |
-| Tag `v1.3.0rc4-motor-council-dry-run` criada | ver relatório MC11-RC4 |
-| GitHub Release publicado | ⏳ pendente — fora do escopo de MC11-RC4, ver MC12-RC4 |
+| Tag `v1.3.0rc4-motor-council-dry-run` criada | ✅ criada em MC11-RC4, aponta para o commit validado |
+| GitHub Release publicado | ✅ publicado automaticamente pelo workflow ao enviar a tag (`prerelease=true` após correção); corpo ainda genérico — melhorar em MC12-RC4 |
 | Publicação no PyPI | ⏳ pendente — fora do escopo desta fase |
 | Reconciliação da numeração MC11+ (trilha release vs. trilha UX) | ✅ resolvida em MC11-RC4 (ver seção 19) |
+| `release.yml` ajustado para não precisar de correção pós-tag | ⏳ pendente — recomendado antes da próxima tag `v*` |
 
 ## 19. Future Roadmap
 
