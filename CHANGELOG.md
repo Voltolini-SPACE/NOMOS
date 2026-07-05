@@ -2,6 +2,26 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
+## [Unreleased] — 2026-07-04 (Motor Council — Fase MC10: índice + preparação RC4)
+
+### Adicionado
+- Índice técnico do Motor Council (`docs/architecture/MOTOR_COUNCIL_INDEX_v1.md`)
+  consolidando as fases MC0–MC9: mapa de fases, mapa de arquitetura, arquivos
+  criados, garantias de segurança/dry-run/modo privado/gate/audit, o
+  travamento do harness de execução real, resumo da UX spec, progressão de
+  testes (520 → 778), evidência de CI, quirks conhecidos do sandbox,
+  não-escopo, riscos remanescentes e um checklist de prontidão para RC4.
+- Notas de release em rascunho para `v1.3.0rc4` — Motor Council Dry-run
+  (`docs/missions/RELEASE_NOTES_v1.3.0rc4_MOTOR_COUNCIL_DRY_RUN.md`).
+- Rascunho de corpo de GitHub Release para `v1.3.0rc4`
+  (`docs/missions/GITHUB_RELEASE_v1.3.0rc4_MOTOR_COUNCIL_DRY_RUN.md`).
+
+### Não alterado
+- Nenhum código de runtime alterado (`src/**` intocado).
+- Nenhum teste alterado (`tests/**` intocado); suíte permanece em 778.
+- Nenhum comando CLI ou chat implementado.
+- Nenhuma tag ou GitHub Release criada; nenhuma publicação no PyPI.
+
 ## [1.3.0rc16] — 2026-07-04 (Motor Council — Fase MC8: orquestrador dry-run)
 
 ### Adicionado (interno, sem wiring de runtime)
