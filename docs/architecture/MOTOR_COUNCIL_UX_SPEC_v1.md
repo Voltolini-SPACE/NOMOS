@@ -20,6 +20,14 @@ ainda não aprovada para implementação. Referencia diretamente
 `docs/architecture/MOTOR_COUNCIL_SPEC_v1.md` (arquitetura/pipeline/modos) e os
 contratos já implementados em `src/nomos/council/*.py` (MC1–MC8).
 
+> **Nota de progresso (MC17-UX).** Parte desta UX já saiu do papel: a CLI
+> `nomos conselho` está registrada e o subcomando `nomos conselho simular`
+> roda em dry-run desde a Fase MC15-UX; o chat `/conselho` está registrado
+> porém desabilitado/fail-closed desde a MC16-UX. A especificação detalhada do
+> **chat dry-run** futuro (`/conselho simular`) — contratos, redaction, flags
+> proibidas, integração com o orquestrador e plano de fases MC18-UX+ — está em
+> `docs/architecture/MOTOR_COUNCIL_CHAT_DRY_RUN_SPEC_v1.md`.
+
 ## 2. Objective
 
 Definir, de forma canônica e implementável posteriormente sem ambiguidade:

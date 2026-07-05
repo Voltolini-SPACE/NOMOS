@@ -2,7 +2,22 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC16-UX: índice, tag, release, alinhamento público, CLI skeleton/dry-run e chat skeleton)
+## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC17-UX: índice, tag, release, alinhamento público, CLI skeleton/dry-run, chat skeleton e chat dry-run spec)
+
+### Documentation (MC17-UX)
+- Added Motor Council chat dry-run command specification for future
+  `/conselho simular` (`docs/architecture/MOTOR_COUNCIL_CHAT_DRY_RUN_SPEC_v1.md`,
+  20 seções): estado atual, contratos de entrada/saída, privacidade/redaction,
+  flags proibidas, failure modes, integração com `CouncilOrchestratorDryRun` e
+  `amigavel.py`, JSON futuro montado à mão (proibido `result.to_dict()`), plano
+  de testes futuros e fases MC18-UX+. Ponteiro adicionado em
+  `MOTOR_COUNCIL_UX_SPEC_v1.md`.
+
+### Not changed (MC17-UX)
+- No functional chat dry-run command enabled (`/conselho` segue desabilitado).
+- No real engine execution enabled.
+- No code/test/workflow changed; suíte permanece em 851.
+- No PyPI publication; nenhuma tag ou release criada.
 
 ### Added (MC16-UX)
 - Added disabled Motor Council chat command skeleton for the future
