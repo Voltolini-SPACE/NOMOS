@@ -3,19 +3,26 @@
 ## 1. Status
 
 ```text
-SPEC_ONLY=true
-IMPLEMENTATION=false
-REFACTOR=false
-API_SKETCH_ONLY=true
-NO_IMPLEMENTATION_IN_MC20=true
+SPEC_ONLY=true               # esta é a spec; o helper foi implementado em MC21
+API_SKETCH_ONLY=true         # (§16 era esboço; a API real está em safe_output.py)
+HELPER_IMPLEMENTED=MC21_DONE
+HELPER_ADOPTED_BY_CLI=false  # migração é MC22
+HELPER_ADOPTED_BY_CHAT=false # migração é MC23
 ```
 
-Este documento é **apenas especificação**. Nenhum helper é criado, nenhum
-código é refatorado, nenhum comportamento de CLI ou chat é alterado, nenhum
-teste é tocado. Ele desenha uma futura unificação segura da lógica de
-**saída/redação** hoje duplicada entre a CLI (`nomos conselho simular`) e o
-chat (`/conselho simular`), para orientar uma fase de refactor posterior
-(MC21+) que **não** deve tocar em nenhuma trava de execução real.
+> **Atualizado em MC21.** O helper especificado aqui **foi implementado** em
+> `src/nomos/council/safe_output.py` (fase MC21), de forma **isolada** — a CLI
+> e o chat **ainda não** o adotaram (migração reservada para MC22/MC23). A API
+> real (`CouncilSafeOutput` + `build_safe_output`/`render_*`) segue o esboço da
+> §16 desta spec; onde a implementação precisou decidir detalhes, o contrato de
+> segurança foi preservado (ver
+> `docs/missions/MOTOR_COUNCIL_MC21_SHARED_REDACTION_HELPER_IMPLEMENTATION.md`).
+
+Este documento é a **especificação canônica** da unificação segura da lógica
+de **saída/redação** hoje duplicada entre a CLI (`nomos conselho simular`) e o
+chat (`/conselho simular`). O helper já existe (MC21); a adoção por cada
+superfície é uma fase de refactor posterior (MC22/MC23) que **não** deve tocar
+em nenhuma trava de execução real.
 
 ## 2. Objective
 

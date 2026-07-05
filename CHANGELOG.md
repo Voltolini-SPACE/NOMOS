@@ -2,7 +2,31 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC20: índice, tag, release, CLI/chat dry-run, alinhamento público e spec de unificação)
+## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC21: índice, tag, release, CLI/chat dry-run, alinhamento público, spec e helper de unificação)
+
+### Added (MC21)
+- Added isolated Motor Council shared safe output/redaction helper
+  (`src/nomos/council/safe_output.py`) for future CLI/chat dry-run
+  unification: `CouncilSafeOutput` (frozen dataclass, 10 campos escalares
+  seguros + `to_json_dict`) e as funções `build_safe_output`/
+  `render_human_output`/`render_json_output`/`render_denied_output`/
+  `render_gate_blocked_output`/`render_exception_output`, parametrizadas por
+  `interface` (`cli`/`chat`).
+
+### Security (MC21)
+- Safe output helper emits only approved scalar fields and fails closed for
+  invalid results: nunca serializa o resultado inteiro do orquestrador (sem
+  `to_dict`/`repr`/`vars`/`asdict`), nunca emite prompt/content/engine_id/
+  secret/token/api_key/trace/audit_envelope, e trava
+  `dry_run=true`/`would_execute=false`/`would_write_audit=false` por
+  construção. `interface`/`mode` inválidos ⇒ `ValueError`; resultado inválido
+  ⇒ `SAFE_OUTPUT_INVALID_RESULT`. 36 testes novos (incl. AST). Suíte: 886 → 922.
+
+### Not changed (MC21)
+- CLI and chat dry-run commands were not migrated yet (`cli_dry_run.py`/
+  `chat_dry_run.py`/`cli.py`/`amigavel.py` intocados).
+- No real engine execution enabled; no runtime behavior changed.
+- No PyPI publication; nenhuma tag ou release criada.
 
 ### Documentation (MC20)
 - Added Motor Council shared output/redaction helper specification for future
