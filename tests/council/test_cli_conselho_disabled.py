@@ -58,8 +58,10 @@ def test_cli_conselho_perguntar_does_not_echo_prompt(capsys):
     assert cli_disabled.DISABLED_CODE in out
 
 
-def test_cli_conselho_simular_does_not_echo_prompt(capsys):
-    rc, out = _run(capsys, "conselho", "simular", _SENSIVEL)
+def test_cli_conselho_disabled_subcommand_does_not_echo_prompt(capsys):
+    # `simular` foi habilitado na MC15 (dry-run); os DEMAIS subcomandos
+    # continuam desabilitados e nunca ecoam o prompt. Usamos `perguntar`.
+    rc, out = _run(capsys, "conselho", "perguntar", _SENSIVEL)
     assert _SENSIVEL not in out
     assert cli_disabled.DISABLED_CODE in out
 
@@ -100,7 +102,8 @@ def test_cli_conselho_does_not_call_harness(capsys, monkeypatch):
         raise AssertionError("harness real não pode ser chamado pela CLI desabilitada")
 
     monkeypatch.setattr(harness.LocalExecutionHarness, "execute", boom)
-    rc, out = _run(capsys, "conselho", "simular", _SENSIVEL)
+    # subcomando desabilitado (`perguntar`) — nunca toca o harness
+    rc, out = _run(capsys, "conselho", "perguntar", _SENSIVEL)
     assert cli_disabled.DISABLED_CODE in out
 
 

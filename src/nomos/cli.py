@@ -1190,16 +1190,16 @@ def cmd_logs(ctx, args) -> int:
 
 
 def cmd_conselho(ctx, args) -> int:
-    """Motor Council CLI — ESQUELETO DESABILITADO (MC14-UX).
+    """Motor Council CLI (MC14/MC15-UX) — fallback de defesa em profundidade.
 
-    Fail-closed: nunca executa o orquestrador, motor, policy/audit/vault reais,
-    nem processa/ecoa o que o usuário digitou. `ctx` e `args` são ignorados de
-    propósito — a mensagem genérica vem do módulo puro
-    `nomos.council.cli_disabled`. (Na prática este handler quase nunca é
-    alcançado: `main()` já curto-circuita `conselho` antes do argparse.)
+    Na prática quase nunca é alcançado: `main()` já curto-circuita `conselho`
+    antes do argparse, roteando para `route_conselho`. Se, por algum motivo, o
+    dispatch chegar aqui, roteia pelos mesmos trilhos: só `simular` roda o
+    orquestrador dry-run; o resto fica DESABILITADO. `ctx` é ignorado de
+    propósito (nunca constrói/usa vault/policy/audit).
     """
-    from nomos.council.cli_disabled import run_disabled
-    return run_disabled()
+    from nomos.council.cli_dry_run import route_conselho
+    return route_conselho(list(getattr(args, "resto", []) or []))
 
 
 # ------------------------- parser -------------------------
@@ -1465,7 +1465,8 @@ def build_parser() -> argparse.ArgumentParser:
     # profundidade caso o curto-circuito seja removido no futuro.
     co = sub.add_parser(
         "conselho",
-        help="Motor Council — pré-release, ainda DESABILITADO (dry-run only)")
+        help=("Motor Council — pré-release; só `simular` (dry-run), demais "
+              "subcomandos DESABILITADOS"))
     co.add_argument("resto", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
     co.set_defaults(fn=cmd_conselho)
 
@@ -1502,15 +1503,15 @@ def cmd_menu(ctx, args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    # MC14-UX: Motor Council CLI desabilitado por construção. Curto-circuito
-    # ANTES do argparse e de _paths(): se o primeiro token é `conselho`, nenhum
-    # subcomando, prompt ou flag é interpretado, e nenhum contexto de kernel
-    # (vault/policy/audit) é sequer construído. Sempre imprime a mensagem
-    # genérica de bloqueio, sem ecoar nada do que o usuário digitou.
+    # MC14/MC15-UX: Motor Council CLI. Curto-circuito ANTES do argparse e de
+    # _paths(): nenhum contexto de kernel (vault/policy/audit) é construído para
+    # o namespace `conselho`. O roteador libera SÓ `conselho simular` (dry-run,
+    # via CouncilOrchestratorDryRun); todo o resto continua DESABILITADO/
+    # fail-closed e nunca ecoa o que o usuário digitou.
     _argv = list(sys.argv[1:] if argv is None else argv)
     if _argv and _argv[0] == "conselho":
-        from nomos.council.cli_disabled import run_disabled
-        return run_disabled()
+        from nomos.council.cli_dry_run import route_conselho
+        return route_conselho(_argv[1:])
 
     args = build_parser().parse_args(argv)
     fn = getattr(args, "fn", None)
