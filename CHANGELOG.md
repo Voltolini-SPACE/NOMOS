@@ -2,7 +2,24 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC15-UX: índice, tag, release, alinhamento público, CLI skeleton e comando dry-run)
+## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC16-UX: índice, tag, release, alinhamento público, CLI skeleton/dry-run e chat skeleton)
+
+### Added (MC16-UX)
+- Added disabled Motor Council chat command skeleton for the future
+  `/conselho` UX. Aparece no `/ajuda` do chat amigável, mas nasce fail-closed:
+  qualquer uso (`/conselho`, `/conselho simular ...`, etc.) devolve
+  `[NOMOS-MC-CHAT-DISABLED]` + `CHAT_ENABLED=false` sem processar/ecoar o texto
+  do usuário. Novo módulo puro `src/nomos/council/chat_disabled.py`
+  (`handle_disabled_chat_command`, constante literal
+  `MOTOR_COUNCIL_CHAT_ENABLED = False`); ramo `/conselho` no loop de
+  `amigavel.py` delega ao handler.
+
+### Security (MC16-UX)
+- Motor Council chat remains fail-closed: no real engine execution, no
+  persistence, no real policy/audit/vault calls, no orchestrator/harness call,
+  no prompt echo, no env enable. Mensagens não relacionadas devolvem `None`.
+  Provado por 23 testes novos (incl. integração pelo loop real e AST de
+  pureza). Suíte: 828 → 851.
 
 ### Added (MC15-UX)
 - Added `nomos conselho simular "texto"` as a redacted dry-run command backed
