@@ -463,9 +463,9 @@ def test_cli_conselho_json_no_forbidden_keys_after_migration(capsys):
         assert chave not in out, chave
 
 
-def test_chat_dry_run_untouched(capsys):
-    # Não-migração do Chat: o módulo do chat NÃO importa o helper compartilhado
-    # (segue com seu código próprio até MC23).
+def test_chat_dry_run_migrated_to_helper_in_mc23(capsys):
+    # Atualizado em MC23: o chat FOI migrado ao helper compartilhado (na MC22
+    # este teste afirmava a não-migração; agora afirma a migração concluída).
     import ast as _ast
 
     from nomos.council import chat_dry_run
@@ -476,7 +476,7 @@ def test_chat_dry_run_untouched(capsys):
             nomes.update(a.name for a in node.names)
         elif isinstance(node, _ast.ImportFrom) and node.module:
             nomes.add(node.module)
-    assert "nomos.council.safe_output" not in nomes
-    # e o chat continua respondendo em dry-run normalmente
+    assert "nomos.council.safe_output" in nomes
+    # e o CLI (migrado na MC22) continua respondendo em dry-run normalmente
     rc, out = _run(capsys, "conselho", "simular", "só para CLI")  # sanity CLI
     assert cli_dry_run.DRY_RUN_CODE in out

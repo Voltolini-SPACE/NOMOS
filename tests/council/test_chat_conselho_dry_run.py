@@ -355,3 +355,140 @@ def test_chat_conselho_module_does_not_import_harness_policy_vault_audit():
 
 def test_chat_conselho_module_does_not_use_result_to_dict_in_source():
     assert "to_dict" not in _fonte()
+
+
+# --------------------------------------------------------------------------
+# MC23 — migração ao helper compartilhado + UX simples
+# --------------------------------------------------------------------------
+
+_JARGAO = ("orchestrator", "orquestrador", "envelope", "scalar", "payload",
+           "safe output", "safe_output", "policy dry-run", "failure_code",
+           "to_dict", "CouncilSafeOutput")
+
+
+def test_chat_conselho_uses_safe_output_helper(monkeypatch):
+    chamadas = {"n": 0}
+    real = chat_dry_run.build_safe_output
+
+    def _spy(*a, **k):
+        chamadas["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(chat_dry_run, "build_safe_output", _spy)
+    _h("/conselho simular uma pergunta")
+    assert chamadas["n"] == 1
+
+
+def test_chat_conselho_module_imports_safe_output_helper():
+    assert "nomos.council.safe_output" in _imports()
+
+
+def test_chat_conselho_json_uses_safe_output_shape():
+    payload = json.loads(_h("/conselho simular texto --json"))
+    assert set(payload.keys()) == {
+        "interface", "dry_run", "allowed", "blocked", "would_execute",
+        "would_write_audit", "private_mode", "persist_allowed", "failure_code",
+        "mode",
+    }
+
+
+def test_chat_conselho_json_contains_interface_and_mode():
+    payload = json.loads(_h("/conselho simular texto --modo critico --json"))
+    assert payload["interface"] == "chat"
+    assert payload["mode"] == "critical"
+
+
+def test_chat_conselho_default_mode_json_balanced():
+    payload = json.loads(_h("/conselho simular texto --json"))
+    assert payload["mode"] == "balanced"
+
+
+def test_chat_conselho_human_output_is_user_friendly():
+    out = _h("/conselho simular texto")
+    assert "Simulação segura concluída." in out
+    assert "Nada foi executado de verdade." in out
+    assert "Nada foi salvo." in out
+    assert "Nenhum dado sensível foi exibido." in out
+
+
+def test_chat_conselho_human_output_avoids_internal_jargon():
+    baixo = _h("/conselho simular texto").lower()
+    for termo in _JARGAO:
+        assert termo.lower() not in baixo, termo
+
+
+def test_chat_conselho_prompt_still_not_echoed_after_migration():
+    assert _SENSIVEL not in _h(f"/conselho simular {_SENSIVEL}")
+    assert _SENSIVEL not in _h(f"/conselho simular {_SENSIVEL} --json")
+
+
+def test_chat_conselho_gate_blocked_safe_after_migration(monkeypatch):
+    from nomos.council import orchestrator as orch
+
+    class _Blocked:
+        allowed = False
+        blocked = True
+        failure_code = orch.OrchestrationFailureCode.ORCH_POLICY_GATE_DENIED
+
+    monkeypatch.setattr(orch.CouncilOrchestratorDryRun, "run",
+                        lambda self, entrada: _Blocked())
+    out = _h(f"/conselho simular {_SENSIVEL}")
+    assert chat_dry_run.GATE_BLOCKED_CODE in out
+    assert "bloqueada por segurança" in out
+    assert _SENSIVEL not in out
+
+
+def test_chat_conselho_denied_safe_after_migration():
+    out = _h(f"/conselho simular {_SENSIVEL} --vault-real")
+    assert chat_dry_run.DENIED_CODE in out
+    assert _SENSIVEL not in out
+    assert "--vault-real" not in out
+
+
+def test_chat_conselho_exception_safe_after_migration(monkeypatch):
+    from nomos.council import orchestrator as orch
+
+    def boom(self, entrada):
+        raise RuntimeError("falha simulada")
+
+    monkeypatch.setattr(orch.CouncilOrchestratorDryRun, "run", boom)
+    out = _h(f"/conselho simular {_SENSIVEL}")
+    assert chat_dry_run.BLOCKED_CODE in out
+    assert _SENSIVEL not in out
+    assert "Traceback" not in out
+
+
+def test_chat_conselho_non_command_still_returns_none_after_migration():
+    for msg in ("oi", "/ajuda", "/conselhoxyz", "", "   ", 42, None):
+        assert chat_dry_run.handle_chat_dry_run(msg) is None
+
+
+def test_chat_conselho_still_no_result_to_dict_after_migration(monkeypatch):
+    from nomos.council import orchestrator as orch
+
+    def boom(self):
+        raise AssertionError("o chat não pode usar result.to_dict() após a migração")
+
+    monkeypatch.setattr(orch.CouncilOrchestrationResult, "to_dict", boom)
+    out = _h("/conselho simular texto --json")
+    assert '"dry_run": true' in out
+
+
+def test_chat_conselho_module_no_result_dump_after_migration():
+    src = _fonte()
+    assert ".to_dict(" not in src
+    assert "repr(" not in src
+    assert "vars(" not in src
+    assert "asdict" not in src
+    assert "json.dumps(result" not in src
+
+
+def test_cli_dry_run_untouched(capsys):
+    # A MC23 migra só o CHAT; o CLI (migrado na MC22) segue funcionando igual,
+    # sem ser alterado nesta fase.
+    from nomos import cli
+    from nomos.council import cli_dry_run
+    cli.main(["conselho", "simular", "só para conferir o CLI"])
+    out = capsys.readouterr().out
+    assert cli_dry_run.DRY_RUN_CODE in out
+    assert "Simulação segura concluída." in out

@@ -1,10 +1,11 @@
-"""Chat command do Motor Council — dry-run `/conselho simular` (MC18-UX).
+"""Chat command do Motor Council — dry-run `/conselho simular` (MC18-UX,
+migrado ao helper compartilhado de saída segura na MC23).
 
 Habilita **apenas** `/conselho simular <texto>` no chat, chamando só o
 `CouncilOrchestratorDryRun` (o orquestrador puro/dry-run de MC8) e devolvendo
-uma resposta **redigida**. Espelha o padrão seguro já usado na CLI
-(`nomos conselho simular`, MC15-UX), mas devolve **strings** (o loop do chat faz
-`say(handle_chat_dry_run(linha))`), não imprime.
+uma resposta **redigida**. Espelha o padrão seguro da CLI
+(`nomos conselho simular`, MC15/MC22), mas devolve **strings** (o loop do chat
+faz `say(handle_chat_dry_run(linha))`), não imprime.
 
 Roteamento:
 
@@ -14,18 +15,21 @@ Roteamento:
 
 Continua: REAL_ENGINE_EXECUTION=false, REAL_POLICY=false, REAL_AUDIT=false,
 REAL_VAULT=false, CLOUD=false, NETWORK=false, SUBPROCESS=false,
-PERSISTENCE=false. Nunca ecoa o prompt; o JSON é montado à mão com escalares
-seguros — o resultado inteiro do orquestrador (trace/envelope/metadados) nunca
-é serializado. Pureza provada por AST: importa só stdlib (`json`) + o
-orquestrador dry-run + o `chat_disabled`; não importa harness/policy/vault/
-audit reais, rede, subprocess, cloud; não toca FS/env; não usa relógio nem
-aleatoriedade.
+PERSISTENCE=false. A ESTRUTURA segura e o JSON vêm do helper compartilhado
+`nomos.council.safe_output` (MC23): `build_safe_output` + `render_json_output`,
+então o resultado do orquestrador nunca é serializado nem lido além de
+`allowed`/`blocked`/`failure_code` (isolado no helper). As mensagens **humanas**
+são específicas do chat e simples/amigáveis (sem jargão), montadas só a partir
+dos campos escalares seguros — nunca do prompt. Pureza provada por AST: importa
+só o `chat_disabled`, o helper de saída segura e (tardiamente) o orquestrador
+dry-run; não importa harness/policy/vault/audit reais, rede, subprocess, cloud;
+não toca FS/env; não usa relógio/aleatoriedade; não serializa/representa o
+resultado bruto.
 """
 from __future__ import annotations
 
-import json
-
 from nomos.council.chat_disabled import disabled_message, is_conselho_command
+from nomos.council.safe_output import build_safe_output, render_json_output
 
 # --------------------------------------------------------------------------
 # Códigos legíveis (estáveis para o usuário/testes)
@@ -52,8 +56,19 @@ _FORBIDDEN_FLAGS = {
     "--audit-real", "--policy-real", "--vault-real", "--engine-real",
 }
 
-_DRY_RUN_MESSAGE = (
-    "[NOMOS-MC-CHAT-DRY-RUN] Conselho simulado com segurança.\n"
+# MC23: a ESTRUTURA segura e o JSON vêm do helper compartilhado
+# (`safe_output`). As mensagens HUMANAS abaixo são específicas do chat e
+# **simples/amigáveis** (sem jargão), montadas só a partir dos campos escalares
+# seguros — nunca do prompt/resultado bruto. O bloco técnico (`DRY_RUN=true`/
+# `REAL_*`) fica sob "Status:" para quem quiser conferir.
+_SUCESSO_MESSAGE = (
+    "[NOMOS-MC-CHAT-DRY-RUN] Simulação segura concluída.\n"
+    "\n"
+    "Nada foi executado de verdade.\n"
+    "Nada foi salvo.\n"
+    "Nenhum dado sensível foi exibido.\n"
+    "\n"
+    "Status:\n"
     "DRY_RUN=true\n"
     "REAL_ENGINE_EXECUTION=false\n"
     "REAL_POLICY=false\n"
@@ -63,50 +78,41 @@ _DRY_RUN_MESSAGE = (
 )
 
 _GATE_BLOCKED_MESSAGE = (
-    "[NOMOS-MC-CHAT-GATE-BLOCKED] Resposta bloqueada pelo Policy Gate dry-run.\n"
+    "[NOMOS-MC-CHAT-GATE-BLOCKED] A simulação foi bloqueada por segurança.\n"
+    "\n"
     "Nada foi executado.\n"
-    "Nada foi persistido.\n"
-    "Conteúdo bloqueado não será exibido."
+    "Nada foi salvo.\n"
+    "O conteúdo bloqueado não será exibido."
+)
+
+_BLOQUEIO_MESSAGE = (
+    "[NOMOS-MC-CHAT-BLOCKED] Não consegui simular com segurança agora.\n"
+    "\n"
+    "Nada foi executado.\n"
+    "Nada foi salvo."
 )
 
 
 def _deny(motivo: str) -> str:
-    """Recusa fail-closed. `motivo` é texto FIXO interno; nunca inclui o prompt
-    ou qualquer token digitado pelo usuário."""
+    """Recusa fail-closed, com mensagem simples e amigável. `motivo` é texto
+    FIXO interno; nunca inclui o prompt ou qualquer token digitado pelo
+    usuário."""
     return (f"{DENIED_CODE} {motivo}\n"
+            "\n"
             "Nada foi executado.\n"
-            "Nada foi persistido.")
+            "Nada foi salvo.")
 
 
-def _render_json(allowed: bool, blocked: bool, private_mode: bool,
-                 failure_code) -> str:
-    # Payload MÍNIMO montado só de escalares — nunca serializa
-    # trace/final_envelope/audit_result, então não há como vazar
-    # prompt/conteúdo/engine_id.
-    payload = {
-        "dry_run": True,
-        "allowed": bool(allowed),
-        "blocked": bool(blocked),
-        "would_execute": False,
-        "would_write_audit": False,
-        "private_mode": bool(private_mode),
-        "persist_allowed": (not private_mode),
-        "failure_code": failure_code,
-    }
-    return json.dumps(payload, sort_keys=True, ensure_ascii=False)
-
-
-def _render_human(allowed: bool, failure_code) -> str:
-    if allowed:
-        return _DRY_RUN_MESSAGE
-    if failure_code == "ORCH_POLICY_GATE_DENIED":
+def _render_human(output) -> str:
+    """Saída humana simples/amigável, lendo SÓ os campos escalares seguros do
+    `CouncilSafeOutput` — nunca o resultado bruto do orquestrador."""
+    if output.allowed:
+        return _SUCESSO_MESSAGE
+    if output.failure_code == "ORCH_POLICY_GATE_DENIED":
         return _GATE_BLOCKED_MESSAGE
-    # Outro bloqueio (sem candidatos, provider, etc.): mensagem segura, sem
-    # conteúdo bruto; só o código de falha (um enum, nunca prompt/conteúdo).
-    return (f"{BLOCKED_CODE} Simulação bloqueada (fail-closed).\n"
-            "Nada foi executado.\n"
-            "Nada foi persistido.\n"
-            f"failure_code={failure_code}")
+    # Outro bloqueio (sem motor elegível, etc.): mensagem simples e segura, sem
+    # conteúdo bruto e sem jargão (o código técnico fica só no --json).
+    return _BLOQUEIO_MESSAGE
 
 
 def _simular(tokens: list) -> str:
@@ -125,10 +131,10 @@ def _simular(tokens: list) -> str:
     while i < n:
         tok = tokens[i]
         if tok in _FORBIDDEN_FLAGS:
-            return _deny("Flag não permitida para Motor Council Chat.")
+            return _deny("Este comando não pode ser usado com essa opção.")
         if tok == "--modo":
             if i + 1 >= n:
-                return _deny("--modo exige um valor: rapido|balanceado|critico|paranoico.")
+                return _deny("Diga qual modo: rapido, balanceado, critico ou paranoico.")
             modo_pt = tokens[i + 1]
             i += 2
             continue
@@ -146,13 +152,13 @@ def _simular(tokens: list) -> str:
             continue
         if tok.startswith("--"):
             # qualquer outra flag desconhecida: fail-closed, sem ecoar o token
-            return _deny("Flag desconhecida (dry-run only).")
+            return _deny("Essa opção não existe para este comando.")
         prompt_parts.append(tok)
         i += 1
 
     if modo_pt not in _MODE_MAP:
         # não ecoa o valor inválido
-        return _deny("Modo inválido. Use: rapido|balanceado|critico|paranoico.")
+        return _deny("Esse modo não existe. Use: rapido, balanceado, critico ou paranoico.")
     modo_interno = _MODE_MAP[modo_pt]
     if modo_pt == "paranoico":
         # paranoico implica modo privado (contrato de UX)
@@ -160,7 +166,7 @@ def _simular(tokens: list) -> str:
 
     prompt = " ".join(prompt_parts).strip()
     if not prompt:
-        return _deny("simular exige um texto, ex.: /conselho simular sua pergunta.")
+        return _deny("Escreva o que você quer simular. Ex.: /conselho simular sua pergunta.")
 
     # Import tardio: o orquestrador (dry-run puro, MC8) só é importado no
     # caminho realmente usado.
@@ -176,19 +182,18 @@ def _simular(tokens: list) -> str:
         resultado = CouncilOrchestratorDryRun().run(entrada)
     except Exception:
         # Nunca vaza traceback nem prompt; falha do orquestrador vira bloqueio
-        # seguro fail-closed.
-        return (f"{BLOCKED_CODE} Não foi possível simular com segurança (fail-closed).\n"
-                "Nada foi executado.\n"
-                "Nada foi persistido.")
+        # seguro fail-closed (mensagem simples e amigável).
+        return _BLOQUEIO_MESSAGE
 
-    allowed = bool(getattr(resultado, "allowed", False))
-    blocked = bool(getattr(resultado, "blocked", not allowed))
-    fc = getattr(resultado, "failure_code", None)
-    failure_code = fc.value if fc is not None and hasattr(fc, "value") else fc
+    # MC23: a estrutura segura e o JSON vêm do helper compartilhado. O `output`
+    # só carrega escalares seguros; o resultado bruto nunca é serializado nem
+    # lido além de allowed/blocked/failure_code (feito dentro do helper).
+    output = build_safe_output(
+        resultado, interface="chat", mode=modo_interno, private_mode=privado)
 
     if as_json:
-        return _render_json(allowed, blocked, privado, failure_code)
-    return _render_human(allowed, failure_code)
+        return render_json_output(output)
+    return _render_human(output)
 
 
 def handle_chat_dry_run(message: object) -> str | None:
