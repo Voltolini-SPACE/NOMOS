@@ -255,6 +255,26 @@ def test_chat_conselho_amigavel_integration_dry_run(tmp_path):
     assert _SENSIVEL not in saida
 
 
+def test_chat_ajuda_mentions_conselho_simular_dry_run(tmp_path):
+    # MC19: o /ajuda do chat deve refletir que `/conselho simular` roda dry-run.
+    saida = _chat(["/ajuda", "/sair"], tmp_path).lower()
+    assert "/conselho simular" in saida
+    assert "dry-run" in saida
+
+
+def test_cli_help_mentions_conselho_simular_dry_run(capsys):
+    # MC19: o `nomos --help` deve indicar que `conselho simular` roda dry-run.
+    import pytest as _pytest
+
+    from nomos import cli
+    with _pytest.raises(SystemExit):
+        cli.main(["--help"])
+    out = capsys.readouterr().out.lower()
+    assert "conselho" in out
+    assert "simular" in out
+    assert "dry-run" in out
+
+
 def test_chat_conselho_amigavel_integration_disabled_routes(tmp_path):
     saida = _chat(["/conselho perguntar " + _SENSIVEL, "/sair"], tmp_path)
     assert "[NOMOS-MC-CHAT-DISABLED]" in saida

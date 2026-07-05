@@ -39,7 +39,7 @@ AJUDA = """comandos:
   /fixar                    marco esta conversa como importante (não expira)
   /privado                  modo efêmero: esta conversa NÃO é gravada em disco
   /nuvem <pergunta>         respondo usando a nuvem (peço permissão antes)
-  /conselho                 Motor Council (pré-release, ainda DESABILITADO)
+  /conselho simular <texto> Motor Council em dry-run (simula, sem execução real)
   /status                   como estou por dentro
   /ajuda                    esta lista
   /sair                     até logo"""

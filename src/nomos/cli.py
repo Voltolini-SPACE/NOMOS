@@ -1458,11 +1458,11 @@ def build_parser() -> argparse.ArgumentParser:
     for mp in (m1, m2, m3, m4, m5, m6, m7, m8):
         mp.set_defaults(fn=cmd_memory)
 
-    # MC14-UX: Motor Council — comando registrado, porém DESABILITADO por
-    # construção (fail-closed). Aparece no --help para descoberta, mas qualquer
-    # uso é curto-circuitado em main() para a mensagem de bloqueio, sem
-    # interpretar subcomando/prompt/flags. O REMAINDER + fn são só defesa em
-    # profundidade caso o curto-circuito seja removido no futuro.
+    # MC14/MC15-UX: Motor Council — comando registrado. `main()` curto-circuita
+    # `conselho` antes do argparse, roteando para `route_conselho`, que libera
+    # SÓ `conselho simular` (dry-run) e mantém os demais subcomandos
+    # DESABILITADOS/fail-closed. Aparece no --help para descoberta. O REMAINDER
+    # + fn são só defesa em profundidade caso o curto-circuito seja removido.
     co = sub.add_parser(
         "conselho",
         help=("Motor Council — pré-release; só `simular` (dry-run), demais "
