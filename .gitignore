@@ -17,3 +17,7 @@ build/
 .cov*
 htmlcov/
 .mypy_cache/
+# sdist/build extraction dirs (ex.: nomos-1.3.0rc16/) — artefatos de build, nunca versionar
+/nomos-[0-9]*/
+# macOS metadata
+.DS_Store
