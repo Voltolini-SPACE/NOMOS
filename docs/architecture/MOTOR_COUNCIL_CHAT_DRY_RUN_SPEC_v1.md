@@ -7,7 +7,16 @@ SPEC_CREATED=true
 IMPLEMENTATION=MC18_DONE
 CHAT_DRY_RUN_ENABLED=true
 REAL_ENGINE_EXECUTION=false
+OUTPUT_MIGRATED_TO_SHARED_HELPER=MC23_DONE
 ```
+
+> **Atualizado em MC23.** A saída/redação do `/conselho simular` foi migrada
+> para o helper compartilhado `nomos.council.safe_output`
+> (`build_safe_output` + `render_json_output`), igual ao CLI (MC22): o
+> resultado do orquestrador nunca é serializado e o `--json` agora tem 10
+> campos (`+interface`/`+mode`). A resposta humana ficou mais simples/amigável.
+> As garantias de segurança abaixo continuam valendo e testadas. Ver
+> `docs/missions/MOTOR_COUNCIL_MC23_CHAT_MIGRATION_SAFE_OUTPUT.md`.
 
 > **Atualizado em MC19.** Esta spec nasceu SPEC-only (MC17-UX) e **foi
 > implementada na Fase MC18-UX**: `/conselho simular <texto>` roda em dry-run

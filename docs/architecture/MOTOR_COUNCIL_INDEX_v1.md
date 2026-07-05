@@ -48,10 +48,12 @@ PRODUCTION_READY=false
 MC20_SHARED_REDACTION_OUTPUT_SPEC=PASS
 MC21_SHARED_REDACTION_HELPER_IMPLEMENTATION=PASS
 MC22_CLI_MIGRATION_SAFE_OUTPUT=PASS
+MC23_CHAT_MIGRATION_SAFE_OUTPUT=PASS
 SHARED_HELPER_IMPLEMENTED=true        # src/nomos/council/safe_output.py
 SHARED_HELPER_ADOPTED_BY_CLI=true     # nomos conselho simular (MC22)
-SHARED_HELPER_ADOPTED_BY_CHAT=false   # migração é MC23
-CLI_CHAT_DUPLICATION=KNOWN_CONTROLLED # reduzida no CLI; chat pendente (MC23)
+SHARED_HELPER_ADOPTED_BY_CHAT=true    # /conselho simular (MC23)
+CLI_CHAT_SECURITY_DUPLICATION=RESOLVED # ambas usam o helper; resta só texto humano por superfície
+FORBIDDEN_FLAGS_RECONCILED=false      # CLI 8 vs chat 10 — reservado para MC24
 ```
 
 > A duplicação controlada entre `cli_dry_run.py` e `chat_dry_run.py` está

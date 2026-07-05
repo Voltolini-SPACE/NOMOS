@@ -2,7 +2,33 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC22: índice, tag, release, CLI/chat dry-run, alinhamento, helper e migração da CLI)
+## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC23: índice, tag, release, CLI/chat dry-run, alinhamento, helper e migração de CLI+chat)
+
+### Changed (MC23)
+- Migrated the Motor Council chat dry-run output to the shared safe output
+  helper: `/conselho simular` agora usa `build_safe_output` +
+  `render_json_output` (`src/nomos/council/safe_output.py`) como fonte da
+  estrutura segura e do JSON, em vez de montar o JSON à mão. O `--json` do chat
+  passou de 8 para 10 campos (adição compatível de `interface`/`mode`),
+  alinhando com o CLI (MC22).
+- Improved chat dry-run human messages for non-technical users: resposta mais
+  simples e amigável ("Simulação segura concluída. Nada foi executado de
+  verdade. Nada foi salvo. Nenhum dado sensível foi exibido."), sem jargão; o
+  bloco técnico `DRY_RUN=true`/`REAL_*` fica sob "Status:" e os detalhes
+  completos no `--json`.
+
+### Security (MC23)
+- Chat dry-run output remains redacted and emits only approved safe scalar
+  fields: o prompt nunca é ecoado, o resultado do orquestrador nunca é
+  serializado (sem `to_dict`/`repr`/`vars`/`asdict`), mensagens não-`/conselho`
+  seguem retornando `None` e o harness/policy/vault/audit reais não são
+  chamados. 15 testes novos (migração + UX + regressão). Suíte: 937 → 952.
+
+### Not changed (MC23)
+- CLI dry-run was not changed in this phase (`cli_dry_run.py`/`cli.py` intocados)
+  e o helper `safe_output.py` não foi alterado.
+- No real engine execution enabled.
+- No PyPI publication; nenhuma tag ou release criada.
 
 ### Changed (MC22)
 - Migrated the Motor Council CLI dry-run output to the shared safe output
