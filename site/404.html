@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex">
+    <meta name="theme-color" content="#0A0F0D">
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    <title>404 — página não encontrada · NOMOS</title>
+    <style>
+        :root { --bg:#0A0F0D; --surface:#111814; --line:#24382a; --neon:#5AF78E; --neon-dim:#2BD968; --texto:#E8FFE8; --texto2:#9fb8a5; --fraco:#6f8a76; --glow:0 0 12px rgba(90,247,142,.35); }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            background:var(--bg); color:var(--texto);
+            font-family:'JetBrains Mono','IBM Plex Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+            min-height:100vh; display:flex; align-items:center; justify-content:center; padding:2rem;
+        }
+        .box { max-width:560px; width:100%; }
+        .term { background:#0d130f; border:1px solid var(--line); border-radius:8px; padding:22px 24px; }
+        .termbar { color:var(--fraco); font-size:12px; margin-bottom:14px; }
+        .code { color:var(--neon); text-shadow:var(--glow); font-size:3.4rem; font-weight:700; line-height:1; }
+        h1 { font-size:1.15rem; margin:0.8rem 0 0.4rem; color:var(--texto); font-weight:700; }
+        p { color:var(--texto2); margin-bottom:1.6rem; line-height:1.6; font-size:0.95rem; }
+        .prompt { color:var(--neon-dim); }
+        a.btn { display:inline-block; background:var(--neon); color:#06120b; text-decoration:none; padding:0.75rem 1.5rem; border-radius:8px; font-weight:700; }
+        a.btn:hover { box-shadow:var(--glow); }
+        .tag { color:var(--neon); margin-top:1.6rem; display:block; font-size:0.85rem; }
+        a:focus-visible { outline:3px solid var(--neon); outline-offset:2px; }
+    </style>
+</head>
+<body>
+    <main class="box">
+        <div class="term">
+            <div class="termbar">~/nomos — 404</div>
+            <div class="prompt">$ nomos abrir --pagina</div>
+            <div class="code">404</div>
+            <h1>página não encontrada</h1>
+            <p>A rota que você pediu não existe neste host. Volte para a página inicial do NOMOS.</p>
+            <a class="btn" href="index.html">Voltar ao início</a>
+            <span class="tag">NOMOS — local por lei.</span>
+        </div>
+    </main>
+</body>
+</html>

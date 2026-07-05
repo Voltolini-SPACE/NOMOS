@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="NOMOS">
+  <title>NOMOS</title>
+  <!-- Brandbook v1.0 congelado: verde-neon #5AF78E sobre preto terminal #0A0F0D -->
+  <rect width="64" height="64" rx="12" fill="#0A0F0D"/>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="10.5" fill="none" stroke="#24382a" stroke-width="1.5"/>
+  <!-- símbolo N em blocos (evoca o logo ASCII shadow) -->
+  <g fill="#5AF78E">
+    <rect x="16" y="16" width="8" height="32"/>
+    <rect x="40" y="16" width="8" height="32"/>
+    <polygon points="24,16 31,16 48,40 48,48 41,48 24,24"/>
+  </g>
+</svg>

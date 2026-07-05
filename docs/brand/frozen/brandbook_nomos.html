@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="pt-br" data-tema="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0A0F0D">
+<title>NOMOS — Brandbook v1.0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0A0F0D; --surface:#111814; --surface2:#0d130f; --line:#24382a; --line2:#1a2820;
+  --neon:#5AF78E; --neon-dim:#2BD968; --texto:#E8FFE8; --texto2:#9fb8a5; --fraco:#6f8a76;
+  --rosa:#FF5FA2; --ciano:#56E1E9; --amarelo:#F2C14E; --vermelho:#FF5C57;
+  --glow:0 0 8px rgba(90,247,142,.35);
+}
+html[data-tema="light"]{
+  --bg:#F3F1E7; --surface:#ffffff; --surface2:#eceadf; --line:#cfc8b0; --line2:#ddd7c2;
+  --neon:#0f7a3d; --neon-dim:#0c6231; --texto:#1c241c; --texto2:#4a5a4a; --fraco:#7a8a7a;
+  --rosa:#c02e77; --ciano:#0b7d86; --amarelo:#9a6b00; --vermelho:#b3271f; --glow:none;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--texto);
+  font-family:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1000px;margin:0 auto;padding:0 20px}
+a{color:var(--ciano)}
+header.top{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;justify-content:space-between;padding:12px 20px}
+.top .brand{color:var(--neon);font-weight:700;letter-spacing:1px;text-shadow:var(--glow)}
+.top nav{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px}
+.top nav a{color:var(--texto2);text-decoration:none}
+.top nav a:hover{color:var(--neon)}
+button.toggle{background:transparent;border:1px solid var(--line);color:var(--texto);
+  font-family:inherit;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12.5px}
+button.toggle:hover{border-color:var(--neon);color:var(--neon)}
+section{padding:56px 0 8px;border-top:1px solid var(--line2)}
+section:first-of-type{border-top:none}
+.tag{color:var(--fraco);font-size:12px;letter-spacing:2px;text-transform:uppercase}
+h1{font-size:clamp(28px,6vw,46px);line-height:1.1;margin:.2em 0;font-weight:700}
+h2{font-size:clamp(20px,3.4vw,26px);color:var(--neon);margin:.2em 0 .6em;text-shadow:var(--glow)}
+h3{font-size:16px;color:var(--texto);margin:1.4em 0 .4em}
+p{color:var(--texto2);max-width:70ch}
+.hl{color:var(--neon)} .rosa{color:var(--rosa)} .ciano{color:var(--ciano)} .amarelo{color:var(--amarelo)}
+pre.logo{color:var(--neon);text-shadow:var(--glow);font-size:clamp(6px,1.9vw,13px);line-height:1.05;margin:14px 0;overflow-x:auto}
+.term{background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:16px 18px;overflow-x:auto;font-size:13px;line-height:1.5}
+.termbar{color:var(--fraco);font-size:12px;margin-bottom:10px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+.sw{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.sw .chip{height:70px}
+.sw .meta{padding:8px 10px;font-size:11.5px;background:var(--surface)}
+.sw .meta b{color:var(--texto);font-weight:500}
+.sw .meta span{color:var(--fraco);display:block}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line2);vertical-align:top}
+th{color:var(--neon);font-weight:500}
+td .k{color:var(--rosa)}
+.do{border-left:3px solid var(--neon)} .dont{border-left:3px solid var(--vermelho)}
+.do h3{color:var(--neon)} .dont h3{color:var(--vermelho)}
+ul{color:var(--texto2);padding-left:1.1em} li{margin:.2em 0}
+.badge{display:inline-block;border:1px solid var(--line);border-radius:20px;padding:2px 12px;font-size:12px;color:var(--texto2);margin:2px}
+.kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:1px 7px;font-size:12px;color:var(--texto)}
+footer{padding:40px 0;color:var(--fraco);font-size:12.5px;border-top:1px solid var(--line);margin-top:40px}
+.cursor::after{content:"▋";color:var(--neon);animation:blink 1s step-end infinite}
+@keyframes blink{50%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.cursor::after{animation:none}}
+@media (max-width:900px){.top nav{display:none}.wrap{padding:0 16px}section{padding:44px 0 8px}}
+@media (max-width:600px){h1{font-size:30px}.term{font-size:11.5px}.top{padding:10px 14px}}
+@media (max-width:400px){body{font-size:14px}.term{font-size:10.5px}h2{font-size:19px}.badge{font-size:11px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <span class="brand">◤ NOMOS</span>
+  <nav>
+    <a href="#manifesto">manifesto</a>
+    <a href="#logo">logo</a>
+    <a href="#cores">cores</a>
+    <a href="#tipografia">tipografia</a>
+    <a href="#terminal">terminal</a>
+    <a href="#voz">voz</a>
+    <a href="#regras">regras</a>
+  </nav>
+  <button class="toggle" id="tg" onclick="tema()">◐ tema</button>
+</header>
+<div class="wrap">
+<section id="capa">
+  <span class="tag">Brandbook v1.0 · congelado</span>
+  <pre class="logo">
+███╗   ██╗ ██████╗ ███╗   ███╗ ██████╗ ███████╗
+████╗  ██║██╔═══██╗████╗ ████║██╔═══██╗██╔════╝
+██╔██╗ ██║██║   ██║██╔████╔██║██║   ██║███████╗
+██║╚██╗██║██║   ██║██║╚██╔╝██║██║   ██║╚════██║
+██║ ╚████║╚██████╔╝██║ ╚═╝ ██║╚██████╔╝███████║
+╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝ ╚═════╝ ╚══════╝</pre>
+  <h1>Seu agente. Sua máquina.<br><span class="hl">Suas regras.</span></h1>
+  <p>Manual de marca do NOMOS — o agente pessoal que roda 100% no seu computador.
+  Este documento aplica a própria identidade que descreve: monoespaçado, verde sobre
+  preto, direto como um terminal.</p>
+  <p style="margin-top:18px"><span class="badge">local por lei</span><span class="badge">fail-closed</span><span class="badge">sem telemetria</span><span class="badge">open by design</span></p>
+</section>
+
+<section id="manifesto">
+  <span class="tag">01 · Manifesto</span>
+  <h2>O que é o NOMOS</h2>
+  <p><span class="hl">NOMOS</span> vem do grego <span class="ciano">νόμος</span> — "a lei", a ordem,
+  a norma que a comunidade dá a si mesma. É o nome certo para um agente cuja primeira lealdade
+  é a você: ele obedece à sua permissão, guarda tudo na sua máquina e não faz nada às escondidas.</p>
+  <p>A maioria dos assistentes de IA mora na nuvem de outra pessoa. O NOMOS inverte isso:
+  o cérebro, a memória, as chaves e os registros ficam no seu computador. A nuvem existe só
+  como uma <span class="rosa">tomada opcional</span> que você pluga de propósito — nunca por padrão.</p>
+  <div class="grid g3" style="margin-top:20px">
+    <div class="card"><h3 class="hl">🔒 Local por lei</h3><p>Por padrão, nada sai da sua máquina. A própria política nega qualquer saída para a internet.</p></div>
+    <div class="card"><h3 class="hl">✋ Pede licença</h3><p>Toda ação sensível passa por uma aprovação sua, digitada e explícita. Não existe atalho.</p></div>
+    <div class="card"><h3 class="hl">🎯 Nunca finge</h3><p>Sem um cérebro conectado, ele diz que está em modo demo — jamais inventa uma resposta.</p></div>
+  </div>
+</section>
+
+<section id="nome">
+  <span class="tag">02 · O nome</span>
+  <h2>NOMOS</h2>
+  <table>
+    <tr><th>Elemento</th><th>Definição</th></tr>
+    <tr><td class="k">Nome</td><td>NOMOS — sempre em caixa alta quando é a marca.</td></tr>
+    <tr><td class="k">Origem</td><td>Grego νόμος: lei, ordem, norma dada por uma comunidade.</td></tr>
+    <tr><td class="k">Categoria</td><td>Agente pessoal local (personal agent foundry).</td></tr>
+    <tr><td class="k">Tagline</td><td>Seu agente. Sua máquina. Suas regras.</td></tr>
+    <tr><td class="k">Assinatura curta</td><td>local por lei</td></tr>
+    <tr><td class="k">Pronúncia</td><td>"nó-mos"</td></tr>
+  </table>
+</section>
+
+<section id="logo">
+  <span class="tag">03 · Logo</span>
+  <h2>Construção do logo</h2>
+  <p>O logotipo é tipográfico, construído em blocos (estilo ANSI shadow) — a letra desenhada
+  pelo próprio terminal. Verde-neon com leve brilho, sempre sobre fundo escuro.</p>
+  <div class="term"><div class="termbar">logo primário · fundo escuro</div>
+  <pre class="logo" style="margin:0">
+███╗   ██╗ ██████╗ ███╗   ███╗ ██████╗ ███████╗
+████╗  ██║██╔═══██╗████╗ ████║██╔═══██╗██╔════╝
+██╔██╗ ██║██║   ██║██╔████╔██║██║   ██║███████╗
+██║╚██╗██║██║   ██║██║╚██╔╝██║██║   ██║╚════██║
+██║ ╚████║╚██████╔╝██║ ╚═╝ ██║╚██████╔╝███████║
+╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝ ╚═════╝ ╚══════╝</pre></div>
+  <h3>Símbolo (o "N")</h3>
+  <p>Para favicons, avatares e espaços pequenos, usa-se o bloco do <span class="hl">N</span>
+  ou a marca curta <span class="hl">◤ NOMOS</span>.</p>
+  <div class="term" style="max-width:220px"><pre class="logo" style="margin:0;font-size:12px">
+███╗   ██╗
+████╗  ██║
+██╔██╗ ██║
+██║╚██╗██║
+██║ ╚████║
+╚═╝  ╚═══╝</pre></div>
+  <h3>Assinatura de linha (prompt)</h3>
+  <div class="term"><span style="color:var(--ciano)">v0.9.0</span> <span style="color:var(--texto2)">~/nomos</span> <span class="hl">local</span>:<span class="rosa">(só-local 🔒)</span> <span style="color:var(--texto2)">$</span> <span style="color:var(--texto)">nomos</span><span class="cursor"></span></div>
+</section>
+
+<section id="respiro">
+  <span class="tag">04 · Área de respiro e usos incorretos</span>
+  <h2>Como (não) usar o logo</h2>
+  <div class="grid g2">
+    <div class="card do"><h3>✓ Faça</h3><ul>
+      <li>Verde-neon sobre fundo escuro (preferencial).</li>
+      <li>Respiro mínimo = altura de um bloco ao redor.</li>
+      <li>Monocromático branco ou preto quando faltar cor.</li>
+      <li>Manter a proporção dos blocos (nunca esticar).</li>
+    </ul></div>
+    <div class="card dont"><h3>✗ Não faça</h3><ul>
+      <li>Não recolorir com gradientes ou fora da paleta.</li>
+      <li>Não usar sobre fundos claros ruidosos sem contraste.</li>
+      <li>Não trocar a fonte por uma não-monoespaçada.</li>
+      <li>Não adicionar sombra pesada, 3D ou contorno duplo.</li>
+    </ul></div>
+  </div>
+</section>
+<section id="cores">
+  <span class="tag">05 · Paleta</span>
+  <h2>Cores</h2>
+  <p>Base preta esverdeada, verde-neon como voz principal, e dois acentos vivos
+  (rosa e ciano) herdados do prompt do terminal. Amarelo e vermelho só para aviso e erro.</p>
+  <div class="grid g4">
+    <div class="sw"><div class="chip" style="background:#0A0F0D;border-bottom:1px solid #24382a"></div><div class="meta"><b>Preto terminal</b><span>#0A0F0D · fundo</span></div></div>
+    <div class="sw"><div class="chip" style="background:#111814"></div><div class="meta"><b>Superfície</b><span>#111814 · caixas</span></div></div>
+    <div class="sw"><div class="chip" style="background:#5AF78E"></div><div class="meta"><b>Verde-neon</b><span>#5AF78E · marca</span></div></div>
+    <div class="sw"><div class="chip" style="background:#2BD968"></div><div class="meta"><b>Verde-borda</b><span>#2BD968 · traço</span></div></div>
+    <div class="sw"><div class="chip" style="background:#E8FFE8"></div><div class="meta"><b>Branco-terminal</b><span>#E8FFE8 · texto</span></div></div>
+    <div class="sw"><div class="chip" style="background:#FF5FA2"></div><div class="meta"><b>Rosa</b><span>#FF5FA2 · acento</span></div></div>
+    <div class="sw"><div class="chip" style="background:#56E1E9"></div><div class="meta"><b>Ciano</b><span>#56E1E9 · acento</span></div></div>
+    <div class="sw"><div class="chip" style="background:#F2C14E"></div><div class="meta"><b>Amarelo</b><span>#F2C14E · aviso</span></div></div>
+    <div class="sw"><div class="chip" style="background:#FF5C57"></div><div class="meta"><b>Vermelho</b><span>#FF5C57 · erro</span></div></div>
+    <div class="sw"><div class="chip" style="background:#6f8a76"></div><div class="meta"><b>Cinza-verde</b><span>#6F8A76 · secundário</span></div></div>
+  </div>
+  <h3>Mapa para as cores do terminal (ANSI)</h3>
+  <p>O software usa cores ANSI padrão — o brandbook e o produto falam a mesma língua.
+  As paletas do comando <span class="rosa">nomos tema</span> derivam daqui.</p>
+  <table>
+    <tr><th>Papel</th><th>Cor ANSI</th><th>Uso</th></tr>
+    <tr><td class="k">destaque</td><td class="ciano">ciano / verde</td><td>prompt "você&gt;", títulos, nome do agente</td></tr>
+    <tr><td class="k">sucesso</td><td class="hl">verde</td><td>✓ confirmações, "guardei sua chave"</td></tr>
+    <tr><td class="k">aviso</td><td class="amarelo">amarelo</td><td>! permissão necessária, atenção</td></tr>
+    <tr><td class="k">erro</td><td style="color:var(--vermelho)">vermelho</td><td>✗ negado, falha</td></tr>
+    <tr><td class="k">fraco</td><td style="color:var(--fraco)">cinza</td><td>dicas, texto secundário</td></tr>
+  </table>
+</section>
+
+<section id="tipografia">
+  <span class="tag">06 · Tipografia</span>
+  <h2>Fonte única: monoespaçada</h2>
+  <p>Tudo no NOMOS é monoespaçado — é o que faz parecer terminal. Recomendada:
+  <span class="hl">JetBrains Mono</span>. Alternativas: IBM Plex Mono, SF Mono, Menlo, Consolas.</p>
+  <div class="card">
+    <div style="font-size:26px;color:var(--neon);text-shadow:var(--glow)">NOMOS abcdefg 0123456789</div>
+    <div style="font-size:19px;color:var(--texto);margin-top:8px">Título · peso 700</div>
+    <div style="font-size:15px;color:var(--texto2);margin-top:6px">Corpo · peso 400 — o agente que roda na sua máquina.</div>
+    <div style="font-size:12.5px;color:var(--fraco);margin-top:6px">Secundário · peso 400 — dica, rodapé, metadado.</div>
+  </div>
+  <h3>Hierarquia</h3>
+  <table>
+    <tr><th>Nível</th><th>Tamanho</th><th>Peso</th><th>Cor</th></tr>
+    <tr><td class="k">Logo/H1</td><td>28–46px</td><td>700</td><td>verde-neon</td></tr>
+    <tr><td class="k">Seção/H2</td><td>20–26px</td><td>700</td><td>verde-neon</td></tr>
+    <tr><td class="k">Corpo</td><td>15px</td><td>400</td><td>branco-terminal</td></tr>
+    <tr><td class="k">Metadado</td><td>12.5px</td><td>400</td><td>cinza-verde</td></tr>
+  </table>
+</section>
+
+<section id="terminal">
+  <span class="tag">07 · Componentes de terminal</span>
+  <h2>A interface é a marca</h2>
+  <p>Estes blocos são o coração visual do NOMOS. Reaproveite-os em telas, docs e social.</p>
+
+  <h3>Banner de abertura</h3>
+  <div class="term"><div class="termbar">$ nomos</div>
+  <pre class="logo" style="margin:0 0 8px;font-size:11px">
+███╗   ██╗ ██████╗ ███╗   ███╗ ██████╗ ███████╗
+████╗  ██║██╔═══██╗████╗ ████║██╔═══██╗██╔════╝
+██╔██╗ ██║██║   ██║██╔████╔██║██║   ██║███████╗
+██║╚██╗██║██║   ██║██║╚██╔╝██║██║   ██║╚════██║
+██║ ╚████║╚██████╔╝██║ ╚═╝ ██║╚██████╔╝███████║
+╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝ ╚═════╝ ╚══════╝</pre>
+  <div style="color:var(--fraco)">seu agente · sua máquina · suas regras</div></div>
+
+  <h3>Pedido de permissão</h3>
+  <div class="term">
+    <div class="amarelo">🔒 PERMISSÃO NECESSÁRIA</div>
+    <div style="color:var(--texto)">Luna quer <b>acessar a internet</b>.</div>
+    <div style="color:var(--fraco)">  alvo: api.exemplo.com</div>
+    <div style="color:var(--fraco)">  por quê: buscar a previsão do tempo</div>
+    <div style="color:var(--texto2)">Digite "sim" para permitir, ou qualquer coisa para negar.</div>
+    <div><span class="hl">&gt;</span> <span class="cursor"></span></div>
+  </div>
+
+  <h3>Cadeado de localidade &amp; motores</h3>
+  <div class="grid g2">
+    <div class="term"><div class="termbar">$ nomos local status</div>
+      <div class="hl">Modo só-local: LIGADO 🔒</div>
+      <div style="color:var(--texto2)">Tudo roda na sua máquina.<br>Motores de nuvem desplugados.</div></div>
+    <div class="term"><div class="termbar">$ nomos motores</div>
+      <div><span class="hl">[✓]</span> texto &nbsp;ollama (hermes3)</div>
+      <div><span style="color:var(--fraco)">[🔌]</span> nuvem &nbsp;para plugar</div>
+      <div><span class="hl">[✓]</span> imagem sdwebui</div>
+      <div><span style="color:var(--fraco)">[–]</span> áudio &nbsp;piper (instale)</div></div>
+  </div>
+
+  <h3>Check-up (nomos doutor)</h3>
+  <div class="term"><div class="termbar">$ nomos doutor</div>
+    <div class="hl">[✓] NOMOS 0.9.0 instalado</div>
+    <div class="hl">[✓] Modo só-local LIGADO 🔒</div>
+    <div class="amarelo">[!] Sem cérebro de IA local ainda</div>
+    <div style="color:var(--fraco)">     ollama pull hermes3 — sem isso, funciono em modo demo</div></div>
+</section>
+
+<section id="icones">
+  <span class="tag">08 · Símbolos</span>
+  <h2>Iconografia mínima</h2>
+  <div class="grid g4">
+    <div class="card"><div style="font-size:26px">🔒</div><b class="hl">Só-local</b><p style="font-size:12.5px">nada sai da máquina</p></div>
+    <div class="card"><div style="font-size:26px">🔌</div><b class="rosa">Plugar</b><p style="font-size:12.5px">motor externo opcional</p></div>
+    <div class="card"><div style="font-size:26px">🔑</div><b class="ciano">Caixa-forte</b><p style="font-size:12.5px">chaves cifradas</p></div>
+    <div class="card"><div style="font-size:26px">🎨</div><b class="amarelo">Tema</b><p style="font-size:12.5px">cores do seu jeito</p></div>
+  </div>
+  <p style="margin-top:12px">Estados em texto: <span class="hl">[✓]</span> pronto · <span class="amarelo">[!]</span> atenção ·
+  <span style="color:var(--vermelho)">[✗]</span> negado · <span style="color:var(--fraco)">[–]</span> ausente · <span style="color:var(--fraco)">[🔌]</span> plugável.</p>
+</section>
+<section id="voz">
+  <span class="tag">09 · Tom de voz</span>
+  <h2>Como o NOMOS fala</h2>
+  <p>Voz: inteligente, calorosa, honesta e sem enrolação — como o amigo que entende
+  de tecnologia e te explica sem te fazer sentir burro. As sete regras:</p>
+  <table>
+    <tr><th>#</th><th>Regra</th><th>Exemplo</th></tr>
+    <tr><td class="k">1</td><td>Direto, sem rodeio</td><td>"guardei sua chave." não "sua chave foi guardada com sucesso!"</td></tr>
+    <tr><td class="k">2</td><td>Voz ativa</td><td>"apaguei o arquivo" não "o arquivo foi apagado"</td></tr>
+    <tr><td class="k">3</td><td>Sem jargão para o leigo</td><td>"acessar a internet" não "egress A2"</td></tr>
+    <tr><td class="k">4</td><td>Honesto sobre limites</td><td>"estou em modo demo, não invento respostas"</td></tr>
+    <tr><td class="k">5</td><td>Sem promessa exagerada</td><td>nada de "revolucionário", "mágico", "sem esforço"</td></tr>
+    <tr><td class="k">6</td><td>Português do Brasil, natural</td><td>"dá pra criar depois" — conversa, não manual</td></tr>
+    <tr><td class="k">7</td><td>Sentence case, sem gritar</td><td>"Permissão necessária" não "PERMISSÃO NECESSÁRIA!!!"</td></tr>
+  </table>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card do"><h3>✓ Soa como NOMOS</h3><ul>
+      <li>"Tudo roda no seu computador, nada sai sem sua permissão."</li>
+      <li>"Não achei o Ollama — sem problema, funciono em modo demo."</li>
+      <li>"Algo deu errado do meu lado, mas nada foi perdido."</li>
+    </ul></div>
+    <div class="card dont"><h3>✗ Não soa como NOMOS</h3><ul>
+      <li>"Erro fatal: exceção não tratada no módulo X."</li>
+      <li>"Nossa IA revolucionária processa seus dados na nuvem!"</li>
+      <li>"Operação concluída com sucesso satisfatoriamente."</li>
+    </ul></div>
+  </div>
+</section>
+
+<section id="lexico">
+  <span class="tag">10 · Léxico da marca</span>
+  <h2>As palavras do NOMOS</h2>
+  <p>Termos técnicos ganham nomes de gente. Use sempre os da direita com o usuário.</p>
+  <table>
+    <tr><th>Em vez de…</th><th>Diga…</th><th>O que é</th></tr>
+    <tr><td style="color:var(--fraco)">vault / cofre técnico</td><td class="hl">caixa-forte</td><td>onde as chaves ficam cifradas</td></tr>
+    <tr><td style="color:var(--fraco)">passphrase</td><td class="hl">senha-mestra</td><td>a senha que abre a caixa-forte</td></tr>
+    <tr><td style="color:var(--fraco)">local-only egress lock</td><td class="hl">modo só-local / cadeado</td><td>trava que impede sair da máquina</td></tr>
+    <tr><td style="color:var(--fraco)">provider / modelo</td><td class="hl">motor / cérebro</td><td>a IA que pensa (Ollama, nuvem…)</td></tr>
+    <tr><td style="color:var(--fraco)">opt-in cloud</td><td class="hl">plugar a nuvem</td><td>ligar um motor externo de propósito</td></tr>
+    <tr><td style="color:var(--fraco)">onboarding</td><td class="hl">assistente / primeiros passos</td><td>o passo-a-passo inicial</td></tr>
+  </table>
+</section>
+
+<section id="aplicacoes">
+  <span class="tag">11 · Aplicações</span>
+  <h2>A marca no mundo</h2>
+  <div class="grid g2">
+    <div class="term"><div class="termbar">README.md · topo</div>
+      <pre class="logo" style="margin:0 0 6px;font-size:9px">
+███╗ ██╗ ██████╗ ███╗ ███╗ ██████╗ ███████╗
+██╔█╗██║ ██║  ██║ ██╔█╔██║ ██║  ██║ ██████╗ </pre>
+      <div style="color:var(--texto2)"># NOMOS</div>
+      <div style="color:var(--fraco)">seu agente pessoal, 100% local</div></div>
+    <div class="card">
+      <h3>Onde a marca aparece</h3>
+      <ul>
+        <li>Banner ao rodar <span class="hl">nomos</span> (o start screen)</li>
+        <li>README e documentação (mono, verde sobre preto)</li>
+        <li>Avatar / favicon: bloco <span class="hl">N</span> ou <span class="hl">◤</span></li>
+        <li>Social: card preto com logo ASCII + tagline</li>
+        <li>Adesivo: <span class="hl">◤ NOMOS</span> + "local por lei"</li>
+      </ul>
+    </div>
+  </div>
+  <h3>Card social</h3>
+  <div class="term" style="text-align:center;padding:28px">
+    <pre class="logo" style="margin:0 auto;display:inline-block;text-align:left">
+███╗   ██╗ ██████╗ ███╗   ███╗ ██████╗ ███████╗
+████╗  ██║██╔═══██╗████╗ ████║██╔═══██╗██╔════╝
+██╔██╗ ██║██║   ██║██╔████╔██║██║   ██║███████╗
+██║╚██╗██║██║   ██║██║╚██╔╝██║██║   ██║╚════██║
+██║ ╚████║╚██████╔╝██║ ╚═╝ ██║╚██████╔╝███████║
+╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝ ╚═════╝ ╚══════╝</pre>
+    <div class="hl" style="margin-top:10px">seu agente · sua máquina · suas regras</div>
+    <div style="color:var(--fraco);font-size:12px">local por lei · sem telemetria</div>
+  </div>
+</section>
+
+<section id="regras">
+  <span class="tag">12 · Congelamento</span>
+  <h2>Brandbook v1.0 — congelado</h2>
+  <p>Esta é a referência oficial da marca NOMOS. Mudanças exigem nova versão (v1.1, v1.2…)
+  com aprovação. O que não muda:</p>
+  <ul>
+    <li>Logo tipográfico em blocos ANSI, verde-neon sobre fundo escuro.</li>
+    <li>Fonte monoespaçada em toda parte.</li>
+    <li>Paleta: preto terminal + verde-neon + acentos rosa/ciano.</li>
+    <li>Tom de voz: direto, honesto, sem jargão, português natural.</li>
+    <li>Léxico: caixa-forte, senha-mestra, só-local, motor/cérebro, plugar.</li>
+    <li>Princípio inegociável: <span class="hl">local por lei</span>.</li>
+  </ul>
+  <p style="margin-top:14px"><span class="badge">v1.0</span><span class="badge">congelado</span>
+  <span class="badge">dark + light</span><span class="badge">responsivo</span></p>
+</section>
+
+<footer>
+  <div class="brand" style="color:var(--neon)">◤ NOMOS</div>
+  NOMOS Brandbook v1.0 · seu agente, sua máquina, suas regras · local por lei<br>
+  Feito no estilo que descreve: monoespaçado, verde sobre preto, sem enrolação.
+</footer>
+</div>
+<script>
+(function(){
+  try{
+    var pref = matchMedia('(prefers-color-scheme: light)').matches ? 'light':'dark';
+    document.documentElement.setAttribute('data-tema', pref);
+  }catch(e){}
+})();
+function tema(){
+  var h=document.documentElement, novo = h.getAttribute('data-tema')==='dark'?'light':'dark';
+  h.setAttribute('data-tema', novo);
+  var m=document.querySelector('meta[name=theme-color]'); if(m) m.setAttribute('content', novo==='dark'?'#0A0F0D':'#F3F1E7');
+}
+</script>
+</body>
+</html>

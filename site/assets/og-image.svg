@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="NOMOS — Seu agente. Sua máquina. Suas regras. Local por lei.">
+  <title>NOMOS — Seu agente. Sua máquina. Suas regras.</title>
+  <!-- Brandbook v1.0 congelado: fundo #0A0F0D, verde-neon #5AF78E, monospace -->
+  <style>
+    text { font-family: 'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, Menlo, Consolas, monospace; }
+  </style>
+  <rect width="1200" height="630" fill="#0A0F0D"/>
+  <rect x="28" y="28" width="1144" height="574" rx="10" fill="none" stroke="#24382a" stroke-width="2"/>
+  <rect x="28" y="28" width="1144" height="46" rx="10" fill="#111814" stroke="#24382a" stroke-width="2"/>
+  <circle cx="61" cy="51" r="7" fill="#FF5C57"/>
+  <circle cx="87" cy="51" r="7" fill="#F2C14E"/>
+  <circle cx="113" cy="51" r="7" fill="#5AF78E"/>
+  <text x="150" y="58" font-size="20" fill="#6f8a76">nomos — local por lei</text>
+  <text x="78" y="176" font-size="30" fill="#2BD968">$ nomos</text>
+  <text x="74" y="312" font-size="132" font-weight="700" fill="#5AF78E" style="filter:drop-shadow(0 0 8px #2BD968)">NOMOS</text>
+  <text x="80" y="398" font-size="34" font-weight="700" fill="#E8FFE8">Seu agente. Sua máquina. Suas regras.</text>
+  <text x="80" y="452" font-size="24" fill="#9fb8a5">Agente pessoal de IA que roda 100% no seu computador.</text>
+  <rect x="80" y="484" width="232" height="50" rx="8" fill="#111814" stroke="#5AF78E" stroke-width="2"/>
+  <text x="102" y="516" font-size="24" font-weight="700" fill="#5AF78E">local por lei</text>
+  <text x="1120" y="574" text-anchor="end" font-size="22" fill="#6f8a76">github.com/Voltolini-SPACE/NOMOS</text>
+</svg>
