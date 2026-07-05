@@ -161,10 +161,12 @@ def test_chat_conselho_no_enable_api():
 # --------------------------------------------------------------------------
 
 def test_chat_conselho_disabled_via_amigavel(tmp_path):
+    # `simular` foi habilitado na MC18 (dry-run); os DEMAIS subcomandos
+    # continuam desabilitados no loop real. Usamos `perguntar`.
     from nomos.kernel.policy import PolicyEngine
     from nomos.simple import amigavel
 
-    feed = iter(["/conselho simular " + _SENSIVEL, "/sair"])
+    feed = iter(["/conselho perguntar " + _SENSIVEL, "/sair"])
     tela = []
     ctx = {"home": tmp_path, "policy": PolicyEngine(tmp_path / "p.json")}
     amigavel.iniciar_chat(ctx, {"agent_name": "Luna", "modo_cerebro": "demo"},

@@ -135,11 +135,12 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
             say(AJUDA)
             continue
         if linha == "/conselho" or linha.startswith("/conselho "):
-            # MC16-UX: chat command do Motor Council — registrado, porém
-            # DESABILITADO/fail-closed. Delega ao handler puro, que nunca
-            # processa/ecoa o texto do usuário nem chama o orquestrador.
-            from nomos.council.chat_disabled import handle_disabled_chat_command
-            say(handle_disabled_chat_command(linha))
+            # MC16/MC18-UX: chat command do Motor Council. O roteador libera SÓ
+            # `/conselho simular` (dry-run, via CouncilOrchestratorDryRun); todo
+            # o resto continua DESABILITADO/fail-closed. Nunca processa/ecoa o
+            # texto do usuário nem constrói contexto de kernel.
+            from nomos.council.chat_dry_run import handle_chat_dry_run
+            say(handle_chat_dry_run(linha))
             continue
         if linha == "/status":
             cerebro = perfil.get("modelo") or "nenhum (modo demo)"
