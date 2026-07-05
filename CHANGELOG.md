@@ -2,7 +2,7 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased] — 2026-07-04 (Motor Council — Fase MC10: índice + preparação RC4)
+## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10-MC11-RC4: índice, preparação e validação RC4)
 
 ### Adicionado
 - Índice técnico do Motor Council (`docs/architecture/MOTOR_COUNCIL_INDEX_v1.md`)
@@ -15,6 +15,18 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
   (`docs/missions/RELEASE_NOTES_v1.3.0rc4_MOTOR_COUNCIL_DRY_RUN.md`).
 - Rascunho de corpo de GitHub Release para `v1.3.0rc4`
   (`docs/missions/GITHUB_RELEASE_v1.3.0rc4_MOTOR_COUNCIL_DRY_RUN.md`).
+- Fase MC11-RC4: validação completa de baseline, ancestry e conteúdo dos
+  rascunhos RC4 antes de tag; reconciliação da numeração de fases futuras —
+  `MC11-RC4` passa a ser a trilha de release engineering (tag/release/PyPI),
+  e a trilha de UX prevista pelo MC9 foi renumerada de MC11–MC16 para
+  `MC12-UX`–`MC17-UX` em `MOTOR_COUNCIL_UX_SPEC_v1.md`.
+
+### Achado (MC11-RC4)
+- `.github/workflows/release.yml` publica um GitHub Release automaticamente
+  em qualquer push de tag `v*`; a criação/push da tag `v1.3.0rc4-motor-
+  council-dry-run` foi pausada nesta fase para decisão explícita do usuário
+  antes de prosseguir (ver `docs/missions/
+  MOTOR_COUNCIL_MC11_RC4_TAG_PREPARATION.md`, seções 8–9).
 
 ### Não alterado
 - Nenhum código de runtime alterado (`src/**` intocado).

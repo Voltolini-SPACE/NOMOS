@@ -41,8 +41,8 @@ Definir, de forma canônica e implementável posteriormente sem ambiguidade:
 - as fases de implementação futuras (MC10 em diante) e suas restrições.
 
 Este documento é o contrato de UX que qualquer fase futura de implementação
-(MC11+) deve seguir literalmente — divergências exigem revisão desta spec
-antes do código.
+(`MC12-UX`+, ver nota de renumeração na seção 20) deve seguir literalmente —
+divergências exigem revisão desta spec antes do código.
 
 ## 3. Non-goals
 
@@ -121,7 +121,7 @@ Descrição de cada subcomando futuro:
 |---|---|
 | `perguntar` / `ask` | roda o Council (via orquestrador) sobre uma pergunta digitada |
 | `revisar` | roda o Council sobre o conteúdo de um arquivo local, envelopado como DADO (nunca como instrução) |
-| `simular` / `simulate` | força `--simular` (nunca executa motor real, mesmo quando MC12 existir) |
+| `simular` / `simulate` | força `--simular` (nunca executa motor real, mesmo quando `MC13-UX` existir) |
 | `status` | mostra se o Council está ligado/desligado e o modo padrão configurado |
 | `explicar-ultima-decisao` | mostra o trace redigido (modo avançado) da última execução da sessão atual |
 | `modos` | lista os 4 modos (rápido/balanceado/crítico/paranoico) e o que cada um implica |
@@ -144,7 +144,7 @@ Descrição de cada subcomando futuro:
 --avancado
 ```
 
-Regras futuras obrigatórias (a valer desde a primeira implementação, MC11+):
+Regras futuras obrigatórias (a valer desde a primeira implementação, `MC12-UX`+):
 
 - `--privado` força `persist_allowed=false` em todos os envelopes (final e de
   auditoria) — igual ao que `CouncilOrchestrationInput.private_mode=true` já
@@ -207,8 +207,8 @@ Regras futuras:
   motor de nuvem no chat exige o mesmo opt-in explícito (cadeado + cofre +
   aprovação por uso) que a CLI exige.
 - Chat command **não pode** executar ação sensível sem uma aprovação humana
-  futura explícita (seção 16) — nesta fase (e em todas até MC15), toda ação
-  sensível é dry-run/bloqueada por padrão.
+  futura explícita (seção 16) — nesta fase (e em todas até `MC16-UX`), toda
+  ação sensível é dry-run/bloqueada por padrão.
 
 ## 7. Council Modes
 
@@ -447,13 +447,14 @@ pré-validado sem execução real
 ```
 
 Esta regra vale para **toda** fase até que exista uma fase futura
-explicitamente aprovada para execução real — inclusive MC11/MC12 (CLI/dry-run
-run command), que continuam 100% dry-run (seção 20).
+explicitamente aprovada para execução real — inclusive `MC12-UX`/`MC13-UX`
+(CLI skeleton/dry-run run command), que continuam 100% dry-run (seção 20).
 
 ## 16. Human Approval Future UX
 
 Esta seção especifica apenas o **desenho futuro**. Não implementa aprovação
-real — nenhuma fase até MC15 (inclusive) tem aprovação humana real habilitada.
+real — nenhuma fase até `MC16-UX` (inclusive) tem aprovação humana real
+habilitada.
 
 Mensagem futura obrigatória sempre que uma ação exigir aprovação:
 
@@ -625,27 +626,42 @@ test_advanced_mode_shows_redacted_trace
 ## 20. Implementation Phases
 
 ```text
-MC10 — Documentation Index + RC4 Preparation
-MC11 — CLI Skeleton Disabled
-MC12 — CLI Dry-run Command
-MC13 — Chat Command SPEC/DISABLED
-MC14 — Chat Dry-run Command
-MC15 — Human Approval UX Dry-run
-MC16 — Real Local Engine Harness Review
+MC10    — Documentation Index + RC4 Preparation
+MC11-RC4 — RC4 Tag Preparation/Validation (release engineering track)
+MC12-UX — CLI Skeleton Disabled
+MC13-UX — CLI Dry-run Command
+MC14-UX — Chat Command SPEC/DISABLED
+MC15-UX — Chat Dry-run Command
+MC16-UX — Human Approval UX Dry-run
+MC17-UX — Real Local Engine Harness Review
 ```
 
-Regras:
+> **Nota de renumeração (MC11-RC4, 2026-07-05)**: esta seção originalmente
+> numerava a trilha de UX como MC11–MC16. Uma colisão foi identificada
+> quando uma segunda missão, independente desta trilha, também reivindicou o
+> número MC11 para "RC4 Tag Preparation/Validation" (release engineering,
+> não UX). Resolução adotada: `MC11-RC4` passa a designar exclusivamente a
+> trilha de release engineering (tag/release/PyPI); toda a trilha de UX
+> originalmente MC11–MC16 foi renumerada para `MC12-UX`–`MC17-UX`, mantendo a
+> ordem relativa e todas as regras abaixo inalteradas — apenas os números
+> mudaram, não o conteúdo de nenhuma fase. Ver também
+> `docs/architecture/MOTOR_COUNCIL_INDEX_v1.md` (seção 19) para o roteiro das
+> duas trilhas em paralelo.
 
-- MC11 pode **registrar** o comando (`nomos conselho` aparece em `--help`),
-  mas **desabilitado** (executar sem `--simular` explica que a fase ainda não
-  libera nada, e mesmo com `--simular` só chama o orquestrador dry-run).
-- MC12 pode chamar **apenas** o orquestrador dry-run (`CouncilOrchestratorDryRun`)
-  já existente — nenhuma nova lógica de negócio, nenhum motor real.
+Regras (numeração atualizada; conteúdo de cada fase inalterado):
+
+- `MC12-UX` pode **registrar** o comando (`nomos conselho` aparece em
+  `--help`), mas **desabilitado** (executar sem `--simular` explica que a
+  fase ainda não libera nada, e mesmo com `--simular` só chama o orquestrador
+  dry-run).
+- `MC13-UX` pode chamar **apenas** o orquestrador dry-run
+  (`CouncilOrchestratorDryRun`) já existente — nenhuma nova lógica de
+  negócio, nenhum motor real.
 - Motor real continua **proibido** até uma fase explicitamente aprovada para
-  isso (não é MC16 automaticamente — "review" nesse nome significa auditoria
-  do harness, não habilitação).
-- Chat real só vem **depois** da CLI dry-run estar estável (MC14 depois de
-  MC12), nunca em paralelo na mesma fase.
+  isso (não é `MC17-UX` automaticamente — "review" nesse nome significa
+  auditoria do harness, não habilitação).
+- Chat real só vem **depois** da CLI dry-run estar estável (`MC15-UX` depois
+  de `MC13-UX`), nunca em paralelo na mesma fase.
 
 ## 21. Acceptance Criteria
 
@@ -669,5 +685,7 @@ Checklist para considerar esta **spec de UX** aceita:
       aplicável, observação de segurança).
 - [x] Restrições de segurança repetidas explicitamente.
 - [x] Plano de testes futuros (15 nomes) listado.
-- [x] Fases de implementação futuras (MC10–MC16) descritas com restrições.
+- [x] Fases de implementação futuras (MC10, MC11-RC4, MC12-UX–MC17-UX)
+      descritas com restrições (numeração reconciliada em MC11-RC4, ver
+      seção 20).
 - [x] Nenhum código funcional, comando real ou alteração de runtime.

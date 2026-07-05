@@ -278,12 +278,16 @@ nada implementado) especifica, para uma implementação futura:
   avançado, da explicação de dry-run, e de uma futura aprovação humana (ainda
   sem implementar).
 - 5 exemplos completos de uso e um plano de 15 testes futuros exatos, para
-  quando a implementação (MC11+/MC12+, conforme a trilha — ver seção 19)
-  começar.
-- Fases futuras de UX então previstas: MC10 (índice + RC4) → MC11 (CLI
-  skeleton desabilitado) → MC12 (CLI dry-run) → MC13 (chat SPEC/disabled) →
-  MC14 (chat dry-run) → MC15 (aprovação humana dry-run) → MC16 (revisão do
-  harness real). Ver nota de reconciliação de numeração na seção 19.
+  quando a implementação (`MC12-UX`+ — ver reconciliação de numeração na
+  seção 19) começar.
+- Fases futuras de UX, **renumeradas em MC11-RC4** para não colidir com a
+  trilha de release engineering: `MC10` (índice + RC4) → `MC11-RC4` (tag
+  RC4) → `MC12-UX` (CLI skeleton desabilitado) → `MC13-UX` (CLI dry-run) →
+  `MC14-UX` (chat SPEC/disabled) → `MC15-UX` (chat dry-run) → `MC16-UX`
+  (aprovação humana dry-run) → `MC17-UX` (revisão do harness real). A
+  numeração original (MC11–MC16 para a trilha de UX) foi atualizada
+  diretamente em `MOTOR_COUNCIL_UX_SPEC_v1.md` seção 20; ver seção 19 abaixo
+  para o histórico da reconciliação.
 
 ## 13. Test Growth
 
@@ -370,14 +374,13 @@ Confirmado, sem exceção, em MC0–MC9:
 
 Consolidado das seções "riscos remanescentes" de cada relatório de fase:
 
-- **Numeração de fases divergente (novo nesta consolidação)**: a UX spec
-  (MC9) previu MC10 como "índice + RC4" (compatível com esta própria fase),
-  mas previu MC11 como "CLI skeleton desabilitado". A missão que originou
-  este índice, no entanto, recomienda como próximo passo "MC11 — RC4 Tag
-  Preparation/Validation" — uma trilha de release engineering, não de
-  implementação de CLI. As duas numerações **MC11 em diante divergem** e
-  precisarão ser reconciliadas explicitamente antes de MC11 começar (ver
-  seção 19).
+- ~~**Numeração de fases divergente**~~ — **RESOLVIDO em MC11-RC4**: a
+  colisão entre "MC11 — CLI skeleton desabilitado" (trilha UX, prevista pelo
+  MC9) e "MC11 — RC4 Tag Preparation/Validation" (trilha release engineering)
+  foi reconciliada explicitamente: `MC11-RC4` passou a designar
+  exclusivamente a trilha de release engineering; toda a trilha de UX foi
+  renumerada para `MC12-UX`–`MC17-UX` diretamente em
+  `MOTOR_COUNCIL_UX_SPEC_v1.md` (seção 20). Ver seção 19 abaixo.
 - **Inconsistência cosmética de `session_id`** (MC8): o `session_id` visível
   nos envelopes de auditoria continua sendo o identificador interno fixo do
   simulador (`offline-sim`), não o `session_id` do chamador — o gate e o
@@ -394,7 +397,7 @@ Consolidado das seções "riscos remanescentes" de cada relatório de fase:
 - **Spec de UX é normativa, não vinculante por código** (MC9): nada impede
   uma implementação futura de divergir dela; a mitigação é a disciplina
   `implementation-loop-100`, que exige revisão da spec antes de qualquer
-  código de MC11+.
+  código de `MC12-UX`+.
 - **Códigos de erro `[NOMOS-MC-XXX]` são provisórios** (MC9): quando a
   implementação real de CLI/chat começar, pode ser necessário reconciliá-los
   com um esquema de códigos de erro mais amplo do NOMOS.
@@ -418,34 +421,35 @@ Consolidado das seções "riscos remanescentes" de cada relatório de fase:
 | Release notes RC4 (rascunho) preparadas | ✅ (ver `RELEASE_NOTES_v1.3.0rc4_MOTOR_COUNCIL_DRY_RUN.md`) |
 | GitHub Release RC4 (rascunho) preparado | ✅ (ver `GITHUB_RELEASE_v1.3.0rc4_MOTOR_COUNCIL_DRY_RUN.md`) |
 | CHANGELOG atualizado com a preparação | ✅ |
-| Tag `v1.3.0rc4` criada | ⏳ pendente — fora do escopo desta fase |
-| GitHub Release publicado | ⏳ pendente — fora do escopo desta fase |
+| Tag `v1.3.0rc4-motor-council-dry-run` criada | ver relatório MC11-RC4 |
+| GitHub Release publicado | ⏳ pendente — fora do escopo de MC11-RC4, ver MC12-RC4 |
 | Publicação no PyPI | ⏳ pendente — fora do escopo desta fase |
-| Reconciliação da numeração MC11+ (trilha release vs. trilha UX) | ⏳ pendente — recomendado antes de iniciar MC11 |
+| Reconciliação da numeração MC11+ (trilha release vs. trilha UX) | ✅ resolvida em MC11-RC4 (ver seção 19) |
 
 ## 19. Future Roadmap
 
-Duas trilhas independentes ficaram propostas por missões diferentes; nenhuma
-foi iniciada:
+Duas trilhas independentes, agora **reconciliadas** (MC11-RC4) para não
+colidir em numeração:
 
-**Trilha A — Release engineering** (recomendada pela missão que originou este
-índice):
-`MC10` (este índice + RC4 prep) → `MC11 — RC4 Tag Preparation/Validation`
-(validar CI e ancestry antes de criar a tag, ainda sem publicar release
-automaticamente) → futura fase de publicação de GitHub Release → futura fase
-de publicação no PyPI.
+**Trilha RC — Release engineering**:
+`MC10` (índice + RC4 prep) → `MC11-RC4` (validar CI/ancestry e criar a tag
+`v1.3.0rc4-motor-council-dry-run`, sem publicar release automaticamente) →
+`MC12-RC4` (GitHub Release Publication — pre-release, `latest=false`) →
+futura fase de publicação no PyPI.
 
-**Trilha B — Implementação de UX** (prevista pela seção 20 do
-`MOTOR_COUNCIL_UX_SPEC_v1.md`, MC9):
-`MC11` (CLI skeleton desabilitado) → `MC12` (CLI dry-run) → `MC13` (chat
-SPEC/disabled) → `MC14` (chat dry-run) → `MC15` (aprovação humana dry-run) →
-`MC16` (revisão do harness real antes de qualquer execução real).
+**Trilha UX — Implementação de CLI/chat** (prevista pela seção 20 do
+`MOTOR_COUNCIL_UX_SPEC_v1.md`, renumerada em MC11-RC4):
+`MC12-UX` (CLI skeleton desabilitado) → `MC13-UX` (CLI dry-run) → `MC14-UX`
+(chat SPEC/disabled) → `MC15-UX` (chat dry-run) → `MC16-UX` (aprovação
+humana dry-run) → `MC17-UX` (revisão do harness real antes de qualquer
+execução real).
 
-Recomendação registrada neste índice (não uma decisão tomada): antes de abrir
-qualquer missão "MC11", reconciliar explicitamente qual das duas trilhas
-recebe esse número — ou renumerar uma delas (ex.: prefixar a trilha de
-release como `RC-*` em vez de `MC*`) — para evitar ambiguidade em relatórios
-futuros.
+As duas trilhas agora têm numeração disjunta (`MCxx-RC4` vs. `MCxx-UX`) e
+podem progredir independentemente sem ambiguidade em relatórios futuros. Esta
+reconciliação foi decidida e aplicada na fase `MC11-RC4` (ver
+`docs/missions/MOTOR_COUNCIL_MC11_RC4_TAG_PREPARATION.md`); nenhuma missão
+futura precisa re-decidir este ponto — apenas seguir a numeração disjunta
+acima.
 
 ## 20. Acceptance Criteria
 
