@@ -3,17 +3,28 @@
 ## 1. Status
 
 ```text
-SPEC_ONLY=true
-IMPLEMENTATION=false
-CHAT_DRY_RUN_ENABLED=false
+SPEC_CREATED=true
+IMPLEMENTATION=MC18_DONE
+CHAT_DRY_RUN_ENABLED=true
+REAL_ENGINE_EXECUTION=false
 ```
 
-Este documento é **apenas especificação**. Nenhum código funcional, comando de
-chat, motor, agente, skill ou rotina é criado ou alterado por ele. Ele descreve
-como o futuro `/conselho simular` deverá funcionar no chat amigável do NOMOS,
-espelhando o padrão seguro já implementado na CLI (`nomos conselho simular`,
-Fase MC15-UX). A implementação funcional é reservada para uma fase futura
-(MC18-UX); até lá, `/conselho` permanece desabilitado/fail-closed (MC16-UX).
+> **Atualizado em MC19.** Esta spec nasceu SPEC-only (MC17-UX) e **foi
+> implementada na Fase MC18-UX**: `/conselho simular <texto>` roda em dry-run
+> no chat amigável, via `src/nomos/council/chat_dry_run.py`, chamando só o
+> `CouncilOrchestratorDryRun`. As regras de segurança abaixo (não-eco de
+> prompt, JSON escalar montado à mão sem `result.to_dict()`, sem harness/
+> policy/audit/vault reais, sem persistência) **valem e foram testadas**. O
+> que **continua bloqueado**: `/conselho` sem subcomando e os demais
+> (`perguntar`, `revisar`, `status`, `modos`, `explicar`, `diagnostico`)
+> seguem desabilitados/fail-closed (MC16-UX). `REAL_ENGINE_EXECUTION`
+> permanece `false`.
+
+Este documento descreve como o `/conselho simular` funciona no chat amigável
+do NOMOS, espelhando o padrão seguro da CLI (`nomos conselho simular`, Fase
+MC15-UX). Nas seções abaixo, o que estava marcado como "futuro" e foi entregue
+na MC18-UX está indicado; o que segue futuro (ex.: aliases, aprovação humana)
+permanece como desenho.
 
 ## 2. Objective
 

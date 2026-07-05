@@ -2,7 +2,31 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC18-UX: índice, tag, release, alinhamento público, CLI skeleton/dry-run, chat skeleton/dry-run)
+## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC19: índice, tag, release, CLI/chat dry-run e alinhamento público)
+
+### Documentation (MC19)
+- Aligned README and Motor Council UX documentation with CLI **and** chat
+  dry-run availability: README `## Motor Council` reescrita (ambas as
+  superfícies têm `simular` em dry-run; o resto segue desabilitado), contagem
+  de testes corrigida (778 → 884). `MOTOR_COUNCIL_INDEX_v1.md` ganhou o bloco
+  "Estado de UX/superfícies" (MC14–MC18, `CLI_DRY_RUN_AVAILABLE=true`,
+  `CHAT_DRY_RUN_AVAILABLE=true`, `REAL_EXECUTION_AVAILABLE=false`,
+  `PRODUCTION_READY=false`) e nota sobre a duplicação controlada CLI/Chat.
+  `MOTOR_COUNCIL_UX_SPEC_v1.md` ganhou "Current implementation status";
+  `MOTOR_COUNCIL_CHAT_DRY_RUN_SPEC_v1.md` marcado como `IMPLEMENTATION=MC18_DONE`.
+
+### Changed (MC19)
+- Clarified Motor Council CLI/chat help text to reference the dry-run
+  simulation commands: a linha do `/ajuda` do chat agora aponta para
+  `/conselho simular` (dry-run), e um comentário interno desatualizado do
+  `cli.py` foi corrigido. Nenhuma lógica de roteamento mudou; guardas de help
+  adicionadas por teste.
+
+### Not changed (MC19)
+- No runtime behavior changed (`cli_dry_run.py`/`chat_dry_run.py`/orchestrator/
+  harness/policy_gate/audit_envelope intocados).
+- No real engine execution enabled; no CLI/Chat refactor.
+- No PyPI publication; nenhuma tag ou release criada.
 
 ### Added (MC18-UX)
 - Added `/conselho simular <texto>` as a redacted dry-run chat command backed

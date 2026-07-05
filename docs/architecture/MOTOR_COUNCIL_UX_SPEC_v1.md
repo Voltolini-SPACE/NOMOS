@@ -4,13 +4,35 @@
 
 ```text
 SPEC_ONLY=true
-IMPLEMENTATION=false
+IMPLEMENTATION=partial      # atualizado em MC19 — ver "Current implementation status"
 ```
 
-Este documento é **apenas especificação de experiência (UX)**. Nenhum comando
+> **Current implementation status (atualizado em MC19).** Este documento
+> nasceu SPEC-only, mas parte dele já foi implementada. Estado real por
+> comando:
+>
+> ```text
+> nomos conselho            -> registrado; help/desabilitado (fail-closed)
+> nomos conselho simular    -> DRY-RUN disponível (MC15-UX)
+> /conselho                 -> registrado; desabilitado (fail-closed)
+> /conselho simular         -> DRY-RUN disponível (MC18-UX)
+> {perguntar, revisar, status, modos, explicar, diagnostico}
+>                           -> desabilitados/fail-closed nas duas superfícies
+> REAL_ENGINE_EXECUTION=false  REAL_POLICY=false  REAL_AUDIT=false
+> REAL_VAULT=false  CLOUD=false  PERSISTENCE=false
+> ```
+>
+> As seções abaixo permanecem como o desenho canônico de UX (incluindo
+> comandos ainda não implementados); onde já há implementação, ela segue este
+> contrato. Ver `MOTOR_COUNCIL_CHAT_DRY_RUN_SPEC_v1.md` e o índice técnico
+> para o mapa por fase.
+
+Este documento é **especificação de experiência (UX)** — parcialmente
+implementada (ver acima). As partes ainda não implementadas não criam comando
 de CLI real, comando de chat real, código Python, motor real, chamada de
-rede/subprocess/cloud, policy/audit/vault real ou persistência é criado ou
-alterado por ele.
+rede/subprocess/cloud, policy/audit/vault real ou persistência; e as já
+implementadas (`simular`) rodam só em dry-run. Nenhuma parte funcional nova é
+criada ou alterada por este documento.
 
 Ele desenha como o Motor Council — hoje completo em SPEC/DRY-RUN até a Fase
 MC8 (`CouncilOrchestratorDryRun` compondo provider local → simulador → policy

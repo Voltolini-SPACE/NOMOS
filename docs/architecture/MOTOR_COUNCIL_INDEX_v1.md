@@ -32,11 +32,27 @@ README_PUBLIC_ALIGNMENT=done
 PYPI_PUBLISHED=false
 ```
 
+**Estado de UX/superfícies (a partir de MC19):**
+
+```text
+MC14_CLI_SKELETON_DISABLED=PASS
+MC15_CLI_DRY_RUN_COMMAND=PASS
+MC16_CHAT_COMMAND_DISABLED=PASS
+MC17_CHAT_DRY_RUN_SPEC_PLAN=PASS
+MC18_CHAT_DRY_RUN_IMPLEMENTATION=PASS
+CLI_DRY_RUN_AVAILABLE=true          # nomos conselho simular "..."
+CHAT_DRY_RUN_AVAILABLE=true         # /conselho simular ...
+OTHER_SUBCOMMANDS_DISABLED=true     # perguntar/revisar/status/modos/explicar/diagnostico
+REAL_EXECUTION_AVAILABLE=false
+PRODUCTION_READY=false
+```
+
 Este documento é um **índice técnico de consolidação**, não uma especificação
 nova nem uma implementação. Ele resume, com referências verificáveis, tudo o
-que as fases MC0–MC9 do Motor Council entregaram, mais o estado de release das
-fases MC10–MC13-RC4. Nenhum arquivo em `src/**` ou `tests/**` foi criado ou
-alterado para produzir ou manter este índice.
+que as fases MC0–MC9 do Motor Council entregaram, mais o estado de release
+(MC10–MC13-RC4) e o estado das superfícies de UX (MC14–MC18, alinhado em
+MC19). Nenhum arquivo em `src/**` ou `tests/**` foi criado ou alterado para
+produzir ou manter este índice.
 
 ## 2. Scope
 
@@ -470,6 +486,21 @@ reconciliação foi decidida e aplicada na fase `MC11-RC4` (ver
 `docs/missions/MOTOR_COUNCIL_MC11_RC4_TAG_PREPARATION.md`); nenhuma missão
 futura precisa re-decidir este ponto — apenas seguir a numeração disjunta
 acima.
+
+**O que a trilha UX efetivamente entregou (atualizado em MC19):** as fases
+executadas foram `MC14-UX` (CLI skeleton desabilitado), `MC15-UX` (CLI
+dry-run `nomos conselho simular`), `MC16-UX` (chat skeleton desabilitado),
+`MC17-UX` (spec do chat dry-run) e `MC18-UX` (chat dry-run `/conselho
+simular`). Portanto **existem hoje duas superfícies dry-run em paralelo** —
+CLI (`src/nomos/council/cli_dry_run.py`) e chat
+(`src/nomos/council/chat_dry_run.py`) — que compartilham o mesmo contrato
+(chamar só o `CouncilOrchestratorDryRun`, redigir a saída, nunca
+`result.to_dict()`) mas **não** o mesmo código. Essa **duplicação é
+controlada e intencional**: uma eventual unificação (helper comum de
+parsing/redação) deve ser uma **fase de refactor seguro separada**, nunca
+combinada com qualquer habilitação de execução real. Próxima fase recomendada
+para isso: `MC20 — Shared Redaction/Output Helper SPEC` (desenho da
+unificação, ainda sem refatorar).
 
 ## 20. Acceptance Criteria
 
