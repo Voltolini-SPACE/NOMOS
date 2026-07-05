@@ -6,8 +6,15 @@ Pre-release candidate.
 
 ## Important
 
-This file is a draft only. No tag or GitHub Release is created in MC10.
-Publishing this release is a separate, future, explicitly approved mission.
+This file originated as a draft only in MC10 (no tag or GitHub Release
+existed yet at that point). The tag was created in MC11-RC4
+(`v1.3.0rc4-motor-council-dry-run`), and the release it automatically
+triggered was corrected and published with this file's content as its body
+in MC12-RC4 — see
+`https://github.com/Voltolini-SPACE/NOMOS/releases/tag/v1.3.0rc4-motor-council-dry-run`
+(`prerelease=true`, not "latest"). This file is kept as the source-of-truth
+draft that the live release body was built from; it is not automatically
+kept in sync with the live release if either is edited later.
 
 ## Summary
 
