@@ -28,6 +28,11 @@ Base do desenho: kernel na tag `v1.2.0rc3-audit-anchored` (commit 657ca21), com
 > já entregaram modelos, simulador, provider/adapter/harness locais, policy
 > gate e audit envelope (todos em dry-run), e MC9 é a spec de UX — não a
 > antiga "MC6" desta tabela original.
+>
+> **Índice técnico:** um índice único consolidando todas as fases MC0–MC9
+> (mapa de arquitetura, arquivos criados, garantias de segurança, progressão
+> de testes, evidência de CI e prontidão para RC4) está em
+> `docs/architecture/MOTOR_COUNCIL_INDEX_v1.md` (Fase MC10).
 
 ## 2. Objective
 
