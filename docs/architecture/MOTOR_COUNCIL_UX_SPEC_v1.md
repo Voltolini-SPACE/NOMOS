@@ -49,6 +49,11 @@ contratos já implementados em `src/nomos/council/*.py` (MC1–MC8).
 > **chat dry-run** futuro (`/conselho simular`) — contratos, redaction, flags
 > proibidas, integração com o orquestrador e plano de fases MC18-UX+ — está em
 > `docs/architecture/MOTOR_COUNCIL_CHAT_DRY_RUN_SPEC_v1.md`.
+>
+> **Unificação de saída/redação (MC20).** A duplicação controlada entre as
+> saídas da CLI e do chat dry-run está especificada, para unificação futura,
+> em `docs/architecture/MOTOR_COUNCIL_SHARED_OUTPUT_REDACTION_SPEC_v1.md`
+> (SPEC-only; helper ainda não implementado, refactor reservado para MC21+).
 
 ## 2. Objective
 

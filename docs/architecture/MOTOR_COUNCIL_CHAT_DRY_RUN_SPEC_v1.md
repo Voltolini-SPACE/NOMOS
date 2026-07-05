@@ -26,6 +26,12 @@ MC15-UX). Nas seções abaixo, o que estava marcado como "futuro" e foi entregue
 na MC18-UX está indicado; o que segue futuro (ex.: aliases, aprovação humana)
 permanece como desenho.
 
+> **Unificação futura (MC20).** A saída/redação deste chat dry-run e a da CLI
+> (`nomos conselho simular`) estão especificadas para unificação num helper
+> compartilhado em
+> `docs/architecture/MOTOR_COUNCIL_SHARED_OUTPUT_REDACTION_SPEC_v1.md`
+> (SPEC-only; ainda não implementado).
+
 ## 2. Objective
 
 Permitir, no futuro, que o usuário rode uma **simulação dry-run** do Motor

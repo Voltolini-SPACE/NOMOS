@@ -45,7 +45,16 @@ CHAT_DRY_RUN_AVAILABLE=true         # /conselho simular ...
 OTHER_SUBCOMMANDS_DISABLED=true     # perguntar/revisar/status/modos/explicar/diagnostico
 REAL_EXECUTION_AVAILABLE=false
 PRODUCTION_READY=false
+MC20_SHARED_REDACTION_OUTPUT_SPEC=PASS
+SHARED_HELPER_IMPLEMENTED=false
+CLI_CHAT_DUPLICATION=KNOWN_CONTROLLED
 ```
+
+> A duplicação controlada entre `cli_dry_run.py` e `chat_dry_run.py` está
+> especificada para unificação futura em
+> `docs/architecture/MOTOR_COUNCIL_SHARED_OUTPUT_REDACTION_SPEC_v1.md` (MC20,
+> SPEC-only) — o helper compartilhado ainda **não** foi implementado; o
+> refactor é reservado para MC21+.
 
 Este documento é um **índice técnico de consolidação**, não uma especificação
 nova nem uma implementação. Ele resume, com referências verificáveis, tudo o

@@ -2,7 +2,26 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC19: índice, tag, release, CLI/chat dry-run e alinhamento público)
+## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC20: índice, tag, release, CLI/chat dry-run, alinhamento público e spec de unificação)
+
+### Documentation (MC20)
+- Added Motor Council shared output/redaction helper specification for future
+  CLI/chat dry-run unification
+  (`docs/architecture/MOTOR_COUNCIL_SHARED_OUTPUT_REDACTION_SPEC_v1.md`, 20
+  seções): documenta a duplicação controlada entre `cli_dry_run.py` e
+  `chat_dry_run.py` (incl. o achado de que a CLI tem 8 flags proibidas e o
+  chat 10), os invariantes de segurança compartilhados, os dados proibidos e
+  campos escalares permitidos, os contratos de saída por `interface`, um
+  esboço de API (`CouncilSafeOutput` + `build_/render_*`, `API_SKETCH_ONLY`),
+  o plano de migração MC21–MC24 e o plano de testes futuros. Ponteiros
+  adicionados em INDEX, UX spec e chat dry-run spec.
+
+### Not changed (MC20)
+- No runtime behavior changed; nenhum helper implementado.
+- No CLI/chat refactor performed (`cli_dry_run.py`/`chat_dry_run.py`
+  intocados); suíte permanece em 886.
+- No real engine execution enabled.
+- No PyPI publication; nenhuma tag ou release criada.
 
 ### Documentation (MC19)
 - Aligned README and Motor Council UX documentation with CLI **and** chat
