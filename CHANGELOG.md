@@ -2,7 +2,22 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC13-RC4: índice, tag, release e alinhamento público)
+## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC14-UX: índice, tag, release, alinhamento público e CLI skeleton desabilitado)
+
+### Added (MC14-UX)
+- Added disabled Motor Council CLI skeleton for the future `nomos conselho`
+  UX. O comando aparece no `nomos --help` ("pré-release, ainda DESABILITADO"),
+  mas nasce fail-closed: qualquer uso devolve `[NOMOS-MC-CLI-DISABLED]` +
+  `CLI_ENABLED=false` e não interpreta subcomando/prompt/flags. Novo módulo
+  puro `src/nomos/council/cli_disabled.py` (constante literal
+  `MOTOR_COUNCIL_CLI_ENABLED = False`, sem API de habilitação); `cli.py`
+  curto-circuita `conselho` antes do argparse e de `_paths()`.
+
+### Security (MC14-UX)
+- Motor Council CLI remains fail-closed: no real engine execution, no
+  persistence, no real policy/audit/vault calls, no orchestrator/harness call,
+  no prompt echo, no env/flag bypass. Provado por 21 testes novos (incl. AST
+  de pureza do módulo). Suíte: 778 → 799.
 
 ### Adicionado
 - Índice técnico do Motor Council (`docs/architecture/MOTOR_COUNCIL_INDEX_v1.md`)
