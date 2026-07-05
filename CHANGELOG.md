@@ -2,7 +2,7 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10-MC11-RC4: índice, preparação e validação RC4)
+## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC13-RC4: índice, tag, release e alinhamento público)
 
 ### Adicionado
 - Índice técnico do Motor Council (`docs/architecture/MOTOR_COUNCIL_INDEX_v1.md`)
@@ -62,6 +62,27 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 - Nenhum comando CLI ou chat implementado.
 - Nenhuma tag movida, recriada ou apagada; nenhuma publicação no PyPI.
 - Nenhum asset binário novo anexado ao release existente.
+
+### Documentation (MC13-RC4)
+- Aligned public README/docs with RC4 Motor Council dry-run status: nova seção
+  `## Motor Council` no `README.md` deixando explícito que o Council está em
+  dry-run/pre-release (sem execução real, sem CLI/chat, sem nuvem/rede/
+  subprocess, policy gate/audit só dry-run, modo privado força
+  `persist_allowed=false`), apontando para o índice técnico e a UX spec.
+  Contagem de testes no README corrigida de 494 (obsoleta) para 778, e a nota
+  de maturidade agora marca o RC4 como pre-release.
+- Added post-release verification notes for `v1.3.0rc4-motor-council-dry-run`
+  (`docs/missions/MOTOR_COUNCIL_MC13_RC4_POST_RELEASE_VERIFICATION.md`) e um
+  bloco "Estado pós-release" em `MOTOR_COUNCIL_INDEX_v1.md`
+  (`RC4_RELEASE_PUBLISHED=true`, `RC4_PRERELEASE=true`, `RC4_LATEST=false`,
+  `RELEASE_WORKFLOW_RC_GUARD=true`, `README_PUBLIC_ALIGNMENT=done`).
+
+### Not changed (MC13-RC4)
+- No runtime code changed (`src/**` intocado).
+- No tests changed (`tests/**` intocado); suíte permanece em 778.
+- No CLI/chat command implemented.
+- No PyPI publication; nenhuma tag criada/movida/apagada; nenhum workflow
+  alterado nesta fase.
 
 ## [1.3.0rc16] — 2026-07-04 (Motor Council — Fase MC8: orquestrador dry-run)
 

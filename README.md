@@ -94,11 +94,37 @@ local-first e pipelines com política em cada etapa). Skills passam por
 manifesto validado, checksum, assinatura ed25519 e trust store. Tudo em
 Python puro, multiplataforma.
 
+## Motor Council
+
+O **Motor Council** — um pipeline de múltiplos motores que revisa, julga e
+arbitra respostas antes de entregá-las — está disponível apenas como
+**arquitetura em dry-run / pre-release** na tag
+`v1.3.0rc4-motor-council-dry-run` (um **pre-release**, não a versão "latest"
+do repositório). Não é produção e não executa nada de verdade ainda.
+
+Estado atual (todos verificados por teste, não por convenção):
+
+- **Execução de motor real:** desligada — trava literal
+  `REAL_LOCAL_ENGINE_EXECUTION_ENABLED = False`, sem API para ativar.
+- **Comandos de CLI/chat (`nomos conselho` / `/conselho`):** ainda **não
+  implementados** — existe só a especificação de UX futura.
+- **Nuvem / rede / subprocess:** não usados por nenhum módulo do Council.
+- **Policy Gate:** só dry-run (A0–A6 simulado, nunca a política real).
+- **Audit envelope:** só dry-run, apenas metadados (`would_write_audit=false`).
+- **Modo privado:** força `persist_allowed=false` de ponta a ponta.
+
+Detalhes técnicos e o mapa completo das fases MC0–MC9:
+
+- [`docs/architecture/MOTOR_COUNCIL_INDEX_v1.md`](docs/architecture/MOTOR_COUNCIL_INDEX_v1.md) — índice técnico
+- [`docs/architecture/MOTOR_COUNCIL_UX_SPEC_v1.md`](docs/architecture/MOTOR_COUNCIL_UX_SPEC_v1.md) — UX futura de CLI/chat (spec-only)
+
 ## Maturidade
 
-Release candidate (v1.3.0rc4). Suíte com 494 testes cobrindo
-segurança (fail-closed, não-vazamento de segredo, opt-in de nuvem) e UX.
-API interna pode mudar; os comandos da tabela acima são estáveis.
+Release candidate (v1.3.0rc4, **pre-release**). Suíte com 778 testes cobrindo
+segurança (fail-closed, não-vazamento de segredo, opt-in de nuvem) e UX. O
+**Motor Council** está em dry-run (ver seção acima): sem execução real, sem
+CLI/chat, sem nuvem. API interna pode mudar; os comandos da tabela acima são
+estáveis.
 
 ## Desenvolvimento
 

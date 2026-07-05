@@ -7,17 +7,36 @@ INDEX_ONLY=true
 IMPLEMENTATION_SUMMARY=true
 RELEASE_PREP=true
 CODE_CHANGED=false
-TAG_CREATED=false
-RELEASE_PUBLISHED=false
+```
+
+> As flags abaixo eram a foto do momento em que este índice foi criado (MC10,
+> antes de qualquer tag/release). Elas evoluíram nas fases seguintes; o estado
+> **atual** de release está no bloco "Estado pós-release" logo em seguida.
+>
+> ```text
+> TAG_CREATED=false          # (MC10) — a tag foi criada depois, em MC11-RC4
+> RELEASE_PUBLISHED=false     # (MC10) — o release foi publicado depois, em MC12-RC4
+> PYPI_PUBLISHED=false        # continua verdadeiro: nada publicado no PyPI
+> ```
+
+**Estado pós-release (a partir de MC13-RC4):**
+
+```text
+RC4_TAG=v1.3.0rc4-motor-council-dry-run
+RC4_TAG_COMMIT=10a7cc7
+RC4_RELEASE_PUBLISHED=true
+RC4_PRERELEASE=true
+RC4_LATEST=false
+RELEASE_WORKFLOW_RC_GUARD=true
+README_PUBLIC_ALIGNMENT=done
 PYPI_PUBLISHED=false
 ```
 
 Este documento é um **índice técnico de consolidação**, não uma especificação
 nova nem uma implementação. Ele resume, com referências verificáveis, tudo o
-que as fases MC0–MC9 do Motor Council entregaram até aqui, para servir de mapa
-único antes de qualquer decisão de tag/release (RC4) ou de nova fase de
-implementação. Nenhum arquivo em `src/**` ou `tests/**` foi criado ou alterado
-para produzir este índice.
+que as fases MC0–MC9 do Motor Council entregaram, mais o estado de release das
+fases MC10–MC13-RC4. Nenhum arquivo em `src/**` ou `tests/**` foi criado ou
+alterado para produzir ou manter este índice.
 
 ## 2. Scope
 
