@@ -2,7 +2,27 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC14-UX: índice, tag, release, alinhamento público e CLI skeleton desabilitado)
+## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC15-UX: índice, tag, release, alinhamento público, CLI skeleton e comando dry-run)
+
+### Added (MC15-UX)
+- Added `nomos conselho simular "texto"` as a redacted dry-run command backed
+  by the Motor Council dry-run orchestrator (`CouncilOrchestratorDryRun`).
+  Flags: `--modo rapido|balanceado|critico|paranoico` (paranoico ⇒ privado),
+  `--privado`, `--json`, `--iniciante`, `--avancado`. Saída humana
+  (`[NOMOS-MC-DRY-RUN]`/`[NOMOS-MC-GATE-BLOCKED]`) e JSON mínimo/redigido
+  (`dry_run/allowed/blocked/would_execute/would_write_audit/private_mode/
+  persist_allowed/failure_code`). Novo módulo `src/nomos/council/cli_dry_run.py`;
+  o roteador de `conselho` em `cli.py` libera só `simular`, mantendo os demais
+  subcomandos desabilitados.
+
+### Security (MC15-UX)
+- The Motor Council CLI still performs no real engine execution, persistence,
+  real policy, real audit or real vault calls: `simular` chama apenas o
+  orquestrador dry-run, nunca o harness real, e o roteamento acontece antes de
+  `_paths()` (Vault/Policy/Audit não são construídos). O prompt nunca é ecoado
+  (humano/JSON/erro); flags proibidas (`--real`/`--enable`/`--cloud`/…) e
+  desconhecidas falham fechado (`[NOMOS-MC-CLI-DENIED]`). Provado por 29 testes
+  novos (incl. AST de pureza). Suíte: 799 → 828.
 
 ### Added (MC14-UX)
 - Added disabled Motor Council CLI skeleton for the future `nomos conselho`
