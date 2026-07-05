@@ -1189,6 +1189,19 @@ def cmd_logs(ctx, args) -> int:
     return EXIT_OK
 
 
+def cmd_conselho(ctx, args) -> int:
+    """Motor Council CLI — ESQUELETO DESABILITADO (MC14-UX).
+
+    Fail-closed: nunca executa o orquestrador, motor, policy/audit/vault reais,
+    nem processa/ecoa o que o usuário digitou. `ctx` e `args` são ignorados de
+    propósito — a mensagem genérica vem do módulo puro
+    `nomos.council.cli_disabled`. (Na prática este handler quase nunca é
+    alcançado: `main()` já curto-circuita `conselho` antes do argparse.)
+    """
+    from nomos.council.cli_disabled import run_disabled
+    return run_disabled()
+
+
 # ------------------------- parser -------------------------
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1445,6 +1458,17 @@ def build_parser() -> argparse.ArgumentParser:
     for mp in (m1, m2, m3, m4, m5, m6, m7, m8):
         mp.set_defaults(fn=cmd_memory)
 
+    # MC14-UX: Motor Council — comando registrado, porém DESABILITADO por
+    # construção (fail-closed). Aparece no --help para descoberta, mas qualquer
+    # uso é curto-circuitado em main() para a mensagem de bloqueio, sem
+    # interpretar subcomando/prompt/flags. O REMAINDER + fn são só defesa em
+    # profundidade caso o curto-circuito seja removido no futuro.
+    co = sub.add_parser(
+        "conselho",
+        help="Motor Council — pré-release, ainda DESABILITADO (dry-run only)")
+    co.add_argument("resto", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
+    co.set_defaults(fn=cmd_conselho)
+
     sub.add_parser("status").set_defaults(fn=cmd_status)
     lg = sub.add_parser("logs").add_subparsers(dest="logs_cmd", required=True)
     lgv = lg.add_parser("verify", help="verifica a cadeia e a âncora HMAC do audit log")
@@ -1478,6 +1502,16 @@ def cmd_menu(ctx, args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # MC14-UX: Motor Council CLI desabilitado por construção. Curto-circuito
+    # ANTES do argparse e de _paths(): se o primeiro token é `conselho`, nenhum
+    # subcomando, prompt ou flag é interpretado, e nenhum contexto de kernel
+    # (vault/policy/audit) é sequer construído. Sempre imprime a mensagem
+    # genérica de bloqueio, sem ecoar nada do que o usuário digitou.
+    _argv = list(sys.argv[1:] if argv is None else argv)
+    if _argv and _argv[0] == "conselho":
+        from nomos.council.cli_disabled import run_disabled
+        return run_disabled()
+
     args = build_parser().parse_args(argv)
     fn = getattr(args, "fn", None)
     if fn is None:
