@@ -2,7 +2,27 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC17-UX: índice, tag, release, alinhamento público, CLI skeleton/dry-run, chat skeleton e chat dry-run spec)
+## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC18-UX: índice, tag, release, alinhamento público, CLI skeleton/dry-run, chat skeleton/dry-run)
+
+### Added (MC18-UX)
+- Added `/conselho simular <texto>` as a redacted dry-run chat command backed
+  by the Motor Council dry-run orchestrator (`CouncilOrchestratorDryRun`).
+  Flags: `--modo rapido|balanceado|critico|paranoico` (paranoico ⇒ privado),
+  `--privado`, `--json`, `--iniciante`, `--avancado`. Saída humana
+  (`[NOMOS-MC-CHAT-DRY-RUN]`/`[NOMOS-MC-CHAT-GATE-BLOCKED]`) e JSON mínimo
+  escalar. Novo módulo `src/nomos/council/chat_dry_run.py`; o ramo `/conselho`
+  do loop de `amigavel.py` passou a rotear só `simular` para dry-run, mantendo
+  os demais subcomandos desabilitados.
+
+### Security (MC18-UX)
+- Motor Council chat dry-run performs no real engine execution, persistence,
+  real policy, real audit or real vault calls: `simular` chama apenas o
+  orquestrador dry-run, nunca o harness real, e nunca constrói contexto de
+  kernel. O prompt nunca é ecoado (humano/JSON/erro); flags proibidas
+  (`--real`/`--enable`/`--cloud`/…) e desconhecidas falham fechado
+  (`[NOMOS-MC-CHAT-DENIED]`). A saída é redigida à mão e **não serializa o
+  resultado inteiro** do orquestrador (nunca `result.to_dict()`). Provado por
+  33 testes novos (incl. integração pelo loop real e AST). Suíte: 851 → 884.
 
 ### Documentation (MC17-UX)
 - Added Motor Council chat dry-run command specification for future
