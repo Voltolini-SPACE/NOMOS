@@ -2,7 +2,32 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC21: índice, tag, release, CLI/chat dry-run, alinhamento público, spec e helper de unificação)
+## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC22: índice, tag, release, CLI/chat dry-run, alinhamento, helper e migração da CLI)
+
+### Changed (MC22)
+- Migrated the Motor Council CLI dry-run output to the shared safe output
+  helper: `nomos conselho simular` agora usa `build_safe_output` +
+  `render_json_output` (`src/nomos/council/safe_output.py`) como fonte da
+  estrutura segura e do JSON, em vez de montar o JSON à mão. O `--json` do CLI
+  passou de 8 para 10 campos (adição compatível de `interface`/`mode`).
+- Improved CLI dry-run human messages for non-technical users: saída mais
+  simples e amigável ("Simulação segura concluída. Nada foi executado de
+  verdade. Nada foi salvo. Nenhum dado sensível foi exibido."), sem jargão; o
+  bloco técnico `DRY_RUN=true`/`REAL_*` fica sob "Status:" e os detalhes
+  completos no `--json`.
+
+### Security (MC22)
+- CLI dry-run output remains redacted and emits only approved safe scalar
+  fields: o prompt nunca é ecoado, o resultado do orquestrador nunca é
+  serializado (sem `to_dict`/`repr`/`vars`/`asdict`), `conselho` continua
+  roteado antes de `_paths()` e o harness/policy/vault/audit reais não são
+  chamados. 15 testes novos (migração + UX + regressão). Suíte: 922 → 937.
+
+### Not changed (MC22)
+- Chat dry-run was not migrated yet (`chat_dry_run.py`/`amigavel.py`
+  intocados); o helper `safe_output.py` não foi alterado.
+- No real engine execution enabled.
+- No PyPI publication; nenhuma tag ou release criada.
 
 ### Added (MC21)
 - Added isolated Motor Council shared safe output/redaction helper
