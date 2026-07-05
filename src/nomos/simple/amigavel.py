@@ -39,6 +39,7 @@ AJUDA = """comandos:
   /fixar                    marco esta conversa como importante (não expira)
   /privado                  modo efêmero: esta conversa NÃO é gravada em disco
   /nuvem <pergunta>         respondo usando a nuvem (peço permissão antes)
+  /conselho                 Motor Council (pré-release, ainda DESABILITADO)
   /status                   como estou por dentro
   /ajuda                    esta lista
   /sair                     até logo"""
@@ -132,6 +133,13 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
             return 0
         if linha == "/ajuda":
             say(AJUDA)
+            continue
+        if linha == "/conselho" or linha.startswith("/conselho "):
+            # MC16-UX: chat command do Motor Council — registrado, porém
+            # DESABILITADO/fail-closed. Delega ao handler puro, que nunca
+            # processa/ecoa o texto do usuário nem chama o orquestrador.
+            from nomos.council.chat_disabled import handle_disabled_chat_command
+            say(handle_disabled_chat_command(linha))
             continue
         if linha == "/status":
             cerebro = perfil.get("modelo") or "nenhum (modo demo)"
