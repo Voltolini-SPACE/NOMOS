@@ -41,12 +41,27 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
   melhorá-lo fica para `MC12-RC4`, assim como ajustar `release.yml` para não
   precisar dessa correção pós-hoc na próxima tag.
 
-### Não alterado
+### Fixed (MC12-RC4)
+- Corrected RC4 GitHub Release metadata/body to publish as pre-release, not
+  latest: título trocado de `v1.3.0rc4-motor-council-dry-run` (genérico) para
+  `NOMOS v1.3.0rc4 — Motor Council Dry-run`, corpo trocado do texto padrão do
+  workflow pelo conteúdo técnico de `docs/missions/
+  GITHUB_RELEASE_v1.3.0rc4_MOTOR_COUNCIL_DRY_RUN.md` (postura de segurança,
+  `PYTEST=778`/`CI=17/17`, itens incluídos/não incluídos, instalação).
+  `prerelease=true`/`draft=false`/`make_latest=false` reconfirmados;
+  `/releases/latest` continua 404.
+- Hardened release workflow so future RC tags are not published as
+  latest/final: `.github/workflows/release.yml` ganhou um step
+  `Resolve release flags` que decide `prerelease`/`make_latest` a partir do
+  nome da tag (`*rc*` ⇒ `prerelease=true`/`make_latest=false`), eliminando a
+  necessidade de correção manual pós-publicação na próxima tag `v*rc*`.
+
+### Not changed
 - Nenhum código de runtime alterado (`src/**` intocado).
 - Nenhum teste alterado (`tests/**` intocado); suíte permanece em 778.
 - Nenhum comando CLI ou chat implementado.
-- Nenhuma tag ou release criados **manualmente**; nenhuma publicação no
-  PyPI. `.github/workflows/release.yml` não foi alterado.
+- Nenhuma tag movida, recriada ou apagada; nenhuma publicação no PyPI.
+- Nenhum asset binário novo anexado ao release existente.
 
 ## [1.3.0rc16] — 2026-07-04 (Motor Council — Fase MC8: orquestrador dry-run)
 

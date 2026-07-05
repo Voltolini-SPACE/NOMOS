@@ -61,12 +61,28 @@ jobs:
           /tmp/venv-release/bin/nomos --version
           NOMOS_HOME=/tmp/nomos-release-smoke /tmp/venv-release/bin/nomos doutor
 
+      - name: Resolve release flags
+        id: release_flags
+        shell: bash
+        run: |
+          # RC tags (qualquer "v*rc*") nunca podem virar latest/final
+          # automaticamente -- só uma tag final sem "rc" (ex.: v1.3.0) pode.
+          if [[ "${{ github.ref_name }}" == *rc* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "make_latest=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "make_latest=legacy" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Criar release no GitHub
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/*
           generate_release_notes: true
+          prerelease: ${{ steps.release_flags.outputs.prerelease }}
+          make_latest: ${{ steps.release_flags.outputs.make_latest }}
           body: |
             Consulte o `CHANGELOG.md` para as novidades desta versão.
 
