@@ -2,7 +2,23 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC24: índice, tag, release, CLI/chat dry-run, alinhamento, helper, migração de CLI+chat e contrato único de flags proibidas)
+## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC27 + site: contrato único de flags proibidas, site com brandbook congelado e update agent read-only)
+
+### Added (MC25–MC27)
+- **Site NOMOS** (`site/`): landing estática com brandbook congelado
+  (`docs/brand/`), página 404, assets e `preview.py`; guia de instalação em
+  `docs/installation/` (MC25; polish/rebrand em `docs/missions/SITE_*`).
+- **NOMOS Update Agent** (`tools/nomos_update_agent.py`, MC27.0): agente
+  **read-only/proposal-only** de consistência de documentação. `--check
+  [--json]` funciona como gate de CI (exit 0/1, campos estáveis,
+  `real_execution_enabled=false`, `auto_push_enabled=false`); `--diff [--json]`
+  propõe patches sem escrever (`PROPOSTA_DIFF_ONLY`, `NO_WRITE`,
+  `HUMAN_APPROVAL_REQUIRED`); `--apply` permanece bloqueado fail-closed.
+  Contrato em `docs/governance/NOMOS_UPDATE_AGENT.md`. 75 testes novos
+  (MC25 deliverables + MC26 check + MC27 diff). Suíte: 1024 → 1114.
+- **Higiene de repo**: `.gitignore` ignora diretórios de extração de
+  sdist/build (`/nomos-[0-9]*/`) e `.DS_Store`; `conftest.py` raiz evita
+  "import file mismatch" na coleta do pytest.
 
 ### Changed (MC24)
 - Reconciled the Motor Council dry-run **forbidden flags** contract between CLI
