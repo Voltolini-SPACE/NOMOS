@@ -4,6 +4,31 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC39 — NOMOS Dash: a ferramenta própria de mission control)
+- **`dash/` no painel**: dashboard AO VIVO, uma tela, leitura pura (sem
+  nenhum POST). Referências aplicadas (mission-control/glanceability,
+  btop): 4 sinais vitais num relance (status, aprovações, memórias a
+  revisar, cadeia), **sparkline 24h da atividade REAL** (nova série
+  `atividade_24h`: 24 buckets/hora computados da trilha, só timestamps),
+  motores por modalidade, avisos e uptime. Polling same-origin: `health/`
+  5s, seções 30s; realce suave SÓ quando um valor muda (sem flicker-
+  ansiedade; respeita `prefers-reduced-motion`); pausa sozinho com a aba
+  oculta + botão pausar; queda de conexão mostra "reconectando…" — nunca
+  inventa dado. Shell 100% estático (dados via JSON + `textContent`,
+  XSS-safe por projeto); forma canônica `dash/` (301 sem barra); link
+  "dash ao vivo ↗" na sidebar.
+- **CSP** ganhou `connect-src 'self'` (fetch SÓ da própria origem — o
+  resto segue `default-src 'none'`). **`health/`** ganhou `uptime_s` e
+  `uptime_hum`.
+- **Site**: fotos regeneradas do produto ATUAL (abas MC37 + tema escuro,
+  countdown vivo) + figure destacada do Dash com copy honesto; alt/captions
+  atualizados (nada de "lateral" que não existe mais).
+- Testes: `tests/test_painel_dash.py` (8 casos — shell estático sem
+  interpolação, widgets, CSP, série 24h real via dados e API, uptime,
+  405/404, link na sidebar). E2E real (Chromium + servidor vivo):
+  aprovação criada com a página aberta fez o tile ir de 0→1 **sem
+  reload**, sparkline com 24 barras, zero erros de console.
+
 ### Added (MC38 — chat local no painel, estilo ChatGPT)
 Chat funcional embutido no painel, com histórico de conversas e conteúdo
 visível, rodando **só motor local**. Testes: `tests/test_chat_painel.py` (7).

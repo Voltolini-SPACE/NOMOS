@@ -370,9 +370,12 @@ _JS = """
 
 # headers enviados em TODAS as respostas do painel (defesa em profundidade)
 _HEADERS_SEGURANCA = {
+    # connect-src 'self' (MC39): o Dash ao vivo faz fetch SÓ da própria
+    # origem (health//api/) — qualquer outro destino segue bloqueado
     "Content-Security-Policy": ("default-src 'none'; "
                                 "style-src 'unsafe-inline'; "
                                 "script-src 'unsafe-inline'; "
+                                "connect-src 'self'; "
                                 "img-src data:; base-uri 'none'; "
                                 "form-action 'self'; frame-ancestors 'none'"),
     "X-Content-Type-Options": "nosniff",
@@ -512,6 +515,26 @@ def dados_dashboard(ctx) -> dict:
     except Exception:
         capacidades = []   # catálogo nunca derruba o painel
 
+    # Atividade 24h (MC39 — Dash): eventos/hora da trilha, SÓ timestamps.
+    # Alimenta a sparkline do dashboard ao vivo com histórico REAL.
+    atividade_24h = {"buckets": [0] * 24, "total": 0}
+    try:
+        if trilha.exists():
+            agora_ts = time.time()
+            for linha in trilha.read_text(encoding="utf-8",
+                                          errors="ignore").splitlines()[-5000:]:
+                try:
+                    ts = float(json.loads(linha).get("ts") or 0)
+                except Exception:
+                    continue
+                idade_h = (agora_ts - ts) / 3600.0
+                if 0 <= idade_h < 24:
+                    # bucket 23 = hora atual; 0 = 24h atrás (ordem de leitura)
+                    atividade_24h["buckets"][23 - int(idade_h)] += 1
+                    atividade_24h["total"] += 1
+    except Exception:
+        atividade_24h = {"buckets": [0] * 24, "total": 0}
+
     # Memória 2.0 (MC31/B5): fila de candidatas visível — aprovar é no terminal
     try:
         from nomos.cognition.memory import Memory
@@ -643,6 +666,7 @@ def dados_dashboard(ctx) -> dict:
         "roteador_vivo": roteador_vivo,
         "aprovacoes": aprovacoes,
         "sistema": sistema,
+        "atividade_24h": atividade_24h,
     }
 
 
@@ -688,11 +712,15 @@ def _sidebar(d: dict, n_aprov: int) -> str:
         f'<div class="linha">'
         f'{"🔒 só-local" if d["so_local"] else "🔌 nuvem plugada"}</div>'
         "</div>")
+    # NOMOS Dash (MC39): a ferramenta própria de mission control, ao vivo
+    dash = ('<a href="dash/" class="dashlink">'
+            '<span class="ico" aria-hidden="true">◪</span>dash ao vivo '
+            '<span aria-hidden="true">↗</span></a>')
     return ('<aside class="sidebar"><div class="brand">NOMOS'
             '<span class="cursor">▌</span></div>'
             '<p class="tagline">seu agente · sua máquina · suas regras</p>'
             '<nav class="menu" aria-label="seções do painel">'
-            + "".join(itens) + "</nav>" + sysbox + "</aside>")
+            + "".join(itens) + dash + "</nav>" + sysbox + "</aside>")
 
 
 def _bloco_atencao(d: dict, n_aprov: int) -> str:
@@ -1187,6 +1215,206 @@ def _subpagina(titulo: str, corpo: str, base: str) -> str:
     return _doc(f"NOMOS — {titulo}", shell)
 
 
+# ---------------------------------------------------------------------------
+# NOMOS Dash (MC39) — a ferramenta própria de dashboard: mission control
+# ao vivo, numa tela. Princípios aplicados (pesquisa de referências):
+# glanceability (a história em <1 min; máx. 8 métricas), tempo-real sem
+# ansiedade (realce suave SÓ quando o valor muda; pausa com aba oculta),
+# sparkline com histórico REAL (estilo btop), honestidade em falha
+# ("reconectando…" — nunca inventa dado). Zero assets externos; fetch SÓ
+# same-origin (CSP connect-src 'self'); leitura pura — dash não tem POST.
+# ---------------------------------------------------------------------------
+_CSS_DASH = """
+ :root{--bg:#0A0F0D;--surface:#111814;--surface2:#0d1411;--line:#1d2a22;
+   --neon:#5AF78E;--dim:#2BD968;--txt:#E8FFE8;--fraco:#7c9a84;
+   --ciano:#56E1E9;--amarelo:#F2C14E;--vermelho:#FF5C57;
+   --glow:0 0 8px rgba(90,247,142,.45)}
+ *{box-sizing:border-box}
+ body{font-family:'JetBrains Mono','IBM Plex Mono','SF Mono',Menlo,Consolas,
+   monospace;background:var(--bg);color:var(--txt);margin:0;font-size:14px;
+   line-height:1.5;min-height:100vh;display:flex;flex-direction:column}
+ a{color:var(--ciano)} :focus-visible{outline:2px solid var(--neon);
+   outline-offset:2px}
+ header{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+   padding:.8rem 1.2rem;border-bottom:1px solid var(--line)}
+ h1{font-size:1rem;margin:0;color:var(--neon);text-shadow:var(--glow);
+   letter-spacing:.14em}
+ h1 small{color:var(--fraco);letter-spacing:0;font-weight:400}
+ .hspace{margin-left:auto;display:flex;gap:.9rem;align-items:center;
+   color:var(--fraco);font-size:.74rem}
+ button.pausa{font:inherit;font-size:.74rem;background:var(--surface);
+   color:var(--txt);border:1px solid var(--line);border-radius:6px;
+   padding:.25rem .7rem;cursor:pointer}
+ button.pausa[aria-pressed="true"]{border-color:var(--amarelo);
+   color:var(--amarelo)}
+ main{flex:1;padding:1.1rem 1.2rem;display:grid;gap:.8rem;
+   grid-template-columns:repeat(12,1fr);align-content:start}
+ .w{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+   padding:.8rem .95rem;min-width:0}
+ .w h2{margin:0 0 .45rem;font-size:.66rem;color:var(--fraco);font-weight:400;
+   text-transform:uppercase;letter-spacing:.16em}
+ .w .valor{font-size:1.7rem;color:var(--neon);text-shadow:var(--glow);
+   font-weight:700;line-height:1.1}
+ .w .valor.warn{color:var(--amarelo)} .w .valor.err{color:var(--vermelho)}
+ .w small{color:var(--fraco);font-size:.72rem;display:block;margin-top:.2rem}
+ .c3{grid-column:span 3} .c4{grid-column:span 4} .c6{grid-column:span 6}
+ .c8{grid-column:span 8} .c12{grid-column:span 12}
+ .c8{display:flex;flex-direction:column}
+ .c8 svg.spark{flex:1;min-height:64px;height:auto}
+ @media(max-width:980px){.c3{grid-column:span 6}.c4{grid-column:span 6}
+   .c6,.c8{grid-column:span 12}}
+ @media(max-width:560px){.c3,.c4{grid-column:span 12}}
+ .lista{margin:.2rem 0 0;padding:0;list-style:none;font-size:.8rem}
+ .lista li{padding:.18rem 0;border-bottom:1px dashed var(--line)}
+ .lista li:last-child{border-bottom:0}
+ .lista .mot{color:var(--neon)} .lista .mod{color:var(--fraco)}
+ svg.spark{width:100%;height:64px;display:block}
+ svg.spark rect{fill:var(--dim)} svg.spark rect.hoje{fill:var(--neon)}
+ .mudou{animation:pulso .6s ease-out}
+ @keyframes pulso{0%{background:rgba(90,247,142,.18)}100%{background:none}}
+ @media (prefers-reduced-motion:reduce){.mudou{animation:none}}
+ #estado[data-erro="1"]{color:var(--amarelo)}
+ footer{padding:.6rem 1.2rem;border-top:1px solid var(--line);
+   color:var(--fraco);font-size:.72rem;display:flex;gap:1rem;flex-wrap:wrap}
+"""
+
+_JS_DASH = """
+(function(){
+ 'use strict';
+ var pausado=false, ultAt=0, antes={};
+ var $=function(id){return document.getElementById(id);};
+ function marca(el){ if(!el) return;
+   el.classList.remove('mudou'); void el.offsetWidth; el.classList.add('mudou'); }
+ function poe(id, v, cls){ var el=$(id); if(!el) return;
+   var s=String(v);
+   if(antes[id]!==undefined && antes[id]!==s) marca(el.closest('.w')||el);
+   antes[id]=s; el.textContent=s; if(cls!==undefined) el.className='valor '+cls; }
+ function chip(status){ return status==='PRONTO'?'':(status==='PARCIAL'?'warn':'err'); }
+ function spark(buckets){
+   var svg=$('spark'); if(!svg||!buckets||!buckets.length) return;
+   var W=480,H=64,n=buckets.length,bw=W/n-2,max=Math.max.apply(null,buckets.concat([1]));
+   var out='';
+   for(var i=0;i<n;i++){ var h=Math.max(2,Math.round((buckets[i]/max)*(H-6)));
+     out+='<rect x="'+(i*(W/n)+1).toFixed(1)+'" y="'+(H-h)+'" width="'+bw.toFixed(1)
+         +'" height="'+h+'"'+(i===n-1?' class="hoje"':'')+'></rect>'; }
+   svg.innerHTML=out; }
+ function saude(d){
+   poe('status', d.status_geral, chip(d.status_geral));
+   poe('aprov', d.aprovacoes_pendentes, d.aprovacoes_pendentes?'warn':'');
+   poe('motores', d.motores_prontos, d.motores_prontos?'':'warn');
+   poe('passo', d.proximo_passo);
+   poe('uptime', d.uptime_hum||'—');
+   var ul=$('avisos'); if(ul){ ul.textContent='';
+     (d.avisos&&d.avisos.length?d.avisos:['nada pendente ✓']).forEach(function(a){
+       var li=document.createElement('li'); li.textContent=a; ul.appendChild(li); }); }
+   var lock=$('modo'); if(lock) lock.textContent=d.so_local?'🔒 só-local':'🔌 nuvem plugada';
+   ultAt=Date.now(); var es=$('estado');
+   es.removeAttribute('data-erro'); es.textContent='ao vivo'; }
+ function dados(d){
+   if(d.secao==='atividade_24h'){ spark(d.dados.buckets);
+     poe('ev24', d.dados.total); }
+   if(d.secao==='roteador_vivo'){ var ul=$('rotas'); if(!ul) return;
+     ul.textContent='';
+     d.dados.forEach(function(r){ var li=document.createElement('li');
+       var mod=document.createElement('span'); mod.className='mod';
+       mod.textContent=r.modalidade+' → ';
+       var mot=document.createElement('span'); mot.className='mot';
+       mot.textContent=r.motor||'— nenhum pronto';
+       li.appendChild(mod); li.appendChild(mot); ul.appendChild(li); }); }
+   if(d.secao==='memoria'){ poe('memrev', d.dados.candidatas,
+     d.dados.candidatas?'warn':''); }
+   if(d.secao==='auditoria'){ poe('cadeia',
+     d.dados.cadeia_integra?'íntegra':'verificar',
+     d.dados.cadeia_integra?'':'warn'); } }
+ function falhou(){ var es=$('estado'); es.setAttribute('data-erro','1');
+   es.textContent='reconectando…'; }
+ function pega(url, fn){ fetch(url,{cache:'no-store'}).then(function(r){
+     if(!r.ok) throw 0; return r.json(); }).then(fn).catch(falhou); }
+ // a página vive em .../dash/ (canônico) — os endpoints ficam um nível acima
+ function ciclo5(){ if(pausado||document.hidden) return; pega('../health/',saude); }
+ function ciclo30(){ if(pausado||document.hidden) return;
+   ['atividade_24h','roteador_vivo','memoria','auditoria'].forEach(function(s){
+     pega('../api/?secao='+s, dados); }); }
+ function relogio(){ var el=$('faz'); if(!el) return;
+   el.textContent = ultAt? Math.round((Date.now()-ultAt)/1000)+'s' : '—'; }
+ var bt=$('pausa');
+ if(bt){ bt.addEventListener('click', function(){ pausado=!pausado;
+   bt.setAttribute('aria-pressed', pausado?'true':'false');
+   bt.textContent = pausado?'retomar':'pausar';
+   if(!pausado){ ciclo5(); ciclo30(); } }); }
+ document.addEventListener('visibilitychange', function(){
+   if(!document.hidden && !pausado){ ciclo5(); ciclo30(); } });
+ ciclo5(); ciclo30();
+ setInterval(ciclo5, 5000); setInterval(ciclo30, 30000);
+ setInterval(relogio, 1000);
+})();
+"""
+
+
+def _uptime_humano(segundos: float) -> str:
+    """3661s → '1h01m'; 90s → '1m30s'; 12s → '12s' — curto e legível."""
+    s = max(0, int(segundos))
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m{s % 60:02d}s"
+    return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+
+
+def render_dash(versao: str) -> str:
+    """Shell ESTÁTICO do NOMOS Dash — nenhum dado interpolado no HTML;
+    tudo chega por polling same-origin e entra via textContent (XSS-safe).
+    """
+    e = html.escape
+    corpo = (
+        "<header><h1>NOMOS DASH <small>— mission control local 🔒</small></h1>"
+        '<div class="hspace">'
+        '<span aria-live="polite"><span id="estado">carregando…</span> · '
+        'atualizado há <span id="faz">—</span></span>'
+        '<button class="pausa" id="pausa" aria-pressed="false">pausar</button>'
+        '<a href="../">← painel</a></div></header>'
+        "<main>"
+        # linha 1 — o essencial num relance (glanceability)
+        '<div class="w c3"><h2>status geral</h2>'
+        '<div class="valor" id="status">—</div>'
+        '<small>doutor: <span id="passo">—</span></small></div>'
+        '<div class="w c3"><h2>aprovações à sua espera</h2>'
+        '<div class="valor" id="aprov">—</div>'
+        '<small><a href="../#aprovacoes">decidir no painel →</a></small></div>'
+        '<div class="w c3"><h2>memórias a revisar</h2>'
+        '<div class="valor" id="memrev">—</div>'
+        "<small>aprovar é sempre decisão sua</small></div>"
+        '<div class="w c3"><h2>cadeia de auditoria</h2>'
+        '<div class="valor" id="cadeia">—</div>'
+        "<small>verificação real, a cada ciclo</small></div>"
+        # linha 2 — histórico real (sparkline) + motores
+        '<div class="w c8"><h2>atividade — últimas 24h '
+        "(<span id=\"ev24\">—</span> eventos)</h2>"
+        '<svg id="spark" class="spark" viewBox="0 0 480 64" '
+        'preserveAspectRatio="none" role="img" '
+        'aria-label="eventos de auditoria por hora, últimas 24 horas"></svg>'
+        "<small>metadados da trilha — conteúdo nunca aparece</small></div>"
+        '<div class="w c4"><h2>motores prontos</h2>'
+        '<div class="valor" id="motores">—</div>'
+        '<ul class="lista" id="rotas"><li>carregando…</li></ul></div>'
+        # linha 3 — avisos honestos
+        '<div class="w c12"><h2>atenção</h2>'
+        '<ul class="lista" id="avisos"><li>carregando…</li></ul></div>'
+        "</main>"
+        "<footer><span>NOMOS v" + e(versao) + "</span>"
+        '<span id="modo">—</span>'
+        '<span>uptime do painel: <span id="uptime">—</span></span>'
+        "<span>ao vivo: health/ 5s · seções 30s · pausa sozinho quando a "
+        "aba se esconde</span>"
+        "<span>local por lei — este dash só LÊ; agir continua no gate</span>"
+        "</footer>")
+    return ("<!doctype html><html lang=\"pt-br\"><meta charset=\"utf-8\">\n"
+            "<meta name=\"viewport\" content=\"width=device-width, "
+            "initial-scale=1\">\n<title>NOMOS Dash</title>\n<style>"
+            + _CSS_DASH + "</style>\n" + corpo
+            + "\n<script>" + _JS_DASH + "</script>\n</html>")
+
+
 class DashboardServer:
     """Servidor do painel — loopback apenas; ação SÓ pela porta de aprovações.
 
@@ -1202,6 +1430,7 @@ class DashboardServer:
             raise ValueError("painel é LOCAL por projeto: bind permitido só em 127.0.0.1")
         self.ctx = ctx
         self.secret = secrets.token_urlsafe(16)
+        self.iniciado_em = time.time()   # uptime real p/ o Dash e o health
         # 2ª porta de escrita (MC38): o chat local. Nasce DESLIGADO — o painel
         # puro segue read-only; `nomos painel` liga. Token CSRF por servidor.
         self.chat_habilitado = bool(chat_habilitado)
@@ -1285,6 +1514,19 @@ class DashboardServer:
                     return self._api(query)
                 if caminho == base + "/health":
                     return self._health()
+                if caminho == base + "/dash":
+                    # NOMOS Dash (MC39): shell estático; dados via polling.
+                    # Como a raiz: forma canônica com barra final, para os
+                    # caminhos relativos (../health/, ../api/) resolverem.
+                    if not self.path.partition("?")[0].endswith("/"):
+                        self.send_response(301)
+                        self.send_header("Location", base + "/dash/")
+                        for k, v in _HEADERS_SEGURANCA.items():
+                            self.send_header(k, v)
+                        self.end_headers()
+                        return None
+                    from nomos import __version__ as _v
+                    return self._responder(200, render_dash(_v))
                 if caminho == base + "/audit":
                     return self._pagina_audit(query)
                 if caminho == base + "/roteador":
@@ -1410,6 +1652,9 @@ class DashboardServer:
                         "aprovacoes_pendentes": n_pend,
                         "motores_prontos": sum(
                             len(v) for v in d["modalidades"].values()),
+                        "uptime_s": int(time.time() - painel.iniciado_em),
+                        "uptime_hum": _uptime_humano(
+                            time.time() - painel.iniciado_em),
                         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                     }, ensure_ascii=False)
                     return self._responder(200, corpo, "application/json")

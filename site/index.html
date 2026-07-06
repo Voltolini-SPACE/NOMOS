@@ -388,15 +388,15 @@
 
             <figure class="shot">
                 <div class="shot-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp; 127.0.0.1 — painel local · só na sua máquina</div>
-                <img src="assets/painel-cockpit.webp" alt="Painel NOMOS no navegador: sidebar de navegação com badges, KPIs de status, fila de aprovações com botões APROVAR e NEGAR, e coluna lateral com o motor escolhido por modalidade" width="1440" height="900" loading="lazy" decoding="async">
-                <figcaption>O cockpit inteiro: navegação com badges de atenção, KPIs, aprovações pendentes e o roteador ao vivo na lateral.</figcaption>
+                <img src="assets/painel-cockpit.webp" alt="Painel NOMOS no navegador: sidebar de abas com badges de pendências, KPIs de status, bloco Precisa de você, motor ao vivo por modalidade, atividade recente e fila de aprovações com botões APROVAR e NEGAR" width="1440" height="900" loading="lazy" decoding="async">
+                <figcaption>O cockpit em abas: badges de atenção, KPIs, "precisa de você", motor ao vivo, atividade recente e as aprovações — com tema escuro ou claro, você escolhe.</figcaption>
             </figure>
 
             <div class="painel-duo">
                 <div>
                     <figure class="shot">
                         <div class="shot-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp; aprovações — você decide</div>
-                        <img src="assets/painel-aprovacoes.webp" alt="Cards de aprovação no painel NOMOS: categoria de risco, alvo, motivo, contagem regressiva de expiração e botões APROVAR e NEGAR" width="976" height="392" loading="lazy" decoding="async">
+                        <img src="assets/painel-aprovacoes.webp" alt="Cards de aprovação no painel NOMOS: categoria de risco, alvo, motivo, contagem regressiva de expiração e botões APROVAR e NEGAR" width="1238" height="167" loading="lazy" decoding="async">
                         <figcaption>Cada pedido chega com risco, alvo, motivo e prazo. APROVAR ou NEGAR viaja com token de uso único — reusar, adivinhar ou atrasar não funciona.</figcaption>
                     </figure>
                     <div class="card" style="margin-top:1.25rem;"><div class="ico">🔎</div><h3>Busca e filtro instantâneos</h3><p>Filtre tabelas e cards enquanto digita; busque na trilha de auditoria com <span class="k">audit/?q=</span> — só metadados, já redigidos, nunca conteúdo.</p></div>
@@ -404,7 +404,7 @@
                 <div>
                     <div class="card"><div class="ico">💬</div><h3>Chat local com histórico</h3><p>Uma aba de chat estilo ChatGPT dentro do painel: histórico de conversas à esquerda, thread à direita, composer embaixo. Roda <strong>só motor local</strong> (o cadeado vale) e, sem motor pronto, avisa em vez de inventar. Cada turno fica na auditoria.</p></div>
                     <div class="card" style="margin-top:1rem;"><div class="ico">✋</div><h3>Aprovar sem sair do fluxo</h3><p>A mesma fila do terminal, no navegador: token single-use, expira sozinho em 5 min, tudo auditado. Duas portas de escrita, ambas governadas — o resto do painel é leitura.</p></div>
-                    <div class="card" style="margin-top:1rem;"><div class="ico">🚦</div><h3>Roteador ao vivo</h3><p>A lateral mostra qual motor atenderia cada modalidade <em>agora</em> — e por quê. Sem motor pronto, o painel diz "nenhum pronto". Nunca finge.</p></div>
+                    <div class="card" style="margin-top:1rem;"><div class="ico">🚦</div><h3>Roteador ao vivo</h3><p>A visão geral mostra qual motor atenderia cada modalidade <em>agora</em> — e por quê. Sem motor pronto, o painel diz "nenhum pronto". Nunca finge.</p></div>
                 </div>
             </div>
 
@@ -429,9 +429,18 @@
                 </figure>
             </div>
 
+            <h3 style="margin-top:2.2rem; font-size:1.05rem; color:var(--neon);">E quando você só quer OLHAR: o NOMOS Dash</h3>
+            <p class="lead">Dentro do painel vive o <strong>Dash</strong> — nossa ferramenta própria de mission control, <strong>ao vivo</strong>: os quatro sinais vitais num relance, a atividade das últimas 24h em barras (dados reais da trilha), o motor escolhido por modalidade e os avisos que esperam você. Atualiza sozinho a cada 5s, destaca só o que mudou, pausa quando a aba se esconde — e se a conexão cair, diz "reconectando…" em vez de fingir.</p>
+            <figure class="shot">
+                <div class="shot-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp; dash/ — mission control ao vivo · atualiza sozinho, só leitura</div>
+                <img src="assets/painel-dash.webp" alt="NOMOS Dash: quatro tiles grandes com status geral, aprovações à espera, memórias a revisar e cadeia de auditoria; gráfico de barras da atividade das últimas 24 horas; lista de motores prontos por modalidade e avisos pendentes" width="1440" height="820" loading="lazy" decoding="async">
+                <figcaption>O Dash não tem botão de agir — de propósito. Ele LÊ; decidir continua no gate de aprovações. Glanceability: a história inteira em segundos.</figcaption>
+            </figure>
+
             <div class="term" role="group" aria-label="Abrir o painel">
                 <div class="termbar">~/nomos — bash</div>
-                <div><span class="p">$</span> <span class="c">nomos painel</span> <span class="o"># abre o cockpit no navegador — ler é livre, agir passa pelo gate</span></div>
+                <div><span class="p">$</span> <span class="c">nomos painel</span> <span class="o"># abre o cockpit — ler é livre, agir passa pelo gate</span></div>
+                <div><span class="o"># na sidebar, "dash ao vivo ↗" abre o mission control que se atualiza sozinho</span></div>
             </div>
         </div>
     </section>
