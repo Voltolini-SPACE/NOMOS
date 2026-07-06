@@ -162,6 +162,22 @@ Identidade **terminal escuro + verde-neon + monospace**.
 | **Amarelo** | `#F2C14E` | Aviso |
 | **Vermelho** | `#FF5C57` | Erro |
 
+### Tokens derivados (MC36 — referência única)
+
+Além do congelado acima, as superfícies usam tokens derivados. Referência:
+
+| Token | Hex | Uso | Nota |
+|-------|-----|-----|------|
+| `--fraco` | `#7c9a84` | Texto secundário | 6.3:1 no fundo — site e painel SINCRONIZADOS |
+| `--line` (site) | `#24382a` | Bordas em página ampla | por superfície |
+| `--line` (painel) | `#1d2a22` | Bordas em layout denso | por superfície |
+| `--surface2` | `#0d130f` (site) / `#0d1411` (painel) | Fundo secundário | por superfície |
+| glow | `12px/.35` (site) / `8px/.45` (painel) | Brilho neon | denso = menor e mais forte |
+
+Regra: `--fraco` é ÚNICO (legibilidade); os estruturais podem variar por
+densidade de layout, mas SEMPRE documentados aqui — divergência nova sem
+registro é bug de marca.
+
 ### Tipografia (Brandbook v1.0 — congelado)
 
 - **Tudo em monoespaçada.** Recomendada: **JetBrains Mono**.

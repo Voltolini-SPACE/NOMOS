@@ -33,7 +33,8 @@
             --bg: #0A0F0D; --surface: #111814; --surface2: #0d130f;
             --line: #24382a; --line2: #1a2820;
             --neon: #5AF78E; --neon-dim: #2BD968;
-            --texto: #E8FFE8; --texto2: #9fb8a5; --fraco: #6f8a76;
+            /* --fraco sincronizado com o painel (MC36): 6.3:1 no fundo */
+            --texto: #E8FFE8; --texto2: #9fb8a5; --fraco: #7c9a84;
             --rosa: #FF5FA2; --ciano: #56E1E9; --amarelo: #F2C14E; --vermelho: #FF5C57;
             --glow: 0 0 12px rgba(90, 247, 142, 0.35);
         }
@@ -87,6 +88,7 @@
         h2 { font-size: clamp(20px, 3.4vw, 27px); color: var(--neon); margin: 0.2em 0 0.5em; text-shadow: var(--glow); }
         h2 .n { color: var(--fraco); font-weight: 400; font-size: 0.6em; }
         h3 { font-size: 15px; color: var(--texto); margin: 1.1em 0 0.35em; }
+        h3.grupo-recursos { color: var(--fraco); font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; margin-top: 2rem; }
         p { color: var(--texto2); max-width: 76ch; margin-bottom: 0.8rem; }
         .lead { color: var(--texto2); font-size: 1.02rem; max-width: 76ch; margin-bottom: 0.5rem; }
 
@@ -177,9 +179,9 @@
             <div class="stats">
                 <div class="stat"><b>100%</b><span>local por padrão</span></div>
                 <div class="stat"><b>0</b><span>telemetria / rastreio</span></div>
-                <div class="stat"><b>14</b><span>motores e conectores no catálogo</span></div>
+                <div class="stat"><b>15</b><span>motores e conectores no catálogo</span></div>
                 <div class="stat"><b>A0–A6</b><span>níveis de risco governados</span></div>
-                <div class="stat"><b>1.280+</b><span>testes automatizados</span></div>
+                <div class="stat"><b>1.330+</b><span>testes automatizados</span></div>
                 <div class="stat"><b>~400 MB</b><span>cérebro leve, sem GPU</span></div>
             </div>
         </div>
@@ -192,9 +194,9 @@
             <h2 id="sobre-t">Um agente que trabalha para você, não contra</h2>
             <p class="lead">NOMOS vem do grego <em>νόμος</em> ("a lei"). É a plataforma que instala, configura, governa e executa o seu agente pessoal — inteiramente na sua máquina. Cérebro, memória, chaves e registros ficam com você. Três princípios inegociáveis:</p>
             <div class="grid">
-                <div class="card"><div class="ico">🔒</div><h3>Local por lei</h3><p>Por padrão, nada sai da sua máquina. A própria política bloqueia qualquer saída para a internet até você permitir.</p></div>
-                <div class="card"><div class="ico">✋</div><h3>Pede licença</h3><p>Toda ação sensível é aprovada por você. Em scripts e CI a resposta é sempre "não" — fail-closed, sem flag de bypass.</p></div>
-                <div class="card"><div class="ico">🎯</div><h3>Nunca finge</h3><p>Sem cérebro conectado, o NOMOS avisa. Jamais inventa uma resposta ou finge um dado que não tem.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🔒</div><h3>Local por lei</h3><p>Por padrão, nada sai da sua máquina. A própria política bloqueia qualquer saída para a internet até você permitir.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">✋</div><h3>Pede licença</h3><p>Toda ação sensível é aprovada por você. Em scripts e CI a resposta é sempre "não" — fail-closed, sem flag de bypass.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🎯</div><h3>Nunca finge</h3><p>Sem cérebro conectado, o NOMOS avisa. Jamais inventa uma resposta ou finge um dado que não tem.</p></div>
             </div>
         </div>
     </section>
@@ -204,27 +206,37 @@
         <div class="wrap">
             <div class="tag">// recursos</div>
             <h2 id="rec-t">Tudo que você precisa, na sua máquina</h2>
+
+            <h3 class="grupo-recursos"><span aria-hidden="true">🧠</span> Cérebro &amp; conversa</h3>
             <div class="grid">
-                <div class="card"><div class="ico">🧠</div><h3>Cérebro leve embutido</h3><p>Baixa um modelo pequeno (~400 MB) que roda em qualquer laptop, sem GPU nem Ollama. Uma vez só.</p></div>
-                <div class="card"><div class="ico">🚦</div><h3>Roteador automático</h3><p>Escolhe o melhor motor para cada tarefa — local primeiro, sempre. Você não precisa entender de modelos.</p></div>
-                <div class="card"><div class="ico">🎯</div><h3>Missões que fazem</h3><p>Não só responde: <span class="k">nomos missao</span> monta um plano legível, pede UMA aprovação, executa passo a passo e fecha com evidência — e um comando desfaz tudo. Nunca sobrescreve, nunca age sem seu "sim".</p></div>
-                <div class="card"><div class="ico">🔌</div><h3>Cidadão do ecossistema MCP</h3><p>O NOMOS é <strong>servidor</strong> Model Context Protocol (tools só-leitura para o Claude Desktop e outros agentes) e <strong>cliente</strong> — usa servers locais como capacidades, cada tool com nível de risco A0–A6 e confiança registrada. Tudo via stdio, sem rede.</p></div>
-                <div class="card"><div class="ico">💬</div><h3>Conversa de verdade</h3><p>Resposta em streaming (aparece enquanto o motor gera), memórias relevantes trazidas ao contexto com transparência total, e <span class="k">/arbitrar</span> no chat para o melhor de vários motores.</p></div>
-                <div class="card"><div class="ico">⚖️</div><h3>Arbitragem entre motores</h3><p>Além de rotear: vários motores prontos geram respostas, debatem entre si e um árbitro converge na melhor execução <strong>real</strong>. Sem motor pronto, o NOMOS avisa — nunca inventa.</p></div>
-                <div class="card"><div class="ico">🗄️</div><h3>Memória local</h3><p>SQLite na sua máquina, com busca full-text (FTS5). Você revisa o que vira memória permanente (<span class="k">nomos memoria</span>) — o NOMOS nunca decide sozinho o que guardar.</p></div>
-                <div class="card"><div class="ico">🔐</div><h3>Caixa-forte e backup</h3><p>Cofre de chaves com senha-mestra; segredos criptografados, nunca em logs. Seu NOMOS inteiro cabe num arquivo cifrado (<span class="k">nomos backup</span>) — memórias, chaves e tudo.</p></div>
-                <div class="card"><div class="ico">🧩</div><h3>Skills governadas</h3><p>Habilidades instaláveis e assinadas que só fazem o que declaram, com risco visível e aprovação.</p></div>
-                <div class="card"><div class="ico">🤖</div><h3>Agentes com escopo</h3><p>Agentes oficiais e próprios, cada um com ferramentas, motores preferidos e risco máximo definidos.</p></div>
-                <div class="card"><div class="ico">📋</div><h3>Auditoria com âncora</h3><p>Tudo que acontece é registrado. Trilha de auditoria com âncora HMAC — evidência que não se altera em silêncio.</p></div>
-                <div class="card"><div class="ico">🛡️</div><h3>Política executável</h3><p>A política de segurança não é um PDF: cada invariante (SEC-01…12) é um teste. Se o código divergir da política, a suíte falha.</p></div>
-                <div class="card"><div class="ico">📦</div><h3>Evidências verificáveis</h3><p>Cada missão gera um pacote com relatório, manifesto e SHA-256 (<span class="k">nomos evidencia</span>) — auditável offline, por qualquer pessoa.</p></div>
-                <div class="card"><div class="ico">⏱️</div><h3>Rotinas e briefings</h3><p>Agende tarefas locais e gere briefings — sempre em dry-run, com sua aprovação antes de qualquer efeito.</p></div>
-                <div class="card"><div class="ico">💬</div><h3>Conversas com retenção</h3><p>Abra, busque, fixe, exporte e esqueça conversas. Política de retenção sob o seu controle.</p></div>
-                <div class="card"><div class="ico">🖥️</div><h3>Painel web local</h3><p>Roda na sua máquina (<span class="k">nomos painel</span>): status, motores, evidências, política A0–A6 viva, decisões do roteador explicadas e auditoria com cadeia verificada — com API JSON local. Só leitura, só 127.0.0.1.</p></div>
-                <div class="card"><div class="ico">✅</div><h3>Fila de aprovações</h3><p>Toda ação sensível passa por uma fila (<span class="k">nomos approvals</span>) que você aprova — no terminal ou no painel local. Em scripts, a resposta é sempre "não".</p></div>
-                <div class="card"><div class="ico">⬆️</div><h3>Atualização com licença</h3><p><span class="k">nomos atualizar</span> checa se há versão nova e propõe — mas <strong>nunca</strong> atualiza sozinho. Você decide, sempre.</p></div>
-                <div class="card"><div class="ico">🩺</div><h3>Doutor</h3><p><span class="k">nomos doutor</span>: um check-up honesto do que está pronto e qual é o próximo passo.</p></div>
-                <div class="card"><div class="ico">🛑</div><h3>Botão de pânico</h3><p>Um comando para cortar tudo. Controle total, inclusive o de parar.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🧠</div><h3>Cérebro leve embutido</h3><p>Baixa um modelo pequeno (~400 MB) que roda em qualquer laptop, sem GPU nem Ollama. Uma vez só.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🚦</div><h3>Roteador automático</h3><p>Escolhe o melhor motor para cada tarefa — local primeiro, sempre. Você não precisa entender de modelos.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">💬</div><h3>Conversa de verdade</h3><p>Resposta em streaming (aparece enquanto o motor gera), memórias relevantes trazidas ao contexto com transparência total, e <span class="k">/arbitrar</span> no chat para o melhor de vários motores.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">⚖️</div><h3>Arbitragem entre motores</h3><p>Além de rotear: vários motores prontos geram respostas, debatem entre si e um árbitro converge na melhor execução <strong>real</strong>. Sem motor pronto, o NOMOS avisa — nunca inventa.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🗄️</div><h3>Memória local</h3><p>SQLite na sua máquina, com busca full-text (FTS5). Você revisa o que vira memória permanente (<span class="k">nomos memoria</span>) — o NOMOS nunca decide sozinho o que guardar.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">💬</div><h3>Conversas com retenção</h3><p>Abra, busque, fixe, exporte e esqueça conversas. Política de retenção sob o seu controle.</p></div>
+            </div>
+
+            <h3 class="grupo-recursos"><span aria-hidden="true">🛡️</span> Governança &amp; segurança</h3>
+            <div class="grid">
+                <div class="card"><div class="ico" aria-hidden="true">🎯</div><h3>Missões que fazem</h3><p>Não só responde: <span class="k">nomos missao</span> monta um plano legível, pede UMA aprovação, executa passo a passo e fecha com evidência — e um comando desfaz tudo. Nunca sobrescreve, nunca age sem seu "sim".</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">✅</div><h3>Fila de aprovações</h3><p>Toda ação sensível passa por uma fila (<span class="k">nomos approvals</span>) que você aprova — no terminal ou no painel local. Em scripts, a resposta é sempre "não".</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🔐</div><h3>Cofre e backup</h3><p>Cofre de chaves com senha-mestra; segredos criptografados, nunca em logs. Seu NOMOS inteiro cabe num arquivo cifrado (<span class="k">nomos backup</span>) — memórias, chaves e tudo.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🧩</div><h3>Skills governadas</h3><p>Habilidades instaláveis e assinadas que só fazem o que declaram, com risco visível e aprovação.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🤖</div><h3>Agentes com escopo</h3><p>Agentes oficiais e próprios, cada um com ferramentas, motores preferidos e risco máximo definidos.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">📋</div><h3>Auditoria com âncora</h3><p>Tudo que acontece é registrado. Trilha de auditoria com âncora HMAC — evidência que não se altera em silêncio.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🛡️</div><h3>Política executável</h3><p>A política de segurança não é um PDF: cada invariante (SEC-01…12) é um teste. Se o código divergir da política, a suíte falha.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">📦</div><h3>Evidências verificáveis</h3><p>Cada missão gera um pacote com relatório, manifesto e SHA-256 (<span class="k">nomos evidencia</span>) — auditável offline, por qualquer pessoa.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🛑</div><h3>Botão de pânico</h3><p>Um comando para cortar tudo. Controle total, inclusive o de parar.</p></div>
+            </div>
+
+            <h3 class="grupo-recursos"><span aria-hidden="true">🖥️</span> Operação &amp; integrações</h3>
+            <div class="grid">
+                <div class="card"><div class="ico" aria-hidden="true">🔌</div><h3>Cidadão do ecossistema MCP</h3><p>O NOMOS é <strong>servidor</strong> Model Context Protocol (tools só-leitura para o Claude Desktop e outros agentes) e <strong>cliente</strong> — usa servers locais como capacidades, cada tool com nível de risco A0–A6 e confiança registrada. Tudo via stdio, sem rede.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🖥️</div><h3>Painel web local</h3><p>Roda na sua máquina (<span class="k">nomos painel</span>): status, motores, evidências, política A0–A6 viva, decisões do roteador explicadas e auditoria com cadeia verificada — com API JSON local. Ler é livre; a única ação é decidir aprovações, com token de uso único. Só 127.0.0.1.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">⏱️</div><h3>Rotinas e briefings</h3><p>Agende tarefas locais e gere briefings — sempre em dry-run, com sua aprovação antes de qualquer efeito.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">⬆️</div><h3>Atualização com licença</h3><p><span class="k">nomos atualizar</span> checa se há versão nova e propõe — mas <strong>nunca</strong> atualiza sozinho. Você decide, sempre.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🩺</div><h3>Doutor</h3><p><span class="k">nomos doutor</span>: um check-up honesto do que está pronto e qual é o próximo passo.</p></div>
             </div>
         </div>
     </section>
@@ -236,11 +248,13 @@
             <h2 id="mot-t">Muitos motores. <span class="n">local primeiro, nuvem opt-in</span></h2>
             <p class="lead">O NOMOS fala com vários motores por modalidade. Os <span class="pill local">locais</span> vêm prontos ou embutidos; os <span class="pill plug">conectores</span> você pluga se já tiver a ferramenta; a <span class="pill cloud">nuvem</span> só funciona se você habilitar de propósito.</p>
             <table>
-                <thead><tr><th>Motor / conector</th><th>Faz</th><th>Onde roda</th></tr></thead>
+                <thead><tr><th scope="col">Motor / conector</th><th scope="col">Faz</th><th scope="col">Onde roda</th></tr></thead>
                 <tbody>
                     <tr><td>Cérebro embutido</td><td>texto, resumo, raciocínio</td><td><span class="pill local">local</span></td></tr>
                     <tr><td>Ollama (texto)</td><td>texto, resumo, raciocínio</td><td><span class="pill local">local</span></td></tr>
                     <tr><td>Ollama coder</td><td>código</td><td><span class="pill local">local</span></td></tr>
+                    <tr><td>Servidor OpenAI-compatível (LM Studio e afins)</td><td>texto, código</td><td><span class="pill plug">conector</span></td></tr>
+                    <tr><td>Texto como código</td><td>código com o motor de texto (fallback)</td><td><span class="pill local">local</span></td></tr>
                     <tr><td>Visão local (Ollama)</td><td>entender imagens</td><td><span class="pill local">local</span></td></tr>
                     <tr><td>Stable Diffusion WebUI</td><td>gerar imagens</td><td><span class="pill plug">conector</span></td></tr>
                     <tr><td>ComfyUI</td><td>gerar imagens</td><td><span class="pill plug">conector</span></td></tr>
@@ -248,6 +262,7 @@
                     <tr><td>Whisper</td><td>transcrever áudio (STT)</td><td><span class="pill plug">conector</span></td></tr>
                     <tr><td>Memória local</td><td>lembrar (SQLite)</td><td><span class="pill local">local</span></td></tr>
                     <tr><td>Busca local</td><td>buscar nas memórias (FTS5)</td><td><span class="pill local">local</span></td></tr>
+                    <tr><td>Skills instaladas</td><td>habilidades assinadas como capacidades</td><td><span class="pill local">local</span></td></tr>
                     <tr><td>Claude</td><td>texto, código, raciocínio</td><td><span class="pill cloud">nuvem · opt-in</span></td></tr>
                     <tr><td>Roteador automático</td><td>escolher o motor certo</td><td><span class="pill local">local</span></td></tr>
                 </tbody>
@@ -269,10 +284,10 @@
             <h2 id="ag-t">Agentes com escopo, ferramentas e risco definidos</h2>
             <p class="lead">Cada agente declara o que pode usar, quais motores prefere e até que nível de risco pode chegar. Três vêm de fábrica — e você cria os seus com o SDK.</p>
             <div class="grid">
-                <div class="card"><div class="ico">🔎</div><h3>pesquisador-local</h3><p>Acha coisas nas suas memórias, conversas e arquivos indexados. Ferramentas de leitura e resumo. Risco máximo: <span class="k">A0</span> (só leitura local).</p></div>
-                <div class="card"><div class="ico">👨‍💻</div><h3>programador</h3><p>Ajuda com código usando motores de código locais, com as travas de segurança do NOMOS.</p></div>
-                <div class="card"><div class="ico">🛡️</div><h3>segurança</h3><p>Perfil voltado a revisão e postura de segurança, honesto sobre limites.</p></div>
-                <div class="card"><div class="ico">🧱</div><h3>Crie o seu (SDK)</h3><p><span class="k">nomos agent create</span>: defina objetivo, ferramentas, motores preferidos e risco máximo. Seu agente, suas regras.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🔎</div><h3>pesquisador-local</h3><p>Acha coisas nas suas memórias, conversas e arquivos indexados. Ferramentas de leitura e resumo. Risco máximo: <span class="k">A0</span> (só leitura local).</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">👨‍💻</div><h3>programador</h3><p>Ajuda com código usando motores de código locais, com as travas de segurança do NOMOS.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🛡️</div><h3>segurança</h3><p>Perfil voltado a revisão e postura de segurança, honesto sobre limites.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🧱</div><h3>Crie o seu (SDK)</h3><p><span class="k">nomos agent create --name meu-agente</span> cria a identidade; o manifesto do agente (o mesmo formato dos oficiais) declara ferramentas, motores preferidos e risco máximo. Seu agente, suas regras.</p></div>
             </div>
         </div>
     </section>
@@ -284,15 +299,15 @@
             <h2 id="skills-t">Habilidades instaláveis, assinadas e transparentes</h2>
             <p class="lead">Uma skill declara o que faz, de que permissões precisa e traz hash de integridade. O NOMOS mostra o risco e pede aprovação antes de instalar ou rodar. Exemplos que acompanham:</p>
             <div class="grid">
-                <div class="card"><div class="ico">📁</div><h3>busca-arquivos</h3><p>Procura arquivos por nome e conteúdo numa pasta — só leitura (<span class="k">A0</span>).</p></div>
-                <div class="card"><div class="ico">🗒️</div><h3>lembrete</h3><p>Formata um lembrete estruturado para a memória do NOMOS.</p></div>
-                <div class="card"><div class="ico">🗂️</div><h3>organizador</h3><p>Relata os arquivos de uma pasta: contagem por tipo e os maiores.</p></div>
-                <div class="card"><div class="ico">💻</div><h3>sistema-info</h3><p>Mostra Python, sistema e espaço em disco — só leitura.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">📁</div><h3>busca-arquivos</h3><p>Procura arquivos por nome e conteúdo numa pasta — só leitura (<span class="k">A0</span>).</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🗒️</div><h3>lembrete</h3><p>Formata um lembrete estruturado para a memória do NOMOS.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🗂️</div><h3>organizador</h3><p>Relata os arquivos de uma pasta: contagem por tipo e os maiores.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">💻</div><h3>sistema-info</h3><p>Mostra Python, sistema e espaço em disco — só leitura.</p></div>
             </div>
             <div class="term">
                 <div class="termbar">~/nomos — skills</div>
-                <div><span class="p">$</span> <span class="c">nomos skill listar</span></div>
-                <div><span class="p">$</span> <span class="c">nomos skill rodar busca-arquivos --pasta ~/Documentos</span></div>
+                <div><span class="p">$</span> <span class="c">nomos skills listar</span></div>
+                <div><span class="p">$</span> <span class="c">nomos skills rodar busca-arquivos --args '{"pasta": "~/Documentos"}'</span></div>
                 <div><span class="o"># cada skill mostra permissões e risco; instalação assinada e aprovada</span></div>
             </div>
         </div>
@@ -362,21 +377,21 @@
                  nos 3 hrefs "releases/download/<TAG>/..." abaixo.
                  Tag atual (assets verificados): v1.3.0rc4-motor-council-dry-run -->
             <div class="grid" role="group" aria-label="Downloads por sistema">
-                <div class="card"><div class="ico">🍎</div><h3>macOS / Linux</h3>
+                <div class="card"><div class="ico" aria-hidden="true">🍎</div><h3>macOS / Linux</h3>
                     <p>Baixe o instalador de 1 clique e o pacote <span class="k">.whl</span> na mesma pasta, e rode <span class="k">bash install.sh</span> — com verificação SHA256, backup do que existia e rollback automático se algo falhar.</p>
-                    <p style="margin-top:0.9rem;"><a class="btn btn-primary" href="https://github.com/Voltolini-SPACE/NOMOS/releases/download/v1.3.0rc4-motor-council-dry-run/install.sh">Baixar install.sh</a></p>
+                    <p style="margin-top:0.9rem;"><a class="btn btn-primary" href="https://github.com/Voltolini-SPACE/NOMOS/releases/download/v1.3.0rc4-motor-council-dry-run/install.sh">Baixar install.sh</a> <a class="btn btn-ghost" href="https://github.com/Voltolini-SPACE/NOMOS/releases/download/v1.3.0rc4-motor-council-dry-run/nomos-1.3.0rc16-py3-none-any.whl">Baixar o .whl</a></p>
                 </div>
-                <div class="card"><div class="ico">🪟</div><h3>Windows</h3>
+                <div class="card"><div class="ico" aria-hidden="true">🪟</div><h3>Windows</h3>
                     <p>Baixe o instalador e o <span class="k">.whl</span> na mesma pasta e rode <span class="k">install.ps1</span> no PowerShell — mesma verificação de integridade, backup e rollback do instalador de Mac/Linux.</p>
-                    <p style="margin-top:0.9rem;"><a class="btn btn-primary" href="https://github.com/Voltolini-SPACE/NOMOS/releases/download/v1.3.0rc4-motor-council-dry-run/install.ps1">Baixar install.ps1</a></p>
+                    <p style="margin-top:0.9rem;"><a class="btn btn-primary" href="https://github.com/Voltolini-SPACE/NOMOS/releases/download/v1.3.0rc4-motor-council-dry-run/install.ps1">Baixar install.ps1</a> <a class="btn btn-ghost" href="https://github.com/Voltolini-SPACE/NOMOS/releases/download/v1.3.0rc4-motor-council-dry-run/nomos-1.3.0rc16-py3-none-any.whl">Baixar o .whl</a></p>
                 </div>
-                <div class="card"><div class="ico">🐙</div><h3>Pelo código (git)</h3>
+                <div class="card"><div class="ico" aria-hidden="true">🐙</div><h3>Pelo código (git)</h3>
                     <p>Para quem quer ver cada linha antes de rodar — o jeito mais NOMOS de instalar:</p>
                     <div class="term" style="margin:0.9rem 0 0;"><div><span class="p">$</span> <span class="c">git clone https://github.com/Voltolini-SPACE/NOMOS</span></div>
                     <div><span class="p">$</span> <span class="c">cd NOMOS &amp;&amp; pip install .</span></div></div>
                 </div>
             </div>
-            <p style="margin-top:1.2rem;"><strong>Versão atual:</strong> v1.3.0rc4 (pré-lançamento) · <a href="https://github.com/Voltolini-SPACE/NOMOS/releases">todas as versões e pacotes .whl</a> · confira a integridade com <span class="k">SHA256SUMS</span> (<span class="k">sha256sum --check SHA256SUMS</span>) — cada release publica os hashes de todos os arquivos.</p>
+            <p style="margin-top:1.2rem;"><strong>Última release publicada:</strong> pacote v1.3.0rc16 (pré-lançamento; o código na main já segue adiante) · <a href="https://github.com/Voltolini-SPACE/NOMOS/releases">todas as versões e pacotes .whl</a> · confira a integridade com <span class="k">SHA256SUMS</span> (<span class="k">sha256sum --check SHA256SUMS</span>) — cada release publica os hashes de todos os arquivos.</p>
             <div class="term" role="group" aria-label="Comandos de instalação">
                 <div class="termbar">~/nomos — bash · ou instale direto do git em um comando</div>
                 <div><span class="p">$</span> <span class="c">pip install git+https://github.com/Voltolini-SPACE/NOMOS</span></div>
@@ -394,10 +409,10 @@
             <div class="tag">// para quem</div>
             <h2 id="pq-t">Feito para quem leva privacidade a sério</h2>
             <div class="grid">
-                <div class="card"><div class="ico">👨‍💻</div><h3>Desenvolvedores</h3><p>Automação local segura. Skills e agentes próprios. Integração com seus fluxos.</p></div>
-                <div class="card"><div class="ico">⚙️</div><h3>Operadores</h3><p>Tarefas repetitivas com confiança, dry-run e auditoria completa.</p></div>
-                <div class="card"><div class="ico">🏢</div><h3>Empresas</h3><p>Dados sensíveis na sua infraestrutura. Sem APIs cloud obrigatórias. Governança auditável.</p></div>
-                <div class="card"><div class="ico">🔒</div><h3>Qualquer um</h3><p>Que quer IA sem complicação e sem abrir mão da privacidade.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">👨‍💻</div><h3>Desenvolvedores</h3><p>Automação local segura. Skills e agentes próprios. Integração com seus fluxos.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">⚙️</div><h3>Operadores</h3><p>Tarefas repetitivas com confiança, dry-run e auditoria completa.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🏢</div><h3>Empresas</h3><p>Dados sensíveis na sua infraestrutura. Sem APIs cloud obrigatórias. Governança auditável.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🔒</div><h3>Qualquer um</h3><p>Que quer IA sem complicação e sem abrir mão da privacidade.</p></div>
             </div>
         </div>
     </section>

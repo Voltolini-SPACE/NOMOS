@@ -77,6 +77,34 @@ Bloco 2 — UX da CLI, do painel e fluxos simples:
 - Coleta do painel: registry de agentes instanciado uma vez por coleta;
   conexão sqlite de conversas fechada em `finally`.
 
+### Fixed (MC36 — revisão loop-100: o site diz a verdade)
+Bloco 3 — site/index.html alinhado ao produto real (lema "nunca finge"):
+- **Comandos publicados agora existem**: `nomos skill listar` → `nomos skills
+  listar`; `nomos skill rodar busca-arquivos --pasta …` → `nomos skills rodar
+  busca-arquivos --args '{"pasta": …}'` (a flag --pasta nunca existiu).
+- **Versão honesta**: "Versão atual: v1.3.0rc4" virou "Última release
+  publicada: pacote v1.3.0rc16 (pré-lançamento; o código na main já segue
+  adiante)" — o wheel real da release É 1.3.0rc16 (verificado na API do
+  GitHub); link direto para o `.whl` adicionado nos cards macOS/Linux e
+  Windows (a instrução pedia 2 arquivos e o card só entregava 1).
+- **Card do SDK sem promessa falsa**: `nomos agent create` não tem flags de
+  objetivo/ferramentas/risco — o card agora descreve o fluxo real (create
+  --name + manifesto no formato dos oficiais).
+- **Números que fecham**: stat e tabela de motores agora refletem o catálogo
+  real (15 entradas — adicionados servidor OpenAI-compatível, texto-como-
+  código e skills); contagem de testes atualizada (1.330+).
+- **Recursos agrupados**: os 20 cards planos viraram 3 blocos temáticos
+  (cérebro & conversa · governança & segurança · operação & integrações) —
+  hierarquia em vez de inventário.
+- **Acessibilidade**: ~30 emojis decorativos com `aria-hidden="true"` (leitor
+  de tela não anuncia mais "cadeado, mão levantada…" antes de cada card);
+  `scope="col"` na tabela de motores.
+- **Copy alinhada ao Painel 4.0**: card do painel não diz mais "Só leitura"
+  ("ler é livre; a única ação é decidir aprovações, com token de uso único");
+  "Caixa-forte e backup" → "Cofre e backup".
+- **Marca**: `--fraco` sincronizado entre site e painel (#7c9a84, 6.3:1);
+  tokens derivados documentados no brandbook como referência única.
+
 ### Added (MC34.1 — downloads no site + sinais reais)
 - **Site § Baixar & instalar**: três caminhos claros — 🍎 macOS/Linux
   (`install.sh`), 🪟 Windows (`install.ps1`) e 🐙 pelo código (git clone +
