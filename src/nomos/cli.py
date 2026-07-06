@@ -331,6 +331,32 @@ def cmd_doutor(ctx, args) -> int:
                                            audit=ctx["audit"])
         return rc
     print(doutor_mod.texto_relatorio_v011(ctx["home"], ctx))
+    # MC30-A3: check-up unificado — quando rodando DE um repo do NOMOS,
+    # os agentes guardiões (docs/marca e git) entram como seções extras.
+    raiz = Path.cwd()
+    agentes = [("docs & marca", raiz / "tools" / "nomos_update_agent.py"),
+               ("git", raiz / "tools" / "nomos_git_agent.py")]
+    if all(p.is_file() for _, p in agentes) and (raiz / "pyproject.toml").is_file():
+        import subprocess
+        print("\nGuardião do repositório (você está numa cópia do código):")
+        for rotulo, script in agentes:
+            try:
+                proc = subprocess.run(
+                    [sys.executable, str(script), "--check", "--json"],
+                    capture_output=True, text=True, timeout=60)
+                dados = json.loads(proc.stdout)
+                if rotulo == "git":
+                    ok = dados.get("clean", False) and not dados.get("ruido")
+                    detalhe = (f"branch {dados.get('branch')}, "
+                               f"{'limpa' if dados.get('clean') else 'suja'}")
+                else:
+                    ok = dados.get("consistent", False)
+                    detalhe = (f"{dados.get('checks_passed', 0)}/"
+                               f"{dados.get('checks_total', 0)} checks")
+                print(f"  {'✅' if ok else '⚠️'} {rotulo}: {detalhe}")
+            except Exception:
+                print(f"  ⚠️ {rotulo}: não consegui rodar o agente "
+                      f"(veja tools/)")
     return EXIT_OK
 
 
@@ -760,9 +786,10 @@ def cmd_motores(ctx, args) -> int:
         allow_cloud = False
         if getattr(args, "nuvem", False):
             if not (sys.stdin.isatty() and sys.stdout.isatty()):
-                print("--nuvem exige terminal interativo: plugar a nuvem é "
-                      "decisão humana (aprovação + passphrase do cofre).",
-                      file=sys.stderr)
+                from nomos.simple.erros import fmt
+                print(fmt("E012", "--nuvem exige terminal interativo: plugar a "
+                          "nuvem é decisão humana (aprovação + passphrase do "
+                          "cofre)."), file=sys.stderr)
                 return EXIT_DENIED
             import getpass
             frase = getpass.getpass("passphrase do cofre (ler a chave da nuvem)> ")
@@ -770,7 +797,8 @@ def cmd_motores(ctx, args) -> int:
                 ctx["home"], policy=ctx["policy"], vault=ctx["vault"],
                 approver=_approver_for(ctx, args), passphrase=frase)
             if runner_nuvem is None:
-                print(f"nuvem não plugada (fail-closed): {motivo}",
+                from nomos.simple.erros import fmt
+                print(fmt("E012", f"nuvem não plugada (fail-closed): {motivo}"),
                       file=sys.stderr)
                 ctx["audit"].append("motores.arbitrar.nuvem_negada")
                 return EXIT_DENIED
@@ -1304,7 +1332,9 @@ def cmd_evidencia(ctx, args) -> int:
                 destino, args.titulo, status=args.status,
                 anexos=anexos, notas=getattr(args, "nota", "") or "")
         except (FileNotFoundError, FileExistsError) as e:
-            print(f"não criei o pacote (fail-closed): {e}", file=sys.stderr)
+            from nomos.simple.erros import fmt
+            print(fmt("E011", f"não criei o pacote (fail-closed): {e}"),
+                  file=sys.stderr)
             return EXIT_ERROR
         ok, problemas = ev.verificar_pacote(pacote)
         ctx["audit"].append("evidencia.criada", pacote=pacote.name,
@@ -1342,7 +1372,8 @@ def cmd_evidencia(ctx, args) -> int:
         if ok:
             print("pacote íntegro ✓ — todos os hashes conferem.")
             return EXIT_OK
-        print("pacote NÃO confere:", file=sys.stderr)
+        from nomos.simple.erros import fmt
+        print(fmt("E011", "pacote NÃO confere:"), file=sys.stderr)
         for p in problemas:
             print(f"  · {p}", file=sys.stderr)
         return EXIT_ERROR

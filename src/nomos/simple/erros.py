@@ -17,6 +17,8 @@ CODIGOS = {
     "E008": "atualização: rede indisponível ou resposta inválida",
     "E009": "conserto do doutor não confirmado ou indisponível",
     "E010": "argumentos inválidos (JSON malformado, opção desconhecida)",
+    "E011": "evidência: pacote violado/duplicado, anexo ausente ou hash divergente",
+    "E012": "nuvem: opt-in negado (cadeado ligado, gate A2/A3, cofre) ou sem terminal",
 }
 
 
@@ -42,6 +44,11 @@ HUMANO = {
              "rode: nomos doutor --consertar e digite CONSERTAR"),
     "E010": ("Os argumentos não são válidos (JSON malformado ou opção "
              "desconhecida).", "confira as aspas do JSON; use --help do comando"),
+    "E011": ("O pacote de evidências não passou na verificação — ou não pôde "
+             "ser criado.", "veja os detalhes acima; liste tudo com: nomos evidencia listar"),
+    "E012": ("A nuvem não foi plugada — isto é proteção: exige cadeado aberto, "
+             "aprovação A2+A3 e a senha do cofre, num terminal de verdade.",
+             "decisão humana: rode num terminal e aprove; cadeado: nomos local off"),
 }
 
 

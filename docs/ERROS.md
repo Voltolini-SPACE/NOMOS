@@ -65,3 +65,16 @@ do que seria consertado aparece mesmo sem TTY — nada é alterado sem seu sim.
 inexistente.
 **Correção**: valide o JSON (aspas duplas!); `--help` do comando lista as
 opções aceitas.
+
+## NOMOS-E011 — evidência não verificada
+**Causa**: pacote adulterado (hash divergente), destino já existente na
+criação, ou anexo inexistente.
+**Correção**: `nomos evidencia listar` mostra o estado de cada pacote;
+recrie o pacote se ele foi alterado — a violação é o aviso funcionando.
+
+## NOMOS-E012 — nuvem não plugada (proteção)
+**Causa**: opt-in de nuvem negado — cadeado só-local ligado, aprovação A2/A3
+ausente, senha do cofre não fornecida ou execução sem terminal interativo.
+**Correção**: é uma decisão humana: rode num terminal, destrave com
+`nomos local off` (consciente), aprove quando o NOMOS perguntar e informe a
+senha do cofre. Em scripts/CI a resposta é sempre "não" — por projeto.
