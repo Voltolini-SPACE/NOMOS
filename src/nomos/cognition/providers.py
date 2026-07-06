@@ -144,3 +144,39 @@ class AnthropicProvider:
         if not text:
             raise ProviderUnavailable("resposta da API sem blocos de texto")
         return ChatReply(text=text, provider=self.name, model=data.get("model", self.model))
+
+
+class OpenAICompatProvider:
+    """Servidor LOCAL OpenAI-compatível (LM Studio, llama.cpp server, LocalAI).
+
+    Loopback por lei: qualquer host fora de 127.0.0.1/localhost/::1 é recusado
+    na construção (MC30-C3). Nada sai da máquina.
+    """
+
+    name = "openai-compat"
+
+    def __init__(self, base: str = "http://127.0.0.1:1234/v1",
+                 model: str = "local", timeout: float = 120.0):
+        from urllib.parse import urlparse
+        host = urlparse(base).hostname or ""
+        if host not in {"127.0.0.1", "localhost", "::1"}:
+            raise ValueError(
+                "servidor OpenAI-compatível é LOCAL por lei — use 127.0.0.1")
+        self.base = base.rstrip("/")
+        self.model = model
+        self.timeout = timeout
+
+    def __repr__(self) -> str:
+        return f"OpenAICompatProvider(base={self.base!r}, model={self.model!r})"
+
+    def chat(self, messages: list[dict]) -> ChatReply:
+        payload = {"model": self.model, "messages": messages}
+        data = _post_json(f"{self.base}/chat/completions", payload,
+                          headers={}, timeout=self.timeout)
+        choices = data.get("choices") or []
+        text = (choices[0].get("message", {}) or {}).get("content", "") \
+            if choices else ""
+        if not text:
+            raise ProviderUnavailable("resposta do servidor local sem conteúdo")
+        return ChatReply(text=text, provider=self.name,
+                         model=data.get("model", self.model))

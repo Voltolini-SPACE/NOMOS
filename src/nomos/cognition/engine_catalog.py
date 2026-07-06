@@ -24,6 +24,9 @@ MODALIDADES_V011 = ("texto", "codigo", "raciocinio", "resumo", "memoria",
 
 TIPOS = ("embutido", "ollama", "llamacpp", "cloud", "mock", "skill", "conector")
 
+# Servidor OpenAI-compatível LOCAL (MC30-C3) — loopback por lei
+OPENAI_COMPAT_BASE = "http://127.0.0.1:1234/v1"
+
 
 @dataclass(frozen=True)
 class Motor:
@@ -98,6 +101,19 @@ def construir(home=None, mapa: dict | None = None) -> Catalogo:
         velocidade="alta", qualidade="alta",
         status=_status(d("ollama"), bool(ollama_modelo)),
         detalhe=ollama_modelo or ""))
+
+    # OpenAI-compatível local (MC30-C3): LM Studio / llama.cpp server / LocalAI.
+    # Loopback apenas — nada sai da máquina; probe leve em /v1/models.
+    oc_pronto = _mot._http_ok(f"{OPENAI_COMPAT_BASE}/models")
+    itens.append(Motor(
+        id="openai-compat", rotulo="Servidor local OpenAI-compatível "
+        "(LM Studio, llama.cpp, LocalAI)",
+        modalidades=("texto", "resumo", "raciocinio", "codigo"),
+        tipo="llamacpp", local=True, instalado=oc_pronto, pronto=oc_pronto,
+        velocidade="alta", qualidade="alta",
+        status=_status(oc_pronto, oc_pronto) if oc_pronto
+        else "ligue seu servidor local na porta 1234 (ex.: LM Studio)",
+        detalhe=OPENAI_COMPAT_BASE))
 
     # --- código ---
     coder = d("ollama-coder", "detalhe", None)

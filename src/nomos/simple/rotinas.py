@@ -237,6 +237,87 @@ def executar_devidas(ctx, agora: datetime | None = None, say=print,
     return resultados
 
 
+FORMATOS_EXPORT = ("launchd", "systemd", "windows")
+
+
+def exportar(home: Path, formato: str | None = None) -> tuple[list[Path], str]:
+    """Gera arquivos de agendador do SO (MC30-B7). O NOMOS NUNCA os instala.
+
+    Devolve (arquivos_gerados, instruções_de_instalação_manual).
+    """
+    import sys
+    if formato is None:
+        formato = ("launchd" if sys.platform == "darwin"
+                   else "windows" if sys.platform.startswith("win")
+                   else "systemd")
+    if formato not in FORMATOS_EXPORT:
+        raise RotinaError(f"formato desconhecido: {formato!r} — "
+                          f"use um de: {', '.join(FORMATOS_EXPORT)}")
+    destino = home / "agendadores"
+    destino.mkdir(parents=True, exist_ok=True)
+    exe = sys.executable
+    cmd = f"{exe} -m nomos.cli rotinas executar"
+    arquivos: list[Path] = []
+
+    if formato == "launchd":
+        plist = destino / "br.com.se7enpay.nomos.rotinas.plist"
+        plist.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>br.com.se7enpay.nomos.rotinas</string>
+  <key>ProgramArguments</key>
+  <array><string>{exe}</string><string>-m</string><string>nomos.cli</string>
+         <string>rotinas</string><string>executar</string></array>
+  <key>EnvironmentVariables</key>
+  <dict><key>NOMOS_HOME</key><string>{home}</string></dict>
+  <key>StartInterval</key><integer>900</integer>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+""", encoding="utf-8")
+        arquivos.append(plist)
+        instrucao = (f"instale VOCÊ MESMO (uma vez):\n"
+                     f"  cp {plist} ~/Library/LaunchAgents/\n"
+                     f"  launchctl load ~/Library/LaunchAgents/{plist.name}")
+    elif formato == "systemd":
+        service = destino / "nomos-rotinas.service"
+        timer = destino / "nomos-rotinas.timer"
+        service.write_text(f"""[Unit]
+Description=NOMOS — executa rotinas devidas (local, sem rede)
+
+[Service]
+Type=oneshot
+Environment=NOMOS_HOME={home}
+ExecStart={cmd}
+""", encoding="utf-8")
+        timer.write_text("""[Unit]
+Description=NOMOS — dispara as rotinas a cada 15 min
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=false
+
+[Install]
+WantedBy=timers.target
+""", encoding="utf-8")
+        arquivos += [service, timer]
+        instrucao = (f"instale VOCÊ MESMO (uma vez):\n"
+                     f"  cp {service} {timer} ~/.config/systemd/user/\n"
+                     f"  systemctl --user enable --now nomos-rotinas.timer")
+    else:  # windows
+        cmdfile = destino / "nomos-rotinas.cmd"
+        cmdfile.write_text(
+            f"@echo off\r\nrem NOMOS — crie a tarefa VOCÊ MESMO executando "
+            f"este arquivo uma vez:\r\n"
+            f"schtasks /create /tn \"NOMOS Rotinas\" /sc minute /mo 15 "
+            f"/tr \"cmd /c set NOMOS_HOME={home}&& {cmd}\"\r\n",
+            encoding="utf-8")
+        arquivos.append(cmdfile)
+        instrucao = (f"instale VOCÊ MESMO (uma vez): dê dois cliques em "
+                     f"{cmdfile} (ou rode no Prompt).")
+    return arquivos, instrucao
+
+
 def linha_agendador(home: Path) -> str:
     """A linha que VOCÊ pode colar no seu agendador. O NOMOS não mexe nele."""
     import sys

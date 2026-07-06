@@ -607,6 +607,20 @@ def cmd_rotinas(ctx, args) -> int:
         print(rot.linha_agendador(ctx["home"]))
         print("\n(o NOMOS nunca altera seu agendador sozinho — colar é com você)")
         return EXIT_OK
+    if sub == "exportar":
+        try:
+            arquivos, instrucao = rot.exportar(ctx["home"],
+                                               getattr(args, "formato", None))
+        except rot.RotinaError as exc:
+            from nomos.simple.erros import fmt
+            print(fmt("E006", str(exc)), file=sys.stderr)
+            return EXIT_ERROR
+        ctx["audit"].append("rotinas.exportadas", formato=arquivos[0].suffix)
+        print("arquivos de agendador gerados (o NOMOS NUNCA instala sozinho):")
+        for a in arquivos:
+            print(f"  {a}")
+        print(f"\n{instrucao}")
+        return EXIT_OK
     return EXIT_ERROR
 
 
@@ -1406,6 +1420,10 @@ def build_parser() -> argparse.ArgumentParser:
     ro = sub.add_parser("rotinas", help="rotinas locais: briefing, check-up e mais")
     rosub = ro.add_subparsers(dest="rotinas_cmd")
     rosub.add_parser("listar").set_defaults(fn=cmd_rotinas)
+    rex = rosub.add_parser("exportar")
+    rex.add_argument("--formato", choices=["launchd", "systemd", "windows"],
+                     default=None)
+    rex.set_defaults(fn=cmd_rotinas)
     rc_ = rosub.add_parser("criar")
     rc_.add_argument("nome")
     rc_.add_argument("hora")
