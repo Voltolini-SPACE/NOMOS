@@ -4,6 +4,19 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC30 — onda A + Painel 2.0)
+- **Painel 2.0**: rotas read-only `/api` (dashboard em JSON, sem vazamento de
+  segredo — testado), `/audit` (verificação real da cadeia de hash + últimos
+  eventos) e `/roteador` (decisão explicada por modalidade); catálogo completo
+  de motores, seção Capacidades, auto-refresh opt-in `?refresh=N` e link para
+  abrir o relatório de cada evidência. Loopback/segredo/405 preservados.
+- **Update agent (A1)**: `--diff` propõe correção específica para cada check
+  `brand:*` reprovado (deriva_de_marca, proposal-only).
+- **Evidências (A2)**: `nomos evidencia listar [--json]` com verificação de
+  integridade por pacote.
+- **CI (A5)**: gate de cobertura dirigido (kernel/evidencia e
+  ext/skill_catalogo ≥90%).
+
 ### Added
 - `docs/ROADMAP_3.md` (MC30): plano de aprimoramentos, funcionalidades e
   conexões pós-rc17 — ondas A (aprimorar), B (produto), C (conexões gateadas:
