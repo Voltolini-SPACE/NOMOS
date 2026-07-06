@@ -2,7 +2,11 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC27 + site: contrato único de flags proibidas, site com brandbook congelado e update agent read-only)
+## [Unreleased]
+
+_(nada ainda)_
+
+## [1.3.0rc17] — 2026-07-05 (Motor Council MC10–MC27 + site + arbitragem real + MC29 governança/agentes/evidências: contrato único de flags proibidas, site com brandbook congelado e update agent read-only)
 
 ### Added (MC29 — plano profissional: 7 implementações)
 - **Política formal de segurança** (`docs/governance/SECURITY_POLICY.md`):
