@@ -4,6 +4,40 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Changed (MC37 — menos poluição visual, mais usabilidade)
+Redesenho do painel para reduzir densidade, com tema claro/escuro. Testes:
+`tests/test_painel_tema_e_abas.py` (6 casos) + contratos de layout atualizados.
+- **Painel em 5 ABAS** (uma por vez) em vez de 16 seções empilhadas numa
+  página só: `visão geral` · `cérebro` · `capacidades` · `operação` · `ajuda`.
+  A visão geral abre por padrão; as demais trocam por clique. O rail lateral
+  foi eliminado — o que ele mostrava (motor ao vivo, "precisa de você",
+  atividade recente) migrou para a visão geral. KPIs 8 → 5.
+- **Deep-links preservados**: cada aba traz uma subnav com as âncoras antigas
+  (`#motores`, `#auditoria`…), e o JS ativa a aba que contém a âncora — links
+  salvos e `#seção` continuam funcionando.
+- **Recolhíveis**: catálogo completo de motores, tabela A0–A6 e últimos
+  eventos da auditoria viraram `<details>` fechados por padrão — acesso a um
+  clique, sem poluir.
+- **Tema CLARO e ESCURO**: escuro segue padrão (brandbook congelado); há tema
+  claro com paleta de contraste WCAG AA verificada, botão de alternância
+  acessível (`aria-pressed`), respeito a `prefers-color-scheme` do sistema,
+  persistência da escolha e boot antes do `<style>` (sem flash de tema).
+- **Filtro** agora varre todas as abas (revela tudo enquanto há texto) e volta
+  sozinho à aba ativa ao limpar.
+
+### Added (MC34.2 — o painel na vitrine: fotos reais + marketing honesto)
+- **Site § Painel ("Você vê tudo. Você decide tudo.")**: seção nova com
+  screenshots REAIS do cockpit (capturados do código atual, retina, WebP
+  otimizado — 3 imagens somando <300 KB), em moldura de navegador com
+  legenda; cards de usabilidade (aprovar com token single-use, roteador ao
+  vivo, busca/filtro) e a resposta REAL de `health/` exibida como terminal;
+  CTA `nomos painel`. Nav ganhou "painel"; hero ganhou "Ver o painel por
+  dentro"; card de recursos linka "Ver por dentro →".
+- Testes: `tests/test_site_painel.py` (5 casos — imagens existem no repo,
+  peso máximo por imagem e total, alt descritivo + lazy + dimensões
+  declaradas (sem CLS), seção ligada na nav/hero, usabilidades reais
+  citadas).
+
 ### Security (MC36 — revisão loop-100: concorrência e fail-closed)
 Auditoria externa completa (código + UX + git) com correção total. Bloco 1 —
 segurança e robustez, cada item com teste de regressão em

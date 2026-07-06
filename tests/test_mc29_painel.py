@@ -130,7 +130,8 @@ def test_painel_20_todas_as_rotas(nomos_home):
             corpo = r.read().decode()
         for link in ('href="api/"', 'href="audit/"', 'href="roteador/"'):
             assert link in corpo
-        assert "Motores (catálogo completo)" in corpo
+        # MC37: catálogo completo agora vive num <details> recolhível
+        assert "catálogo completo de motores" in corpo
         assert "cadeia de hash" in corpo
         # /api: JSON parseável com o mesmo contrato da dashboard
         with urllib.request.urlopen(f"{url}api/", timeout=5) as ra:  # nosec B310

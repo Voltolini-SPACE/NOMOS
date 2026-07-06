@@ -55,13 +55,17 @@ def _get(url, timeout=5):
 # ---------------------------------------------------------------------------
 # 1. layout de app: sidebar, rail, sistema — e âncoras novas estáveis
 # ---------------------------------------------------------------------------
-def test_layout_app_sidebar_rail_e_sysbox(nomos_home):
+def test_layout_app_abas_sidebar_e_sysbox(nomos_home):
+    # MC37: layout em ABAS (uma por vez, sem rail). O que o rail mostrava
+    # (motor ao vivo, atenção, atividade) migrou para a aba "visão geral".
     corpo = render_html(dados_dashboard(_ctx(nomos_home)))
-    assert 'class="sidebar"' in corpo and 'class="rail"' in corpo
+    assert 'class="sidebar"' in corpo
+    assert 'class="aba' in corpo and 'data-aba="visao"' in corpo   # abas
+    assert 'class="rail"' not in corpo                             # rail removido
     assert 'class="sysbox"' in corpo            # bloco Sistema na sidebar
     assert 'class="menu"' in corpo and "aria-label" in corpo
-    assert "motor ao vivo" in corpo             # rail: decisão do roteador
-    assert "atenção" in corpo and "atividade" in corpo
+    assert "motor ao vivo" in corpo             # migrou p/ visão geral
+    assert "atividade recente" in corpo         # idem (antes no rail)
     # marca congelada segue intacta no novo layout
     assert "--neon:#5AF78E" in corpo and "#0A0F0D" in corpo
 
@@ -83,7 +87,8 @@ def test_secao_sistema_e_ajuda_com_conteudo_real(nomos_home):
     assert d["sistema"]["python"] in corpo      # dado real, não enfeite
 
 
-def test_roteador_vivo_no_rail(nomos_home):
+def test_roteador_vivo_na_visao_geral(nomos_home):
+    # MC37: "motor ao vivo" saiu do rail e vive no bloco de visão geral
     d = dados_dashboard(_ctx(nomos_home))
     assert d["roteador_vivo"], "roteador_vivo deveria listar as modalidades"
     mods = {r["modalidade"] for r in d["roteador_vivo"]}

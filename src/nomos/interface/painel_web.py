@@ -34,10 +34,23 @@ from urllib.parse import parse_qs
 # identidade visual — paleta da marca CONGELADA (brandbook v1.0)
 # ---------------------------------------------------------------------------
 _CSS = """
+ /* tema ESCURO (padrão) — brandbook congelado */
  :root{--bg:#0A0F0D;--surface:#111814;--surface2:#0d1411;--line:#1d2a22;
    --neon:#5AF78E;--dim:#2BD968;--txt:#E8FFE8;--fraco:#7c9a84;
    --rosa:#FF5FA2;--ciano:#56E1E9;--amarelo:#F2C14E;--vermelho:#FF5C57;
    --glow:0 0 8px rgba(90,247,142,.45)}
+ /* tema CLARO — mesma marca, contraste WCAG AA (verificado) */
+ :root[data-tema="claro"]{
+   --bg:#f4f7f4;--surface:#ffffff;--surface2:#eaf0ea;--line:#b9c8bc;
+   --neon:#0b7a3b;--dim:#0b7a3b;--txt:#10261a;--fraco:#3f6b50;
+   --rosa:#b3266e;--ciano:#0a6d74;--amarelo:#8a6a12;--vermelho:#b3261e;
+   --glow:none}
+ /* sem escolha explícita, respeita o SO */
+ @media (prefers-color-scheme:light){:root:not([data-tema]){
+   --bg:#f4f7f4;--surface:#ffffff;--surface2:#eaf0ea;--line:#b9c8bc;
+   --neon:#0b7a3b;--dim:#0b7a3b;--txt:#10261a;--fraco:#3f6b50;
+   --rosa:#b3266e;--ciano:#0a6d74;--amarelo:#8a6a12;--vermelho:#b3261e;
+   --glow:none}}
  *{box-sizing:border-box}
  html{scroll-behavior:smooth}
  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
@@ -50,20 +63,21 @@ _CSS = """
  .skip:focus{left:0}
  :focus-visible{outline:2px solid var(--neon);outline-offset:2px}
 
- /* ---- app shell: sidebar | conteúdo | rail ---- */
- .app{display:grid;grid-template-columns:230px minmax(0,1fr) 250px;
+ /* ---- app shell: sidebar de abas | conteúdo (rail eliminado no MC37) ---- */
+ .app{display:grid;grid-template-columns:210px minmax(0,1fr);
    min-height:100vh}
  .sidebar{background:var(--surface2);border-right:1px solid var(--line);
    padding:1rem .9rem;position:sticky;top:0;height:100vh;overflow:auto}
  .main{padding:0 1.4rem 3rem;min-width:0}
- .rail{border-left:1px solid var(--line);padding:1rem .9rem;background:
-   var(--surface2);position:sticky;top:0;height:100vh;overflow:auto}
- @media(max-width:1180px){.app{grid-template-columns:230px minmax(0,1fr)}
-   .rail{display:none}}
  @media(max-width:820px){.app{display:block}
    .sidebar{position:static;height:auto;border-right:0;
-     border-bottom:1px solid var(--line)}
-   .rail{display:none}}
+     border-bottom:1px solid var(--line)}}
+
+ /* ---- abas: só a ativa aparece (menos densidade; navegação clara) ---- */
+ .aba{display:none}
+ .aba.ativa{display:block}
+ /* ao filtrar, o JS revela tudo (.buscando) p/ a busca varrer todas as abas */
+ .app.buscando .aba{display:block}
 
  /* ---- sidebar ---- */
  .brand{color:var(--neon);text-shadow:var(--glow);font-weight:700;
@@ -72,20 +86,22 @@ _CSS = """
  @keyframes pisca{50%{opacity:0}}
  @media (prefers-reduced-motion:reduce){.brand .cursor{animation:none}}
  .tagline{color:var(--fraco);font-size:.72rem;margin:.15rem 0 1.1rem}
- nav.menu{display:flex;flex-direction:column;gap:.1rem}
- nav.menu .grupo{color:var(--fraco);font-size:.72rem;text-transform:uppercase;
-   letter-spacing:.16em;margin:.9rem 0 .25rem}
- nav.menu a{color:var(--fraco);text-decoration:none;font-size:.78rem;
-   padding:.28rem .5rem;border-radius:6px;border-left:2px solid transparent;
-   display:flex;align-items:center;gap:.45rem}
+ nav.menu{display:flex;flex-direction:column;gap:.15rem}
+ nav.menu a{color:var(--fraco);text-decoration:none;font-size:.82rem;
+   padding:.42rem .6rem;border-radius:6px;border-left:2px solid transparent;
+   display:flex;align-items:center;gap:.55rem}
  nav.menu a:hover{color:var(--txt);background:var(--surface)}
  nav.menu a.ativo{color:var(--neon);border-left-color:var(--neon);
    background:var(--surface)}
  nav.menu .ico{width:1.1em;text-align:center;opacity:.85}
- nav.menu .ext{margin-left:auto;opacity:.6;font-size:.72rem}
  .badge{color:var(--bg);background:var(--neon);border-radius:10px;
    padding:0 .4rem;font-size:.72rem;margin-left:auto;font-weight:700}
  .badge.alerta{background:var(--amarelo)}
+ /* mini-nav de saltos dentro da aba (some no mobile p/ não poluir) */
+ .subnav{margin:.2rem 0 1rem;font-size:.72rem;color:var(--fraco);
+   display:flex;flex-wrap:wrap;gap:.1rem .8rem}
+ .subnav a{color:var(--fraco);text-decoration:none}
+ .subnav a:hover{color:var(--neon)}
 
  /* ---- bloco Sistema (rodapé da sidebar) ---- */
  .sysbox{margin-top:1.2rem;border-top:1px solid var(--line);
@@ -164,23 +180,31 @@ _CSS = """
  .aprov button.nao:hover{background:rgba(255,92,87,.12)}
  .conta{color:var(--amarelo)}
 
- /* ---- rail ---- */
- .rail h3{font-size:.72rem;text-transform:uppercase;letter-spacing:.16em;
-   color:var(--fraco);margin:1.1rem 0 .4rem}
- .rail .mini{background:var(--surface);border:1px solid var(--line);
-   border-radius:8px;padding:.5rem .6rem;font-size:.72rem;margin:.3rem 0}
- .rail .mini b{color:var(--neon);font-weight:700}
- .rail .mini small{display:block}
+ /* ---- blocos "ao vivo" (na visão geral; antes eram o rail) ---- */
+ .mini-h{font-size:.72rem;text-transform:uppercase;letter-spacing:.14em;
+   color:var(--fraco);margin:.2rem 0 .5rem;border:0;padding:0}
+ .mini{background:var(--surface);border:1px solid var(--line);
+   border-radius:8px;padding:.5rem .6rem;font-size:.74rem;margin:.3rem 0}
+ .mini b{color:var(--neon);font-weight:700}
+ .colunas2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+ @media(max-width:640px){.colunas2{grid-template-columns:1fr}}
+ ul.lista{margin:.4rem 0 0;padding-left:1.1rem}
+ ul.lista li{margin:.2rem 0;font-size:.82rem}
+ /* recolhíveis: detalhe dá acesso sem poluir (fecha por padrão) */
+ details.mais{margin:.6rem 0}
+ details.mais>summary{cursor:pointer;color:var(--dim);font-size:.8rem;
+   padding:.2rem 0;list-style:none}
+ details.mais>summary::-webkit-details-marker{display:none}
+ details.mais>summary::before{content:"▸ ";color:var(--fraco)}
+ details.mais[open]>summary::before{content:"▾ "}
  footer{border-top:1px solid var(--line);margin-top:2.5rem;padding:1rem 0;
    color:var(--fraco);font-size:.72rem}
 
- /* mobile: menu vira pills compactas (fica no FIM da folha para vencer
-    as regras base de nav.menu na cascata — mesma especificidade) */
+ /* mobile: abas viram pills em linha (fim da folha p/ vencer a cascata) */
  @media(max-width:820px){
    nav.menu{flex-direction:row;flex-wrap:wrap;gap:.15rem .3rem}
-   nav.menu .grupo{flex-basis:100%;margin:.5rem 0 .1rem}
    nav.menu a{border:1px solid var(--line);border-radius:16px;
-     padding:.18rem .6rem}
+     padding:.28rem .7rem}
    nav.menu .badge{margin-left:.35rem}
    .sysbox{display:flex;flex-wrap:wrap;gap:.1rem .9rem}}
 """
@@ -189,25 +213,75 @@ _CSS = """
 _JS = """
 (function(){
  'use strict';
- // scrollspy: marca na sidebar a seção visível
- try{
-  var links={};
-  document.querySelectorAll('nav.menu a[href^="#"]').forEach(function(a){
-    links[a.getAttribute('href').slice(1)]=a;});
-  var obs=new IntersectionObserver(function(es){
-    es.forEach(function(en){
-      var a=links[en.target.id];
-      if(a && en.isIntersecting){
-        Object.keys(links).forEach(function(k){
-          links[k].classList.remove('ativo');});
-        a.classList.add('ativo');}});
-  },{rootMargin:'-20% 0px -70% 0px'});
-  document.querySelectorAll('h2[id]').forEach(function(h){obs.observe(h);});
+ var app=document.querySelector('.app');
+ // ---- tema claro/escuro: respeita o SO; escolha explícita persiste
+ var root=document.documentElement;
+ function temaAtual(){
+   var t=root.getAttribute('data-tema');
+   if(t)return t;
+   return (window.matchMedia&&window.matchMedia('(prefers-color-scheme:light)').matches)
+     ?'claro':'escuro';
+ }
+ try{var salvo=localStorage.getItem('nomos-tema');
+   if(salvo==='claro'||salvo==='escuro')root.setAttribute('data-tema',salvo);
  }catch(e){}
- // filtro rápido: esconde cards/linhas que não batem + contador acessível
+ var tbtn=document.getElementById('tema-btn');
+ function pintaBtn(){
+   if(!tbtn)return;
+   var claro=temaAtual()==='claro';
+   tbtn.textContent=(claro?'☀':'☾')+' tema';
+   tbtn.setAttribute('aria-pressed',claro?'true':'false');
+ }
+ pintaBtn();
+ if(tbtn){tbtn.addEventListener('click',function(){
+   var novo=temaAtual()==='claro'?'escuro':'claro';
+   root.setAttribute('data-tema',novo);
+   try{localStorage.setItem('nomos-tema',novo);}catch(e){}
+   pintaBtn();
+ });}
+ // ---- abas: mostra UMA por vez (menos densidade); deep-link ativa a certa
+ var tabs=[].slice.call(document.querySelectorAll('nav.menu a[data-aba]'));
+ var abas=[].slice.call(document.querySelectorAll('.aba'));
+ // mapa âncora(#id de h2) -> aba que a contém, p/ deep-links continuarem valendo
+ var secaoDaAba={};
+ abas.forEach(function(ab){
+   ab.querySelectorAll('[id]').forEach(function(el){
+     secaoDaAba[el.id]=ab.getAttribute('data-aba');});});
+ function mostrar(nome,foco){
+   if(!nome) nome=(abas[0]&&abas[0].getAttribute('data-aba'));
+   abas.forEach(function(ab){
+     ab.classList.toggle('ativa',ab.getAttribute('data-aba')===nome);});
+   tabs.forEach(function(t){
+     t.classList.toggle('ativo',t.getAttribute('data-aba')===nome);});
+   if(foco){var alvo=document.getElementById(foco);
+     if(alvo&&alvo.scrollIntoView)alvo.scrollIntoView({block:'start'});}
+ }
+ tabs.forEach(function(t){
+   t.addEventListener('click',function(ev){
+     ev.preventDefault();
+     var nome=t.getAttribute('data-aba');
+     mostrar(nome);
+     if(history.replaceState)history.replaceState(null,'','#'+nome);
+   });});
+ // qualquer link #secao (subnav, avisos) troca de aba e rola até a seção
+ document.addEventListener('click',function(ev){
+   var a=ev.target.closest&&ev.target.closest('a[href^="#"]');
+   if(!a||a.hasAttribute('data-aba'))return;
+   var id=a.getAttribute('href').slice(1);
+   if(secaoDaAba[id]){ev.preventDefault();mostrar(secaoDaAba[id],id);
+     if(history.replaceState)history.replaceState(null,'','#'+id);}
+ });
+ // estado inicial: hash aponta p/ aba OU p/ uma seção dentro de uma aba
+ (function(){var h=(location.hash||'').slice(1);
+   if(secaoDaAba[h])mostrar(secaoDaAba[h],h);
+   else mostrar(h||null);})();
+
+ // filtro rápido: com texto, revela TODAS as abas e varre tudo; ao limpar,
+ // o CSS volta sozinho a mostrar só a aba ativa (.aba.ativa)
  var f=document.getElementById('filtro');
  if(f){f.addEventListener('input',function(){
    var q=f.value.toLowerCase(),vis=0,tot=0;
+   if(app)app.classList.toggle('buscando',!!q);
    document.querySelectorAll('.filtravel').forEach(function(el){
      var mostra=el.textContent.toLowerCase().indexOf(q)>=0;
      el.style.display=mostra?'':'none';
@@ -272,9 +346,15 @@ def _doc(titulo: str, corpo: str, refresh: int | None = None) -> str:
     recarregaria no meio de uma decisão e apagaria o filtro digitado."""
     meta = (f'\n<meta name="nomos-refresh" content="{int(refresh)}">'
             if refresh else "")
+    # boot do tema ANTES do <style>: aplica a escolha salva já na 1ª pintura
+    # (sem flash). Sem escolha, o CSS respeita prefers-color-scheme sozinho.
+    boot = ("<script>try{var t=localStorage.getItem('nomos-tema');"
+            "if(t==='claro'||t==='escuro')"
+            "document.documentElement.setAttribute('data-tema',t);}"
+            "catch(e){}</script>")
     return ("<!doctype html><html lang=\"pt-br\"><meta charset=\"utf-8\">\n"
             "<meta name=\"viewport\" content=\"width=device-width, "
-            "initial-scale=1\">" + meta + "\n<title>" +
+            "initial-scale=1\">" + meta + "\n" + boot + "\n<title>" +
             html.escape(titulo) + "</title>\n<style>" + _CSS + "</style>\n" +
             corpo + "\n<script>" + _JS + "</script>\n</html>")
 
@@ -471,72 +551,45 @@ def dados_dashboard(ctx) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# blocos do layout
+# blocos do layout — MC37: 5 ABAS (uma por vez), sem rail. Menos densidade,
+# mesma informação. Cada aba agrupa seções afins; deep-links (#motores…)
+# continuam válidos (o JS ativa a aba que contém a âncora).
 # ---------------------------------------------------------------------------
-_GRUPOS_NAV: list[tuple[str, list[tuple[str, str, str]]]] = [
-    # (grupo, [(href, ícone, rótulo)])
-    ("agora", [("#status", "◉", "visão geral"),
-               ("#aprovacoes", "✋", "aprovações"),
-               ("#checkup", "✚", "check-up")]),
-    ("cérebro", [("#motores", "⚙", "motores"),
-                 ("roteador/", "⇄", "roteador"),
-                 ("#conversas", "❯", "conversas"),
-                 ("#memoria", "◈", "memória")]),
-    ("capacidades", [("#skills", "❖", "skills"),
-                     ("#agentes", "☍", "agentes"),
-                     ("#capacidades", "▤", "catálogo"),
-                     ("#mcp", "⛁", "mcp")]),
-    ("operação", [("#rotinas", "◷", "rotinas"),
-                  ("#evidencias", "✓", "evidências"),
-                  ("#politica", "§", "política"),
-                  ("#auditoria", "≡", "auditoria"),
-                  ("audit/", "…", "trilha completa"),
-                  ("#sistema", "☰", "sistema")]),
-    ("ajuda", [("#ajuda", "?", "ajuda rápida"),
-               ("api/", "{}", "dados em JSON"),
-               ("health/", "♥", "health")]),
+# (data-aba, ícone, rótulo) — a ordem é a ordem da sidebar
+_ABAS_NAV: list[tuple[str, str, str]] = [
+    ("visao", "◉", "visão geral"),
+    ("cerebro", "⚙", "cérebro"),
+    ("capacidades", "❖", "capacidades"),
+    ("operacao", "≡", "operação"),
+    ("ajuda", "?", "ajuda"),
 ]
 
 
 def _sidebar(d: dict, n_aprov: int) -> str:
     e = html.escape
     memo = d.get("memoria", {})
-    badge_mem = (f'<span class="badge">{memo.get("candidatas", 0)}</span>'
-                 if memo.get("candidatas") else "")
-    badge_apr = (f'<span class="badge alerta">{n_aprov}</span>'
-                 if n_aprov else "")
+    badges = {
+        "visao": (f'<span class="badge alerta">{n_aprov}</span>'
+                  if n_aprov else ""),
+        "cerebro": (f'<span class="badge">{memo.get("candidatas", 0)}</span>'
+                    if memo.get("candidatas") else ""),
+    }
     itens = []
-    for grupo, links in _GRUPOS_NAV:
-        itens.append(f'<div class="grupo">{e(grupo)}</div>')
-        for href, ico, rotulo in links:
-            extra = ""
-            if href == "#memoria":
-                extra = badge_mem
-            elif href == "#aprovacoes":
-                extra = badge_apr
-            if not href.startswith("#") and not extra:
-                # sai da página principal (subpágina/JSON): marca visual —
-                # âncora e navegação não podem parecer a mesma coisa
-                extra = ('<span class="ext" aria-hidden="true" '
-                         'title="abre outra página">↗</span>')
-            itens.append(f'<a href="{e(href)}"><span class="ico">{ico}</span>'
-                         f"{e(rotulo)}{extra}</a>")
+    for aba, ico, rotulo in _ABAS_NAV:
+        extra = badges.get(aba, "")
+        itens.append(f'<a href="#{aba}" data-aba="{aba}">'
+                     f'<span class="ico" aria-hidden="true">{ico}</span>'
+                     f"{e(rotulo)}{extra}</a>")
     classe = {"PRONTO": "ok", "PARCIAL": "warn",
               "BLOQUEADO": "err"}[d["status_geral"]]
-    aud = d.get("auditoria", {})
     sysbox = (
-        '<div class="sysbox"><div class="grupo">sistema</div>'
+        '<div class="sysbox">'
         f'<div class="linha">status <span class="chip {classe}">'
         f'{e(d["status_geral"])}</span></div>'
-        f'<div class="linha">agente <b>{e(d["sistema"]["nome_agente"])}</b>'
+        f'<div class="linha">{e(d["sistema"]["nome_agente"])}'
         f' · v{e(d["versao"])}</div>'
         f'<div class="linha">'
-        f'{"🔒 modo só-local" if d["so_local"] else "🔌 nuvem plugada"}</div>'
-        f'<div class="linha">auditoria: '
-        f'{"íntegra" if aud.get("cadeia_integra") else "verificar"} · '
-        f'{aud.get("eventos_total", 0)} eventos</div>'
-        f'<div class="linha">aprovações pendentes: <b>{n_aprov}</b></div>'
-        '<div class="linha">agora: <span id="relogio">—</span></div>'
+        f'{"🔒 só-local" if d["so_local"] else "🔌 nuvem plugada"}</div>'
         "</div>")
     return ('<aside class="sidebar"><div class="brand">NOMOS'
             '<span class="cursor">▌</span></div>'
@@ -545,47 +598,48 @@ def _sidebar(d: dict, n_aprov: int) -> str:
             + "".join(itens) + "</nav>" + sysbox + "</aside>")
 
 
-def _rail(d: dict, n_aprov: int) -> str:
+def _bloco_atencao(d: dict, n_aprov: int) -> str:
+    """O que espera VOCÊ — antes vivia no rail; agora abre a visão geral."""
+    memo = d.get("memoria", {})
+    itens = []
+    if n_aprov:
+        itens.append(f'<a href="#aprovacoes">{n_aprov} aprovação(ões) '
+                     "esperando decisão</a>")
+    if memo.get("candidatas"):
+        itens.append(f'{memo["candidatas"]} memória(s) a revisar '
+                     "(<code>nomos memoria revisar</code>)")
+    if not d.get("auditoria", {}).get("cadeia_integra"):
+        itens.append("cadeia de auditoria: verificar "
+                     "(<code>nomos logs verify</code>)")
+    ev_ruins = [x for x in d.get("evidencias", []) if not x.get("integro")]
+    if ev_ruins:
+        itens.append(f"{len(ev_ruins)} evidência(s) NÃO conferem")
+    if not itens:
+        return ('<div class="card ok">nada pendente ✓ <small>— quando algo '
+                "precisar de você, aparece aqui</small></div>")
+    linhas = "".join(f"<li>⚠ {x}</li>" for x in itens)
+    return f'<div class="card warn"><b>Precisa de você</b><ul class="lista">{linhas}</ul></div>'
+
+
+def _bloco_ao_vivo(d: dict) -> str:
+    """Motor escolhido por modalidade + atividade recente (metadados)."""
     e = html.escape
-    memo, aud = d.get("memoria", {}), d.get("auditoria", {})
-    partes = ['<aside class="rail" aria-label="status ao vivo">']
-    # motor escolhido por modalidade — decisão real do roteador
-    partes.append("<h3>motor ao vivo</h3>")
+    partes = ['<div class="colunas2">']
+    partes.append('<div><h3 class="mini-h">motor ao vivo</h3>')
     if d.get("roteador_vivo"):
         for r in d["roteador_vivo"]:
             motor = r.get("motor") or "— nenhum pronto"
             partes.append(f'<div class="mini"><b>{e(r["modalidade"])}</b> → '
-                          f'{e(motor)}<small>{e(str(r.get("motivo", "")))[:90]}'
-                          "</small></div>")
+                          f"{e(motor)}</div>")
     else:
         partes.append('<div class="mini">roteador indisponível</div>')
-    # atenção: o que espera decisão SUA
-    partes.append("<h3>atenção</h3>")
-    atencao = []
-    if n_aprov:
-        atencao.append(f'<a href="#aprovacoes">{n_aprov} aprovação(ões) '
-                       "esperando decisão</a>")
-    if memo.get("candidatas"):
-        atencao.append(f'{memo["candidatas"]} memória(s) a revisar '
-                       "(<code>nomos memoria revisar</code>)")
-    if not aud.get("cadeia_integra"):
-        atencao.append("cadeia de auditoria: verificar "
-                       "(<code>nomos logs verify</code>)")
-    ev_ruins = [x for x in d.get("evidencias", []) if not x.get("integro")]
-    if ev_ruins:
-        atencao.append(f"{len(ev_ruins)} evidência(s) NÃO conferem")
-    if atencao:
-        partes += [f'<div class="mini">⚠ {a}</div>' for a in atencao]
-    else:
-        partes.append('<div class="mini">nada pendente ✓</div>')
-    # atividade recente (metadados; a auditoria já redige na entrada)
-    partes.append("<h3>atividade</h3>")
+    partes.append('</div><div><h3 class="mini-h">atividade recente</h3>')
     for ev in d.get("eventos", [])[:5]:
-        partes.append(f'<div class="mini"><code>{e(str(ev["evento"]))}</code>'
+        partes.append(f'<div class="mini"><code>{e(str(ev["evento"]))}</code> '
                       f'<small>{e(str(ev["ts"]))[:19]}</small></div>')
     if not d.get("eventos"):
         partes.append('<div class="mini">sem eventos ainda</div>')
-    partes.append("</aside>")
+    partes.append("</div></div>")
     return "".join(partes)
 
 
@@ -668,6 +722,8 @@ def render_html(d: dict, refresh: int | None = None,
         '<div class="acoes"><input id="filtro" type="search" '
         'placeholder="filtrar seções e tabelas…" aria-label="filtrar"> '
         '<span id="filtro-n" aria-live="polite"></span> '
+        '<button id="tema-btn" type="button" aria-pressed="false" '
+        'title="alternar tema claro/escuro">◐ tema</button> '
         + ('<a class="ativo" href="./">auto: ligado — parar</a> '
            f'<span id="auto-estado">auto: {int(refresh)}s</span> '
            if refresh else
@@ -676,203 +732,194 @@ def render_html(d: dict, refresh: int | None = None,
         '<a href="audit/">audit/ ↗</a> <a href="roteador/">roteador/ ↗</a> '
         '<a href="health/">health/ ↗</a></div></header>')
 
-    # --- KPIs ---
+    # --- KPIs (5, enxutos: o essencial de relance) ---
     memo = d.get("memoria", {})
     aud = d.get("auditoria", {})
     n_prontos = sum(len(v) for v in d["modalidades"].values())
-    ev_ok = sum(1 for x in d.get("evidencias", []) if x.get("integro"))
     cadeia_kpi = "íntegra" if aud.get("cadeia_integra") else "verificar"
     kpis = [
         (e(d["status_geral"]), "status geral"),
         ("🔒 local" if d["so_local"] else "🔌 nuvem", "cadeado"),
         (str(n_aprov), "aprovações"),
         (str(n_prontos), "motores prontos"),
-        (str(memo.get("total", 0)), "memórias"),
-        (str(memo.get("candidatas", 0)), "a revisar"),
-        (str(ev_ok), "evidências ok"),
         (cadeia_kpi, "cadeia auditoria"),
     ]
     corpo.append('<div class="kpis">' + "".join(
         f'<div class="kpi"><b>{v}</b><span>{lbl}</span></div>'
         for v, lbl in kpis) + "</div>")
 
-    # --- status geral ---
-    corpo.append(
+    def _subnav(pares: list[tuple[str, str]]) -> str:
+        return ('<nav class="subnav" aria-label="saltar na aba">'
+                + " ".join(f'<a href="#{i}">{e(r)}</a>' for i, r in pares)
+                + "</nav>")
+
+    # =========================== ABA: visão geral ===========================
+    aba_visao = [_subnav([("status", "status"), ("aprovacoes", "aprovações"),
+                          ("checkup", "check-up")])]
+    aba_visao.append(_bloco_atencao(d, n_aprov))
+    aba_visao.append(
         f'<h2 id="status">Visão geral</h2>'
         f'<div class="card {classe}"><b>STATUS GERAL: {e(d["status_geral"])}'
         f"</b> · NOMOS {e(d['versao'])} · "
         f'{"modo só-local LIGADO 🔒" if d["so_local"] else "motores externos plugados 🔌"}'
         f"<br>próximo passo: <code>{e(d['proximo_passo'])}</code></div>")
-
-    # --- aprovações (única porta de ação; sem fila = só informa) ---
-    corpo.append(_secao_aprovacoes(aprovacoes, n_aprov))
-
-    # --- check-up ---
-    corpo.append('<h2 id="checkup">Check-up</h2>')
+    aba_visao.append(_bloco_ao_vivo(d))
+    aba_visao.append(_secao_aprovacoes(aprovacoes, n_aprov))
+    aba_visao.append('<h2 id="checkup">Check-up</h2>')
     for it in d["checkup"]:
         marca = "✅" if it["ok"] else ("❌" if it.get("bloqueante") else "⚠️")
         det = f' <small>{e(it["detalhe"])}</small>' if it.get("detalhe") else ""
-        corpo.append(f'<div class="card filtravel">{marca} '
-                     f'{e(it["titulo"])}{det}</div>')
+        aba_visao.append(f'<div class="card filtravel">{marca} '
+                         f'{e(it["titulo"])}{det}</div>')
 
-    corpo.append('<p><small>ver também: <a href="api/">dados em JSON</a> · '
-                 '<a href="audit/">auditoria completa</a> · '
-                 '<a href="roteador/">decisões do roteador</a> · '
-                 '<a href="health/">health</a></small></p>')
-
-    # --- motores ---
-    corpo.append('<h2 id="motores">Motores prontos por modalidade</h2><table>'
-                 "<tr><th scope='col'>modalidade</th><th scope='col'>motores</th></tr>")
+    # ============================= ABA: cérebro =============================
+    aba_cerebro = [_subnav([("motores", "motores"), ("conversas", "conversas"),
+                            ("memoria", "memória")])]
+    aba_cerebro.append('<h2 id="motores">Motores prontos por modalidade</h2>'
+                       "<table><tr><th scope='col'>modalidade</th>"
+                       "<th scope='col'>motores</th></tr>")
     for mod, ms in d["modalidades"].items():
-        corpo.append(f'<tr class="filtravel"><td>{e(mod)}</td>'
-                     f"<td>{e(', '.join(ms)) if ms else '—'}</td></tr>")
-    corpo.append("</table>")
-
-    corpo.append("<h2>Motores (catálogo completo)</h2><table>"
-                 "<tr><th scope='col'>motor</th><th scope='col'>onde</th><th scope='col'>custo</th>"
-                 "<th scope='col'>qualidade</th><th scope='col'>pronto</th></tr>")
+        aba_cerebro.append(f'<tr class="filtravel"><td>{e(mod)}</td>'
+                           f"<td>{e(', '.join(ms)) if ms else '—'}</td></tr>")
+    aba_cerebro.append("</table>")
+    aba_cerebro.append('<details class="mais"><summary>catálogo completo de '
+                       "motores</summary><table>"
+                       "<tr><th scope='col'>motor</th><th scope='col'>onde</th>"
+                       "<th scope='col'>custo</th><th scope='col'>qualidade</th>"
+                       "<th scope='col'>pronto</th></tr>")
     for m in d.get("motores", []):
-        corpo.append(
+        aba_cerebro.append(
             f'<tr class="filtravel"><td>{e(m["rotulo"])}</td>'
             f"<td>{'🔒 local' if m['local'] else '☁ nuvem (opt-in)'}</td>"
             f"<td>{e(m['custo'])}</td><td>{e(m['qualidade'])}</td>"
             f"<td>{'✓' if m['pronto'] else '—'}</td></tr>")
-    corpo.append("</table>")
+    aba_cerebro.append("</table></details>")
+    aba_cerebro.append('<p><small>decisão explicada por modalidade: '
+                       '<a href="roteador/">roteador/ ↗</a></small></p>')
+    aba_cerebro.append('<h2 id="conversas">Conversas</h2>')
+    if not d.get("conversas"):
+        aba_cerebro.append("<p>nenhuma conversa ainda. <code>nomos chat</code></p>")
+    for c in d.get("conversas", []):
+        pino = "📌 " if c.get("fixada") else ""
+        aba_cerebro.append(f'<div class="card filtravel">{pino}<b>#{c["id"]}</b> '
+                           f'{e(c["titulo"])} <small>· {c.get("turnos", 0)} turno(s)'
+                           f'{" · " + e(c["motor"]) if c.get("motor") else ""}'
+                           "</small></div>")
+    if d.get("conversas"):
+        aba_cerebro.append("<p><small>só títulos e metadados — o conteúdo nunca "
+                           "aparece no painel. Abra no terminal: <code>nomos "
+                           "conversas</code></small></p>")
+    pend = memo.get("candidatas", 0)
+    aviso = (f'⚠️ <b>{pend}</b> candidata(s) aguardando SUA revisão — '
+             f"<code>nomos memoria revisar</code>" if pend
+             else "fila de candidatas vazia ✓")
+    aba_cerebro.append(f'<h2 id="memoria">Memória local</h2><div class="card">'
+                       f'{memo.get("total", 0)} memórias guardadas · {aviso}'
+                       f"<br><small>aprovar/descartar é sempre decisão sua, "
+                       f"no terminal — o painel só mostra</small></div>")
 
-    # --- skills ---
-    corpo.append('<h2 id="skills">Skills</h2>')
+    # ============================ ABA: capacidades ==========================
+    aba_capac = [_subnav([("skills", "skills"), ("agentes", "agentes"),
+                          ("capacidades", "catálogo"), ("mcp", "mcp")])]
+    aba_capac.append('<h2 id="skills">Skills</h2>')
     if not d["skills"]:
-        corpo.append("<p>nenhuma instalada. <code>nomos skills</code></p>")
+        aba_capac.append("<p>nenhuma instalada. <code>nomos skills</code></p>")
     for s in d["skills"]:
-        corpo.append(f'<div class="card filtravel">{e(s["name"])}@'
-                     f'{e(s["version"])} — {e(s["estado"])} · '
-                     f'risco {e(s["risco"])}</div>')
-
-    # --- agentes ---
-    corpo.append('<h2 id="agentes">Agentes</h2>')
+        aba_capac.append(f'<div class="card filtravel">{e(s["name"])}@'
+                         f'{e(s["version"])} — {e(s["estado"])} · '
+                         f'risco {e(s["risco"])}</div>')
+    aba_capac.append('<h2 id="agentes">Agentes</h2>')
     if not d.get("agentes"):
-        corpo.append("<p>nenhum agente. <code>nomos agentes</code></p>")
+        aba_capac.append("<p>nenhum agente. <code>nomos agentes</code></p>")
     for a in d.get("agentes", []):
         estado = "ativo ✓" if a.get("ativo") else "inativo"
         ferr = ", ".join(a.get("ferramentas", [])) or "—"
-        corpo.append(f'<div class="card filtravel">{e(a["nome"])} '
-                     f'<span class="pill">risco máx {e(a["risco_max"])}</span>'
-                     f'<span class="pill">{estado}</span><br>'
-                     f"<small>ferramentas: {e(ferr)}</small></div>")
-
-    # --- capacidades ---
-    corpo.append('<h2 id="capacidades">Capacidades (catálogo)</h2>')
+        aba_capac.append(f'<div class="card filtravel">{e(a["nome"])} '
+                         f'<span class="pill">risco máx {e(a["risco_max"])}</span>'
+                         f'<span class="pill">{estado}</span><br>'
+                         f"<small>ferramentas: {e(ferr)}</small></div>")
+    aba_capac.append('<h2 id="capacidades">Capacidades (catálogo)</h2>')
     if not d.get("capacidades"):
-        corpo.append("<p>catálogo vazio. <code>nomos skills catalogo</code></p>")
+        aba_capac.append("<p>catálogo vazio. <code>nomos skills catalogo</code></p>")
     for c in d.get("capacidades", []):
-        corpo.append(
+        aba_capac.append(
             f'<div class="card filtravel">{e(c["nome"])} '
             f'<small>[{e(c["status"])} · risco {e(c["risco"])}]</small><br>'
             f'{e(c["descricao"])}<br>'
             f'<small>entrada: {e(c["entrada"])} → {e(c["saida"])}</small></div>')
-
-    # --- MCP ---
     mcp = d.get("mcp", {})
-    corpo.append('<h2 id="mcp">MCP — Model Context Protocol</h2>')
-    corpo.append(f'<div class="card ok"><b>NOMOS como servidor</b> '
-                 f'({len(mcp.get("server_tools", []))} tools somente leitura) '
-                 f"— <code>nomos mcp servir</code><br><small>"
-                 + " · ".join(e(t["nome"]) for t in mcp.get("server_tools", []))
-                 + "</small></div>")
+    aba_capac.append('<h2 id="mcp">MCP — Model Context Protocol</h2>')
+    aba_capac.append(f'<div class="card ok"><b>NOMOS como servidor</b> '
+                     f'({len(mcp.get("server_tools", []))} tools somente leitura) '
+                     f"— <code>nomos mcp servir</code><br><small>"
+                     + " · ".join(e(t["nome"]) for t in mcp.get("server_tools", []))
+                     + "</small></div>")
     conf = mcp.get("confiaveis", [])
     if conf:
-        corpo.append('<div class="card"><b>Servers confiáveis</b> '
-                     f"({len(conf)} · {mcp.get('revogadas', 0)} revogado(s)):<br>"
-                     + "<br>".join(f'<small>✓ {e(s["nome"])} '
-                                   f'[{e(s.get("impressao", ""))}]</small>'
-                                   for s in conf) + "</div>")
+        aba_capac.append('<div class="card"><b>Servers confiáveis</b> '
+                         f"({len(conf)} · {mcp.get('revogadas', 0)} revogado(s)):<br>"
+                         + "<br>".join(f'<small>✓ {e(s["nome"])} '
+                                       f'[{e(s.get("impressao", ""))}]</small>'
+                                       for s in conf) + "</div>")
     else:
-        corpo.append("<p>nenhum server MCP confiável. "
-                     "<code>nomos mcp confiar &lt;manifesto&gt;</code></p>")
+        aba_capac.append("<p>nenhum server MCP confiável. "
+                         "<code>nomos mcp confiar &lt;manifesto&gt;</code></p>")
 
-    # --- conversas ---
-    corpo.append('<h2 id="conversas">Conversas</h2>')
-    if not d.get("conversas"):
-        corpo.append("<p>nenhuma conversa ainda. <code>nomos chat</code></p>")
-    for c in d.get("conversas", []):
-        pino = "📌 " if c.get("fixada") else ""
-        corpo.append(f'<div class="card filtravel">{pino}<b>#{c["id"]}</b> '
-                     f'{e(c["titulo"])} <small>· {c.get("turnos", 0)} turno(s)'
-                     f'{" · " + e(c["motor"]) if c.get("motor") else ""}'
-                     "</small></div>")
-    if d.get("conversas"):
-        corpo.append("<p><small>só títulos e metadados — o conteúdo nunca "
-                     "aparece no painel. Abra no terminal: <code>nomos "
-                     "conversas</code></small></p>")
-
-    # --- rotinas ---
-    corpo.append('<h2 id="rotinas">Rotinas</h2>')
+    # ============================= ABA: operação ============================
+    aba_op = [_subnav([("rotinas", "rotinas"), ("evidencias", "evidências"),
+                       ("politica", "política"), ("auditoria", "auditoria"),
+                       ("sistema", "sistema")])]
+    aba_op.append('<h2 id="rotinas">Rotinas</h2>')
     if not d["rotinas"]:
-        corpo.append("<p>nenhuma rotina. <code>nomos rotinas</code></p>")
+        aba_op.append("<p>nenhuma rotina. <code>nomos rotinas</code></p>")
     for r in d["rotinas"]:
         marca = "✓" if r.get("ativa", True) else "·"
-        corpo.append(f'<div class="card filtravel">[{marca}] {e(r["hora"])} — '
-                     f'{e(r["nome"])} <small>({e(r["acao"])})</small></div>')
-
-    # --- memória ---
-    if memo:
-        pend = memo.get("candidatas", 0)
-        aviso = (f'⚠️ <b>{pend}</b> candidata(s) aguardando SUA revisão — '
-                 f"<code>nomos memoria revisar</code>" if pend
-                 else "fila de candidatas vazia ✓")
-        corpo.append(f'<h2 id="memoria">Memória local</h2><div class="card">'
-                     f'{memo.get("total", 0)} memórias guardadas · {aviso}'
-                     f"<br><small>aprovar/descartar é sempre decisão sua, "
-                     f"no terminal — o painel só mostra</small></div>")
-
-    # --- evidências ---
-    corpo.append('<h2 id="evidencias">Evidências de missões</h2>')
+        aba_op.append(f'<div class="card filtravel">[{marca}] {e(r["hora"])} — '
+                      f'{e(r["nome"])} <small>({e(r["acao"])})</small></div>')
+    aba_op.append('<h2 id="evidencias">Evidências de missões</h2>')
     if not d.get("evidencias"):
-        corpo.append("<p>nenhum pacote ainda. "
-                     '<code>nomos evidencia criar "título"</code></p>')
+        aba_op.append("<p>nenhum pacote ainda. "
+                      '<code>nomos evidencia criar "título"</code></p>')
     for ev_i in d.get("evidencias", []):
         marca = "✅ íntegro" if ev_i["integro"] else "❌ NÃO confere"
-        corpo.append(f'<div class="card filtravel">{e(ev_i["nome"])} — {marca}'
-                     f' · <a href="ev/{e(ev_i["nome"])}/">abrir relatório</a>'
-                     "</div>")
-
-    # --- política ---
+        aba_op.append(f'<div class="card filtravel">{e(ev_i["nome"])} — {marca}'
+                      f' · <a href="ev/{e(ev_i["nome"])}/">abrir relatório</a>'
+                      "</div>")
     pol = d.get("politica", {})
     if pol:
-        corpo.append('<h2 id="politica">Política de permissões (A0–A6)</h2>'
-                     "<table><tr><th scope='col'>categoria</th><th scope='col'>default</th></tr>")
+        aba_op.append('<h2 id="politica">Política de permissões (A0–A6)</h2>'
+                      "<details class=\"mais\"><summary>ver a tabela A0–A6 "
+                      "completa</summary><table>"
+                      "<tr><th scope='col'>categoria</th>"
+                      "<th scope='col'>default</th></tr>")
         for cat_nome, efeito in pol["regras"].items():
-            corpo.append(f'<tr class="filtravel"><td><code>{e(cat_nome)}'
-                         f"</code></td><td>{e(efeito)}</td></tr>")
-        corpo.append("</table>")
+            aba_op.append(f'<tr class="filtravel"><td><code>{e(cat_nome)}'
+                          f"</code></td><td>{e(efeito)}</td></tr>")
+        aba_op.append("</table></details>")
         conselho = ("DESLIGADA (dry-run apenas)"
                     if not pol["execucao_real_council"] else "LIGADA")
-        corpo.append(f'<div class="card ok">Conselho: execução real de motor '
-                     f'<b>{e(conselho)}</b> · {pol["flags_proibidas"]} flags '
-                     f"proibidas fail-closed · aprovação humana obrigatória "
-                     f"para ações sensíveis</div>")
-
-    # --- auditoria ---
+        aba_op.append(f'<div class="card ok">Conselho: execução real de motor '
+                      f'<b>{e(conselho)}</b> · {pol["flags_proibidas"]} flags '
+                      f"proibidas fail-closed · aprovação humana obrigatória "
+                      f"para ações sensíveis</div>")
     cadeia = ("íntegra ✅" if aud.get("cadeia_integra")
               else "⚠️ verificar (nomos logs verify)")
-    corpo.append(f'<h2 id="auditoria">Últimos eventos da auditoria</h2>'
-                 f"<p><small>cadeia de hash: {cadeia} · "
-                 f"{aud.get('eventos_total', 0)} eventos no total · "
-                 f'<a href="audit/">trilha completa com busca</a></small></p>'
-                 "<table><tr><th scope='col'>quando (ts)</th><th scope='col'>evento</th></tr>")
+    aba_op.append(f'<h2 id="auditoria">Últimos eventos da auditoria</h2>'
+                  f"<p><small>cadeia de hash: {cadeia} · "
+                  f"{aud.get('eventos_total', 0)} eventos no total · "
+                  f'<a href="audit/">trilha completa com busca ↗</a></small></p>'
+                  '<details class="mais"><summary>ver os últimos eventos'
+                  "</summary><table><tr><th scope='col'>quando (ts)</th>"
+                  "<th scope='col'>evento</th></tr>")
     for ev in d["eventos"]:
-        corpo.append(f'<tr class="filtravel"><td>{e(str(ev["ts"]))}</td>'
-                     f'<td><code>{e(str(ev["evento"]))}</code></td></tr>')
-    corpo.append("</table><p><small>a trilha completa (com cadeia de hash) "
-                 "está em <code>~/.nomos/logs/audit.jsonl</code> — verifique "
-                 "com <code>nomos logs verify</code></small></p>")
-
-    # --- sistema ---
+        aba_op.append(f'<tr class="filtravel"><td>{e(str(ev["ts"]))}</td>'
+                      f'<td><code>{e(str(ev["evento"]))}</code></td></tr>')
+    aba_op.append("</table></details>")
     sis = d.get("sistema", {})
     if sis:
         bancos = " · ".join(f"{n} {'✓' if ok else '—'}"
                             for n, ok in sis.get("bancos", {}).items())
-        corpo.append(
+        aba_op.append(
             '<h2 id="sistema">Sistema</h2><table>'
             f'<tr class="filtravel"><td>agente</td><td><b>'
             f'{e(sis.get("nome_agente", "NOMOS"))}</b></td></tr>'
@@ -888,8 +935,8 @@ def render_html(d: dict, refresh: int | None = None,
             f'<tr class="filtravel"><td>bancos locais</td><td>{bancos}</td></tr>'
             "</table>")
 
-    # --- ajuda rápida ---
-    corpo.append(
+    # ============================== ABA: ajuda ==============================
+    aba_ajuda = [
         '<h2 id="ajuda">Ajuda rápida</h2><table>'
         "<tr><th scope='col'>comando</th><th scope='col'>o que faz</th></tr>"
         '<tr class="filtravel"><td><code>nomos</code></td>'
@@ -912,7 +959,22 @@ def render_html(d: dict, refresh: int | None = None,
         "2 · pede licença — ação sensível exige SUA aprovação (A0–A6)<br>"
         "3 · nunca finge — sem motor pronto, avisa; jamais inventa<br>"
         "4 · tudo deixa trilha — auditoria com cadeia de hash verificável"
-        "</small></div>")
+        "</small></div>"
+        '<p><small>dados técnicos (abrem outra página): '
+        '<a href="api/">api/ ↗</a> · <a href="audit/">audit/ ↗</a> · '
+        '<a href="roteador/">roteador/ ↗</a> · '
+        '<a href="health/">health/ ↗</a></small></p>']
+
+    def _aba(nome: str, ativa: bool, partes: list[str]) -> str:
+        cls = "aba ativa" if ativa else "aba"
+        return (f'<section class="{cls}" data-aba="{nome}" '
+                f'aria-label="{nome}">' + "\n".join(partes) + "</section>")
+
+    corpo.append(_aba("visao", True, aba_visao))
+    corpo.append(_aba("cerebro", False, aba_cerebro))
+    corpo.append(_aba("capacidades", False, aba_capac))
+    corpo.append(_aba("operacao", False, aba_op))
+    corpo.append(_aba("ajuda", False, aba_ajuda))
 
     corpo.append("<footer>NOMOS · local por lei · o painel nunca executa nada "
                  "sozinho — toda ação exige SUA decisão com token de uso "
@@ -921,7 +983,7 @@ def render_html(d: dict, refresh: int | None = None,
     conteudo = ('<a class="skip" href="#conteudo">pular para o conteúdo</a>'
                 '<div class="app">' + _sidebar(d, n_aprov)
                 + '<main id="conteudo" class="main">' + "\n".join(corpo)
-                + "</main>" + _rail(d, n_aprov) + "</div>")
+                + "</main></div>")
     return _doc("NOMOS — painel local", conteudo, refresh)
 
 
