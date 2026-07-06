@@ -457,7 +457,25 @@ O arquivo `tools/nomos_update_agent.py` evoluiu de scaffold (MC25) para **verifi
 CI-safe** (MC26) e, no MC27, ganhou **gate read-only para CI** e o modo **`--diff`
 proposal-only**.
 
-### Status Atual (MC27.0)
+### Status Atual (MC29.0) — Brand + Site Sync Agent
+
+No MC29 o agente vira também o **guardião da marca**: além da consistência
+documental, o `--check` valida o alinhamento README ↔ brandbook ↔ manual ↔
+site ↔ versão do pacote.
+
+- [x] `brand:paleta` — cores do brandbook congelado (`#5AF78E`, `#0A0F0D`)
+      presentes no site (identidade não deriva em silêncio)
+- [x] `brand:tagline` — tagline canônica *"Seu agente. Sua máquina. Suas
+      regras."* e assinatura *"local por lei"* no README e no site
+- [x] `brand:instalacao_oficial` — nenhum doc oficial recomenda
+      `pip install nomos` puro (o nome `nomos` no PyPI é de projeto de
+      terceiros; instalação oficial é via GitHub/instaladores de release)
+- [x] `brand:versao_coerente` — `pyproject.toml` e `nomos.__version__` iguais
+- [x] Testes reais: `tests/test_mc29_brand_sync.py`
+- [x] Asserções de versão dos testes MC27 desfragilizadas (comparam com
+      `AGENT_VERSION` dinâmico, não literal)
+
+### Histórico (MC27.0)
 
 - [x] Documentação completa
 - [x] Especificação de comando

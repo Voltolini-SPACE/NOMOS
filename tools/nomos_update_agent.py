@@ -31,7 +31,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import List, Optional
 
-AGENT_VERSION = "MC27.0"
+AGENT_VERSION = "MC29.0"
 
 # ANSI colors (apenas no modo humano)
 GREEN = "\033[92m"
@@ -47,6 +47,17 @@ MANUAL_REL = "docs/installation/NOMOS_INSTALLATION_MANUAL.md"
 LANDING_REL = "site/index.html"
 README_REL = "README.md"
 GOVERNANCE_REL = "docs/governance/NOMOS_UPDATE_AGENT.md"
+
+# Brand/site sync (MC29): identidade congelada (docs/brand/frozen) e instalação oficial
+INSTALL_MD_REL = "docs/INSTALL.md"
+PYPROJECT_REL = "pyproject.toml"
+INIT_REL = "src/nomos/__init__.py"
+PALETA_CONGELADA = ("#5AF78E", "#0A0F0D")     # verde-neon + preto terminal (Brandbook v1.0)
+TAGLINE_CANONICA = "Seu agente. Sua máquina. Suas regras."
+ASSINATURA_CANONICA = "local por lei"
+# `pip install nomos` puro é proibido: o nome `nomos` no PyPI é de projeto de
+# terceiros. Lookahead negativo preserva formas legítimas (wheel, git+, ponto).
+_PIP_NOMOS_PURO = re.compile(r"pip install nomos(?![-\w./])")
 
 # Seções obrigatórias nos documentos
 BRANDBOOK_SECOES = [
@@ -216,6 +227,59 @@ class NomosUpdateAgent:
         self._add_check("secrets", not achados,
                         "nenhum segredo aparente" if not achados else f"suspeitos: {achados}")
 
+    # ---- brand/site sync (MC29) ----
+    def _check_brand_paleta(self):
+        landing = self._read(LANDING_REL)
+        if landing is None:
+            self._add_check("brand:paleta", False, "landing ausente")
+            return
+        baixo = landing.lower()
+        faltando = [hexcor for hexcor in PALETA_CONGELADA if hexcor.lower() not in baixo]
+        self._add_check("brand:paleta", not faltando,
+                        "paleta congelada presente" if not faltando
+                        else f"cores do brandbook congelado ausentes no site: {faltando}")
+
+    def _check_brand_tagline(self):
+        problemas = []
+        for rel in (README_REL, LANDING_REL):
+            texto = self._read(rel)
+            if texto is None:
+                problemas.append(f"{rel}: ausente")
+                continue
+            if TAGLINE_CANONICA not in texto:
+                problemas.append(f"{rel}: sem tagline canônica")
+            if ASSINATURA_CANONICA not in texto.lower():
+                problemas.append(f"{rel}: sem assinatura 'local por lei'")
+        self._add_check("brand:tagline", not problemas,
+                        "tagline e assinatura canônicas presentes" if not problemas
+                        else "; ".join(problemas))
+
+    def _check_instalacao_oficial(self):
+        alvos = [README_REL, MANUAL_REL, BRANDBOOK_REL, LANDING_REL, INSTALL_MD_REL]
+        ofensores = []
+        for rel in alvos:
+            texto = self._read(rel)
+            if texto is not None and _PIP_NOMOS_PURO.search(texto):
+                ofensores.append(rel)
+        self._add_check("brand:instalacao_oficial", not ofensores,
+                        "nenhum doc recomenda 'pip install nomos' puro (nome de "
+                        "terceiros no PyPI)" if not ofensores
+                        else f"docs recomendam pacote de terceiros: {ofensores}")
+
+    def _check_versao_coerente(self):
+        pyproject = self._read(PYPROJECT_REL) or ""
+        init = self._read(INIT_REL) or ""
+        m_py = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.MULTILINE)
+        m_init = re.search(r'^__version__\s*=\s*"([^"]+)"', init, re.MULTILINE)
+        if not (m_py and m_init):
+            self._add_check("brand:versao_coerente", False,
+                            "não foi possível ler versão de pyproject/__init__")
+            return
+        iguais = m_py.group(1) == m_init.group(1)
+        self._add_check("brand:versao_coerente", iguais,
+                        f"versão única: {m_py.group(1)}" if iguais
+                        else f"pyproject={m_py.group(1)} != __init__={m_init.group(1)}")
+
     def _check_git(self):
         """Lê estado básico do git por leitura direta de .git (somente leitura)."""
         git_dir = self.repo_root / ".git"
@@ -241,6 +305,10 @@ class NomosUpdateAgent:
         self._check_secoes()
         self._check_links_landing()
         self._check_secrets()
+        self._check_brand_paleta()
+        self._check_brand_tagline()
+        self._check_instalacao_oficial()
+        self._check_versao_coerente()
         self._check_git()
 
         self.report.timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

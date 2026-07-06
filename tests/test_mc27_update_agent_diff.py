@@ -29,11 +29,11 @@ def _load_agent_module():
     return mod
 
 
-# 1. --version imprime MC27.0
+# 1. --version imprime a versão corrente do agente (dinâmico: sem travar em bump)
 def test_version_mc27():
     proc = _run(["--version"])
     assert proc.returncode == 0
-    assert proc.stdout.strip() == "MC27.0"
+    assert proc.stdout.strip() == _load_agent_module().AGENT_VERSION
 
 
 # 2. --check continua imprimindo CONSISTENTE
@@ -55,7 +55,7 @@ def test_check_json_valido():
 def test_check_json_campos_mc27():
     proc = _run(["--check", "--json"])
     data = json.loads(proc.stdout)
-    assert data["agent_version"] == "MC27.0"
+    assert data["agent_version"] == _load_agent_module().AGENT_VERSION
     assert data["mode"] == "check"
     assert data["consistent"] is True
     assert data["real_execution_enabled"] is False
@@ -98,7 +98,7 @@ def test_diff_json_proposal_only():
     proc = _run(["--diff", "--json"])
     data = json.loads(proc.stdout)
     assert data["proposal_only"] is True
-    assert data["agent_version"] == "MC27.0"
+    assert data["agent_version"] == _load_agent_module().AGENT_VERSION
     assert data["mode"] == "diff"
 
 
