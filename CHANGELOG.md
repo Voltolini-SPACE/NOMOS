@@ -4,6 +4,14 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC31 — B1 provado e completado)
+- **Chat com motor OpenAI-compatível**: cadeia local-first do chat vira
+  embutido → Ollama → LM Studio/llama.cpp (normal e streaming SSE), com
+  auditoria própria. `NOMOS_OPENAI_COMPAT_BASE` para porta customizada.
+- **Contratos de conversa blindados**: 1º token antes do fim, fallback sem
+  stream, degradação honesta, RAG de memórias no contexto — o streaming e a
+  memória-no-contexto da v1.1 agora têm testes de contrato dedicados.
+
 ### Added (MC30 — fecho da onda A + B7 + C3)
 - **Doutor unificado (A3)**: dentro de um repo do NOMOS, `nomos doutor` inclui
   os agentes guardiões (docs & marca, git) como seções do check-up.
