@@ -730,6 +730,33 @@ def cmd_motores(ctx, args) -> int:
             print(f"  {dec.reason}")
             return EXIT_ERROR
         return EXIT_OK
+    if sub == "arbitrar":
+        from nomos.cognition import arbitragem as arbmod
+        prompt = getattr(args, "prompt", None)
+        if not prompt:
+            print("uso: nomos motores arbitrar \"<pergunta>\"", file=sys.stderr)
+            return EXIT_ERROR
+        runners = arbmod.montar_runners_producao(ctx["home"])
+        out = arbmod.arbitrar(prompt, runners)
+        ctx["audit"].append("motores.arbitrar", status=out.status,
+                            motores=len(out.engines_ready), bloqueado=out.decision.blocked)
+        if out.status == "no_engine":
+            print("nenhum motor pronto para arbitrar — nada foi inventado.")
+            print("  ligue o Ollama ou baixe o cérebro: nomos cerebro baixar")
+            return EXIT_ERROR
+        if out.decision.blocked:
+            print("arbitragem bloqueada (fail-closed): "
+                  + (out.failure_code.value if out.failure_code else "motivo desconhecido"))
+            for r in out.decision.reasons:
+                print(f"  · {r}")
+            return EXIT_ERROR
+        print(f"melhor resposta ({out.decision.selected_candidate_alias}, "
+              f"confiança {out.decision.confidence.value}, "
+              f"{len(out.engines_ready)} motores, {out.rounds_run} rodada(s)):")
+        print(out.decision.final_content)
+        if out.disagreement.requires_clarification:
+            print("\n⚠ os motores divergiram bastante — confira antes de usar.")
+        return EXIT_OK
     if sub == "auto":
         estado = getattr(args, "estado", None)
         if estado not in {"on", "off"}:
@@ -1321,6 +1348,10 @@ def build_parser() -> argparse.ArgumentParser:
     mosub.add_parser("listar").set_defaults(fn=cmd_motores)
     mosub.add_parser("menu").set_defaults(fn=cmd_motores)
     mosub.add_parser("status").set_defaults(fn=cmd_motores)
+    marb = mosub.add_parser("arbitrar",
+                            help="vários motores debatem e convergem na melhor resposta real")
+    marb.add_argument("prompt")
+    marb.set_defaults(fn=cmd_motores)
     mr = mosub.add_parser("recomendar")
     mr.add_argument("modalidade", nargs="?")
     mr.set_defaults(fn=cmd_motores)

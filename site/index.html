@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="NOMOS é um agente pessoal de IA que roda 100% no seu computador, com aprovação humana em cada passo. Local por lei.">
-    <meta name="keywords" content="agente IA, local-first, privacidade, segurança, automação">
+    <meta name="description" content="NOMOS é um agente pessoal de IA que roda 100% no seu computador: motores locais, memória, cofre, skills e agentes governados — com aprovação humana em cada passo. Local por lei.">
+    <meta name="keywords" content="agente IA, local-first, privacidade, segurança, automação, ollama, whisper, stable diffusion, skills, dry-run">
     <meta name="author" content="Se7enpay">
     <meta name="theme-color" content="#0A0F0D">
     <link rel="canonical" href="https://nomos.se7enpay.com/">
@@ -12,7 +12,7 @@
     <link rel="apple-touch-icon" href="assets/favicon.svg">
     <!-- Open Graph -->
     <meta property="og:title" content="NOMOS — Seu agente. Sua máquina. Suas regras.">
-    <meta property="og:description" content="Agente pessoal de IA que roda 100% no seu computador, com aprovação humana em cada passo.">
+    <meta property="og:description" content="Agente pessoal de IA local-first: motores, memória, cofre, skills e agentes governados, com aprovação humana em cada passo.">
     <meta property="og:type" content="website">
     <meta property="og:locale" content="pt_BR">
     <meta property="og:site_name" content="NOMOS">
@@ -24,132 +24,119 @@
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="NOMOS — Seu agente. Sua máquina. Suas regras.">
-    <meta name="twitter:description" content="Agente pessoal de IA que roda 100% no seu computador, com aprovação humana em cada passo.">
+    <meta name="twitter:description" content="Agente pessoal de IA local-first: motores, memória, cofre, skills e agentes governados, com aprovação humana em cada passo.">
     <meta name="twitter:image" content="https://nomos.se7enpay.com/assets/og-image.png">
     <title>NOMOS — Seu agente. Sua máquina. Suas regras.</title>
     <style>
         /* Brandbook v1.0 (congelado) — paleta terminal, verde-neon, monospace */
         :root {
-            --bg: #0A0F0D;
-            --surface: #111814;
-            --surface2: #0d130f;
-            --line: #24382a;
-            --line2: #1a2820;
-            --neon: #5AF78E;
-            --neon-dim: #2BD968;
-            --texto: #E8FFE8;
-            --texto2: #9fb8a5;
-            --fraco: #6f8a76;
-            --rosa: #FF5FA2;
-            --ciano: #56E1E9;
-            --amarelo: #F2C14E;
-            --vermelho: #FF5C57;
+            --bg: #0A0F0D; --surface: #111814; --surface2: #0d130f;
+            --line: #24382a; --line2: #1a2820;
+            --neon: #5AF78E; --neon-dim: #2BD968;
+            --texto: #E8FFE8; --texto2: #9fb8a5; --fraco: #6f8a76;
+            --rosa: #FF5FA2; --ciano: #56E1E9; --amarelo: #F2C14E; --vermelho: #FF5C57;
             --glow: 0 0 12px rgba(90, 247, 142, 0.35);
         }
-
         * { margin: 0; padding: 0; box-sizing: border-box; }
-
+        html { scroll-behavior: smooth; }
         body {
-            background: var(--bg);
-            color: var(--texto);
+            background: var(--bg); color: var(--texto);
             font-family: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-            line-height: 1.6;
-            font-size: 15px;
+            line-height: 1.6; font-size: 15px;
+            background-image: radial-gradient(rgba(90,247,142,0.05) 1px, transparent 1px);
+            background-size: 28px 28px;
         }
-
-        .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px; }
-
+        .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
         a { color: var(--ciano); }
 
-        /* header */
         header.top {
             position: sticky; top: 0; z-index: 20;
-            background: rgba(10, 15, 13, 0.92);
-            backdrop-filter: blur(6px);
+            background: rgba(10, 15, 13, 0.92); backdrop-filter: blur(6px);
             border-bottom: 1px solid var(--line);
         }
         header.top .wrap { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; gap: 1rem; flex-wrap: wrap; }
         .brand { color: var(--neon); font-weight: 700; letter-spacing: 1px; text-shadow: var(--glow); font-size: 1.05rem; }
-        header nav { display: flex; gap: 1.5rem; flex-wrap: wrap; }
-        header nav a { color: var(--texto2); text-decoration: none; font-size: 0.9rem; }
+        header nav { display: flex; gap: 1.2rem; flex-wrap: wrap; }
+        header nav a { color: var(--texto2); text-decoration: none; font-size: 0.85rem; }
         header nav a:hover { color: var(--neon); }
 
-        /* hero */
-        .hero { padding: 64px 0 40px; }
-        pre.logo {
-            color: var(--neon); text-shadow: var(--glow);
-            font-size: clamp(6px, 1.9vw, 13px); line-height: 1.05;
-            margin: 0 0 20px; overflow-x: auto;
-        }
+        .hero { padding: 60px 0 36px; }
+        pre.logo { color: var(--neon); text-shadow: var(--glow); font-size: clamp(6px, 1.9vw, 13px); line-height: 1.05; margin: 0 0 20px; overflow-x: auto; }
         .tagline-top { color: var(--fraco); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 12px; }
-        .hero h1 { font-size: clamp(1.6rem, 4.6vw, 2.6rem); color: var(--texto); font-weight: 700; margin-bottom: 0.6rem; }
+        .hero h1 { font-size: clamp(1.6rem, 4.6vw, 2.7rem); color: var(--texto); font-weight: 700; margin-bottom: 0.6rem; }
         .hero h1 .hl { color: var(--neon); text-shadow: var(--glow); }
-        .hero p.sub { color: var(--texto2); font-size: 1.05rem; max-width: 70ch; margin-bottom: 1.75rem; }
+        .hero p.sub { color: var(--texto2); font-size: 1.05rem; max-width: 74ch; margin-bottom: 1.75rem; }
         .cursor::after { content: "▋"; color: var(--neon); animation: blink 1s step-end infinite; }
         @keyframes blink { 50% { opacity: 0; } }
 
         .cta-group { display: flex; gap: 1rem; flex-wrap: wrap; }
-        .btn {
-            font-family: inherit; font-size: 0.95rem; text-decoration: none;
-            padding: 0.8rem 1.5rem; border-radius: 8px; cursor: pointer;
-            transition: all 0.2s; display: inline-block;
-        }
+        .btn { font-family: inherit; font-size: 0.95rem; text-decoration: none; padding: 0.8rem 1.5rem; border-radius: 8px; cursor: pointer; transition: all 0.2s; display: inline-block; }
         .btn-primary { background: var(--neon); color: #06120b; font-weight: 700; border: 1px solid var(--neon); }
         .btn-primary:hover { box-shadow: var(--glow); }
         .btn-ghost { background: transparent; color: var(--texto); border: 1px solid var(--line); }
         .btn-ghost:hover { border-color: var(--neon); color: var(--neon); }
 
-        /* sections */
-        section { padding: 48px 0 8px; border-top: 1px solid var(--line2); }
-        .tag { color: var(--fraco); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; }
-        h2 { font-size: clamp(20px, 3.4vw, 26px); color: var(--neon); margin: 0.2em 0 0.7em; text-shadow: var(--glow); }
-        h3 { font-size: 16px; color: var(--texto); margin: 1.2em 0 0.4em; }
-        p { color: var(--texto2); max-width: 72ch; margin-bottom: 0.8rem; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-top: 2.5rem; }
+        .stat { background: var(--surface); padding: 18px 20px; }
+        .stat b { color: var(--neon); font-size: 1.5rem; display: block; text-shadow: var(--glow); }
+        .stat span { color: var(--fraco); font-size: 0.8rem; }
 
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-top: 1.5rem; }
-        .card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; }
+        section { padding: 52px 0 8px; border-top: 1px solid var(--line2); }
+        .tag { color: var(--fraco); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; }
+        h2 { font-size: clamp(20px, 3.4vw, 27px); color: var(--neon); margin: 0.2em 0 0.5em; text-shadow: var(--glow); }
+        h2 .n { color: var(--fraco); font-weight: 400; font-size: 0.6em; }
+        h3 { font-size: 15px; color: var(--texto); margin: 1.1em 0 0.35em; }
+        p { color: var(--texto2); max-width: 76ch; margin-bottom: 0.8rem; }
+        .lead { color: var(--texto2); font-size: 1.02rem; max-width: 76ch; margin-bottom: 0.5rem; }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+        .card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; transition: border-color 0.2s; }
+        .card:hover { border-color: var(--neon-dim); }
         .card .ico { color: var(--neon); font-size: 1.1rem; margin-bottom: 0.4rem; }
         .card h3 { margin-top: 0; }
-        .card p { margin-bottom: 0; font-size: 0.9rem; }
+        .card p { margin-bottom: 0; font-size: 0.88rem; }
 
-        /* terminal block */
-        .term { background: var(--surface2); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; overflow-x: auto; font-size: 13.5px; line-height: 1.7; margin: 1.25rem 0; }
+        .term { background: var(--surface2); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; overflow-x: auto; font-size: 13.5px; line-height: 1.75; margin: 1.25rem 0; }
         .termbar { color: var(--fraco); font-size: 12px; margin-bottom: 10px; }
-        .term .p { color: var(--neon); }
-        .term .c { color: var(--texto); }
-        .term .o { color: var(--texto2); }
+        .term .p { color: var(--neon); } .term .c { color: var(--texto); } .term .o { color: var(--fraco); }
 
-        /* steps */
+        table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 1.25rem 0; }
+        th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line2); vertical-align: top; }
+        th { color: var(--neon); font-weight: 500; }
+        td .k { color: var(--rosa); }
+        .pill { display: inline-block; border: 1px solid var(--line); border-radius: 20px; padding: 1px 10px; font-size: 11px; color: var(--texto2); }
+        .pill.local { border-color: var(--neon-dim); color: var(--neon); }
+        .pill.cloud { border-color: var(--amarelo); color: var(--amarelo); }
+        .pill.plug { border-color: var(--ciano); color: var(--ciano); }
+
+        .ladder { margin-top: 1.5rem; }
+        .rung { display: grid; grid-template-columns: 60px 1fr; gap: 14px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--line2); }
+        .rung .lvl { color: var(--neon); font-weight: 700; border: 1px solid var(--line); border-radius: 6px; text-align: center; padding: 6px 0; background: var(--surface); }
+        .rung.hi .lvl { color: var(--amarelo); border-color: var(--amarelo); }
+        .rung.max .lvl { color: var(--vermelho); border-color: var(--vermelho); }
+        .rung b { color: var(--texto); } .rung p { margin: 0.2rem 0 0; font-size: 0.85rem; }
+
         .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-top: 1.5rem; }
         .step { border-left: 3px solid var(--neon); padding-left: 12px; }
-        .step .n { color: var(--neon); font-weight: 700; }
-        .step h3 { margin: 0.2em 0; }
-        .step p { font-size: 0.88rem; margin: 0; }
+        .step .n { color: var(--neon); font-weight: 700; } .step h3 { margin: 0.2em 0; } .step p { font-size: 0.86rem; margin: 0; }
 
-        /* security do/dont */
         .seg-list { list-style: none; margin-top: 1rem; }
-        .seg-list li { padding: 0.4rem 0 0.4rem 1.6rem; position: relative; color: var(--texto2); }
+        .seg-list li { padding: 0.35rem 0 0.35rem 1.6rem; position: relative; color: var(--texto2); font-size: 0.92rem; }
         .seg-list li::before { content: "✓"; color: var(--neon); position: absolute; left: 0; }
+        .seg-list.no li::before { content: "✗"; color: var(--vermelho); }
 
-        /* roadmap */
         .rm { border-left: 3px solid var(--line); padding: 0.6rem 0 0.6rem 14px; margin: 0.5rem 0; }
-        .rm.done { border-left-color: var(--neon); }
-        .rm.now { border-left-color: var(--ciano); }
-        .rm.next { border-left-color: var(--amarelo); }
-        .rm b { color: var(--texto); }
-        .rm p { margin: 0.3rem 0 0; font-size: 0.88rem; }
+        .rm.done { border-left-color: var(--neon); } .rm.now { border-left-color: var(--ciano); } .rm.next { border-left-color: var(--amarelo); }
+        .rm b { color: var(--texto); } .rm p { margin: 0.3rem 0 0; font-size: 0.86rem; }
 
-        /* footer */
         footer { padding: 40px 0; color: var(--fraco); font-size: 12.5px; border-top: 1px solid var(--line); margin-top: 40px; }
         .footer-links { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
-        footer a { color: var(--texto2); text-decoration: none; }
-        footer a:hover { color: var(--neon); }
+        footer a { color: var(--texto2); text-decoration: none; } footer a:hover { color: var(--neon); }
 
-        /* acessibilidade */
         .skip-link { position: absolute; left: -999px; top: 0; background: var(--neon); color: #06120b; padding: 0.75rem 1rem; border-radius: 0 0 6px 0; z-index: 2000; font-weight: 700; }
         .skip-link:focus { left: 0; }
         a:focus-visible, button:focus-visible { outline: 3px solid var(--neon); outline-offset: 2px; }
-        @media (prefers-reduced-motion: reduce) { *, .cursor::after { animation: none !important; transition: none !important; } }
+        @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, .cursor::after { animation: none !important; transition: none !important; } }
     </style>
 </head>
 <body>
@@ -158,11 +145,12 @@
         <div class="wrap">
             <span class="brand">◤ NOMOS</span>
             <nav aria-label="Navegação principal">
-                <a href="#sobre">o que é</a>
-                <a href="#porque">por que</a>
-                <a href="#como">como funciona</a>
-                <a href="#instalar">instalar</a>
+                <a href="#recursos">recursos</a>
+                <a href="#motores">motores</a>
+                <a href="#agentes">agentes</a>
+                <a href="#skills">skills</a>
                 <a href="#seguranca">segurança</a>
+                <a href="#instalar">instalar</a>
                 <a href="https://github.com/Voltolini-SPACE/NOMOS">github</a>
             </nav>
         </div>
@@ -180,46 +168,163 @@
 ╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝ ╚═════╝ ╚══════╝</pre>
             <div class="tagline-top">local por lei</div>
             <h1 id="hero-title">Seu agente. Sua máquina. <span class="hl">Suas regras.</span><span class="cursor"></span></h1>
-            <p class="sub">Um agente pessoal de IA que roda 100% no seu computador, com aprovação humana em cada passo. Cérebro, memória, chaves e registros ficam na sua máquina.</p>
+            <p class="sub">Um agente pessoal de IA que roda 100% no seu computador. Motores locais, memória, cofre de chaves, skills e agentes — todos governados, com aprovação humana em cada passo. A nuvem é uma tomada opcional que você pluga de propósito, nunca por padrão.</p>
             <div class="cta-group">
-                <a href="../docs/installation/NOMOS_INSTALLATION_MANUAL.md" class="btn btn-primary">Instalar agora</a>
-                <a href="../docs/" class="btn btn-ghost">Ver documentação</a>
+                <a href="#instalar" class="btn btn-primary">Instalar agora</a>
+                <a href="https://github.com/Voltolini-SPACE/NOMOS" class="btn btn-ghost">Ver no GitHub</a>
+            </div>
+            <div class="stats">
+                <div class="stat"><b>100%</b><span>local por padrão</span></div>
+                <div class="stat"><b>0</b><span>telemetria / rastreio</span></div>
+                <div class="stat"><b>10+</b><span>motores e conectores</span></div>
+                <div class="stat"><b>A0–A6</b><span>níveis de risco governados</span></div>
+                <div class="stat"><b>~400 MB</b><span>cérebro leve, sem GPU</span></div>
             </div>
         </div>
     </section>
 
-    <!-- Sobre -->
+    <!-- O que é -->
     <section id="sobre" aria-labelledby="sobre-t">
         <div class="wrap">
             <div class="tag">// o que é</div>
-            <h2 id="sobre-t">Um agente que trabalha para você</h2>
-            <p>NOMOS vem do grego <em>νόμος</em> ("a lei"). É o agente pessoal que roda 100% no seu computador. A nuvem é uma tomada opcional que você pluga de propósito, nunca por padrão.</p>
+            <h2 id="sobre-t">Um agente que trabalha para você, não contra</h2>
+            <p class="lead">NOMOS vem do grego <em>νόμος</em> ("a lei"). É a plataforma que instala, configura, governa e executa o seu agente pessoal — inteiramente na sua máquina. Cérebro, memória, chaves e registros ficam com você. Três princípios inegociáveis:</p>
             <div class="grid">
                 <div class="card"><div class="ico">🔒</div><h3>Local por lei</h3><p>Por padrão, nada sai da sua máquina. A própria política bloqueia qualquer saída para a internet até você permitir.</p></div>
-                <div class="card"><div class="ico">✋</div><h3>Pede licença</h3><p>Toda ação sensível é aprovada por você. Em scripts/CI a resposta é sempre "não" (fail-closed).</p></div>
-                <div class="card"><div class="ico">🎯</div><h3>Nunca finge</h3><p>Sem cérebro conectado, avisa. Jamais inventa resposta ou dados.</p></div>
-                <div class="card"><div class="ico">🧠</div><h3>Cérebro leve</h3><p>Não precisa de GPU nem de super-PC. Roda em qualquer laptop.</p></div>
-                <div class="card"><div class="ico">🧩</div><h3>Skills governadas</h3><p>Habilidades instaláveis que só fazem o que declaram, com risco visível.</p></div>
-                <div class="card"><div class="ico">🚦</div><h3>Roteador automático</h3><p>Escolhe o melhor motor para cada tarefa, local primeiro.</p></div>
+                <div class="card"><div class="ico">✋</div><h3>Pede licença</h3><p>Toda ação sensível é aprovada por você. Em scripts e CI a resposta é sempre "não" — fail-closed, sem flag de bypass.</p></div>
+                <div class="card"><div class="ico">🎯</div><h3>Nunca finge</h3><p>Sem cérebro conectado, o NOMOS avisa. Jamais inventa uma resposta ou finge um dado que não tem.</p></div>
             </div>
         </div>
     </section>
 
-    <!-- Por que -->
-    <section id="porque" aria-labelledby="porque-t">
+    <!-- Recursos -->
+    <section id="recursos" aria-labelledby="rec-t">
         <div class="wrap">
-            <div class="tag">// por que NOMOS</div>
-            <h2 id="porque-t">Segurança por design</h2>
-            <p>Privacidade e segurança são o padrão, não a exceção.</p>
-            <ul class="seg-list">
-                <li>Nada sai da sua máquina sem você permitir.</li>
-                <li>Toda ação sensível pede aprovação explícita.</li>
-                <li>Dry-run simula antes de executar — você vê o que aconteceria.</li>
-                <li>Fail-closed: em automação, o padrão é "não fazer nada".</li>
-                <li>Auditoria completa: tudo registrado, você vê.</li>
-                <li>Sem dependências pesadas — sem Ollama, Docker ou GPU.</li>
-                <li>Caixa-forte com senha-mestra — segredos nunca em logs.</li>
-            </ul>
+            <div class="tag">// recursos</div>
+            <h2 id="rec-t">Tudo que você precisa, na sua máquina</h2>
+            <div class="grid">
+                <div class="card"><div class="ico">🧠</div><h3>Cérebro leve embutido</h3><p>Baixa um modelo pequeno (~400 MB) que roda em qualquer laptop, sem GPU nem Ollama. Uma vez só.</p></div>
+                <div class="card"><div class="ico">🚦</div><h3>Roteador automático</h3><p>Escolhe o melhor motor para cada tarefa — local primeiro, sempre. Você não precisa entender de modelos.</p></div>
+                <div class="card"><div class="ico">⚖️</div><h3>Arbitragem entre motores</h3><p>Além de rotear: vários motores prontos geram respostas, debatem entre si e um árbitro converge na melhor execução <strong>real</strong>. Sem motor pronto, o NOMOS avisa — nunca inventa.</p></div>
+                <div class="card"><div class="ico">🗄️</div><h3>Memória local</h3><p>SQLite na sua máquina, com busca full-text (FTS5). Suas conversas e notas, pesquisáveis e privadas.</p></div>
+                <div class="card"><div class="ico">🔐</div><h3>Caixa-forte</h3><p>Cofre de chaves com senha-mestra. Segredos criptografados, nunca em logs, nunca expostos.</p></div>
+                <div class="card"><div class="ico">🧩</div><h3>Skills governadas</h3><p>Habilidades instaláveis e assinadas que só fazem o que declaram, com risco visível e aprovação.</p></div>
+                <div class="card"><div class="ico">🤖</div><h3>Agentes com escopo</h3><p>Agentes oficiais e próprios, cada um com ferramentas, motores preferidos e risco máximo definidos.</p></div>
+                <div class="card"><div class="ico">📋</div><h3>Auditoria com âncora</h3><p>Tudo que acontece é registrado. Trilha de auditoria com âncora HMAC — evidência que não se altera em silêncio.</p></div>
+                <div class="card"><div class="ico">⏱️</div><h3>Rotinas e briefings</h3><p>Agende tarefas locais e gere briefings — sempre em dry-run, com sua aprovação antes de qualquer efeito.</p></div>
+                <div class="card"><div class="ico">💬</div><h3>Conversas com retenção</h3><p>Abra, busque, fixe, exporte e esqueça conversas. Política de retenção sob o seu controle.</p></div>
+                <div class="card"><div class="ico">🖥️</div><h3>Painel web local</h3><p>Um painel que roda na sua máquina (<span class="k">nomos painel</span>) para ver e aprovar sem sair do navegador.</p></div>
+                <div class="card"><div class="ico">🩺</div><h3>Doutor</h3><p><span class="k">nomos doutor</span>: um check-up honesto do que está pronto e qual é o próximo passo.</p></div>
+                <div class="card"><div class="ico">🛑</div><h3>Botão de pânico</h3><p>Um comando para cortar tudo. Controle total, inclusive o de parar.</p></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Motores & Integrações -->
+    <section id="motores" aria-labelledby="mot-t">
+        <div class="wrap">
+            <div class="tag">// motores & integrações</div>
+            <h2 id="mot-t">Muitos motores. <span class="n">local primeiro, nuvem opt-in</span></h2>
+            <p class="lead">O NOMOS fala com vários motores por modalidade. Os <span class="pill local">locais</span> vêm prontos ou embutidos; os <span class="pill plug">conectores</span> você pluga se já tiver a ferramenta; a <span class="pill cloud">nuvem</span> só funciona se você habilitar de propósito.</p>
+            <table>
+                <thead><tr><th>Motor / conector</th><th>Faz</th><th>Onde roda</th></tr></thead>
+                <tbody>
+                    <tr><td>Cérebro embutido</td><td>texto, resumo, raciocínio</td><td><span class="pill local">local</span></td></tr>
+                    <tr><td>Ollama (texto)</td><td>texto, resumo, raciocínio</td><td><span class="pill local">local</span></td></tr>
+                    <tr><td>Ollama coder</td><td>código</td><td><span class="pill local">local</span></td></tr>
+                    <tr><td>Visão local (Ollama)</td><td>entender imagens</td><td><span class="pill local">local</span></td></tr>
+                    <tr><td>Stable Diffusion WebUI</td><td>gerar imagens</td><td><span class="pill plug">conector</span></td></tr>
+                    <tr><td>ComfyUI</td><td>gerar imagens</td><td><span class="pill plug">conector</span></td></tr>
+                    <tr><td>Piper</td><td>falar em voz alta (TTS → WAV)</td><td><span class="pill plug">conector</span></td></tr>
+                    <tr><td>Whisper</td><td>transcrever áudio (STT)</td><td><span class="pill plug">conector</span></td></tr>
+                    <tr><td>Memória local</td><td>lembrar (SQLite)</td><td><span class="pill local">local</span></td></tr>
+                    <tr><td>Busca local</td><td>buscar nas memórias (FTS5)</td><td><span class="pill local">local</span></td></tr>
+                    <tr><td>Claude</td><td>texto, código, raciocínio</td><td><span class="pill cloud">nuvem · opt-in</span></td></tr>
+                    <tr><td>Roteador automático</td><td>escolher o motor certo</td><td><span class="pill local">local</span></td></tr>
+                </tbody>
+            </table>
+            <div class="term">
+                <div class="termbar">~/nomos — escolher e arbitrar motores</div>
+                <div><span class="p">$</span> <span class="c">nomos motores listar</span></div>
+                <div><span class="p">$</span> <span class="c">nomos motores recomendar imagem</span></div>
+                <div><span class="p">$</span> <span class="c">nomos motores arbitrar "explique local-first"</span></div>
+                <div><span class="o"># arbitrar: os motores prontos debatem e convergem na melhor resposta real</span></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Agentes -->
+    <section id="agentes" aria-labelledby="ag-t">
+        <div class="wrap">
+            <div class="tag">// agentes</div>
+            <h2 id="ag-t">Agentes com escopo, ferramentas e risco definidos</h2>
+            <p class="lead">Cada agente declara o que pode usar, quais motores prefere e até que nível de risco pode chegar. Três vêm de fábrica — e você cria os seus com o SDK.</p>
+            <div class="grid">
+                <div class="card"><div class="ico">🔎</div><h3>pesquisador-local</h3><p>Acha coisas nas suas memórias, conversas e arquivos indexados. Ferramentas de leitura e resumo. Risco máximo: <span class="k">A0</span> (só leitura local).</p></div>
+                <div class="card"><div class="ico">👨‍💻</div><h3>programador</h3><p>Ajuda com código usando motores de código locais, com as travas de segurança do NOMOS.</p></div>
+                <div class="card"><div class="ico">🛡️</div><h3>segurança</h3><p>Perfil voltado a revisão e postura de segurança, honesto sobre limites.</p></div>
+                <div class="card"><div class="ico">🧱</div><h3>Crie o seu (SDK)</h3><p><span class="k">nomos agent create</span>: defina objetivo, ferramentas, motores preferidos e risco máximo. Seu agente, suas regras.</p></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Skills -->
+    <section id="skills" aria-labelledby="skills-t">
+        <div class="wrap">
+            <div class="tag">// skills</div>
+            <h2 id="skills-t">Habilidades instaláveis, assinadas e transparentes</h2>
+            <p class="lead">Uma skill declara o que faz, de que permissões precisa e traz hash de integridade. O NOMOS mostra o risco e pede aprovação antes de instalar ou rodar. Exemplos que acompanham:</p>
+            <div class="grid">
+                <div class="card"><div class="ico">📁</div><h3>busca-arquivos</h3><p>Procura arquivos por nome e conteúdo numa pasta — só leitura (<span class="k">A0</span>).</p></div>
+                <div class="card"><div class="ico">🗒️</div><h3>lembrete</h3><p>Formata um lembrete estruturado para a memória do NOMOS.</p></div>
+                <div class="card"><div class="ico">🗂️</div><h3>organizador</h3><p>Relata os arquivos de uma pasta: contagem por tipo e os maiores.</p></div>
+                <div class="card"><div class="ico">💻</div><h3>sistema-info</h3><p>Mostra Python, sistema e espaço em disco — só leitura.</p></div>
+            </div>
+            <div class="term">
+                <div class="termbar">~/nomos — skills</div>
+                <div><span class="p">$</span> <span class="c">nomos skill listar</span></div>
+                <div><span class="p">$</span> <span class="c">nomos skill rodar busca-arquivos --pasta ~/Documentos</span></div>
+                <div><span class="o"># cada skill mostra permissões e risco; instalação assinada e aprovada</span></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Segurança A0–A6 -->
+    <section id="seguranca" aria-labelledby="seg-t">
+        <div class="wrap">
+            <div class="tag">// modelo de segurança</div>
+            <h2 id="seg-t">A escada de risco A0–A6</h2>
+            <p class="lead">Nada é "seguro ou inseguro" no vácuo. Toda ação é classificada num nível — e quanto mais alto, mais explícita precisa ser a sua aprovação. Isto é governança concreta, não promessa.</p>
+            <div class="ladder">
+                <div class="rung"><span class="lvl">A0</span><div><b>Ler local</b><p>Ler arquivos e memórias na sua máquina. O básico, sem risco de saída.</p></div></div>
+                <div class="rung"><span class="lvl">A1</span><div><b>Escrever local</b><p>Criar ou alterar arquivos na sua máquina.</p></div></div>
+                <div class="rung hi"><span class="lvl">A2</span><div><b>Sair para a rede</b><p>Qualquer egress para a internet. Bloqueado por padrão — precisa do seu "sim".</p></div></div>
+                <div class="rung hi"><span class="lvl">A3</span><div><b>Conector / credencial</b><p>Usar um conector externo ou uma chave do cofre.</p></div></div>
+                <div class="rung hi"><span class="lvl">A4</span><div><b>Câmera / microfone / tela</b><p>Acessar dispositivos sensíveis — sempre governado.</p></div></div>
+                <div class="rung max"><span class="lvl">A5</span><div><b>Executar código / instalar skill</b><p>Rodar código ou instalar uma habilidade nova. Aprovação forte.</p></div></div>
+                <div class="rung max"><span class="lvl">A6</span><div><b>Destrutivo</b><p>Ações irreversíveis. O topo da escada — máxima fricção proposital.</p></div></div>
+            </div>
+            <div class="grid" style="margin-top:2rem;">
+                <div><h3 style="color:var(--neon)">O que o NOMOS faz</h3>
+                    <ul class="seg-list">
+                        <li>Dry-run: simula e mostra o que aconteceria, antes.</li>
+                        <li>Fila de aprovação com token de uso único e validade curta.</li>
+                        <li>Conselho (council) que revisa a ação antes de liberar.</li>
+                        <li>Auditoria com âncora HMAC — evidência à prova de adulteração silenciosa.</li>
+                        <li>Sandbox para rodar o que precisa de isolamento.</li>
+                    </ul>
+                </div>
+                <div><h3 style="color:var(--vermelho)">O que o NOMOS não faz</h3>
+                    <ul class="seg-list no">
+                        <li>Não sai para a internet sem opt-in.</li>
+                        <li>Não executa ação real por padrão — dry-run primeiro.</li>
+                        <li>Não se atualiza sozinho.</li>
+                        <li>Não expõe segredos em logs.</li>
+                        <li>Não promete o impossível — entrega controle e evidência.</li>
+                    </ul>
+                </div>
+            </div>
+            <p style="margin-top:1.5rem;">Encontrou uma vulnerabilidade? <a href="mailto:security@se7enpay.com.br">Reporte em privado</a>. Detalhes no <a href="../docs/THREAT_MODEL.md">modelo de ameaças</a>.</p>
         </div>
     </section>
 
@@ -227,40 +332,31 @@
     <section id="como" aria-labelledby="como-t">
         <div class="wrap">
             <div class="tag">// como funciona</div>
-            <h2 id="como-t">Entrada → motor → simulação → aprovação</h2>
+            <h2 id="como-t">Entrada → motor → simulação → aprovação → evidência</h2>
             <div class="steps">
                 <div class="step"><span class="n">01</span><h3>Você fala</h3><p>Descreve o que quer, em linguagem natural.</p></div>
-                <div class="step"><span class="n">02</span><h3>Motor processa</h3><p>Escolhe a melhor estratégia, localmente.</p></div>
-                <div class="step"><span class="n">03</span><h3>Simula (dry-run)</h3><p>Mostra o que faria, sem executar.</p></div>
-                <div class="step"><span class="n">04</span><h3>Você aprova</h3><p>Vê tudo, aprova, nega ou ajusta.</p></div>
-                <div class="step"><span class="n">05</span><h3>Executa seguro</h3><p>Só com sua aprovação explícita.</p></div>
-                <div class="step"><span class="n">06</span><h3>Evidência</h3><p>Auditoria registra o que aconteceu.</p></div>
+                <div class="step"><span class="n">02</span><h3>Roteia o motor</h3><p>O roteador escolhe a melhor estratégia, local primeiro.</p></div>
+                <div class="step"><span class="n">03</span><h3>Simula (dry-run)</h3><p>Mostra exatamente o que faria, sem executar.</p></div>
+                <div class="step"><span class="n">04</span><h3>Conselho revisa</h3><p>A política e o conselho checam o risco da ação.</p></div>
+                <div class="step"><span class="n">05</span><h3>Você aprova</h3><p>Vê tudo, aprova, nega ou ajusta.</p></div>
+                <div class="step"><span class="n">06</span><h3>Executa e registra</h3><p>Só com seu OK — e a auditoria guarda a evidência.</p></div>
             </div>
         </div>
     </section>
 
     <!-- Instalar -->
-    <section id="instalar" aria-labelledby="instalar-t">
+    <section id="instalar" aria-labelledby="inst-t">
         <div class="wrap">
             <div class="tag">// instalação</div>
-            <h2 id="instalar-t">Comece em um comando</h2>
+            <h2 id="inst-t">Comece em um comando</h2>
             <div class="term" role="group" aria-label="Comandos de instalação">
                 <div class="termbar">~/nomos — bash</div>
                 <div><span class="p">$</span> <span class="c">pip install nomos</span></div>
-                <div><span class="p">$</span> <span class="c">nomos</span></div>
-                <div><span class="o"># 1ª vez: assistente guiado; depois: menu principal</span></div>
+                <div><span class="p">$</span> <span class="c">nomos</span> <span class="o"># 1ª vez: assistente guiado</span></div>
+                <div><span class="p">$</span> <span class="c">nomos doutor</span> <span class="o"># check-up honesto</span></div>
+                <div><span class="p">$</span> <span class="c">nomos cerebro baixar</span> <span class="o"># cérebro leve (uma vez, com sua aprovação)</span></div>
             </div>
-            <p>Requer Python 3.10+ (Mac, Windows ou Linux). Ou baixe um <strong>instalador de 1 clique</strong> com verificação de integridade SHA256 e rollback: <a href="https://github.com/Voltolini-SPACE/NOMOS/releases">releases do GitHub</a>. Guia completo: <a href="../docs/installation/NOMOS_INSTALLATION_MANUAL.md">Manual de Instalação</a>.</p>
-        </div>
-    </section>
-
-    <!-- Segurança -->
-    <section id="seguranca" aria-labelledby="seg-t">
-        <div class="wrap">
-            <div class="tag">// segurança</div>
-            <h2 id="seg-t">O que o NOMOS não faz sem você</h2>
-            <p>Não executa ação real por padrão. Não expõe segredos. Não sai para a internet sem opt-in. Não se atualiza sozinho.</p>
-            <p>Encontrou uma vulnerabilidade? <a href="mailto:security@se7enpay.com.br">Reporte em privado</a>.</p>
+            <p>Requer Python 3.10+ (Mac, Windows ou Linux) — sem GPU, sem super-PC. Ou baixe um <strong>instalador de 1 clique</strong> com verificação SHA256 e rollback: <a href="https://github.com/Voltolini-SPACE/NOMOS/releases">releases do GitHub</a>. Guia completo: <a href="../docs/installation/NOMOS_INSTALLATION_MANUAL.md">Manual de Instalação</a>.</p>
         </div>
     </section>
 
@@ -270,9 +366,9 @@
             <div class="tag">// para quem</div>
             <h2 id="pq-t">Feito para quem leva privacidade a sério</h2>
             <div class="grid">
-                <div class="card"><div class="ico">👨‍💻</div><h3>Desenvolvedores</h3><p>Automação local segura. Skills personalizadas. Integração com seus fluxos.</p></div>
-                <div class="card"><div class="ico">⚙️</div><h3>Operadores</h3><p>Tarefas repetitivas com confiança e auditoria completa.</p></div>
-                <div class="card"><div class="ico">🏢</div><h3>Empresas</h3><p>Dados sensíveis na sua infraestrutura. Sem APIs cloud.</p></div>
+                <div class="card"><div class="ico">👨‍💻</div><h3>Desenvolvedores</h3><p>Automação local segura. Skills e agentes próprios. Integração com seus fluxos.</p></div>
+                <div class="card"><div class="ico">⚙️</div><h3>Operadores</h3><p>Tarefas repetitivas com confiança, dry-run e auditoria completa.</p></div>
+                <div class="card"><div class="ico">🏢</div><h3>Empresas</h3><p>Dados sensíveis na sua infraestrutura. Sem APIs cloud obrigatórias. Governança auditável.</p></div>
                 <div class="card"><div class="ico">🔒</div><h3>Qualquer um</h3><p>Que quer IA sem complicação e sem abrir mão da privacidade.</p></div>
             </div>
         </div>
@@ -284,8 +380,8 @@
             <div class="tag">// roadmap</div>
             <h2 id="rm-t">O caminho até aqui e adiante</h2>
             <div class="rm done"><b>✓ MC22–MC24 — Migração CLI/Chat segura</b><p>Dry-run validado, redação de saída, âncora HMAC de auditoria.</p></div>
-            <div class="rm now"><b>▸ MC25–MC27 — Brandbook, manual, landing e Update Agent</b><p>Documentação profissional, presença web e gate CI read-only com modo --diff.</p></div>
-            <div class="rm next"><b>· Próximas etapas</b><p>Envelope de aprovação para patches, expansão de skills e motores.</p></div>
+            <div class="rm now"><b>▸ MC25–MC27 — Brandbook, manual, landing e Update Agent</b><p>Documentação profissional, presença web e gate CI read-only com modo --diff proposal-only.</p></div>
+            <div class="rm next"><b>· Próximas etapas</b><p>Envelope de aprovação para patches exportáveis, expansão de skills e motores, integração de CI read-only.</p></div>
             <p style="margin-top:1.5rem;"><a href="../docs/ROADMAP.md">Ver roadmap completo →</a></p>
         </div>
     </section>
@@ -300,6 +396,7 @@
                 <a href="../docs/installation/NOMOS_INSTALLATION_MANUAL.md">Manual de Instalação</a>
                 <a href="../docs/brand/NOMOS_BRANDBOOK.md">Brandbook</a>
                 <a href="../docs/">Documentação</a>
+                <a href="../docs/THREAT_MODEL.md">Modelo de ameaças</a>
                 <a href="../docs/PRIVACIDADE.md">Privacidade</a>
             </div>
             <p>&copy; 2026 NOMOS · mantido por <a href="https://se7enpay.com">Se7enpay</a> · licença MIT</p>

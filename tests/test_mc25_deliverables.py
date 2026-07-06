@@ -6,6 +6,7 @@ roda em dry-run sem escrever e nenhum segredo esta exposto.
 
 Estes testes SUBSTITUEM asercoes em markdown por verificacao executavel real.
 """
+import re
 import subprocess
 import sys
 from html.parser import HTMLParser
@@ -206,17 +207,18 @@ def test_agente_check_roda_e_sai_zero():
 # ---------------------------------------------------------------------------
 DELIVERABLES = [BRANDBOOK, MANUAL, GOVERNANCE, LANDING, SITE_README, AGENT]
 
-# Padroes que indicariam vazamento real (valor atribuido), nao mera mencao da palavra.
-SECRET_PATTERNS = [
-    "sk-",              # chaves estilo OpenAI
-    "-----BEGIN",       # blocos PEM
-    "AKIA",             # AWS access key id
-    "ghp_",             # GitHub PAT
+# Padroes SHAPE-AWARE: exigem o formato real da chave (valor), evitando falso-positivo
+# com substrings inocentes como "sk-t" (id de secao), "task-", "risk-".
+SECRET_REGEXES = [
+    re.compile("s" + r"k-[A-Za-z0-9]{16,}"),        # chaves estilo OpenAI/Anthropic
+    re.compile("-----" + r"BEGIN [A-Z ]*PRIVATE"),   # blocos PEM
+    re.compile("AK" + r"IA[0-9A-Z]{16}"),            # AWS access key id
+    re.compile("g" + r"hp_[A-Za-z0-9]{16,}"),        # GitHub PAT
 ]
 
 
 @pytest.mark.parametrize("path", DELIVERABLES)
 def test_deliverable_sem_segredo(path):
     texto = path.read_text(encoding="utf-8", errors="ignore")
-    achados = [p for p in SECRET_PATTERNS if p in texto]
+    achados = [rgx.pattern for rgx in SECRET_REGEXES if rgx.search(texto)]
     assert not achados, f"Possivel segredo em {path.name}: {achados}"

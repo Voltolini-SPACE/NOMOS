@@ -176,6 +176,37 @@ def test_index_fiel_ao_brandbook_congelado():
     assert "local por lei" in txt
 
 
+def test_index_tem_secoes_ricas():
+    """Trava as seções expandidas: recursos, motores, agentes, skills, segurança A0–A6."""
+    txt = INDEX.read_text(encoding="utf-8")
+    for ancora in ['id="recursos"', 'id="motores"', 'id="agentes"',
+                   'id="skills"', 'id="seguranca"', 'id="como"', 'id="instalar"']:
+        assert ancora in txt, f"landing sem seção: {ancora}"
+
+
+def test_index_capacidades_reais_presentes():
+    """Capacidades REAIS do NOMOS aparecem (ancoradas no código, não inventadas)."""
+    txt = INDEX.read_text(encoding="utf-8")
+    for termo in ["Ollama", "Whisper", "Stable Diffusion", "ComfyUI", "Piper",
+                  "pesquisador-local", "roteador", "FTS5", "dry-run", "HMAC",
+                  "Arbitragem", "arbitrar"]:
+        assert termo in txt, f"landing sem capacidade real: {termo}"
+    # escada de risco A0..A6
+    for nivel in ["A0", "A2", "A5", "A6"]:
+        assert nivel in txt, f"landing sem nível de risco {nivel}"
+
+
+def test_index_honesto_sem_promessa_exagerada():
+    """Regra 5 do brandbook: sem promessa exagerada de segurança absoluta."""
+    txt = INDEX.read_text(encoding="utf-8").lower()
+    proibidos = ["100% seguro", "impossível hackear", "impossivel hackear",
+                 "segurança absoluta", "seguranca absoluta", "inviolável", "inviolavel"]
+    achados = [p for p in proibidos if p in txt]
+    assert not achados, f"promessa exagerada na landing: {achados}"
+    # cloud deve ser apresentada como opt-in
+    assert "opt-in" in txt
+
+
 def test_theme_color_e_terminal():
     ex = _parse(INDEX)
     tc = [m for m in ex.metas if m.get("name") == "theme-color"]
