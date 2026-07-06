@@ -1323,6 +1323,72 @@ def cmd_conselho(ctx, args) -> int:
     return route_conselho(list(getattr(args, "resto", []) or []))
 
 
+def cmd_missao(ctx, args) -> int:
+    """Executor de missões (MC32/P1): plano → aprovação explícita → evidência."""
+    from nomos.kernel import missao as ms
+    from nomos.simple.erros import fmt
+    sub = getattr(args, "missao_cmd", None)
+    if sub in ("planejar", "executar"):
+        try:
+            plano = ms.planejar_organizacao(Path(args.pasta))
+        except ms.MissaoErro as exc:
+            print(fmt("E003", str(exc)), file=sys.stderr)
+            return EXIT_ERROR
+        print(plano.resumo())
+        if not plano.passos:
+            print("nada a fazer — pasta sem arquivos soltos no topo.")
+            return EXIT_OK
+        if sub == "planejar":
+            print("\n(plano apenas — nada foi movido; para agir: "
+                  f"nomos missao executar organizar {args.pasta})")
+            return EXIT_OK
+        if not plano.executavel:
+            print(fmt("E002", "plano com conflitos — resolva-os antes de "
+                      "executar; nada foi movido."), file=sys.stderr)
+            return EXIT_DENIED
+        decision = ctx["policy"].decide(Category.WRITE_LOCAL,
+                                        target=f"missao:organizar:{args.pasta}")
+        if not gate(decision, _approver_for(ctx, args)):
+            print(fmt("E002", "mover arquivos é nível A1 — exige sua aprovação "
+                      "num terminal interativo. Nada foi movido."),
+                  file=sys.stderr)
+            return EXIT_DENIED
+        print(f"\nisto vai MOVER {len(plano.passos)} arquivo(s) dentro de "
+              f"{args.pasta} (reversível com 'missao desfazer').")
+        if input('digite "EXECUTAR" para confirmar> ').strip() != "EXECUTAR":
+            print("ok, nada foi movido.")
+            return EXIT_OK
+        try:
+            pacote = ms.executar(plano, aprovado=True,
+                                 evidencias_dir=ctx["home"] / "evidencias",
+                                 audit=ctx["audit"])
+        except ms.MissaoErro as exc:
+            print(fmt("E011", str(exc)), file=sys.stderr)
+            return EXIT_ERROR
+        print(f"missão concluída ✓ — evidência: {pacote}")
+        print(f"para reverter: nomos missao desfazer {pacote} {args.pasta}")
+        return EXIT_OK
+    if sub == "desfazer":
+        decision = ctx["policy"].decide(Category.WRITE_LOCAL,
+                                        target=f"missao:desfazer:{args.pasta}")
+        if not gate(decision, _approver_for(ctx, args)):
+            print(fmt("E002", "desfazer também é nível A1 — aprove num "
+                      "terminal. Nada foi movido."), file=sys.stderr)
+            return EXIT_DENIED
+        try:
+            n = ms.desfazer(Path(args.pacote), Path(args.pasta),
+                            aprovado=True, audit=ctx["audit"])
+        except ms.MissaoErro as exc:
+            print(fmt("E011", str(exc)), file=sys.stderr)
+            return EXIT_ERROR
+        print(f"desfeito ✓ — {n} arquivo(s) de volta ao lugar original.")
+        return EXIT_OK
+    print("uso: nomos missao planejar organizar <pasta>   (dry-run, padrão)\n"
+          "     nomos missao executar organizar <pasta>   (pede EXECUTAR)\n"
+          "     nomos missao desfazer <pacote> <pasta>", file=sys.stderr)
+    return EXIT_ERROR
+
+
 def cmd_mcp(ctx, args) -> int:
     """MCP server local (MC31/C1): NOMOS como servidor de tools, read-only."""
     from nomos.interface import mcp_server
@@ -1635,6 +1701,19 @@ def build_parser() -> argparse.ArgumentParser:
     losub.add_parser("on").set_defaults(fn=cmd_local)
     losub.add_parser("off").set_defaults(fn=cmd_local)
     lo.set_defaults(fn=cmd_local, local_cmd=None)
+    mip = sub.add_parser("missao",
+                         help="missões que FAZEM: plano → sua aprovação → evidência")
+    misub = mip.add_subparsers(dest="missao_cmd")
+    for nome_m in ("planejar", "executar"):
+        mm = misub.add_parser(nome_m)
+        mm.add_argument("tipo", choices=["organizar"])
+        mm.add_argument("pasta")
+        mm.set_defaults(fn=cmd_missao)
+    md = misub.add_parser("desfazer")
+    md.add_argument("pacote")
+    md.add_argument("pasta")
+    md.set_defaults(fn=cmd_missao)
+    mip.set_defaults(fn=cmd_missao, missao_cmd=None)
     mcpp = sub.add_parser("mcp",
                           help="servidor MCP local (tools somente leitura)")
     mcpsub = mcpp.add_subparsers(dest="mcp_cmd")
