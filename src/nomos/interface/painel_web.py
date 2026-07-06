@@ -107,14 +107,14 @@ _CSS = """
  .sub{color:var(--fraco);font-size:.72rem;margin:.2rem 0 0}
  .acoes{display:flex;gap:.6rem;align-items:center;margin-top:.5rem;
    flex-wrap:wrap}
- .acoes input{background:var(--surface);border:1px solid #3a5544;
+ .acoes input{background:var(--surface);border:1px solid #4f7660;
    color:var(--txt);border-radius:6px;padding:.3rem .6rem;font:inherit;
    font-size:.76rem;width:230px;max-width:60vw}
  .acoes a{font-size:.72rem;color:var(--fraco)}
  .acoes a:hover{color:var(--neon)}
  .acoes a.ativo{color:var(--neon)}
  .acoes button{font:inherit;font-size:.72rem;border-radius:6px;
-   padding:.3rem .7rem;cursor:pointer;border:1px solid #3a5544;
+   padding:.3rem .7rem;cursor:pointer;border:1px solid #4f7660;
    background:var(--surface2);color:var(--txt)}
  .acoes button:hover{border-color:var(--dim);color:var(--neon)}
  #filtro-n{font-size:.72rem;color:var(--fraco)}
