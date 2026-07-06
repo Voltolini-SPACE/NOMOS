@@ -5,6 +5,9 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 ## [Unreleased]
 
 ### Added (MC31 — B1 provado e completado)
+- **`/arbitrar` no chat (B2)**: arbitragem real multi-motor na conversa,
+  só motores locais (nuvem permanece exclusiva da CLI gateada); honesto
+  sem motor pronto; aviso de divergência alta.
 - **Chat com motor OpenAI-compatível**: cadeia local-first do chat vira
   embutido → Ollama → LM Studio/llama.cpp (normal e streaming SSE), com
   auditoria própria. `NOMOS_OPENAI_COMPAT_BASE` para porta customizada.
