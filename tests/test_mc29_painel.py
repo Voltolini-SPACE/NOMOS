@@ -107,6 +107,66 @@ def test_painel_refresh_opt_in_e_validado(nomos_home):
         srv.stop()
 
 
+# 4c. Painel 2.0 (MC30): /api, /audit, /roteador — validação de todas as rotas
+def test_painel_20_todas_as_rotas(nomos_home):
+    import json as _json
+    import urllib.error
+    import urllib.request
+
+    from nomos.interface.painel_web import DashboardServer
+    ctx = _ctx(nomos_home)
+    ctx["audit"].append("painel.teste", origem="mc30")
+    srv = DashboardServer(ctx)
+    url = srv.start()   # termina com /
+    try:
+        # dashboard linka as rotas novas
+        with urllib.request.urlopen(url, timeout=5) as r:  # nosec B310 - loopback
+            corpo = r.read().decode()
+        for link in ('href="api/"', 'href="audit/"', 'href="roteador/"'):
+            assert link in corpo
+        assert "Motores (catálogo completo)" in corpo
+        assert "cadeia de hash" in corpo
+        # /api: JSON parseável com o mesmo contrato da dashboard
+        with urllib.request.urlopen(f"{url}api/", timeout=5) as ra:  # nosec B310
+            data = _json.loads(ra.read().decode())
+        assert "application/json" in ra.headers.get("Content-Type", "")
+        for chave in ("versao", "motores", "politica", "capacidades",
+                      "auditoria", "evidencias"):
+            assert chave in data
+        assert data["politica"]["execucao_real_council"] is False
+        # /audit: cadeia verificada de verdade + evento recém-gravado
+        with urllib.request.urlopen(f"{url}audit/", timeout=5) as rb:  # nosec B310
+            audit_html = rb.read().decode()
+        assert "íntegra ✅" in audit_html
+        assert "painel.teste" in audit_html
+        # /roteador: decisão explicada por modalidade
+        with urllib.request.urlopen(f"{url}roteador/", timeout=5) as rc:  # nosec B310
+            rot = rc.read().decode()
+        assert "Roteador — decisão explicada" in rot and "texto" in rot
+        assert "gate de aprovação" in rot
+        # segredo continua mandando: rota certa com segredo errado = 404
+        base_errada = url.rsplit("/d/", 1)[0] + "/d/segredo-errado/api/"
+        with pytest.raises(urllib.error.HTTPError) as e404:
+            urllib.request.urlopen(base_errada, timeout=5)  # nosec B310
+        assert e404.value.code == 404
+        # POST segue proibido nas rotas novas
+        req = urllib.request.Request(f"{url}api/", data=b"x", method="POST")
+        with pytest.raises(urllib.error.HTTPError) as e405:
+            urllib.request.urlopen(req, timeout=5)  # nosec B310
+        assert e405.value.code == 405
+    finally:
+        srv.stop()
+
+
+def test_painel_20_api_nao_vaza_segredo(nomos_home):
+    import json as _json
+    ctx = _ctx(nomos_home)
+    chave = "sk-" + "Z" * 30
+    ctx["audit"].append("evento.sensivel", detalhe=f"token {chave}")
+    dados = dados_dashboard(ctx)
+    assert chave not in _json.dumps(dados, default=str)
+
+
 # 5. rota /ev/<pacote>: serve o relatório; nome estrito; sem traversal
 def test_painel_serve_relatorio_de_evidencia(nomos_home):
     import urllib.error

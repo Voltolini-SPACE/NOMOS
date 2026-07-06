@@ -70,6 +70,18 @@ def dados_dashboard(ctx) -> dict:
             integro, _ = ev_mod.verificar_pacote(pac)
             evidencias.append({"nome": pac.name, "integro": integro})
 
+    # Motores: catálogo completo com custo/privacidade/prontidão (MC30)
+    motores_tab = [{
+        "id": m.id, "rotulo": m.rotulo, "local": bool(m.local),
+        "custo": m.custo, "qualidade": m.qualidade, "pronto": bool(m.pronto),
+    } for m in cat.motores]
+
+    # Auditoria: verificação REAL da cadeia de hash (não só os últimos eventos)
+    try:
+        cadeia_ok, cadeia_n = ctx["audit"].verify()
+    except Exception:
+        cadeia_ok, cadeia_n = False, 0
+
     # Capacidades (MC30-A4): o catálogo completo, com risco visível
     from nomos.ext import skill_catalogo as scat
     try:
@@ -100,6 +112,8 @@ def dados_dashboard(ctx) -> dict:
         "evidencias": evidencias,
         "politica": politica,
         "capacidades": capacidades,
+        "motores": motores_tab,
+        "auditoria": {"cadeia_integra": cadeia_ok, "eventos_total": cadeia_n},
     }
 
 
@@ -119,11 +133,26 @@ def render_html(d: dict, refresh: int | None = None) -> str:
         det = f' <small>{e(it["detalhe"])}</small>' if it.get("detalhe") else ""
         corpo.append(f'<div class="card">{marca} {e(it["titulo"])}{det}</div>')
 
+    corpo.append('<p><small>ver também: <a href="api/">dados em JSON</a> · '
+                 '<a href="audit/">auditoria completa</a> · '
+                 '<a href="roteador/">decisões do roteador</a></small></p>')
+
     corpo.append("<h2>Motores prontos por modalidade</h2><table>"
                  "<tr><th>modalidade</th><th>motores</th></tr>")
     for mod, ms in d["modalidades"].items():
         corpo.append(f"<tr><td>{e(mod)}</td>"
                      f"<td>{e(', '.join(ms)) if ms else '—'}</td></tr>")
+    corpo.append("</table>")
+
+    corpo.append("<h2>Motores (catálogo completo)</h2><table>"
+                 "<tr><th>motor</th><th>onde</th><th>custo</th>"
+                 "<th>qualidade</th><th>pronto</th></tr>")
+    for m in d.get("motores", []):
+        corpo.append(
+            f"<tr><td>{e(m['rotulo'])}</td>"
+            f"<td>{'🔒 local' if m['local'] else '☁ nuvem (opt-in)'}</td>"
+            f"<td>{e(m['custo'])}</td><td>{e(m['qualidade'])}</td>"
+            f"<td>{'✓' if m['pronto'] else '—'}</td></tr>")
     corpo.append("</table>")
 
     corpo.append("<h2>Skills</h2>")
@@ -174,7 +203,12 @@ def render_html(d: dict, refresh: int | None = None) -> str:
                      f'proibidas fail-closed · aprovação humana obrigatória '
                      f'para ações sensíveis</div>')
 
-    corpo.append("<h2>Últimos eventos da auditoria</h2>"
+    aud = d.get("auditoria", {})
+    cadeia = ("íntegra ✅" if aud.get("cadeia_integra")
+              else "⚠️ verificar (nomos logs verify)")
+    corpo.append(f"<h2>Últimos eventos da auditoria</h2>"
+                 f"<p><small>cadeia de hash: {cadeia} · "
+                 f"{aud.get('eventos_total', 0)} eventos no total</small></p>"
                  "<table><tr><th>quando (ts)</th><th>evento</th></tr>")
     for ev in d["eventos"]:
         corpo.append(f"<tr><td>{e(str(ev['ts']))}</td>"
@@ -224,9 +258,79 @@ class DashboardServer:
                             500, f"painel indisponível: {type(exc).__name__}",
                             "text/plain")
                     return self._responder(200, corpo)
+                if caminho == base + "/api":
+                    try:
+                        dados = dados_dashboard(painel.ctx)
+                    except Exception as exc:
+                        return self._responder(
+                            500, f"api indisponível: {type(exc).__name__}",
+                            "text/plain")
+                    return self._responder(
+                        200, json.dumps(dados, ensure_ascii=False, indent=2,
+                                        default=str), "application/json")
+                if caminho == base + "/audit":
+                    return self._pagina_audit()
+                if caminho == base + "/roteador":
+                    return self._pagina_roteador()
                 if caminho.startswith(base + "/ev/"):
                     return self._servir_evidencia(caminho[len(base) + 4:])
                 return self._responder(404, "não encontrado", "text/plain")
+
+            def _pagina_audit(self):
+                """Auditoria completa: verificação de cadeia + últimos 100 eventos."""
+                e = html.escape
+                try:
+                    ok, total = painel.ctx["audit"].verify()
+                except Exception:
+                    ok, total = False, 0
+                linhas = [f"<h2>Auditoria — cadeia de hash "
+                          f"{'íntegra ✅' if ok else '⚠️ verificar'} · "
+                          f"{total} eventos</h2>",
+                          "<table><tr><th>quando (ts)</th><th>evento</th></tr>"]
+                trilha = Path(painel.ctx["home"]) / "logs" / "audit.jsonl"
+                if trilha.exists():
+                    for linha in trilha.read_text(encoding="utf-8",
+                                                  errors="ignore").splitlines()[-100:][::-1]:
+                        try:
+                            reg = json.loads(linha)
+                        except Exception:
+                            continue
+                        linhas.append(f"<tr><td>{e(str(reg.get('ts')))}</td>"
+                                      f"<td><code>{e(str(reg.get('event')))}</code></td></tr>")
+                linhas.append("</table><p><small>metadados apenas — conteúdo "
+                              "nunca aparece; trilha completa em "
+                              "<code>~/.nomos/logs/audit.jsonl</code></small></p>")
+                self._responder(200, _PAGE.format(body="\n".join(linhas),
+                                                  meta_refresh=""))
+
+            def _pagina_roteador(self):
+                """Decisões do roteador, explicadas, por modalidade — só leitura."""
+                e = html.escape
+                try:
+                    from nomos.cognition import engine_catalog as cat_mod
+                    from nomos.cognition import engine_router as er
+                    home = Path(painel.ctx["home"])
+                    linhas = ["<h2>Roteador — decisão explicada por modalidade</h2>"]
+                    for mod in cat_mod.MODALIDADES_V011:
+                        rel = er.relatorio_decisao(
+                            er.Tarefa(tipo=mod, modalidade=mod), home=home)
+                        dec = rel["decisao"]
+                        escolhido = dec["selected_engine"] or "— (nenhum pronto)"
+                        linhas.append(
+                            f'<div class="card"><b>{e(mod)}</b> → '
+                            f'<code>{e(escolhido)}</code><br>'
+                            f'<small>{e(dec["reason"])}</small><br>'
+                            f'<small>regras: '
+                            f'{e(" · ".join(rel["trace"]["regras_aplicadas"]))}'
+                            f'</small></div>')
+                    linhas.append("<p><small>dados, não ação: executar continua "
+                                  "passando pelo gate de aprovação</small></p>")
+                except Exception as exc:
+                    return self._responder(
+                        500, f"roteador indisponível: {type(exc).__name__}",
+                        "text/plain")
+                self._responder(200, _PAGE.format(body="\n".join(linhas),
+                                                  meta_refresh=""))
 
             def _servir_evidencia(self, nome: str):
                 """RELATORIO.md de um pacote — leitura, nome estrito, sem traversal."""
