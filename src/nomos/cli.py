@@ -1336,8 +1336,73 @@ def cmd_mcp(ctx, args) -> int:
         print("servidor MCP do NOMOS no stdio (somente leitura; Ctrl+C sai)…",
               file=sys.stderr)
         return mcp_server.servir(ctx)
+    if sub == "conectar":
+        from nomos.interface import mcp_client as mc
+        try:
+            manifesto = mc.carregar_manifesto(Path(args.manifesto))
+        except mc.ManifestoInvalido as exc:
+            print(f"manifesto recusado (fail-closed): {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        try:
+            with mc.ClienteMCP(manifesto) as cli_mcp:
+                tools = cli_mcp.tools()
+        except mc.McpErro as exc:
+            print(f"não conectei: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        ctx["audit"].append("mcp.client.conectado", server=manifesto["nome"],
+                            tools=len(tools))
+        srv_nome = cli_mcp.server_info.get("name", "?")
+        print(f"conectado a '{manifesto['nome']}' (server: {srv_nome}) — "
+              f"{len(tools)} tool(s):\n")
+        for t in tools:
+            print(f"  [{t['nivel']}] {t['name']} — "
+                  f"{t.get('description', '')[:70]}")
+        print("\n⚠ server externo NÃO assinado — capacidades valem o manifesto "
+              "que VOCÊ escreveu.\nchame com: nomos mcp chamar "
+              f"{args.manifesto} <tool> [--args '{{...}}']")
+        return EXIT_OK
+    if sub == "chamar":
+        from nomos.interface import mcp_client as mc
+        try:
+            manifesto = mc.carregar_manifesto(Path(args.manifesto))
+        except mc.ManifestoInvalido as exc:
+            print(f"manifesto recusado (fail-closed): {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        nivel = mc.nivel_da_tool(manifesto, args.tool)
+        decision = ctx["policy"].decide(
+            mc.NIVEIS[nivel], target=f"mcp:{manifesto['nome']}:{args.tool}")
+        if not gate(decision, _approver_for(ctx, args)):
+            from nomos.simple.erros import fmt
+            ctx["audit"].append("mcp.client.tool.negada", server=manifesto["nome"],
+                                tool=args.tool, nivel=nivel)
+            print(fmt("E002", f"tool '{args.tool}' é nível {nivel} — exige sua "
+                      "aprovação num terminal interativo; nada foi executado."),
+                  file=sys.stderr)
+            return EXIT_DENIED
+        try:
+            argumentos = json.loads(args.args_json) if getattr(
+                args, "args_json", None) else {}
+        except Exception:
+            from nomos.simple.erros import fmt
+            print(fmt("E010", "--args precisa ser JSON válido"), file=sys.stderr)
+            return EXIT_ERROR
+        try:
+            with mc.ClienteMCP(manifesto) as cli_mcp:
+                resultado = cli_mcp.chamar(args.tool, argumentos)
+        except mc.McpErro as exc:
+            print(f"tool falhou no server: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        ctx["audit"].append("mcp.client.tool", server=manifesto["nome"],
+                            tool=args.tool, nivel=nivel)
+        for bloco in resultado.get("content", []):
+            if bloco.get("type") == "text":
+                print(bloco.get("text", ""))
+        return EXIT_OK
     print("uso: nomos mcp servir   (conecte um cliente MCP local via stdio)\n"
-          "     nomos mcp tools    (lista as tools expostas)", file=sys.stderr)
+          "     nomos mcp tools    (lista as tools expostas)\n"
+          "     nomos mcp conectar <manifesto.json>\n"
+          "     nomos mcp chamar <manifesto.json> <tool> [--args '{...}']",
+          file=sys.stderr)
     return EXIT_ERROR
 
 
@@ -1575,6 +1640,14 @@ def build_parser() -> argparse.ArgumentParser:
     mcpsub = mcpp.add_subparsers(dest="mcp_cmd")
     mcpsub.add_parser("servir").set_defaults(fn=cmd_mcp)
     mcpsub.add_parser("tools").set_defaults(fn=cmd_mcp)
+    mcc = mcpsub.add_parser("conectar")
+    mcc.add_argument("manifesto")
+    mcc.set_defaults(fn=cmd_mcp)
+    mch = mcpsub.add_parser("chamar")
+    mch.add_argument("manifesto")
+    mch.add_argument("tool")
+    mch.add_argument("--args", dest="args_json")
+    mch.set_defaults(fn=cmd_mcp)
     mcpp.set_defaults(fn=cmd_mcp, mcp_cmd=None)
     memp = sub.add_parser("memoria",
                           help="memória local: revisar candidatas (você decide)")
