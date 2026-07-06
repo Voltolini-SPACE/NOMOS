@@ -1229,6 +1229,43 @@ def cmd_conselho(ctx, args) -> int:
     return route_conselho(list(getattr(args, "resto", []) or []))
 
 
+def cmd_evidencia(ctx, args) -> int:
+    """Pacote de evidências auditável (MC29): criar e verificar, tudo local."""
+    from nomos.kernel import evidencia as ev
+    sub = getattr(args, "evidencia_cmd", None)
+    if sub == "criar":
+        destino = ctx["home"] / "evidencias"
+        anexos = [Path(a) for a in (getattr(args, "anexo", None) or [])]
+        try:
+            pacote = ev.gerar_pacote(
+                destino, args.titulo, status=args.status,
+                anexos=anexos, notas=getattr(args, "nota", "") or "")
+        except (FileNotFoundError, FileExistsError) as e:
+            print(f"não criei o pacote (fail-closed): {e}", file=sys.stderr)
+            return EXIT_ERROR
+        ok, problemas = ev.verificar_pacote(pacote)
+        ctx["audit"].append("evidencia.criada", pacote=pacote.name,
+                            anexos=len(anexos), verificada=ok)
+        print(f"pacote de evidências criado: {pacote}")
+        print("verificação imediata: " + ("OK ✓" if ok else f"FALHOU: {problemas}"))
+        print(f"para conferir depois: cd {pacote} && sha256sum -c SHA256SUMS")
+        return EXIT_OK if ok else EXIT_ERROR
+    if sub == "verificar":
+        ok, problemas = ev.verificar_pacote(Path(args.pacote))
+        ctx["audit"].append("evidencia.verificada", ok=ok)
+        if ok:
+            print("pacote íntegro ✓ — todos os hashes conferem.")
+            return EXIT_OK
+        print("pacote NÃO confere:", file=sys.stderr)
+        for p in problemas:
+            print(f"  · {p}", file=sys.stderr)
+        return EXIT_ERROR
+    print("uso: nomos evidencia criar \"<título>\" [--status S] [--nota N] "
+          "[--anexo ARQ ...]\n     nomos evidencia verificar <pasta-do-pacote>",
+          file=sys.stderr)
+    return EXIT_ERROR
+
+
 # ------------------------- parser -------------------------
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1339,6 +1376,19 @@ def build_parser() -> argparse.ArgumentParser:
     losub.add_parser("on").set_defaults(fn=cmd_local)
     losub.add_parser("off").set_defaults(fn=cmd_local)
     lo.set_defaults(fn=cmd_local, local_cmd=None)
+    evd = sub.add_parser("evidencia",
+                         help="pacote de evidências auditável (criar/verificar, local)")
+    evsub = evd.add_subparsers(dest="evidencia_cmd")
+    evc = evsub.add_parser("criar")
+    evc.add_argument("titulo")
+    evc.add_argument("--status", default="PASS")
+    evc.add_argument("--nota", default="")
+    evc.add_argument("--anexo", action="append")
+    evc.set_defaults(fn=cmd_evidencia)
+    evv = evsub.add_parser("verificar")
+    evv.add_argument("pacote")
+    evv.set_defaults(fn=cmd_evidencia)
+    evd.set_defaults(fn=cmd_evidencia, evidencia_cmd=None)
     ck = sub.add_parser("chaves", help="guardar chaves com segurança (sem digitar no chat)")
     cksub = ck.add_subparsers(dest="chaves_cmd")
     cksub.add_parser("listar").set_defaults(fn=cmd_chaves)
