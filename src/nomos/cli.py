@@ -558,7 +558,8 @@ def cmd_painel(ctx, args) -> int:
     from nomos.interface.painel_web import DashboardServer
     srv = DashboardServer(ctx, port=getattr(args, "port", 0) or 0)
     url = srv.start()
-    print(f"painel local (somente leitura): {url}")
+    print(f"painel local: {url}")
+    print("ler é livre; agir só pela fila de aprovações (token de uso único).")
     print("só funciona neste computador (127.0.0.1). Ctrl+C encerra.")
     try:
         import webbrowser

@@ -39,6 +39,7 @@
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html { scroll-behavior: smooth; }
+        section[id], h2[id] { scroll-margin-top: 76px; } /* âncoras nunca somem sob o header fixo */
         body {
             background: var(--bg); color: var(--texto);
             font-family: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
@@ -332,7 +333,7 @@
                     </ul>
                 </div>
             </div>
-            <p style="margin-top:1.5rem;">Encontrou uma vulnerabilidade? <a href="mailto:security@se7enpay.com.br">Reporte em privado</a>. Detalhes no <a href="../docs/THREAT_MODEL.md">modelo de ameaças</a>.</p>
+            <p style="margin-top:1.5rem;">Encontrou uma vulnerabilidade? <a href="mailto:security@se7enpay.com.br">Reporte em privado</a>. Detalhes no <a href="https://github.com/Voltolini-SPACE/NOMOS/blob/main/docs/THREAT_MODEL.md">modelo de ameaças</a>.</p>
         </div>
     </section>
 
@@ -352,19 +353,38 @@
         </div>
     </section>
 
-    <!-- Instalar -->
+    <!-- Instalar / Baixar -->
     <section id="instalar" aria-labelledby="inst-t">
         <div class="wrap">
-            <div class="tag">// instalação</div>
-            <h2 id="inst-t">Comece em um comando</h2>
+            <div class="tag">// baixar &amp; instalar</div>
+            <h2 id="inst-t">Escolha o seu jeito de começar</h2>
+            <!-- MANUTENÇÃO: ao publicar uma release nova, atualize a tag
+                 nos 3 hrefs "releases/download/<TAG>/..." abaixo.
+                 Tag atual (assets verificados): v1.3.0rc4-motor-council-dry-run -->
+            <div class="grid" role="group" aria-label="Downloads por sistema">
+                <div class="card"><div class="ico">🍎</div><h3>macOS / Linux</h3>
+                    <p>Baixe o instalador de 1 clique e o pacote <span class="k">.whl</span> na mesma pasta, e rode <span class="k">bash install.sh</span> — com verificação SHA256, backup do que existia e rollback automático se algo falhar.</p>
+                    <p style="margin-top:0.9rem;"><a class="btn btn-primary" href="https://github.com/Voltolini-SPACE/NOMOS/releases/download/v1.3.0rc4-motor-council-dry-run/install.sh">Baixar install.sh</a></p>
+                </div>
+                <div class="card"><div class="ico">🪟</div><h3>Windows</h3>
+                    <p>Baixe o instalador e o <span class="k">.whl</span> na mesma pasta e rode <span class="k">install.ps1</span> no PowerShell — mesma verificação de integridade, backup e rollback do instalador de Mac/Linux.</p>
+                    <p style="margin-top:0.9rem;"><a class="btn btn-primary" href="https://github.com/Voltolini-SPACE/NOMOS/releases/download/v1.3.0rc4-motor-council-dry-run/install.ps1">Baixar install.ps1</a></p>
+                </div>
+                <div class="card"><div class="ico">🐙</div><h3>Pelo código (git)</h3>
+                    <p>Para quem quer ver cada linha antes de rodar — o jeito mais NOMOS de instalar:</p>
+                    <div class="term" style="margin:0.9rem 0 0;"><div><span class="p">$</span> <span class="c">git clone https://github.com/Voltolini-SPACE/NOMOS</span></div>
+                    <div><span class="p">$</span> <span class="c">cd NOMOS &amp;&amp; pip install .</span></div></div>
+                </div>
+            </div>
+            <p style="margin-top:1.2rem;"><strong>Versão atual:</strong> v1.3.0rc4 (pré-lançamento) · <a href="https://github.com/Voltolini-SPACE/NOMOS/releases">todas as versões e pacotes .whl</a> · confira a integridade com <span class="k">SHA256SUMS</span> (<span class="k">sha256sum --check SHA256SUMS</span>) — cada release publica os hashes de todos os arquivos.</p>
             <div class="term" role="group" aria-label="Comandos de instalação">
-                <div class="termbar">~/nomos — bash</div>
+                <div class="termbar">~/nomos — bash · ou instale direto do git em um comando</div>
                 <div><span class="p">$</span> <span class="c">pip install git+https://github.com/Voltolini-SPACE/NOMOS</span></div>
                 <div><span class="p">$</span> <span class="c">nomos</span> <span class="o"># 1ª vez: assistente guiado</span></div>
                 <div><span class="p">$</span> <span class="c">nomos doutor</span> <span class="o"># check-up honesto</span></div>
                 <div><span class="p">$</span> <span class="c">nomos cerebro baixar</span> <span class="o"># cérebro leve (uma vez, com sua aprovação)</span></div>
             </div>
-            <p>Requer Python 3.10+ (Mac, Windows ou Linux) — sem GPU, sem super-PC. Ou baixe um <strong>instalador de 1 clique</strong> com verificação SHA256 e rollback: <a href="https://github.com/Voltolini-SPACE/NOMOS/releases">releases do GitHub</a>. Guia completo: <a href="../docs/installation/NOMOS_INSTALLATION_MANUAL.md">Manual de Instalação</a>.</p>
+            <p>Requer Python 3.10+ (Mac, Windows ou Linux) — sem GPU, sem super-PC. O NOMOS <strong>nunca se atualiza sozinho</strong>: novidades só com <span class="k">nomos atualizar</span>, opt-in e com sua aprovação. Guia completo: <a href="https://github.com/Voltolini-SPACE/NOMOS/blob/main/docs/installation/NOMOS_INSTALLATION_MANUAL.md">Manual de Instalação</a>.</p>
         </div>
     </section>
 
@@ -391,7 +411,7 @@
             <div class="rm done"><b>✓ MC30–MC31 — Superfícies e conversa</b><p>Painel 2.0 (API JSON, auditoria verificada, roteador explicado), streaming e <span class="k">/arbitrar</span> no chat, memória 2.0, motor OpenAI-compatível local.</p></div>
             <div class="rm now"><b>▸ MC32 — Potência real e MCP</b><p>Executor de missões (plano → aprovação → evidência → desfazer), NOMOS como servidor e cliente MCP com níveis A e confiança registrada.</p></div>
             <div class="rm next"><b>· Próximas etapas</b><p>Visão de tela assistida (OmniParser V2, local, processo isolado), OCR e conversor de documentos locais, personas multi-agente, embeddings locais.</p></div>
-            <p style="margin-top:1.5rem;"><a href="../docs/ROADMAP_4.md">Ver roadmap completo →</a></p>
+            <p style="margin-top:1.5rem;"><a href="https://github.com/Voltolini-SPACE/NOMOS/blob/main/docs/ROADMAP_4.md">Ver roadmap completo →</a></p>
         </div>
     </section>
     </main>
@@ -401,12 +421,12 @@
         <div class="wrap">
             <div class="footer-links">
                 <a href="https://github.com/Voltolini-SPACE/NOMOS">GitHub</a>
-                <a href="../README.md">README</a>
-                <a href="../docs/installation/NOMOS_INSTALLATION_MANUAL.md">Manual de Instalação</a>
-                <a href="../docs/brand/NOMOS_BRANDBOOK.md">Brandbook</a>
-                <a href="../docs/">Documentação</a>
-                <a href="../docs/THREAT_MODEL.md">Modelo de ameaças</a>
-                <a href="../docs/PRIVACIDADE.md">Privacidade</a>
+                <a href="https://github.com/Voltolini-SPACE/NOMOS/blob/main/README.md">README</a>
+                <a href="https://github.com/Voltolini-SPACE/NOMOS/blob/main/docs/installation/NOMOS_INSTALLATION_MANUAL.md">Manual de Instalação</a>
+                <a href="https://github.com/Voltolini-SPACE/NOMOS/blob/main/docs/brand/NOMOS_BRANDBOOK.md">Brandbook</a>
+                <a href="https://github.com/Voltolini-SPACE/NOMOS/tree/main/docs">Documentação</a>
+                <a href="https://github.com/Voltolini-SPACE/NOMOS/blob/main/docs/THREAT_MODEL.md">Modelo de ameaças</a>
+                <a href="https://github.com/Voltolini-SPACE/NOMOS/blob/main/docs/PRIVACIDADE.md">Privacidade</a>
             </div>
             <p>&copy; 2026 NOMOS · mantido por <a href="https://se7enpay.com">Se7enpay</a> · licença MIT</p>
             <p style="margin-top:0.5rem; color:var(--neon);">Seu agente. Sua máquina. Suas regras. — local por lei.</p>
