@@ -5,6 +5,13 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 ## [Unreleased]
 
 ### Added (MC31 — B1 provado e completado)
+- **NOMOS como servidor MCP (C1)**: `nomos mcp servir` — Model Context
+  Protocol sobre stdio (sem rede), 5 tools somente leitura (status,
+  capacidades, evidências, memória redigida, roteador explicado); erros
+  fail-closed e auditoria por tool call. `nomos mcp tools` lista.
+- **Memória 2.0 (B5)**: `nomos memoria candidatas [--json]` e `nomos memoria
+  revisar` (interativo; sem TTY nega fail-closed e a fila fica intacta);
+  painel mostra a fila pendente.
 - **`/arbitrar` no chat (B2)**: arbitragem real multi-motor na conversa,
   só motores locais (nuvem permanece exclusiva da CLI gateada); honesto
   sem motor pronto; aviso de divergência alta.
