@@ -1323,6 +1323,24 @@ def cmd_conselho(ctx, args) -> int:
     return route_conselho(list(getattr(args, "resto", []) or []))
 
 
+def cmd_mcp(ctx, args) -> int:
+    """MCP server local (MC31/C1): NOMOS como servidor de tools, read-only."""
+    from nomos.interface import mcp_server
+    sub = getattr(args, "mcp_cmd", None)
+    if sub == "tools":
+        for t in mcp_server.TOOLS:
+            print(f"  ◆ {t['name']} — {t['description']}")
+        print(f"\n{len(mcp_server.TOOLS)} tools, todas SOMENTE LEITURA (A0).")
+        return EXIT_OK
+    if sub == "servir":
+        print("servidor MCP do NOMOS no stdio (somente leitura; Ctrl+C sai)…",
+              file=sys.stderr)
+        return mcp_server.servir(ctx)
+    print("uso: nomos mcp servir   (conecte um cliente MCP local via stdio)\n"
+          "     nomos mcp tools    (lista as tools expostas)", file=sys.stderr)
+    return EXIT_ERROR
+
+
 def cmd_memoria(ctx, args) -> int:
     """Memória 2.0 (MC31/B5): revisão humana da fila de candidatas."""
     from nomos.cognition.memory import Memory
@@ -1552,6 +1570,12 @@ def build_parser() -> argparse.ArgumentParser:
     losub.add_parser("on").set_defaults(fn=cmd_local)
     losub.add_parser("off").set_defaults(fn=cmd_local)
     lo.set_defaults(fn=cmd_local, local_cmd=None)
+    mcpp = sub.add_parser("mcp",
+                          help="servidor MCP local (tools somente leitura)")
+    mcpsub = mcpp.add_subparsers(dest="mcp_cmd")
+    mcpsub.add_parser("servir").set_defaults(fn=cmd_mcp)
+    mcpsub.add_parser("tools").set_defaults(fn=cmd_mcp)
+    mcpp.set_defaults(fn=cmd_mcp, mcp_cmd=None)
     memp = sub.add_parser("memoria",
                           help="memória local: revisar candidatas (você decide)")
     memsub = memp.add_subparsers(dest="memoria_cmd")
