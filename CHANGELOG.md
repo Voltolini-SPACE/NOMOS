@@ -5,6 +5,10 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 ## [Unreleased]
 
 ### Added (MC32 — execução: ruídos + M1)
+- **Executor de missões (P1)**: `nomos missao planejar/executar organizar
+  <pasta>` — plano legível dry-run por padrão; execução exige gate A1 +
+  confirmação digitada; evidência verificável com manifesto de DESFAZER;
+  `nomos missao desfazer` reverte (também gateado). Nunca sobrescreve.
 - **MCP client (M1)**: `nomos mcp conectar/chamar <manifesto.json>` — servers
   MCP locais viram capacidades externas com nível A0–A6 por tool (desconhecida
   herda A5 fail-closed); A0 direto, A1+ só com aprovação interativa (negação
