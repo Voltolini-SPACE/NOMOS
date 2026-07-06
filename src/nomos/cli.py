@@ -1323,6 +1323,57 @@ def cmd_conselho(ctx, args) -> int:
     return route_conselho(list(getattr(args, "resto", []) or []))
 
 
+def cmd_memoria(ctx, args) -> int:
+    """Memória 2.0 (MC31/B5): revisão humana da fila de candidatas."""
+    from nomos.cognition.memory import Memory
+    mem = Memory(ctx["home"] / "memory.db")
+    sub = getattr(args, "memoria_cmd", None)
+    if sub == "candidatas":
+        fila = mem.candidatas()
+        if getattr(args, "json", False):
+            print(json.dumps({"contrato": 1, "total_memorias": mem.count(),
+                              "candidatas": fila}, ensure_ascii=False, indent=2))
+            return EXIT_OK
+        if not fila:
+            print("nenhuma candidata aguardando revisão — memória em dia ✓")
+            return EXIT_OK
+        print(f"candidatas aguardando SUA revisão ({len(fila)}):\n")
+        for c in fila:
+            print(f"  [{c['id']}] ({c.get('tipo', 'fato')}) {c['text']}")
+        print("\nrevise com: nomos memoria revisar")
+        return EXIT_OK
+    if sub == "revisar":
+        fila = mem.candidatas()
+        if not fila:
+            print("nenhuma candidata para revisar — memória em dia ✓")
+            return EXIT_OK
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            from nomos.simple.erros import fmt
+            print(fmt("E002", "revisar memórias exige terminal interativo — "
+                      "nada foi aprovado nem descartado (a fila continua "
+                      "intacta; veja-a com: nomos memoria candidatas)"),
+                  file=sys.stderr)
+            return EXIT_DENIED
+        aprovadas = descartadas = 0
+        for c in fila:
+            print(f"\n({c.get('tipo', 'fato')}) {c['text']}")
+            resp = input("guardar para sempre? [s]im / [n]ão / [p]ular> ").strip().lower()
+            if resp == "s":
+                mem.aprovar_candidata(c["id"])
+                aprovadas += 1
+            elif resp == "n":
+                mem.descartar_candidata(c["id"])
+                descartadas += 1
+        ctx["audit"].append("memoria.revisada", aprovadas=aprovadas,
+                            descartadas=descartadas)
+        print(f"\npronto: {aprovadas} aprovada(s), {descartadas} descartada(s), "
+              f"{len(fila) - aprovadas - descartadas} deixada(s) para depois.")
+        return EXIT_OK
+    print("uso: nomos memoria candidatas [--json]\n"
+          "     nomos memoria revisar", file=sys.stderr)
+    return EXIT_ERROR
+
+
 def cmd_evidencia(ctx, args) -> int:
     """Pacote de evidências auditável (MC29): criar e verificar, tudo local."""
     from nomos.kernel import evidencia as ev
@@ -1501,6 +1552,14 @@ def build_parser() -> argparse.ArgumentParser:
     losub.add_parser("on").set_defaults(fn=cmd_local)
     losub.add_parser("off").set_defaults(fn=cmd_local)
     lo.set_defaults(fn=cmd_local, local_cmd=None)
+    memp = sub.add_parser("memoria",
+                          help="memória local: revisar candidatas (você decide)")
+    memsub = memp.add_subparsers(dest="memoria_cmd")
+    memc = memsub.add_parser("candidatas")
+    memc.add_argument("--json", action="store_true")
+    memc.set_defaults(fn=cmd_memoria)
+    memsub.add_parser("revisar").set_defaults(fn=cmd_memoria)
+    memp.set_defaults(fn=cmd_memoria, memoria_cmd=None)
     evd = sub.add_parser("evidencia",
                          help="pacote de evidências auditável (criar/verificar, local)")
     evsub = evd.add_subparsers(dest="evidencia_cmd")

@@ -89,6 +89,14 @@ def dados_dashboard(ctx) -> dict:
     except Exception:
         capacidades = []   # catálogo nunca derruba o painel
 
+    # Memória 2.0 (MC31/B5): fila de candidatas visível — aprovar é no terminal
+    try:
+        from nomos.cognition.memory import Memory
+        _mem = Memory(home / "memory.db")
+        memoria = {"total": _mem.count(), "candidatas": len(_mem.candidatas())}
+    except Exception:
+        memoria = {"total": 0, "candidatas": 0}
+
     # Política viva (MC29): o painel mostra o contrato, não uma cópia dele
     from nomos.council import forbidden_flags as ff
     from nomos.council import local_harness as lh
@@ -114,6 +122,7 @@ def dados_dashboard(ctx) -> dict:
         "capacidades": capacidades,
         "motores": motores_tab,
         "auditoria": {"cadeia_integra": cadeia_ok, "eventos_total": cadeia_n},
+        "memoria": memoria,
     }
 
 
@@ -178,6 +187,17 @@ def render_html(d: dict, refresh: int | None = None) -> str:
             f'<div class="card">{e(c["nome"])} <small>[{e(c["status"])} · '
             f'risco {e(c["risco"])}]</small><br>{e(c["descricao"])}<br>'
             f'<small>entrada: {e(c["entrada"])} → {e(c["saida"])}</small></div>')
+
+    memo = d.get("memoria", {})
+    if memo:
+        pend = memo.get("candidatas", 0)
+        aviso = (f'⚠️ <b>{pend}</b> candidata(s) aguardando SUA revisão — '
+                 f'<code>nomos memoria revisar</code>' if pend
+                 else "fila de candidatas vazia ✓")
+        corpo.append(f'<h2>Memória local</h2><div class="card">'
+                     f'{memo.get("total", 0)} memórias guardadas · {aviso}'
+                     f'<br><small>aprovar/descartar é sempre decisão sua, '
+                     f'no terminal — o painel só mostra</small></div>')
 
     corpo.append("<h2>Evidências de missões</h2>")
     if not d.get("evidencias"):
