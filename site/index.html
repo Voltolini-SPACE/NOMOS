@@ -103,6 +103,20 @@
         .termbar { color: var(--fraco); font-size: 12px; margin-bottom: 10px; }
         .term .p { color: var(--neon); } .term .c { color: var(--texto); } .term .o { color: var(--fraco); }
 
+        /* screenshots do painel (seção #painel) */
+        .shot { margin: 1.5rem 0 0; background: var(--surface2); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+        .shot-bar { display: flex; align-items: center; gap: 5px; padding: 9px 14px; border-bottom: 1px solid var(--line); color: var(--fraco); font-size: 12px; }
+        .shot-bar .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); display: inline-block; }
+        .shot-bar .dot:first-child { background: var(--vermelho); opacity: .7; }
+        .shot-bar .dot:nth-child(2) { background: var(--amarelo); opacity: .7; }
+        .shot-bar .dot:nth-child(3) { background: var(--neon-dim); opacity: .8; }
+        .shot img { display: block; width: 100%; height: auto; }
+        .shot figcaption { padding: 10px 14px; color: var(--fraco); font-size: 12.5px; border-top: 1px solid var(--line2); }
+        .painel-duo { display: grid; grid-template-columns: 3fr 2fr; gap: 1.25rem; margin-top: 1.5rem; align-items: start; }
+        .painel-duo .shot { margin-top: 0; }
+        .shot-mobile { max-width: 330px; justify-self: center; }
+        @media (max-width: 760px) { .painel-duo { grid-template-columns: 1fr; } .shot-mobile { justify-self: start; } }
+
         table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 1.25rem 0; }
         th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line2); vertical-align: top; }
         th { color: var(--neon); font-weight: 500; }
@@ -152,6 +166,7 @@
                 <a href="#motores">motores</a>
                 <a href="#agentes">agentes</a>
                 <a href="#skills">skills</a>
+                <a href="#painel">painel</a>
                 <a href="#seguranca">segurança</a>
                 <a href="#instalar">instalar</a>
                 <a href="https://github.com/Voltolini-SPACE/NOMOS">github</a>
@@ -174,6 +189,7 @@
             <p class="sub">Um agente pessoal de IA que roda 100% no seu computador. Motores locais, memória, cofre de chaves, skills e agentes — todos governados, com aprovação humana em cada passo. A nuvem é uma tomada opcional que você pluga de propósito, nunca por padrão.</p>
             <div class="cta-group">
                 <a href="#instalar" class="btn btn-primary">Instalar agora</a>
+                <a href="#painel" class="btn btn-ghost">Ver o painel por dentro</a>
                 <a href="https://github.com/Voltolini-SPACE/NOMOS" class="btn btn-ghost">Ver no GitHub</a>
             </div>
             <div class="stats">
@@ -233,7 +249,7 @@
             <h3 class="grupo-recursos"><span aria-hidden="true">🖥️</span> Operação &amp; integrações</h3>
             <div class="grid">
                 <div class="card"><div class="ico" aria-hidden="true">🔌</div><h3>Cidadão do ecossistema MCP</h3><p>O NOMOS é <strong>servidor</strong> Model Context Protocol (tools só-leitura para o Claude Desktop e outros agentes) e <strong>cliente</strong> — usa servers locais como capacidades, cada tool com nível de risco A0–A6 e confiança registrada. Tudo via stdio, sem rede.</p></div>
-                <div class="card"><div class="ico" aria-hidden="true">🖥️</div><h3>Painel web local</h3><p>Roda na sua máquina (<span class="k">nomos painel</span>): status, motores, evidências, política A0–A6 viva, decisões do roteador explicadas e auditoria com cadeia verificada — com API JSON local. Ler é livre; a única ação é decidir aprovações, com token de uso único. Só 127.0.0.1.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🖥️</div><h3>Painel web local</h3><p>Roda na sua máquina (<span class="k">nomos painel</span>): status, motores, evidências, política A0–A6 viva, decisões do roteador explicadas e auditoria com cadeia verificada — com API JSON local. Ler é livre; a única ação é decidir aprovações, com token de uso único. Só 127.0.0.1. <a href="#painel">Ver por dentro →</a></p></div>
                 <div class="card"><div class="ico" aria-hidden="true">⏱️</div><h3>Rotinas e briefings</h3><p>Agende tarefas locais e gere briefings — sempre em dry-run, com sua aprovação antes de qualquer efeito.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">⬆️</div><h3>Atualização com licença</h3><p><span class="k">nomos atualizar</span> checa se há versão nova e propõe — mas <strong>nunca</strong> atualiza sozinho. Você decide, sempre.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">🩺</div><h3>Doutor</h3><p><span class="k">nomos doutor</span>: um check-up honesto do que está pronto e qual é o próximo passo.</p></div>
@@ -309,6 +325,62 @@
                 <div><span class="p">$</span> <span class="c">nomos skills listar</span></div>
                 <div><span class="p">$</span> <span class="c">nomos skills rodar busca-arquivos --args '{"pasta": "~/Documentos"}'</span></div>
                 <div><span class="o"># cada skill mostra permissões e risco; instalação assinada e aprovada</span></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Painel: o cockpit local -->
+    <section id="painel" aria-labelledby="painel-t">
+        <div class="wrap">
+            <div class="tag">// o cockpit</div>
+            <h2 id="painel-t">Você vê tudo. Você decide tudo.</h2>
+            <p class="lead">Um comando — <span class="k">nomos painel</span> — abre o cockpit no seu navegador: status, motores, memória, evidências, auditoria e a fila de aprovações, tudo numa tela. Roda <strong>só em 127.0.0.1</strong>, com URL secreta, zero assets externos — nada sai da sua máquina, nem para desenhar a página.</p>
+
+            <figure class="shot">
+                <div class="shot-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp; 127.0.0.1 — painel local · só na sua máquina</div>
+                <img src="assets/painel-cockpit.webp" alt="Painel NOMOS no navegador: sidebar de navegação com badges, KPIs de status, fila de aprovações com botões APROVAR e NEGAR, e coluna lateral com o motor escolhido por modalidade" width="1440" height="900" loading="lazy" decoding="async">
+                <figcaption>O cockpit inteiro: navegação com badges de atenção, KPIs, aprovações pendentes e o roteador ao vivo na lateral.</figcaption>
+            </figure>
+
+            <div class="painel-duo">
+                <div>
+                    <figure class="shot">
+                        <div class="shot-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp; aprovações — você decide</div>
+                        <img src="assets/painel-aprovacoes.webp" alt="Cards de aprovação no painel NOMOS: categoria de risco, alvo, motivo, contagem regressiva de expiração e botões APROVAR e NEGAR" width="976" height="392" loading="lazy" decoding="async">
+                        <figcaption>Cada pedido chega com risco, alvo, motivo e prazo. APROVAR ou NEGAR viaja com token de uso único — reusar, adivinhar ou atrasar não funciona.</figcaption>
+                    </figure>
+                    <div class="card" style="margin-top:1.25rem;"><div class="ico">🔎</div><h3>Busca e filtro instantâneos</h3><p>Filtre tabelas e cards enquanto digita; busque na trilha de auditoria com <span class="k">audit/?q=</span> — só metadados, já redigidos, nunca conteúdo.</p></div>
+                </div>
+                <div>
+                    <div class="card"><div class="ico">✋</div><h3>Aprovar sem sair do fluxo</h3><p>A mesma fila do terminal, no navegador: token single-use, expira sozinho em 5 min, tudo auditado. Escrever só existe nessa porta — o resto do painel é leitura.</p></div>
+                    <div class="card" style="margin-top:1rem;"><div class="ico">🚦</div><h3>Roteador ao vivo</h3><p>A lateral mostra qual motor atenderia cada modalidade <em>agora</em> — e por quê. Sem motor pronto, o painel diz "nenhum pronto". Nunca finge.</p></div>
+                </div>
+            </div>
+
+            <div class="painel-duo">
+                <div>
+                    <div class="card"><div class="ico">🩺</div><h3>Sinais para os seus scripts</h3><p>O endpoint <span class="k">health/</span> devolve JSON com status, próximo passo e avisos reais — pronto para rotinas, monitoramento e integrações locais. E <span class="k">api/?secao=</span> recorta só a fatia que você quer.</p></div>
+                    <div class="term" style="margin:1rem 0 0;">
+                        <div class="termbar">GET health/ — resposta real</div>
+<div><span class="o">{</span></div>
+<div>&nbsp;&nbsp;<span class="c">"ok"</span><span class="o">:</span> <span class="p">true</span><span class="o">,</span> <span class="c">"saudavel"</span><span class="o">:</span> <span class="p">false</span><span class="o">,</span></div>
+<div>&nbsp;&nbsp;<span class="c">"status_geral"</span><span class="o">:</span> <span class="c">"PARCIAL"</span><span class="o">,</span></div>
+<div>&nbsp;&nbsp;<span class="c">"proximo_passo"</span><span class="o">:</span> <span class="c">"rode: nomos start"</span><span class="o">,</span></div>
+<div>&nbsp;&nbsp;<span class="c">"avisos"</span><span class="o">:</span> <span class="o">[</span><span class="c">"1 aprovação(ões) esperando sua decisão"</span><span class="o">],</span></div>
+<div>&nbsp;&nbsp;<span class="c">"aprovacoes_pendentes"</span><span class="o">:</span> <span class="p">1</span><span class="o">,</span> <span class="c">"motores_prontos"</span><span class="o">:</span> <span class="p">3</span></div>
+<div><span class="o">}</span></div>
+                    </div>
+                </div>
+                <figure class="shot shot-mobile">
+                    <div class="shot-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp; no celular também</div>
+                    <img src="assets/painel-mobile.webp" alt="Painel NOMOS em tela estreita: menu compacto em pills agrupadas por seção, com badges de pendências" width="390" height="780" loading="lazy" decoding="async">
+                    <figcaption>Responsivo de verdade: menu vira pills, nada se perde.</figcaption>
+                </figure>
+            </div>
+
+            <div class="term" role="group" aria-label="Abrir o painel">
+                <div class="termbar">~/nomos — bash</div>
+                <div><span class="p">$</span> <span class="c">nomos painel</span> <span class="o"># abre o cockpit no navegador — ler é livre, agir passa pelo gate</span></div>
             </div>
         </div>
     </section>
