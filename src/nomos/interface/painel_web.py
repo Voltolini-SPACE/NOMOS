@@ -229,7 +229,10 @@ _JS = """
  function pintaBtn(){
    if(!tbtn)return;
    var claro=temaAtual()==='claro';
-   tbtn.textContent=(claro?'☀':'☾')+' tema';
+   // rótulo mostra o ALVO do clique (◐ = glifo que renderiza em toda fonte)
+   tbtn.textContent=claro?'◐ escuro':'◐ claro';
+   tbtn.setAttribute('aria-label',
+     claro?'mudar para tema escuro':'mudar para tema claro');
    tbtn.setAttribute('aria-pressed',claro?'true':'false');
  }
  pintaBtn();
@@ -622,17 +625,32 @@ def _bloco_atencao(d: dict, n_aprov: int) -> str:
 
 
 def _bloco_ao_vivo(d: dict) -> str:
-    """Motor escolhido por modalidade + atividade recente (metadados)."""
+    """Motor escolhido por modalidade + atividade recente (metadados).
+
+    MC37.1: a lista de modalidades sem motor pronto (ruído quando não há
+    cérebro instalado) é recolhida num <details> — só os prontos ficam à
+    vista, mantendo a honestidade ("sem motor pronto") sem inundar a tela.
+    """
     e = html.escape
-    partes = ['<div class="colunas2">']
-    partes.append('<div><h3 class="mini-h">motor ao vivo</h3>')
-    if d.get("roteador_vivo"):
-        for r in d["roteador_vivo"]:
-            motor = r.get("motor") or "— nenhum pronto"
-            partes.append(f'<div class="mini"><b>{e(r["modalidade"])}</b> → '
-                          f"{e(motor)}</div>")
-    else:
+    rv = d.get("roteador_vivo") or []
+    prontos = [r for r in rv if r.get("motor")]
+    vazios = [r for r in rv if not r.get("motor")]
+    partes = ['<div class="colunas2">', '<div><h3 class="mini-h">motor ao vivo</h3>']
+    if not rv:
         partes.append('<div class="mini">roteador indisponível</div>')
+    else:
+        for r in prontos:
+            partes.append(f'<div class="mini"><b>{e(r["modalidade"])}</b> → '
+                          f'{e(r["motor"])}</div>')
+        if vazios:
+            nomes = ", ".join(e(r["modalidade"]) for r in vazios)
+            resumo = (f"{len(vazios)} modalidade(s) sem motor pronto"
+                      if prontos else
+                      f"nenhum motor pronto ainda ({len(vazios)} modalidades)")
+            partes.append(
+                f'<details class="mais"><summary>{resumo}</summary>'
+                f'<div class="mini">{nomes}<br><small>instale um cérebro: '
+                "<code>nomos cerebro baixar</code></small></div></details>")
     partes.append('</div><div><h3 class="mini-h">atividade recente</h3>')
     for ev in d.get("eventos", [])[:5]:
         partes.append(f'<div class="mini"><code>{e(str(ev["evento"]))}</code> '

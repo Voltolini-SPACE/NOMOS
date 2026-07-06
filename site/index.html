@@ -582,7 +582,9 @@
             function pinta() {
                 if (!btn) return;
                 var claro = atual() === 'claro';
-                btn.textContent = (claro ? '☀' : '☾') + ' tema';
+                /* rótulo = alvo do clique; ◐ renderiza em toda fonte */
+                btn.textContent = claro ? '◐ escuro' : '◐ claro';
+                btn.setAttribute('aria-label', claro ? 'mudar para tema escuro' : 'mudar para tema claro');
                 btn.setAttribute('aria-pressed', claro ? 'true' : 'false');
             }
             pinta();

@@ -94,8 +94,9 @@ def test_roteador_vivo_na_visao_geral(nomos_home):
     mods = {r["modalidade"] for r in d["roteador_vivo"]}
     assert "texto" in mods
     corpo = render_html(d)
-    # com tudo mockado off, a decisão honesta é "nenhum pronto"
-    assert "nenhum pronto" in corpo
+    # MC37.1: com tudo mockado off, a honestidade continua — agora recolhida
+    # num <details> ("nenhum motor pronto ainda") em vez de 13 linhas
+    assert "sem motor pronto" in corpo
 
 
 # ---------------------------------------------------------------------------
