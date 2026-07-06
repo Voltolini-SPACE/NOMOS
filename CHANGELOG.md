@@ -4,6 +4,14 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC32 — execução: ruídos + M1)
+- **MCP client (M1)**: `nomos mcp conectar/chamar <manifesto.json>` — servers
+  MCP locais viram capacidades externas com nível A0–A6 por tool (desconhecida
+  herda A5 fail-closed); A0 direto, A1+ só com aprovação interativa (negação
+  auditada sem executar). Nunca auto-instala; dogfood contra o próprio server.
+- **Higiene**: artefatos regeneráveis git-ignorados removidos do repo; pacote
+  histórico v0.10 do invólucro movido para `NOMOS_REPO/archive/`.
+
 ### Added (MC32 — planejamento)
 - `docs/ROADMAP_4.md`: plano de potência real — trilha P (executor de missões
   aprovável, skills A1 com diff-prévia, visão de tela via OmniParser V2 local
