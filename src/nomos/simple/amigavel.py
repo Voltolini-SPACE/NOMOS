@@ -26,6 +26,7 @@ AJUDA = """comandos:
   /motores                  mostro meus motores (texto·código·imagem·áudio)
   /motor <modal> <id>       troco de motor  ex.: /motor codigo ollama-coder
   /cod <pedido>             programo usando o motor de código
+  /arbitrar <pergunta>      vários motores debatem e convergem (tudo local)
   /arquivo <caminho>        leio e resumo um arquivo seu (tudo local)
   /ouvir <audio>            transcrevo um áudio (whisper local) e resumo
   /ver <imagem>             descrevo uma imagem (modelo de visão local)
@@ -141,6 +142,41 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
             # texto do usuário nem constrói contexto de kernel.
             from nomos.council.chat_dry_run import handle_chat_dry_run
             say(handle_chat_dry_run(linha))
+            continue
+        if linha == "/arbitrar" or linha.startswith("/arbitrar "):
+            # MC31/B2: espelho fail-closed da CLI `nomos motores arbitrar`.
+            # No chat só motores LOCAIS participam; nuvem exige o fluxo com
+            # gates da CLI (--nuvem). Nunca inventa resposta.
+            pedido = linha[len("/arbitrar"):].strip()
+            if not pedido:
+                say(f"{nome}: me diga a pergunta: /arbitrar <pergunta>")
+                continue
+            from nomos.cognition import arbitragem as arbmod
+            runners = arbmod.montar_runners_producao(ctx["home"])
+            out = arbmod.arbitrar(pedido, runners)
+            if ctx.get("audit"):
+                ctx["audit"].append("chat.arbitrar", status=out.status,
+                                    motores=len(out.engines_ready))
+            if out.status == "no_engine":
+                say(f"{nome}: nenhum motor pronto para arbitrar — nada foi "
+                    "inventado.")
+                say("  ligue o Ollama ou baixe meu cérebro leve: /cerebro")
+                continue
+            if out.decision.blocked:
+                say(f"{nome}: arbitragem bloqueada (fail-closed): "
+                    + (out.failure_code.value if out.failure_code
+                       else "motivo desconhecido"))
+                for razao in out.decision.reasons:
+                    say(f"  · {razao}")
+                continue
+            say(f"{nome} (arbitrado por {len(out.engines_ready)} motor(es), "
+                f"{out.rounds_run} rodada(s), confiança "
+                f"{out.decision.confidence.value}):")
+            say(out.decision.final_content)
+            if out.disagreement.requires_clarification:
+                say("⚠ os motores divergiram bastante — confira antes de usar.")
+            say(c("fraco", "(nuvem no debate? só pela CLI, com gates: "
+                           "nomos motores arbitrar --nuvem)"))
             continue
         if linha == "/status":
             cerebro = perfil.get("modelo") or "nenhum (modo demo)"
