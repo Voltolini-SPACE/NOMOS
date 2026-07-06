@@ -236,8 +236,8 @@ A nuvem é opcional e só funciona se você "plugar" de propósito.
 ```
 Pronto para começar?
 
-Instalação em um comando:
-  pip install nomos
+Instalação em um comando (a partir do GitHub — o nome `nomos` no PyPI é de terceiros):
+  pip install git+https://github.com/Voltolini-SPACE/NOMOS
   nomos
 
 Ou baixe um instalador de 1 clique para seu sistema (com verificação de integridade).

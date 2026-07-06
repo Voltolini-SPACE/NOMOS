@@ -46,7 +46,7 @@ remove, e só com confirmação digitada.
 
 Ou, se preferir só o pip:
 ```bash
-pip install nomos-0.12.0-py3-none-any.whl
+pip install nomos-<versão>-py3-none-any.whl  # use o arquivo baixado da release
 nomos
 ```
 

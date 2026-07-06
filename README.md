@@ -133,7 +133,7 @@ Detalhes técnicos e o mapa completo das fases MC0–MC18:
 
 ## Maturidade
 
-Release candidate (v1.3.0rc4, **pre-release**). Suíte com 884 testes cobrindo
+Release candidate (v1.3.0rc4, **pre-release**). Suíte com mais de 1.100 testes cobrindo
 segurança (fail-closed, não-vazamento de segredo, opt-in de nuvem) e UX. O
 **Motor Council** está em dry-run (ver seção acima): o subcomando `simular`
 roda na CLI e no chat, mas sem execução de motor real, sem nuvem e sem

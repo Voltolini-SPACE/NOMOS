@@ -4,6 +4,30 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC27 + site: contrato único de flags proibidas, site com brandbook congelado e update agent read-only)
 
+### Added (ARBITRAGEM + MC-VALIDACAO-E2E)
+- **Arbitragem real entre motores** (`cognition/arbitragem.py` + CLI
+  `nomos motores arbitrar "<pergunta>"`): motores prontos geram candidatos
+  reais, juízes cegos pontuam, árbitro converge na melhor execução; fail-closed
+  e honesto (sem motor pronto ⇒ bloqueia e explica; `final_content` sempre de
+  candidato real). Local-first; nuvem só com opt-in. 16 testes novos.
+- **Site expandido**: recursos, motores & integrações, agentes, skills e escada
+  de risco A0–A6 na landing (missão SITE_EXPAND, brandbook congelado preservado).
+- `tests/test_missao_validacao_anti_regressao.py`: 6 contratos — trava de
+  execução real do council, integridade (SHA-256) do brandbook congelado, docs
+  essenciais presentes, cobertura do `.gitignore`, proibição de `pip install
+  nomos` puro nos docs oficiais, coerência de versão pyproject ↔ pacote.
+
+### Fixed (MC-VALIDACAO-E2E)
+- **Docs e site não recomendam mais `pip install nomos` puro** — o nome `nomos`
+  no PyPI pertence a projeto de terceiros (dowhiledev, "multi-step agent
+  framework"); seguir o manual antigo instalaria outro software. Instalação
+  oficial passa a ser via GitHub/instaladores, com aviso explícito (README,
+  manual de instalação, brandbook §5, site, `docs/INSTALL.md`).
+- README: contagem de testes desatualizada ("884" → "mais de 1.100").
+- `pyproject.toml`: URL do Changelog corrigida (`blob/main/CHANGELOG.md`;
+  a anterior apontava para `nomos/CHANGELOG.md`, caminho inexistente no repo).
+- `docs/INSTALL.md`: exemplo de wheel com versão fixa 0.12.0 → placeholder.
+
 ### Added (MC25–MC27)
 - **Site NOMOS** (`site/`): landing estática com brandbook congelado
   (`docs/brand/`), página 404, assets e `preview.py`; guia de instalação em

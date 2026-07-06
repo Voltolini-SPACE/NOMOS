@@ -58,11 +58,18 @@ Antes de instalar NOMOS, certifique-se de que você tem:
 
 Para começar em **menos de 2 minutos**, escolha uma das opções:
 
-### Opção 1: Pip (Recomendado para Usuários)
+### Opção 1: Pip a partir do GitHub (Recomendado para Usuários)
+
+> ⚠️ **AVISO IMPORTANTE — colisão de nome no PyPI.** O pacote chamado ``nomos``
+> publicado no PyPI (pypi.org/project/nomos) é um **projeto de terceiros** (framework
+> de agentes LLM da dowhiledev), **não** é o NOMOS da Se7enpay. **Não instale pelo
+> nome puro no PyPI.** Enquanto o NOMOS não for publicado sob nome próprio, instale
+> a partir do código-fonte (GitHub) ou dos instaladores de 1 clique das releases.
+
 
 ```bash
 # Instalar do PyPI
-pip install nomos
+pip install git+https://github.com/Voltolini-SPACE/NOMOS
 
 # Executar (primeira vez: assistente guiado)
 nomos
@@ -297,10 +304,10 @@ python3 --version
 # Se < 3.10, baixar: https://www.python.org/downloads/
 
 # Instalar com versão explícita
-python3.10 -m pip install nomos
+python3.10 -m pip install git+https://github.com/Voltolini-SPACE/NOMOS
 
 # Ou com alias
-python3 -m pip install nomos
+python3 -m pip install git+https://github.com/Voltolini-SPACE/NOMOS
 ```
 
 ### "Permissão negada" em macOS/Linux
@@ -323,7 +330,7 @@ chmod 755 ~/.nomos
 **Solução:**
 ```bash
 # Reinstalar
-pip uninstall nomos -y && pip install nomos
+pip uninstall nomos -y && pip install git+https://github.com/Voltolini-SPACE/NOMOS
 
 # Ou ativar venv se estiver usando
 source venv/bin/activate  # Mac/Linux
@@ -367,7 +374,7 @@ pip install --upgrade nomos
 
 # Ou desinstalar + reinstalar
 pip uninstall nomos -y
-pip install nomos
+pip install git+https://github.com/Voltolini-SPACE/NOMOS
 ```
 
 ### "Dados perdidos após crash"
@@ -573,7 +580,7 @@ pip install --upgrade nomos
 
 ```bash
 # Instalar (mais simples)
-pip install nomos
+pip install git+https://github.com/Voltolini-SPACE/NOMOS
 nomos
 
 # Instalar (dev)
