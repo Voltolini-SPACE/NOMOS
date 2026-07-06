@@ -72,3 +72,37 @@ def test_render_lista_evidencias_com_integridade(nomos_home):
 def test_sem_evidencias_orienta_comando(nomos_home):
     corpo = render_html(dados_dashboard(_ctx(nomos_home)))
     assert "nomos evidencia criar" in corpo
+
+
+# 5. rota /ev/<pacote>: serve o relatório; nome estrito; sem traversal
+def test_painel_serve_relatorio_de_evidencia(nomos_home):
+    import urllib.error
+    import urllib.request
+
+    from nomos.interface.painel_web import DashboardServer
+    ctx = _ctx(nomos_home)
+    pacote = ev.gerar_pacote(nomos_home / "evidencias", "abrir no painel",
+                             status="PASS")
+    srv = DashboardServer(ctx)
+    url = srv.start()
+    try:
+        # dashboard linka o relatório
+        with urllib.request.urlopen(url, timeout=5) as r:  # nosec B310 - loopback
+            corpo = r.read().decode()
+        assert f'href="ev/{pacote.name}/"' in corpo
+        # relatório servido como texto
+        with urllib.request.urlopen(f"{url}ev/{pacote.name}/", timeout=5) as r2:  # nosec B310
+            rel = r2.read().decode()
+        assert r2.status == 200 and "Evidência" in rel
+        assert "text/plain" in r2.headers.get("Content-Type", "")
+        # nome fora do padrão => 404
+        with pytest.raises(urllib.error.HTTPError) as e1:
+            urllib.request.urlopen(f"{url}ev/nao-e-pacote/", timeout=5)  # nosec B310
+        assert e1.value.code == 404
+        # traversal => 404 (nunca sai de ~/.nomos/evidencias)
+        with pytest.raises(urllib.error.HTTPError) as e2:
+            urllib.request.urlopen(
+                f"{url}ev/EVIDENCIA_x/%2e%2e/%2e%2e/policy.json", timeout=5)  # nosec B310
+        assert e2.value.code == 404
+    finally:
+        srv.stop()

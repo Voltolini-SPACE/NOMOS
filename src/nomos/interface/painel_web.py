@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 import secrets
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -136,7 +137,8 @@ def render_html(d: dict) -> str:
                      '<code>nomos evidencia criar "título"</code></p>')
     for ev_i in d.get("evidencias", []):
         marca = "✅ íntegro" if ev_i["integro"] else "❌ NÃO confere"
-        corpo.append(f'<div class="card">{e(ev_i["nome"])} — {marca}</div>')
+        corpo.append(f'<div class="card">{e(ev_i["nome"])} — {marca} · '
+                     f'<a href="ev/{e(ev_i["nome"])}/">abrir relatório</a></div>')
 
     pol = d.get("politica", {})
     if pol:
@@ -187,15 +189,31 @@ class DashboardServer:
                 self.wfile.write(data)
 
             def do_GET(self):
-                if self.path.rstrip("/") != f"/d/{painel.secret}":
+                caminho = self.path.rstrip("/")
+                base = f"/d/{painel.secret}"
+                if caminho == base:
+                    try:
+                        corpo = render_html(dados_dashboard(painel.ctx))
+                    except Exception as exc:   # painel nunca derruba nada
+                        return self._responder(
+                            500, f"painel indisponível: {type(exc).__name__}",
+                            "text/plain")
+                    return self._responder(200, corpo)
+                if caminho.startswith(base + "/ev/"):
+                    return self._servir_evidencia(caminho[len(base) + 4:])
+                return self._responder(404, "não encontrado", "text/plain")
+
+            def _servir_evidencia(self, nome: str):
+                """RELATORIO.md de um pacote — leitura, nome estrito, sem traversal."""
+                if not re.fullmatch(r"EVIDENCIA_[A-Za-z0-9_-]+", nome):
                     return self._responder(404, "não encontrado", "text/plain")
-                try:
-                    corpo = render_html(dados_dashboard(painel.ctx))
-                except Exception as exc:   # painel nunca derruba nada
-                    return self._responder(
-                        500, f"painel indisponível: {type(exc).__name__}",
-                        "text/plain")
-                self._responder(200, corpo)
+                raiz = (Path(painel.ctx["home"]) / "evidencias").resolve()
+                alvo = (raiz / nome / "RELATORIO.md").resolve()
+                # cinto e suspensório: mesmo com o regex, o alvo TEM de estar na raiz
+                if raiz not in alvo.parents or not alvo.is_file():
+                    return self._responder(404, "não encontrado", "text/plain")
+                self._responder(200, alvo.read_text(encoding="utf-8"),
+                                "text/plain")
 
             def do_POST(self):
                 # somente leitura — POST não existe aqui, por projeto
