@@ -7,9 +7,11 @@ Garantias:
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -20,6 +22,7 @@ REDACTED = "[REDIGIDO]"
 SENSITIVE_KEYS = {
     "secret", "segredo", "passphrase", "password", "senha",
     "token", "api_key", "apikey", "key", "authorization", "credential",
+    "chave", "credencial",
 }
 
 # Padrões de valores que denunciam segredos mesmo em campos "inocentes".
@@ -67,41 +70,102 @@ def _canonical(record: dict) -> str:
     return json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
+# um lock por arquivo de trilha: appends concorrentes (painel em
+# ThreadingHTTPServer + CLI) não podem bifurcar a cadeia de hash
+_LOCKS: dict[str, threading.Lock] = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_de(path: Path) -> threading.Lock:
+    key = str(path)
+    with _LOCKS_GUARD:
+        lk = _LOCKS.get(key)
+        if lk is None:
+            lk = _LOCKS[key] = threading.Lock()
+        return lk
+
+
 class AuditLog:
     def __init__(self, path: Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = _lock_de(self.path.resolve())
+
+    @contextlib.contextmanager
+    def _flock(self):
+        """Trava de arquivo best-effort para escritores em OUTRO processo
+        (painel + CLI ao mesmo tempo). POSIX: fcntl.flock; sem suporte
+        (ex.: Windows), degrada para o lock in-process apenas."""
+        try:
+            import fcntl
+        except ImportError:
+            yield
+            return
+        lockfile = self.path.with_suffix(self.path.suffix + ".lock")
+        with lockfile.open("a") as fh:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                with contextlib.suppress(OSError):
+                    fcntl.flock(fh, fcntl.LOCK_UN)
+
+    def _tail_scan(self) -> tuple[str, int, int]:
+        """Um passo só: (hash do último registro VÁLIDO, offset em bytes do
+        fim da última linha válida, tamanho do arquivo).
+
+        Linhas inválidas no MEIO (legado) não são tocadas — mas uma CAUDA
+        ilegível (crash/disco cheio a meio-append) é detectável: offset
+        válido < tamanho. append() repara truncando a cauda — sem isso o
+        lixo ficaria no meio do arquivo e verify() acusaria violação para
+        sempre, mesmo a trilha nunca tendo sido adulterada."""
+        tip, valid_end, pos = GENESIS, 0, 0
+        if not self.path.exists():
+            return tip, 0, 0
+        with self.path.open("rb") as fh:
+            for raw in fh:
+                pos += len(raw)
+                line = raw.decode("utf-8", errors="replace").strip()
+                if not line:
+                    if raw.endswith(b"\n"):
+                        valid_end = pos
+                    continue
+                if not raw.endswith(b"\n"):
+                    continue   # cauda sem \n = escrita parcial (inválida)
+                try:
+                    tip = json.loads(line).get("hash", tip)
+                    valid_end = pos
+                except json.JSONDecodeError:
+                    continue
+        return tip, valid_end, pos
 
     def _last_hash(self) -> str:
         # tolerante a linha final parcial (crash/disco cheio no meio de um
         # append): usa o ÚLTIMO registro válido — sem isso, json.loads
         # estouraria aqui e travaria TODA auditoria futura
-        if not self.path.exists():
-            return GENESIS
-        tip = GENESIS
-        with self.path.open(encoding="utf-8") as fh:
-            for line in fh:
-                if not line.strip():
-                    continue
-                try:
-                    tip = json.loads(line).get("hash", tip)
-                except json.JSONDecodeError:
-                    continue
+        tip, _, _ = self._tail_scan()
         return tip
 
     def append(self, event: str, **fields) -> dict:
-        record = {
-            "ts": round(time.time(), 3),
-            "event": event,
-            **redact(fields),
-            "prev": self._last_hash(),
-        }
-        record["hash"] = hashlib.sha256(
-            (record["prev"] + _canonical({k: v for k, v in record.items() if k != "hash"}))
-            .encode("utf-8")
-        ).hexdigest()
-        with self.path.open("a", encoding="utf-8") as fh:
-            fh.write(_canonical(record) + "\n")
+        with self._lock, self._flock():
+            tip, valid_end, size = self._tail_scan()
+            if valid_end < size:
+                # cauda ilegível: repara ANTES de anexar, para o lixo nunca
+                # ficar no meio da cadeia (recuperação alinhada com verify)
+                with self.path.open("rb+") as fh:
+                    fh.truncate(valid_end)
+            record = {
+                "ts": round(time.time(), 3),
+                "event": event,
+                **redact(fields),
+                "prev": tip,
+            }
+            record["hash"] = hashlib.sha256(
+                (record["prev"] + _canonical({k: v for k, v in record.items() if k != "hash"}))
+                .encode("utf-8")
+            ).hexdigest()
+            with self.path.open("a", encoding="utf-8") as fh:
+                fh.write(_canonical(record) + "\n")
         return record
 
     def estado(self) -> tuple[int, str]:

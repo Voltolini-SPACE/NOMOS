@@ -12,9 +12,12 @@ from __future__ import annotations
 
 from nomos.kernel.plataforma import chmod_privado
 
+import contextlib
 import hmac
 import json
+import os
 import secrets
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -47,6 +50,10 @@ class ApprovalQueue:
         self.audit = audit
         self.clock = clock
         self.ttl = ttl
+        # serializa transições de estado dentro do processo (o painel roda em
+        # ThreadingHTTPServer); entre processos, decide() usa reivindicação
+        # atômica por os.replace — ver decide().
+        self._lock = threading.RLock()
 
     # ---------- interno ----------
     def _path(self, rid: str) -> Path:
@@ -56,9 +63,25 @@ class ApprovalQueue:
 
     def _load(self, rid: str) -> dict:
         p = self._path(rid)
-        if not p.exists():
-            raise ApprovalError(f"solicitação inexistente: {rid}")
-        return json.loads(p.read_text())
+        claim = p.with_suffix(".deciding")
+        for _ in range(2):
+            try:
+                return json.loads(p.read_text())
+            except FileNotFoundError:
+                pass
+            # decisão em andamento noutro fluxo: lê o snapshot reivindicado.
+            # Se o claim ficou órfão (crash no meio da decisão) e o TTL já
+            # passou com folga, devolve-o à fila — expira no fluxo normal
+            # (fail-closed: órfão jamais vira aprovação).
+            try:
+                d = json.loads(claim.read_text())
+                if self.clock() >= float(d.get("expires", 0)) + 30.0:
+                    with contextlib.suppress(OSError):
+                        os.replace(claim, p)
+                return d
+            except (OSError, json.JSONDecodeError):
+                continue
+        raise ApprovalError(f"solicitação inexistente: {rid}")
 
     def _save(self, data: dict) -> None:
         p = self._path(data["id"])
@@ -69,12 +92,22 @@ class ApprovalQueue:
         chmod_privado(p, 0o600)
 
     def _expire_if_due(self, data: dict) -> dict:
-        if data["status"] == PENDENTE and self.clock() >= data["expires"]:
-            data["status"] = EXPIRADA
-            self._save(data)
-            if self.audit:
-                self.audit.append("approval.expirada", id=data["id"],
-                                  category=data["category"], target=data["target"])
+        if data["status"] != PENDENTE or self.clock() < data["expires"]:
+            return data
+        with self._lock:
+            # reconfirma no disco sob o lock — evita corrida com decide():
+            # arquivo ausente = reivindicado por um decisor; não toca.
+            try:
+                data = json.loads(self._path(data["id"]).read_text())
+            except (OSError, json.JSONDecodeError):
+                return data
+            if data["status"] == PENDENTE and self.clock() >= data["expires"]:
+                data["status"] = EXPIRADA
+                self._save(data)
+                if self.audit:
+                    self.audit.append("approval.expirada", id=data["id"],
+                                      category=data["category"],
+                                      target=data["target"])
         return data
 
     # ---------- API ----------
@@ -111,28 +144,79 @@ class ApprovalQueue:
     def pending(self) -> list[Approval]:
         out = []
         for p in sorted(self.dir.glob("*.json")):
-            d = self._expire_if_due(json.loads(p.read_text()))
+            try:
+                d = json.loads(p.read_text())
+            except (OSError, json.JSONDecodeError):
+                continue   # entrada ilegível não derruba a fila inteira
+            d = self._expire_if_due(d)
             if d["status"] == PENDENTE:
-                out.append(self.get(d["id"]))
+                out.append(Approval(d["id"], d["category"], d["target"],
+                                    d["reason"], d["created"], d["expires"],
+                                    d["status"]))
         return out
 
     def decide(self, rid: str, token: str, approve: bool) -> str:
-        d = self._expire_if_due(self._load(rid))
-        if d["status"] != PENDENTE:
-            raise ApprovalError(
-                f"decisão recusada: solicitação {d['status']} (single-use/TTL)")
-        if not hmac.compare_digest(d["token"], token or ""):
+        """Decide com garantia single-use REAL sob concorrência.
+
+        A solicitação é reivindicada por os.replace (atômico no mesmo
+        filesystem) ANTES de validar: com N decisores simultâneos (duas abas
+        do painel, painel + terminal, duplo-clique), exatamente UM vence;
+        os demais recebem ApprovalError. Falhou a validação? O arquivo volta
+        à fila intacto.
+        """
+        with self._lock:
+            p = self._path(rid)
+            claim = p.with_suffix(".deciding")
+            try:
+                os.replace(p, claim)
+            except FileNotFoundError:
+                d = self._load(rid)   # decidida/expirada/em decisão — ou nada
+                raise ApprovalError(
+                    f"decisão recusada: solicitação {d['status']} "
+                    "(single-use/TTL)") from None
+            try:
+                d = json.loads(claim.read_text())
+            except (OSError, json.JSONDecodeError):
+                with contextlib.suppress(OSError):
+                    os.replace(claim, p)
+                raise ApprovalError(
+                    "solicitação ilegível — decisão recusada") from None
+            devolver = True   # até decidir, qualquer falha devolve à fila
+            try:
+                if d["status"] == PENDENTE and self.clock() >= d["expires"]:
+                    d["status"] = EXPIRADA
+                    devolver = False
+                    self._save(d)
+                    claim.unlink(missing_ok=True)
+                    if self.audit:
+                        self.audit.append("approval.expirada", id=d["id"],
+                                          category=d["category"],
+                                          target=d["target"])
+                    raise ApprovalError(
+                        "decisão recusada: solicitação expirada "
+                        "(single-use/TTL)")
+                if d["status"] != PENDENTE:
+                    raise ApprovalError(
+                        f"decisão recusada: solicitação {d['status']} "
+                        "(single-use/TTL)")
+                if not hmac.compare_digest(d["token"], token or ""):
+                    if self.audit:
+                        self.audit.append("approval.token_invalido", id=rid)
+                    raise ApprovalError("token inválido — decisão recusada")
+                d["status"] = APROVADA if approve else NEGADA
+                d["decided_at"] = self.clock()
+                d["token"] = ""  # nosec B105 - limpa o token (single-use), não é senha
+                devolver = False
+                self._save(d)
+                claim.unlink(missing_ok=True)
+            finally:
+                if devolver:
+                    with contextlib.suppress(OSError):
+                        os.replace(claim, p)
             if self.audit:
-                self.audit.append("approval.token_invalido", id=rid)
-            raise ApprovalError("token inválido — decisão recusada")
-        d["status"] = APROVADA if approve else NEGADA
-        d["decided_at"] = self.clock()
-        d["token"] = ""  # nosec B105 - limpa o token (single-use), não é senha
-        self._save(d)
-        if self.audit:
-            self.audit.append(f"approval.{d['status']}", id=rid,
-                              category=d["category"], target=d["target"])
-        return d["status"]
+                self.audit.append(f"approval.{d['status']}", id=rid,
+                                  category=d["category"], target=d["target"])
+            return d["status"]
 
     def wait(self, rid: str, poll_s: float = 0.2, sleep=time.sleep) -> str:
         """Bloqueia até decisão ou expiração; devolve status final."""

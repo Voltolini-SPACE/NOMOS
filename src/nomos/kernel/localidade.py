@@ -25,7 +25,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 ARQUIVO = "localidade.json"
-_LOOPBACK_NOMES = {"localhost", "ip6-localhost", "ip6-loopback", ""}
+_LOOPBACK_NOMES = {"localhost", "ip6-localhost", "ip6-loopback"}
 
 
 def _extrair_host(target: str) -> str:
@@ -43,6 +43,10 @@ def _extrair_host(target: str) -> str:
 def eh_loopback(target: str) -> bool:
     """True se o alvo é a própria máquina (motor local), não a internet."""
     host = _extrair_host(target)
+    if not host:
+        # alvo vazio/não-parseável NÃO é "seguro": trata como remoto, para
+        # o cadeado bloquear (fail-closed) em vez de liberar por engano
+        return False
     if host in _LOOPBACK_NOMES:
         return True
     try:

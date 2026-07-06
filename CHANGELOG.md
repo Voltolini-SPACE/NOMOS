@@ -4,6 +4,34 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Security (MC36 — revisão loop-100: concorrência e fail-closed)
+Auditoria externa completa (código + UX + git) com correção total. Bloco 1 —
+segurança e robustez, cada item com teste de regressão em
+`tests/test_revisao_seguranca_2026.py`:
+- **`nomos doutor` não executa mais código do diretório atual sem pedido**:
+  o guardião do repositório (que roda `tools/*.py` do CWD) virou opt-in
+  explícito `--repo` — antes, qualquer pasta com 3 arquivos certos ganhava
+  execução ao rodar um comando anunciado como "só observa" (fail-open).
+- **Aprovações são single-use DE VERDADE sob concorrência**: `decide()` agora
+  reivindica a solicitação por `os.replace` atômico + lock — com N decisores
+  simultâneos (duas abas do painel, painel + terminal, duplo-clique), exatamente
+  UM vence; claim órfão de um crash expira fail-closed, jamais vira aprovação.
+- **Cadeia de auditoria não bifurca com escritas concorrentes**: `append()`
+  serializa por lock in-process (painel roda em ThreadingHTTPServer) +
+  `fcntl.flock` best-effort entre processos; cauda parcial de um crash/disco
+  cheio é REPARADA no próximo append (antes, o lixo ficava no meio do arquivo
+  e `verify()` acusava violação para sempre).
+- **Cadeado só-local**: alvo vazio/não-parseável (ex.: `"http://"`) deixou de
+  classificar como loopback — não-parseável agora é remoto (fail-closed).
+- **Redação da auditoria** cobre também os nomes de campo pt-BR `chave` e
+  `credencial`.
+- **Fila de aprovações não cai por arquivo corrompido**: entrada ilegível é
+  pulada em `pending()` em vez de derrubar a listagem (painel incluso).
+- **Painel valida o POST de decisão**: `Content-Length` não-numérico/negativo
+  e corpo não-UTF-8 respondem 400 (antes: exceção na thread); erros do fluxo
+  (400/405/409/413) agora respondem página mínima com link de volta ao painel
+  em vez de texto cru sem saída.
+
 ### Added (MC34.1 — downloads no site + sinais reais)
 - **Site § Baixar & instalar**: três caminhos claros — 🍎 macOS/Linux
   (`install.sh`), 🪟 Windows (`install.ps1`) e 🐙 pelo código (git clone +

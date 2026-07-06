@@ -1170,26 +1170,48 @@ class DashboardServer:
                 decide é a fila (kernel.approvals), com TTL e auditoria.
                 """
                 base = f"/d/{painel.secret}"
+
+                def _erro(code: int, titulo: str, msg: str):
+                    # beco sem saída, nunca: todo erro do fluxo de decisão
+                    # devolve página mínima com caminho de volta ao painel
+                    corpo = (f"<p>{html.escape(msg)}</p>"
+                             f'<p><a href="{base}/#aprovacoes">'
+                             "← voltar ao painel</a></p>")
+                    return self._responder(code,
+                                           _subpagina(titulo, corpo, base))
+
                 if (painel.fila is None
                         or self.path.rstrip("/") != base + "/aprovacoes/decidir"):
-                    return self._responder(
-                        405, "painel: escrever só existe na porta de "
-                        "aprovações (token de uso único)", "text/plain")
+                    return _erro(405, "método não permitido",
+                                 "escrever só existe na porta de aprovações "
+                                 "(token de uso único)")
                 from nomos.kernel.approvals import ApprovalError
-                tam = int(self.headers.get("Content-Length") or 0)
+                try:
+                    tam = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    return _erro(400, "pedido inválido",
+                                 "Content-Length não numérico")
+                if tam < 0:
+                    return _erro(400, "pedido inválido",
+                                 "Content-Length negativo")
                 if tam > 8192:   # formulário minúsculo; nada além disso
-                    return self._responder(413, "grande demais", "text/plain")
-                form = parse_qs(self.rfile.read(tam).decode())
+                    return _erro(413, "pedido grande demais",
+                                 "o formulário de decisão tem poucos bytes — "
+                                 "corpo acima de 8 KiB não é dele")
+                try:
+                    form = parse_qs(self.rfile.read(tam).decode())
+                except UnicodeDecodeError:
+                    return _erro(400, "pedido inválido", "corpo não é UTF-8")
                 rid = (form.get("id") or [""])[0]
                 token = (form.get("token") or [""])[0]
                 acao = (form.get("action") or [""])[0]
                 if acao not in ("aprovar", "negar"):
-                    return self._responder(400, "ação inválida", "text/plain")
+                    return _erro(400, "ação inválida",
+                                 "a ação precisa ser aprovar ou negar")
                 try:
                     painel.fila.decide(rid, token, approve=(acao == "aprovar"))
                 except ApprovalError as exc:
-                    return self._responder(409, f"recusado: {exc}",
-                                           "text/plain")
+                    return _erro(409, "decisão recusada", f"recusado: {exc}")
                 # PRG: decidir → recarregar o painel (evita repost no F5)
                 self.send_response(303)
                 self.send_header("Location", base + "/#aprovacoes")

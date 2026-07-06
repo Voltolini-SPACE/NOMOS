@@ -337,32 +337,41 @@ def cmd_doutor(ctx, args) -> int:
                                            audit=ctx["audit"])
         return rc
     print(doutor_mod.texto_relatorio_v011(ctx["home"], ctx))
-    # MC30-A3: check-up unificado — quando rodando DE um repo do NOMOS,
-    # os agentes guardiões (docs/marca e git) entram como seções extras.
-    raiz = Path.cwd()
-    agentes = [("docs & marca", raiz / "tools" / "nomos_update_agent.py"),
-               ("git", raiz / "tools" / "nomos_git_agent.py")]
-    if all(p.is_file() for _, p in agentes) and (raiz / "pyproject.toml").is_file():
-        import subprocess
-        print("\nGuardião do repositório (você está numa cópia do código):")
-        for rotulo, script in agentes:
-            try:
-                proc = subprocess.run(
-                    [sys.executable, str(script), "--check", "--json"],
-                    capture_output=True, text=True, timeout=60)
-                dados = json.loads(proc.stdout)
-                if rotulo == "git":
-                    ok = dados.get("clean", False) and not dados.get("ruido")
-                    detalhe = (f"branch {dados.get('branch')}, "
-                               f"{'limpa' if dados.get('clean') else 'suja'}")
-                else:
-                    ok = dados.get("consistent", False)
-                    detalhe = (f"{dados.get('checks_passed', 0)}/"
-                               f"{dados.get('checks_total', 0)} checks")
-                print(f"  {'✅' if ok else '⚠️'} {rotulo}: {detalhe}")
-            except Exception:
-                print(f"  ⚠️ {rotulo}: não consegui rodar o agente "
-                      f"(veja tools/)")
+    # MC30-A3 (endurecido na revisão 2026-07): o guardião do repositório roda
+    # scripts do diretório ATUAL — isso agora é OPT-IN explícito (--repo).
+    # Antes, bastava um diretório qualquer conter tools/*.py + pyproject.toml
+    # para o doutor executá-los: exec fail-open num comando anunciado como
+    # "só observa". Fail-closed: sem --repo, nada é executado do CWD.
+    if getattr(args, "repo", False):
+        raiz = Path.cwd()
+        agentes = [("docs & marca", raiz / "tools" / "nomos_update_agent.py"),
+                   ("git", raiz / "tools" / "nomos_git_agent.py")]
+        if all(p.is_file() for _, p in agentes) and (raiz / "pyproject.toml").is_file():
+            import subprocess
+            print("\nGuardião do repositório (--repo: você pediu; rodando "
+                  "tools/ desta pasta):")
+            for rotulo, script in agentes:
+                try:
+                    proc = subprocess.run(
+                        [sys.executable, str(script), "--check", "--json"],
+                        capture_output=True, text=True, timeout=60)
+                    dados = json.loads(proc.stdout)
+                    if rotulo == "git":
+                        ok = dados.get("clean", False) and not dados.get("ruido")
+                        detalhe = (f"branch {dados.get('branch')}, "
+                                   f"{'limpa' if dados.get('clean') else 'suja'}")
+                    else:
+                        ok = dados.get("consistent", False)
+                        detalhe = (f"{dados.get('checks_passed', 0)}/"
+                                   f"{dados.get('checks_total', 0)} checks")
+                    print(f"  {'✅' if ok else '⚠️'} {rotulo}: {detalhe}")
+                except Exception:
+                    print(f"  ⚠️ {rotulo}: não consegui rodar o agente "
+                          f"(veja tools/)")
+        else:
+            print("\n--repo: esta pasta não parece uma cópia do código do "
+                  "NOMOS\n(esperava tools/nomos_update_agent.py, "
+                  "tools/nomos_git_agent.py e pyproject.toml juntos)")
     return EXIT_OK
 
 
@@ -1723,6 +1732,9 @@ def build_parser() -> argparse.ArgumentParser:
     dr = sub.add_parser("doutor", help="check-up: o que está pronto e o próximo passo")
     dr.add_argument("--consertar", action="store_true",
                     help="aplica correções seguras (com sua confirmação)")
+    dr.add_argument("--repo", action="store_true",
+                    help="inclui o guardião do repositório (executa tools/ "
+                         "DESTA pasta — use só numa cópia confiável do código)")
     dr.set_defaults(fn=cmd_doutor)
     ag2 = sub.add_parser("agentes", help="agentes locais especializados (governados)")
     ag2sub = ag2.add_subparsers(dest="agentes_cmd")
