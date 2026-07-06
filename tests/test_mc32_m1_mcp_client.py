@@ -12,17 +12,20 @@ from pathlib import Path
 
 import pytest
 
+from nomos.interface import mcp_catalogo as cat
 from nomos.interface import mcp_client as mc
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def _manifesto(tmp_path: Path, home: Path, **extra) -> Path:
+def _manifesto(tmp_path: Path, home: Path, confiar=True, **extra) -> Path:
     dados = {"nome": "nomos-espelho",
              "comando": [sys.executable, "-m", "nomos", "mcp", "servir"],
              "nivel_padrao": "A0", **extra}
     p = tmp_path / "manifesto.json"
     p.write_text(json.dumps(dados), encoding="utf-8")
+    if confiar:                       # M2: registra a confiança direto no catálogo
+        cat.confiar(home, mc.carregar_manifesto(p))
     return p
 
 
@@ -63,7 +66,7 @@ def test_conectar_lista_tools_do_server_real(tmp_path):
     assert proc.returncode == 0, proc.stderr
     assert "conectado a 'nomos-espelho'" in proc.stdout
     assert "[A0] nomos_status" in proc.stdout
-    assert "NÃO assinado" in proc.stdout            # honestidade sobre confiança
+    assert "confiável" in proc.stdout               # registrado no catálogo (M2)
 
 
 # 3. chamar A0: roda direto e devolve conteúdo real
@@ -88,10 +91,11 @@ def test_chamar_tool_a1_sem_tty_negada(tmp_path):
 
 # 5. server que não fala MCP: erro claro, sem traceback
 def test_server_quebrado_erro_claro(tmp_path):
+    dados = {"nome": "quebrado", "comando": [sys.executable, "-c", "print('oi')"],
+             "nivel_padrao": "A0"}
     man = tmp_path / "m.json"
-    man.write_text(json.dumps({
-        "nome": "quebrado", "comando": [sys.executable, "-c", "print('oi')"],
-        "nivel_padrao": "A0"}), encoding="utf-8")
+    man.write_text(json.dumps(dados), encoding="utf-8")
+    cat.confiar(tmp_path, mc.carregar_manifesto(man))  # confiável (normalizado)
     proc = _cli(["mcp", "conectar", str(man)], tmp_path)
     assert proc.returncode == 1
     assert "não conectei" in proc.stderr

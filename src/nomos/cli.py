@@ -1410,13 +1410,81 @@ def cmd_mcp(ctx, args) -> int:
         print("servidor MCP do NOMOS no stdio (somente leitura; Ctrl+C sai)…",
               file=sys.stderr)
         return mcp_server.servir(ctx)
+    if sub in ("catalogo", "confiar", "revogar"):
+        from nomos.interface import mcp_catalogo as cat
+        from nomos.interface import mcp_client as mc
+        if sub == "catalogo":
+            snap = cat.listar(ctx["home"])
+            if not snap["confiaveis"]:
+                print("nenhum server MCP confiável registrado ainda.")
+                print("  inspecione e confie: nomos mcp confiar <manifesto.json>")
+                return EXIT_OK
+            print(f"servers MCP confiáveis ({len(snap['confiaveis'])}) · "
+                  f"{snap['revogadas']} revogado(s):\n")
+            for s in snap["confiaveis"]:
+                print(f"  ✓ {s['nome']}  [{s['impressao']}]  {s['comando']}")
+            return EXIT_OK
+        try:
+            manifesto = mc.carregar_manifesto(Path(args.manifesto))
+        except mc.ManifestoInvalido as exc:
+            from nomos.simple.erros import fmt
+            print(fmt("E010", f"manifesto recusado: {exc}"), file=sys.stderr)
+            return EXIT_ERROR
+        if sub == "revogar":
+            cat.revogar(ctx["home"], manifesto)
+            ctx["audit"].append("mcp.revogado", server=manifesto["nome"])
+            print(f"revogado: '{manifesto['nome']}' não será mais confiável "
+                  "(nem que reapareça idêntico).")
+            return EXIT_OK
+        # confiar: decisão consciente, em TTY
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            from nomos.simple.erros import fmt
+            print(fmt("E002", "confiar num server MCP é decisão consciente — "
+                      "num terminal interativo."), file=sys.stderr)
+            return EXIT_DENIED
+        print(f"manifesto '{manifesto['nome']}' — comando: {manifesto['comando']}")
+        print(f"nível padrão: {manifesto['nivel_padrao']} · "
+              f"tools declaradas: {manifesto['tools'] or '(nenhuma)'}")
+        if input('digite "CONFIO" para registrar> ').strip() != "CONFIO":
+            print("ok, não registrei.")
+            return EXIT_OK
+        try:
+            fp = cat.confiar(ctx["home"], manifesto)
+        except cat.CatalogoErro as exc:
+            print(f"não confiei (fail-closed): {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        ctx["audit"].append("mcp.confiado", server=manifesto["nome"])
+        print(f"registrado ✓ impressão {fp[:16]}… — conexões futuras deste "
+              "manifesto exato são confiáveis.")
+        return EXIT_OK
     if sub == "conectar":
+        from nomos.interface import mcp_catalogo as cat
         from nomos.interface import mcp_client as mc
         try:
             manifesto = mc.carregar_manifesto(Path(args.manifesto))
         except mc.ManifestoInvalido as exc:
             print(f"manifesto recusado (fail-closed): {exc}", file=sys.stderr)
             return EXIT_ERROR
+        confianca = cat.status(ctx["home"], manifesto)
+        if confianca == "revogado":
+            from nomos.simple.erros import fmt
+            print(fmt("E002", f"'{manifesto['nome']}' está REVOGADO — não "
+                      "conecto. Reveja em: nomos mcp catalogo"), file=sys.stderr)
+            return EXIT_DENIED
+        if confianca == "experimental":
+            if not (sys.stdin.isatty() and sys.stdout.isatty()):
+                from nomos.simple.erros import fmt
+                print(fmt("E002", f"'{manifesto['nome']}' não é confiável "
+                          "(experimental) — conectar exige confirmação em "
+                          "terminal, ou registre com: nomos mcp confiar"),
+                      file=sys.stderr)
+                return EXIT_DENIED
+            print(f"⚠ '{manifesto['nome']}' é EXPERIMENTAL (não registrado). "
+                  f"Comando que vou rodar: {manifesto['comando']}")
+            if input('digite "ACEITO O RISCO" para conectar> ').strip() \
+                    != "ACEITO O RISCO":
+                print("ok, não conectei.")
+                return EXIT_OK
         try:
             with mc.ClienteMCP(manifesto) as cli_mcp:
                 tools = cli_mcp.tools()
@@ -1424,16 +1492,17 @@ def cmd_mcp(ctx, args) -> int:
             print(f"não conectei: {exc}", file=sys.stderr)
             return EXIT_ERROR
         ctx["audit"].append("mcp.client.conectado", server=manifesto["nome"],
-                            tools=len(tools))
+                            tools=len(tools), confianca=confianca)
         srv_nome = cli_mcp.server_info.get("name", "?")
-        print(f"conectado a '{manifesto['nome']}' (server: {srv_nome}) — "
+        marca = "✓ confiável" if confianca == "confiavel" else "⚠ experimental"
+        print(f"conectado a '{manifesto['nome']}' [{marca}] (server: {srv_nome}) — "
               f"{len(tools)} tool(s):\n")
         for t in tools:
             print(f"  [{t['nivel']}] {t['name']} — "
                   f"{t.get('description', '')[:70]}")
-        print("\n⚠ server externo NÃO assinado — capacidades valem o manifesto "
-              "que VOCÊ escreveu.\nchame com: nomos mcp chamar "
-              f"{args.manifesto} <tool> [--args '{{...}}']")
+        if confianca != "confiavel":
+            print("\n(confie neste manifesto: nomos mcp confiar "
+                  f"{args.manifesto})")
         return EXIT_OK
     if sub == "chamar":
         from nomos.interface import mcp_client as mc
@@ -1442,6 +1511,16 @@ def cmd_mcp(ctx, args) -> int:
         except mc.ManifestoInvalido as exc:
             print(f"manifesto recusado (fail-closed): {exc}", file=sys.stderr)
             return EXIT_ERROR
+        from nomos.interface import mcp_catalogo as cat
+        confianca = cat.status(ctx["home"], manifesto)
+        if confianca != "confiavel":
+            from nomos.simple.erros import fmt
+            ctx["audit"].append("mcp.client.tool.sem_confianca",
+                                server=manifesto["nome"], confianca=confianca)
+            print(fmt("E002", f"'{manifesto['nome']}' é {confianca} — só chamo "
+                      "tools de server registrado. Confie primeiro: "
+                      "nomos mcp confiar <manifesto>"), file=sys.stderr)
+            return EXIT_DENIED
         nivel = mc.nivel_da_tool(manifesto, args.tool)
         decision = ctx["policy"].decide(
             mc.NIVEIS[nivel], target=f"mcp:{manifesto['nome']}:{args.tool}")
@@ -1732,6 +1811,11 @@ def build_parser() -> argparse.ArgumentParser:
     mcc = mcpsub.add_parser("conectar")
     mcc.add_argument("manifesto")
     mcc.set_defaults(fn=cmd_mcp)
+    mcpsub.add_parser("catalogo").set_defaults(fn=cmd_mcp)
+    for verbo in ("confiar", "revogar"):
+        mv = mcpsub.add_parser(verbo)
+        mv.add_argument("manifesto")
+        mv.set_defaults(fn=cmd_mcp)
     mch = mcpsub.add_parser("chamar")
     mch.add_argument("manifesto")
     mch.add_argument("tool")
