@@ -4,6 +4,18 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC30 — fecho da onda A + B7 + C3)
+- **Doutor unificado (A3)**: dentro de um repo do NOMOS, `nomos doutor` inclui
+  os agentes guardiões (docs & marca, git) como seções do check-up.
+- **Erros E011/E012 (A6)**: evidência violada e nuvem-não-plugada ganham
+  código pesquisável, frase humana e próximo passo (docs/ERROS.md).
+- **Rotinas exportáveis (B7)**: `nomos rotinas exportar` gera launchd plist,
+  systemd timer+service ou .cmd do Agendador do Windows — o NOMOS nunca
+  instala sozinho.
+- **Motor OpenAI-compatível (C3)**: LM Studio/llama.cpp server/LocalAI no
+  catálogo como motor local (probe 127.0.0.1:1234) + `OpenAICompatProvider`
+  loopback-por-lei (host externo recusado na construção).
+
 ### Added (MC30 — onda A + Painel 2.0)
 - **Painel 2.0**: rotas read-only `/api` (dashboard em JSON, sem vazamento de
   segredo — testado), `/audit` (verificação real da cadeia de hash + últimos
