@@ -869,6 +869,28 @@ def cmd_skills(ctx, args) -> int:
 
     if sub is None:
         sub = "menu" if interativo else "listar"
+    if sub == "catalogo":
+        from nomos.ext import skill_catalogo as scat
+        caps = scat.capacidades(ctx["home"], ctx["skills"])
+        if getattr(args, "json", False):
+            print(json.dumps({"contrato": scat.CONTRATO_CATALOGO,
+                              "capacidades": caps}, ensure_ascii=False, indent=2))
+            return EXIT_OK
+        if not caps:
+            print("nenhuma skill instalada ou disponível ainda.")
+            print("  para experimentar: nomos skills instalar "
+                  "examples/skills/busca-arquivos")
+            return EXIT_OK
+        print(f"Catálogo de capacidades ({len(caps)}):\n")
+        for c in caps:
+            print(f"  ◆ {c['nome']}  [{c['status']} · risco {c['risco']}]")
+            print(f"    {c['descricao']}")
+            print(f"    entrada: {c['entrada']}  →  saída: {c['saida']}")
+            print(f"    permissões: {', '.join(c['permissoes']) or '—'}")
+            if c["exemplos"]:
+                print(f"    exemplos: {', '.join(c['exemplos'])}")
+            print()
+        return EXIT_OK
     if sub == "menu":
         if not interativo:
             sub = "listar"
@@ -1434,6 +1456,10 @@ def build_parser() -> argparse.ArgumentParser:
     skssub = sks.add_subparsers(dest="skills_cmd")
     skssub.add_parser("menu").set_defaults(fn=cmd_skills)
     skssub.add_parser("listar").set_defaults(fn=cmd_skills)
+    s_cat = skssub.add_parser("catalogo")
+    s_cat.add_argument("--json", action="store_true",
+                       help="catálogo de capacidades em JSON estável")
+    s_cat.set_defaults(fn=cmd_skills)
     s_i = skssub.add_parser("instalar")
     s_i.add_argument("caminho")
     s_i.add_argument("--panel", action="store_true")
