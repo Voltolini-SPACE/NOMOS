@@ -11,6 +11,10 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
   <pasta>` — plano legível dry-run por padrão; execução exige gate A1 +
   confirmação digitada; evidência verificável com manifesto de DESFAZER;
   `nomos missao desfazer` reverte (também gateado). Nunca sobrescreve.
+- **Trust store de MCPs (M2)**: `nomos mcp confiar/revogar/catalogo` —
+  confiança por impressão (SHA-256 do manifesto); conectar/chamar só rodam
+  server confiável (experimental exige "ACEITO O RISCO"; revogado bloqueia;
+  manifesto alterado volta a experimental).
 - **MCP client (M1)**: `nomos mcp conectar/chamar <manifesto.json>` — servers
   MCP locais viram capacidades externas com nível A0–A6 por tool (desconhecida
   herda A5 fail-closed); A0 direto, A1+ só com aprovação interativa (negação
