@@ -1731,10 +1731,18 @@ def cmd_evidencia(ctx, args) -> int:
 # ------------------------- parser -------------------------
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="nomos",
-                                description="NOMOS — seu agente pessoal, 100% local: instala, configura, governa e executa (local por lei)")
+    p = argparse.ArgumentParser(
+        prog="nomos",
+        description="NOMOS — seu agente pessoal, 100% local: instala, "
+                    "configura, governa e executa (local por lei)",
+        epilog="dica: 'nomos <comando> --help' explica cada comando · "
+               "'nomos' sozinho abre o menu amigável.")
     p.add_argument("--version", action="version", version=f"nomos {__version__}")
-    sub = p.add_subparsers(dest="cmd", required=False)
+    # metavar limpo: sem ele, o argparse despeja a chave gigante
+    # {start,cerebro,doutor,...} na linha de uso E no cabeçalho — poluição
+    # que assusta quem só quer o essencial. A lista completa segue abaixo,
+    # cada comando com sua descrição.
+    sub = p.add_subparsers(dest="cmd", required=False, metavar="<comando>")
 
     st0 = sub.add_parser("start", help="modo simples: onboarding + chat")
     st0.set_defaults(fn=cmd_start)
