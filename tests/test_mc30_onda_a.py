@@ -115,3 +115,45 @@ def test_a2_listar_json_estavel(tmp_path):
     assert data["contrato"] == 1
     assert data["pacotes"][0]["integro"] is True
     assert data["pacotes"][0]["problemas"] == []
+
+
+# --------------------------------------------------- A5 (ramos de borda p/ gate ≥90%)
+def test_a5_verificar_acusa_linha_invalida_e_formato_desconhecido(tmp_path):
+    from nomos.kernel import evidencia as ev
+    pacote = ev.gerar_pacote(tmp_path / "e", "bordas", status="PASS")
+    sums = pacote / "SHA256SUMS"
+    sums.write_text("linha-sem-hash-nem-nome\n" + sums.read_text(encoding="utf-8"),
+                    encoding="utf-8")
+    ok, problemas = ev.verificar_pacote(pacote)
+    assert ok is False and any("linha inválida" in p for p in problemas)
+    # manifesto com formato desconhecido também é acusado
+    import json as _json
+    m = pacote / "manifest.json"
+    dados = _json.loads(m.read_text(encoding="utf-8"))
+    dados["formato"] = 999
+    m.write_text(_json.dumps(dados), encoding="utf-8")
+    ok2, problemas2 = ev.verificar_pacote(pacote)
+    assert ok2 is False and any("formato" in p for p in problemas2)
+
+
+def test_a5_catalogo_inclui_disponiveis_sem_duplicar(tmp_path, monkeypatch):
+    from nomos.ext import skill_catalogo as scat
+    from nomos.ext import skill_registry as reg
+    skills_dir = tmp_path / "skills"
+    (skills_dir / "minha").mkdir(parents=True)
+    (skills_dir / "minha" / "skill.json").write_text(json.dumps({
+        "name": "minha", "version": "1.0.0", "description": "instalada",
+        "permissions": ["A0_READ_LOCAL"], "keywords": ["oi"],
+        "modalities": ["texto"], "output": "relatório em markdown",
+    }), encoding="utf-8")
+    monkeypatch.setattr(reg, "catalogo", lambda home: [
+        {"name": "minha", "description": "duplicada — deve ser ignorada",
+         "permissions": []},
+        {"name": "remota", "description": "só no catálogo",
+         "permissions": ["A2_NET_EGRESS"], "keywords": []},
+    ])
+    caps = scat.capacidades(tmp_path, skills_dir)
+    assert [c["nome"] for c in caps] == ["minha", "remota"]
+    assert caps[0]["status"] == "instalada"
+    assert caps[0]["saida"] == "relatório em markdown"
+    assert caps[1]["status"] == "disponível no catálogo"

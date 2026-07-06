@@ -66,6 +66,14 @@ jobs:
       - name: "Testes com cobertura (metas — kernel >=90%, geral >=80%)"
         run: python -m pytest -q --cov=nomos --cov-report=term --cov-fail-under=80
 
+      - name: "Gate dirigido MC30-A5: módulos novos >=90%"
+        run: >
+          python -m pytest -q -p no:cacheprovider
+          --cov=nomos.kernel.evidencia --cov=nomos.ext.skill_catalogo
+          --cov-report=term --cov-fail-under=90
+          tests/test_evidencia_pacote.py tests/test_mc29_skills_catalogo.py
+          tests/test_mc29_painel.py tests/test_mc30_onda_a.py
+
   tipos:
     name: mypy (informativo)
     runs-on: ubuntu-latest

@@ -5,6 +5,7 @@ pacotes de evidências (com verificação real de integridade) e a política de
 permissões A0–A6 lida do código (contrato vivo, não cópia).
 """
 import io
+from pathlib import Path
 
 import pytest
 
@@ -72,6 +73,38 @@ def test_render_lista_evidencias_com_integridade(nomos_home):
 def test_sem_evidencias_orienta_comando(nomos_home):
     corpo = render_html(dados_dashboard(_ctx(nomos_home)))
     assert "nomos evidencia criar" in corpo
+
+
+# 4b. MC30-A4: catálogo de capacidades no painel + auto-refresh opt-in
+def test_painel_mostra_capacidades_do_catalogo(nomos_home):
+    import shutil
+    exemplo = Path(__file__).resolve().parent.parent / "examples/skills/busca-arquivos"
+    destino = nomos_home / "skills" / "busca-arquivos"
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(exemplo, destino)
+    corpo = render_html(dados_dashboard(_ctx(nomos_home)))
+    assert "Capacidades (catálogo)" in corpo
+    assert "busca-arquivos" in corpo and "risco" in corpo
+
+
+def test_painel_refresh_opt_in_e_validado(nomos_home):
+    import urllib.request
+
+    from nomos.interface.painel_web import DashboardServer
+    srv = DashboardServer(_ctx(nomos_home))
+    url = srv.start()
+    try:
+        with urllib.request.urlopen(f"{url}?refresh=10", timeout=5) as r:  # nosec B310
+            com = r.read().decode()
+        assert 'http-equiv="refresh" content="10"' in com
+        with urllib.request.urlopen(url, timeout=5) as r2:  # nosec B310
+            sem = r2.read().decode()
+        assert "http-equiv=\"refresh\"" not in sem      # padrão: sem refresh
+        with urllib.request.urlopen(f"{url}?refresh=2", timeout=5) as r3:  # nosec B310
+            fora = r3.read().decode()
+        assert "http-equiv=\"refresh\"" not in fora     # fora da faixa: ignora
+    finally:
+        srv.stop()
 
 
 # 5. rota /ev/<pacote>: serve o relatório; nome estrito; sem traversal

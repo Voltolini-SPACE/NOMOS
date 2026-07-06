@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 _PAGE = """<!doctype html><html lang="pt-br"><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">{meta_refresh}
 <title>NOMOS — painel local</title>
 <style>
  body{{font-family:system-ui,sans-serif;max-width:860px;margin:2rem auto;padding:0 1rem;line-height:1.45}}
@@ -70,6 +70,13 @@ def dados_dashboard(ctx) -> dict:
             integro, _ = ev_mod.verificar_pacote(pac)
             evidencias.append({"nome": pac.name, "integro": integro})
 
+    # Capacidades (MC30-A4): o catálogo completo, com risco visível
+    from nomos.ext import skill_catalogo as scat
+    try:
+        capacidades = scat.capacidades(home, home / "skills")
+    except Exception:
+        capacidades = []   # catálogo nunca derruba o painel
+
     # Política viva (MC29): o painel mostra o contrato, não uma cópia dele
     from nomos.council import forbidden_flags as ff
     from nomos.council import local_harness as lh
@@ -92,11 +99,14 @@ def dados_dashboard(ctx) -> dict:
         "eventos": list(reversed(eventos)),
         "evidencias": evidencias,
         "politica": politica,
+        "capacidades": capacidades,
     }
 
 
-def render_html(d: dict) -> str:
+def render_html(d: dict, refresh: int | None = None) -> str:
     e = html.escape
+    meta_refresh = (f'\n<meta http-equiv="refresh" content="{int(refresh)}">'
+                    if refresh else "")
     classe = {"PRONTO": "ok", "PARCIAL": "warn", "BLOQUEADO": "err"}[d["status_geral"]]
     corpo = [f'<div class="card {classe}"><b>STATUS GERAL: {e(d["status_geral"])}</b>'
              f' · NOMOS {e(d["versao"])} · '
@@ -131,6 +141,15 @@ def render_html(d: dict) -> str:
         corpo.append(f'<div class="card">[{marca}] {e(r["hora"])} — '
                      f'{e(r["nome"])} <small>({e(r["acao"])})</small></div>')
 
+    corpo.append("<h2>Capacidades (catálogo)</h2>")
+    if not d.get("capacidades"):
+        corpo.append("<p>catálogo vazio. <code>nomos skills catalogo</code></p>")
+    for c in d.get("capacidades", []):
+        corpo.append(
+            f'<div class="card">{e(c["nome"])} <small>[{e(c["status"])} · '
+            f'risco {e(c["risco"])}]</small><br>{e(c["descricao"])}<br>'
+            f'<small>entrada: {e(c["entrada"])} → {e(c["saida"])}</small></div>')
+
     corpo.append("<h2>Evidências de missões</h2>")
     if not d.get("evidencias"):
         corpo.append('<p>nenhum pacote ainda. '
@@ -163,7 +182,7 @@ def render_html(d: dict) -> str:
     corpo.append("</table><p><small>a trilha completa (com cadeia de hash) "
                  "está em <code>~/.nomos/logs/audit.jsonl</code> — verifique "
                  "com <code>nomos logs verify</code></small></p>")
-    return _PAGE.format(body="\n".join(corpo))
+    return _PAGE.format(body="\n".join(corpo), meta_refresh=meta_refresh)
 
 
 class DashboardServer:
@@ -189,11 +208,17 @@ class DashboardServer:
                 self.wfile.write(data)
 
             def do_GET(self):
-                caminho = self.path.rstrip("/")
+                caminho, _, query = self.path.partition("?")
+                caminho = caminho.rstrip("/")
                 base = f"/d/{painel.secret}"
                 if caminho == base:
+                    refresh = None
+                    m = re.search(r"(?:^|&)refresh=(\d{1,4})(?:&|$)", query)
+                    if m and 5 <= int(m.group(1)) <= 3600:
+                        refresh = int(m.group(1))   # fora da faixa: ignorado
                     try:
-                        corpo = render_html(dados_dashboard(painel.ctx))
+                        corpo = render_html(dados_dashboard(painel.ctx),
+                                            refresh=refresh)
                     except Exception as exc:   # painel nunca derruba nada
                         return self._responder(
                             500, f"painel indisponível: {type(exc).__name__}",
