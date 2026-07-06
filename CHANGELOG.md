@@ -7,6 +7,14 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 ### Changed (MC37 — menos poluição visual, mais usabilidade)
 Redesenho do painel para reduzir densidade, com tema claro/escuro. Testes:
 `tests/test_painel_tema_e_abas.py` (6 casos) + contratos de layout atualizados.
+- **Site: tema CLARO e ESCURO** (a pedido) com botão no cabeçalho
+  (`aria-pressed`), respeito a `prefers-color-scheme`, persistência e boot no
+  `<head>` (sem flash); paleta clara de contraste WCAG AA verificada.
+- **Site: menos scroll** — hero de 6 → 4 números; os ~20 cards de recursos
+  agora vivem em 3 grupos recolhíveis (`<details>`, o 1º aberto); a tabela de
+  15 motores e a lista completa também recolhem; navegação do topo enxuta.
+- **CLI**: `nomos --help` sem a chave gigante de comandos (metavar
+  `<comando>`); epílogo aponta o menu amigável e o `--help` por comando.
 - **Painel em 5 ABAS** (uma por vez) em vez de 16 seções empilhadas numa
   página só: `visão geral` · `cérebro` · `capacidades` · `operação` · `ajuda`.
   A visão geral abre por padrão; as demais trocam por clique. O rail lateral

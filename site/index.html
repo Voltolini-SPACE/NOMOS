@@ -27,8 +27,17 @@
     <meta name="twitter:description" content="Agente pessoal de IA local-first: motores, memória, cofre, skills e agentes governados, com aprovação humana em cada passo.">
     <meta name="twitter:image" content="https://nomos.se7enpay.com/assets/og-image.png">
     <title>NOMOS — Seu agente. Sua máquina. Suas regras.</title>
+    <script>
+        /* boot do tema, no <head>: aplica a escolha salva ANTES do CSS pintar
+           (zero flash). Sem escolha, o CSS respeita prefers-color-scheme. */
+        try { var _t = localStorage.getItem('nomos-tema');
+            if (_t === 'claro' || _t === 'escuro')
+                document.documentElement.setAttribute('data-tema', _t);
+        } catch (e) {}
+    </script>
     <style>
         /* Brandbook v1.0 (congelado) — paleta terminal, verde-neon, monospace */
+        /* tema ESCURO (padrão) */
         :root {
             --bg: #0A0F0D; --surface: #111814; --surface2: #0d130f;
             --line: #24382a; --line2: #1a2820;
@@ -37,6 +46,32 @@
             --texto: #E8FFE8; --texto2: #9fb8a5; --fraco: #7c9a84;
             --rosa: #FF5FA2; --ciano: #56E1E9; --amarelo: #F2C14E; --vermelho: #FF5C57;
             --glow: 0 0 12px rgba(90, 247, 142, 0.35);
+            --topo: rgba(10, 15, 13, 0.92);
+            --grade: rgba(90,247,142,0.05);
+        }
+        /* tema CLARO — mesma marca; contraste WCAG AA verificado */
+        :root[data-tema="claro"] {
+            --bg: #f4f7f4; --surface: #ffffff; --surface2: #eaf0ea;
+            --line: #b9c8bc; --line2: #d3ded4;
+            --neon: #0b7a3b; --neon-dim: #0b7a3b;
+            --texto: #10261a; --texto2: #35604a; --fraco: #4a6b55;
+            --rosa: #b3266e; --ciano: #0a6d74; --amarelo: #8a6a12; --vermelho: #b3261e;
+            --glow: none;
+            --topo: rgba(244, 247, 244, 0.92);
+            --grade: rgba(11,122,59,0.06);
+        }
+        /* sem escolha explícita, respeita o sistema operacional */
+        @media (prefers-color-scheme: light) {
+            :root:not([data-tema]) {
+                --bg: #f4f7f4; --surface: #ffffff; --surface2: #eaf0ea;
+                --line: #b9c8bc; --line2: #d3ded4;
+                --neon: #0b7a3b; --neon-dim: #0b7a3b;
+                --texto: #10261a; --texto2: #35604a; --fraco: #4a6b55;
+                --rosa: #b3266e; --ciano: #0a6d74; --amarelo: #8a6a12; --vermelho: #b3261e;
+                --glow: none;
+                --topo: rgba(244, 247, 244, 0.92);
+                --grade: rgba(11,122,59,0.06);
+            }
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html { scroll-behavior: smooth; }
@@ -45,7 +80,7 @@
             background: var(--bg); color: var(--texto);
             font-family: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
             line-height: 1.6; font-size: 15px;
-            background-image: radial-gradient(rgba(90,247,142,0.05) 1px, transparent 1px);
+            background-image: radial-gradient(var(--grade) 1px, transparent 1px);
             background-size: 28px 28px;
         }
         .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
@@ -53,7 +88,7 @@
 
         header.top {
             position: sticky; top: 0; z-index: 20;
-            background: rgba(10, 15, 13, 0.92); backdrop-filter: blur(6px);
+            background: var(--topo); backdrop-filter: blur(6px);
             border-bottom: 1px solid var(--line);
         }
         header.top .wrap { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; gap: 1rem; flex-wrap: wrap; }
@@ -61,6 +96,10 @@
         header nav { display: flex; gap: 1.2rem; flex-wrap: wrap; }
         header nav a { color: var(--texto2); text-decoration: none; font-size: 0.85rem; }
         header nav a:hover { color: var(--neon); }
+        .tema-btn { font-family: inherit; font-size: 0.8rem; color: var(--texto2);
+            background: transparent; border: 1px solid var(--line); border-radius: 6px;
+            padding: 2px 10px; cursor: pointer; }
+        .tema-btn:hover { color: var(--neon); border-color: var(--neon-dim); }
 
         .hero { padding: 60px 0 36px; }
         pre.logo { color: var(--neon); text-shadow: var(--glow); font-size: clamp(6px, 1.9vw, 13px); line-height: 1.05; margin: 0 0 20px; overflow-x: auto; }
@@ -88,7 +127,12 @@
         h2 { font-size: clamp(20px, 3.4vw, 27px); color: var(--neon); margin: 0.2em 0 0.5em; text-shadow: var(--glow); }
         h2 .n { color: var(--fraco); font-weight: 400; font-size: 0.6em; }
         h3 { font-size: 15px; color: var(--texto); margin: 1.1em 0 0.35em; }
-        h3.grupo-recursos { color: var(--fraco); font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; margin-top: 2rem; }
+        h3.grupo-recursos, summary.grupo-recursos { color: var(--fraco); font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; margin-top: 2rem; }
+        details.grupo > summary { cursor: pointer; list-style: none; padding: 0.35rem 0; user-select: none; }
+        details.grupo > summary::-webkit-details-marker { display: none; }
+        details.grupo > summary::before { content: "▸ "; color: var(--neon); }
+        details.grupo[open] > summary::before { content: "▾ "; }
+        details.grupo > summary:hover { color: var(--texto); }
         p { color: var(--texto2); max-width: 76ch; margin-bottom: 0.8rem; }
         .lead { color: var(--texto2); font-size: 1.02rem; max-width: 76ch; margin-bottom: 0.5rem; }
 
@@ -164,12 +208,11 @@
             <nav aria-label="Navegação principal">
                 <a href="#recursos">recursos</a>
                 <a href="#motores">motores</a>
-                <a href="#agentes">agentes</a>
-                <a href="#skills">skills</a>
-                <a href="#painel">painel</a>
                 <a href="#seguranca">segurança</a>
+                <a href="#painel">painel</a>
                 <a href="#instalar">instalar</a>
                 <a href="https://github.com/Voltolini-SPACE/NOMOS">github</a>
+                <button id="tema-btn" type="button" class="tema-btn" aria-pressed="false" title="alternar tema claro/escuro">◐ tema</button>
             </nav>
         </div>
     </header>
@@ -195,10 +238,8 @@
             <div class="stats">
                 <div class="stat"><b>100%</b><span>local por padrão</span></div>
                 <div class="stat"><b>0</b><span>telemetria / rastreio</span></div>
-                <div class="stat"><b>15</b><span>motores e conectores no catálogo</span></div>
                 <div class="stat"><b>A0–A6</b><span>níveis de risco governados</span></div>
                 <div class="stat"><b>1.330+</b><span>testes automatizados</span></div>
-                <div class="stat"><b>~400 MB</b><span>cérebro leve, sem GPU</span></div>
             </div>
         </div>
     </section>
@@ -223,7 +264,8 @@
             <div class="tag">// recursos</div>
             <h2 id="rec-t">Tudo que você precisa, na sua máquina</h2>
 
-            <h3 class="grupo-recursos"><span aria-hidden="true">🧠</span> Cérebro &amp; conversa</h3>
+            <details class="grupo" open>
+            <summary class="grupo-recursos"><span aria-hidden="true">🧠</span> Cérebro &amp; conversa</summary>
             <div class="grid">
                 <div class="card"><div class="ico" aria-hidden="true">🧠</div><h3>Cérebro leve embutido</h3><p>Baixa um modelo pequeno (~400 MB) que roda em qualquer laptop, sem GPU nem Ollama. Uma vez só.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">🚦</div><h3>Roteador automático</h3><p>Escolhe o melhor motor para cada tarefa — local primeiro, sempre. Você não precisa entender de modelos.</p></div>
@@ -232,8 +274,10 @@
                 <div class="card"><div class="ico" aria-hidden="true">🗄️</div><h3>Memória local</h3><p>SQLite na sua máquina, com busca full-text (FTS5). Você revisa o que vira memória permanente (<span class="k">nomos memoria</span>) — o NOMOS nunca decide sozinho o que guardar.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">💬</div><h3>Conversas com retenção</h3><p>Abra, busque, fixe, exporte e esqueça conversas. Política de retenção sob o seu controle.</p></div>
             </div>
+            </details>
 
-            <h3 class="grupo-recursos"><span aria-hidden="true">🛡️</span> Governança &amp; segurança</h3>
+            <details class="grupo">
+            <summary class="grupo-recursos"><span aria-hidden="true">🛡️</span> Governança &amp; segurança</summary>
             <div class="grid">
                 <div class="card"><div class="ico" aria-hidden="true">🎯</div><h3>Missões que fazem</h3><p>Não só responde: <span class="k">nomos missao</span> monta um plano legível, pede UMA aprovação, executa passo a passo e fecha com evidência — e um comando desfaz tudo. Nunca sobrescreve, nunca age sem seu "sim".</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">✅</div><h3>Fila de aprovações</h3><p>Toda ação sensível passa por uma fila (<span class="k">nomos approvals</span>) que você aprova — no terminal ou no painel local. Em scripts, a resposta é sempre "não".</p></div>
@@ -245,8 +289,10 @@
                 <div class="card"><div class="ico" aria-hidden="true">📦</div><h3>Evidências verificáveis</h3><p>Cada missão gera um pacote com relatório, manifesto e SHA-256 (<span class="k">nomos evidencia</span>) — auditável offline, por qualquer pessoa.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">🛑</div><h3>Botão de pânico</h3><p>Um comando para cortar tudo. Controle total, inclusive o de parar.</p></div>
             </div>
+            </details>
 
-            <h3 class="grupo-recursos"><span aria-hidden="true">🖥️</span> Operação &amp; integrações</h3>
+            <details class="grupo">
+            <summary class="grupo-recursos"><span aria-hidden="true">🖥️</span> Operação &amp; integrações</summary>
             <div class="grid">
                 <div class="card"><div class="ico" aria-hidden="true">🔌</div><h3>Cidadão do ecossistema MCP</h3><p>O NOMOS é <strong>servidor</strong> Model Context Protocol (tools só-leitura para o Claude Desktop e outros agentes) e <strong>cliente</strong> — usa servers locais como capacidades, cada tool com nível de risco A0–A6 e confiança registrada. Tudo via stdio, sem rede.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">🖥️</div><h3>Painel web local</h3><p>Roda na sua máquina (<span class="k">nomos painel</span>): status, motores, evidências, política A0–A6 viva, decisões do roteador explicadas e auditoria com cadeia verificada — com API JSON local. Ler é livre; a única ação é decidir aprovações, com token de uso único. Só 127.0.0.1. <a href="#painel">Ver por dentro →</a></p></div>
@@ -254,6 +300,7 @@
                 <div class="card"><div class="ico" aria-hidden="true">⬆️</div><h3>Atualização com licença</h3><p><span class="k">nomos atualizar</span> checa se há versão nova e propõe — mas <strong>nunca</strong> atualiza sozinho. Você decide, sempre.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">🩺</div><h3>Doutor</h3><p><span class="k">nomos doutor</span>: um check-up honesto do que está pronto e qual é o próximo passo.</p></div>
             </div>
+            </details>
         </div>
     </section>
 
@@ -263,6 +310,8 @@
             <div class="tag">// motores & integrações</div>
             <h2 id="mot-t">Muitos motores. <span class="n">local primeiro, nuvem opt-in</span></h2>
             <p class="lead">O NOMOS fala com vários motores por modalidade. Os <span class="pill local">locais</span> vêm prontos ou embutidos; os <span class="pill plug">conectores</span> você pluga se já tiver a ferramenta; a <span class="pill cloud">nuvem</span> só funciona se você habilitar de propósito.</p>
+            <details class="grupo">
+            <summary class="grupo-recursos">ver os 15 motores e conectores do catálogo</summary>
             <table>
                 <thead><tr><th scope="col">Motor / conector</th><th scope="col">Faz</th><th scope="col">Onde roda</th></tr></thead>
                 <tbody>
@@ -283,6 +332,7 @@
                     <tr><td>Roteador automático</td><td>escolher o motor certo</td><td><span class="pill local">local</span></td></tr>
                 </tbody>
             </table>
+            </details>
             <div class="term">
                 <div class="termbar">~/nomos — escolher e arbitrar motores</div>
                 <div><span class="p">$</span> <span class="c">nomos motores listar</span></div>
@@ -519,5 +569,30 @@
             <p style="margin-top:0.5rem; color:var(--neon);">Seu agente. Sua máquina. Suas regras. — local por lei.</p>
         </div>
     </footer>
+    <script>
+        /* alternância de tema: respeita o SO; a escolha explícita persiste */
+        (function () {
+            'use strict';
+            var root = document.documentElement, btn = document.getElementById('tema-btn');
+            function atual() {
+                var t = root.getAttribute('data-tema');
+                if (t) return t;
+                return (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'claro' : 'escuro';
+            }
+            function pinta() {
+                if (!btn) return;
+                var claro = atual() === 'claro';
+                btn.textContent = (claro ? '☀' : '☾') + ' tema';
+                btn.setAttribute('aria-pressed', claro ? 'true' : 'false');
+            }
+            pinta();
+            if (btn) btn.addEventListener('click', function () {
+                var novo = atual() === 'claro' ? 'escuro' : 'claro';
+                root.setAttribute('data-tema', novo);
+                try { localStorage.setItem('nomos-tema', novo); } catch (e) {}
+                pinta();
+            });
+        })();
+    </script>
 </body>
 </html>
