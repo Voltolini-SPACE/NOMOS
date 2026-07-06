@@ -31,7 +31,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import List, Optional
 
-AGENT_VERSION = "MC29.0"
+AGENT_VERSION = "MC33.0"
 
 # ANSI colors (apenas no modo humano)
 GREEN = "\033[92m"
@@ -58,6 +58,16 @@ ASSINATURA_CANONICA = "local por lei"
 # `pip install nomos` puro é proibido: o nome `nomos` no PyPI é de projeto de
 # terceiros. Lookahead negativo preserva formas legítimas (wheel, git+, ponto).
 _PIP_NOMOS_PURO = re.compile(r"pip install nomos(?![-\w./])")
+
+# Comandos internos/infra que NÃO precisam aparecer no site de marketing.
+# Adicionar um comando NOVO ⇒ ou ele vira conteúdo do site, ou entra aqui
+# conscientemente. O gate brand:site_atualizado força essa decisão.
+SITE_COMANDOS_INTERNOS = frozenset({
+    "init", "start", "run", "status", "panic", "consent", "logs",
+    "conselho",            # Motor Council é dry-run/pré-release, fora da vitrine
+    "memory", "agent",     # aliases técnicos de memoria/agentes (pt-BR no site)
+    "vault",               # alias técnico de 'chaves' (Caixa-forte no site)
+})
 
 # Seções obrigatórias nos documentos
 BRANDBOOK_SECOES = [
@@ -280,6 +290,41 @@ class NomosUpdateAgent:
                         f"versão única: {m_py.group(1)}" if iguais
                         else f"pyproject={m_py.group(1)} != __init__={m_init.group(1)}")
 
+    def _check_site_cobre_comandos(self):
+        """REGRA (MC33): toda capacidade voltada ao usuário aparece no site.
+
+        Introspecta os comandos top-level reais do CLI. Cada comando NÃO listado
+        em SITE_COMANDOS_INTERNOS deve ser mencionado em site/index.html. Assim,
+        adicionar um comando novo sem atualizar o site quebra o gate (build
+        vermelho) — o site não deriva do produto em silêncio.
+        """
+        landing = self._read(LANDING_REL)
+        if landing is None:
+            self._add_check("brand:site_atualizado", False, "landing ausente")
+            return
+        try:
+            import importlib
+            cli = importlib.import_module("nomos.cli")
+            parser = cli.build_parser()
+            comandos = set()
+            for a in parser._subparsers._group_actions:
+                if getattr(a, "choices", None):
+                    comandos.update(a.choices)
+                    break
+        except Exception as exc:
+            self._add_check("brand:site_atualizado", False,
+                            f"não introspectei o CLI: {type(exc).__name__}")
+            return
+        baixo = landing.lower()
+        faltando = sorted(c for c in comandos
+                          if c not in SITE_COMANDOS_INTERNOS
+                          and c.lower() not in baixo)
+        self._add_check(
+            "brand:site_atualizado", not faltando,
+            "site cobre todas as capacidades voltadas ao usuário" if not faltando
+            else f"comandos ausentes do site (atualize site/ ou marque como "
+                 f"interno): {faltando}")
+
     def _check_git(self):
         """Lê estado básico do git por leitura direta de .git (somente leitura)."""
         git_dir = self.repo_root / ".git"
@@ -309,6 +354,7 @@ class NomosUpdateAgent:
         self._check_brand_tagline()
         self._check_instalacao_oficial()
         self._check_versao_coerente()
+        self._check_site_cobre_comandos()
         self._check_git()
 
         self.report.timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

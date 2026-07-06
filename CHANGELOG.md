@@ -4,6 +4,18 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC33 — regra: site sempre reflete o produto)
+- **Gate `brand:site_atualizado`** no update agent (MC33.0): introspecta os
+  comandos top-level do CLI e exige que cada capacidade voltada ao usuário
+  apareça no `site/index.html`. Comando novo sem menção no site ⇒ build
+  vermelho no CI. Internos/infra ficam em `SITE_COMANDOS_INTERNOS` (decisão
+  consciente, testada contra exclusões órfãs).
+- **Site atualizado** para MC30–MC32: cards de missões (executor), MCP
+  (servidor + cliente), conversa em streaming/`/arbitrar`, memória revisável,
+  backup, fila de aprovações e atualização com licença; roadmap e stats
+  (1.280+ testes) em dia. Marca congelada intacta.
+
+
 ### Added (MC32 — execução: ruídos + M1)
 - **Missão `renomear` (P2)**: diff-prévia em lote (antes → depois no plano),
   colisão-safe, mesma trilha aprovação/evidência/desfazer do executor.

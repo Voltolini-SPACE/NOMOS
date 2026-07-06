@@ -178,7 +178,7 @@
                 <div class="stat"><b>0</b><span>telemetria / rastreio</span></div>
                 <div class="stat"><b>14</b><span>motores e conectores no catálogo</span></div>
                 <div class="stat"><b>A0–A6</b><span>níveis de risco governados</span></div>
-                <div class="stat"><b>1.100+</b><span>testes automatizados</span></div>
+                <div class="stat"><b>1.280+</b><span>testes automatizados</span></div>
                 <div class="stat"><b>~400 MB</b><span>cérebro leve, sem GPU</span></div>
             </div>
         </div>
@@ -206,9 +206,12 @@
             <div class="grid">
                 <div class="card"><div class="ico">🧠</div><h3>Cérebro leve embutido</h3><p>Baixa um modelo pequeno (~400 MB) que roda em qualquer laptop, sem GPU nem Ollama. Uma vez só.</p></div>
                 <div class="card"><div class="ico">🚦</div><h3>Roteador automático</h3><p>Escolhe o melhor motor para cada tarefa — local primeiro, sempre. Você não precisa entender de modelos.</p></div>
+                <div class="card"><div class="ico">🎯</div><h3>Missões que fazem</h3><p>Não só responde: <span class="k">nomos missao</span> monta um plano legível, pede UMA aprovação, executa passo a passo e fecha com evidência — e um comando desfaz tudo. Nunca sobrescreve, nunca age sem seu "sim".</p></div>
+                <div class="card"><div class="ico">🔌</div><h3>Cidadão do ecossistema MCP</h3><p>O NOMOS é <strong>servidor</strong> Model Context Protocol (tools só-leitura para o Claude Desktop e outros agentes) e <strong>cliente</strong> — usa servers locais como capacidades, cada tool com nível de risco A0–A6 e confiança registrada. Tudo via stdio, sem rede.</p></div>
+                <div class="card"><div class="ico">💬</div><h3>Conversa de verdade</h3><p>Resposta em streaming (aparece enquanto o motor gera), memórias relevantes trazidas ao contexto com transparência total, e <span class="k">/arbitrar</span> no chat para o melhor de vários motores.</p></div>
                 <div class="card"><div class="ico">⚖️</div><h3>Arbitragem entre motores</h3><p>Além de rotear: vários motores prontos geram respostas, debatem entre si e um árbitro converge na melhor execução <strong>real</strong>. Sem motor pronto, o NOMOS avisa — nunca inventa.</p></div>
-                <div class="card"><div class="ico">🗄️</div><h3>Memória local</h3><p>SQLite na sua máquina, com busca full-text (FTS5). Suas conversas e notas, pesquisáveis e privadas.</p></div>
-                <div class="card"><div class="ico">🔐</div><h3>Caixa-forte</h3><p>Cofre de chaves com senha-mestra. Segredos criptografados, nunca em logs, nunca expostos.</p></div>
+                <div class="card"><div class="ico">🗄️</div><h3>Memória local</h3><p>SQLite na sua máquina, com busca full-text (FTS5). Você revisa o que vira memória permanente (<span class="k">nomos memoria</span>) — o NOMOS nunca decide sozinho o que guardar.</p></div>
+                <div class="card"><div class="ico">🔐</div><h3>Caixa-forte e backup</h3><p>Cofre de chaves com senha-mestra; segredos criptografados, nunca em logs. Seu NOMOS inteiro cabe num arquivo cifrado (<span class="k">nomos backup</span>) — memórias, chaves e tudo.</p></div>
                 <div class="card"><div class="ico">🧩</div><h3>Skills governadas</h3><p>Habilidades instaláveis e assinadas que só fazem o que declaram, com risco visível e aprovação.</p></div>
                 <div class="card"><div class="ico">🤖</div><h3>Agentes com escopo</h3><p>Agentes oficiais e próprios, cada um com ferramentas, motores preferidos e risco máximo definidos.</p></div>
                 <div class="card"><div class="ico">📋</div><h3>Auditoria com âncora</h3><p>Tudo que acontece é registrado. Trilha de auditoria com âncora HMAC — evidência que não se altera em silêncio.</p></div>
@@ -217,6 +220,8 @@
                 <div class="card"><div class="ico">⏱️</div><h3>Rotinas e briefings</h3><p>Agende tarefas locais e gere briefings — sempre em dry-run, com sua aprovação antes de qualquer efeito.</p></div>
                 <div class="card"><div class="ico">💬</div><h3>Conversas com retenção</h3><p>Abra, busque, fixe, exporte e esqueça conversas. Política de retenção sob o seu controle.</p></div>
                 <div class="card"><div class="ico">🖥️</div><h3>Painel web local</h3><p>Roda na sua máquina (<span class="k">nomos painel</span>): status, motores, evidências, política A0–A6 viva, decisões do roteador explicadas e auditoria com cadeia verificada — com API JSON local. Só leitura, só 127.0.0.1.</p></div>
+                <div class="card"><div class="ico">✅</div><h3>Fila de aprovações</h3><p>Toda ação sensível passa por uma fila (<span class="k">nomos approvals</span>) que você aprova — no terminal ou no painel local. Em scripts, a resposta é sempre "não".</p></div>
+                <div class="card"><div class="ico">⬆️</div><h3>Atualização com licença</h3><p><span class="k">nomos atualizar</span> checa se há versão nova e propõe — mas <strong>nunca</strong> atualiza sozinho. Você decide, sempre.</p></div>
                 <div class="card"><div class="ico">🩺</div><h3>Doutor</h3><p><span class="k">nomos doutor</span>: um check-up honesto do que está pronto e qual é o próximo passo.</p></div>
                 <div class="card"><div class="ico">🛑</div><h3>Botão de pânico</h3><p>Um comando para cortar tudo. Controle total, inclusive o de parar.</p></div>
             </div>
@@ -382,10 +387,11 @@
         <div class="wrap">
             <div class="tag">// roadmap</div>
             <h2 id="rm-t">O caminho até aqui e adiante</h2>
-            <div class="rm done"><b>✓ MC22–MC24 — Migração CLI/Chat segura</b><p>Dry-run validado, redação de saída, âncora HMAC de auditoria.</p></div>
-            <div class="rm now"><b>▸ MC25–MC27 — Brandbook, manual, landing e Update Agent</b><p>Documentação profissional, presença web e gate CI read-only com modo --diff proposal-only.</p></div>
-            <div class="rm next"><b>· Próximas etapas</b><p>Envelope de aprovação para patches exportáveis, expansão de skills e motores, integração de CI read-only.</p></div>
-            <p style="margin-top:1.5rem;"><a href="../docs/ROADMAP.md">Ver roadmap completo →</a></p>
+            <div class="rm done"><b>✓ MC25–MC29 — Governança executável</b><p>Política SEC-01…12 como teste, evidências auditáveis, agentes guardiões (docs/marca e git) no CI, arbitragem real local-first.</p></div>
+            <div class="rm done"><b>✓ MC30–MC31 — Superfícies e conversa</b><p>Painel 2.0 (API JSON, auditoria verificada, roteador explicado), streaming e <span class="k">/arbitrar</span> no chat, memória 2.0, motor OpenAI-compatível local.</p></div>
+            <div class="rm now"><b>▸ MC32 — Potência real e MCP</b><p>Executor de missões (plano → aprovação → evidência → desfazer), NOMOS como servidor e cliente MCP com níveis A e confiança registrada.</p></div>
+            <div class="rm next"><b>· Próximas etapas</b><p>Visão de tela assistida (OmniParser V2, local, processo isolado), OCR e conversor de documentos locais, personas multi-agente, embeddings locais.</p></div>
+            <p style="margin-top:1.5rem;"><a href="../docs/ROADMAP_4.md">Ver roadmap completo →</a></p>
         </div>
     </section>
     </main>
