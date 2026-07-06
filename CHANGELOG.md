@@ -5,6 +5,8 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 ## [Unreleased]
 
 ### Added (MC32 — execução: ruídos + M1)
+- **Missão `renomear` (P2)**: diff-prévia em lote (antes → depois no plano),
+  colisão-safe, mesma trilha aprovação/evidência/desfazer do executor.
 - **Executor de missões (P1)**: `nomos missao planejar/executar organizar
   <pasta>` — plano legível dry-run por padrão; execução exige gate A1 +
   confirmação digitada; evidência verificável com manifesto de DESFAZER;
