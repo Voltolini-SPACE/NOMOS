@@ -37,7 +37,8 @@ class ChatOutcome:
 class Router:
     def __init__(self, policy, gate, approver, audit, vault: Vault,
                  ollama: OllamaProvider | None = None,
-                 cloud_factory=AnthropicProvider, embutido=None):
+                 cloud_factory=AnthropicProvider, embutido=None,
+                 openai_compat=None):
         self.policy = policy
         self.gate = gate
         self.approver = approver
@@ -46,6 +47,7 @@ class Router:
         self.ollama = ollama or OllamaProvider()
         self.cloud_factory = cloud_factory
         self.embutido = embutido   # cérebro leve do NOMOS (opcional)
+        self.openai_compat = openai_compat  # LM Studio/llama.cpp local (MC31)
 
     # ---------- rotas ----------
     def _try_local(self, messages) -> ChatOutcome | None:
@@ -56,15 +58,23 @@ class Router:
                 return ChatOutcome(True, "local", r.text, r.provider, r.model)
             except Exception as exc:
                 self.audit.append("chat.embutido.falhou", motivo=type(exc).__name__)
-        if not self.ollama.available():
-            return None
-        try:
-            r: ChatReply = self.ollama.chat(messages)
-        except ProviderUnavailable as exc:
-            self.audit.append("chat.local.falhou", motivo=str(exc))
-            return None
-        self.audit.append("chat.local", model=r.model, egress="nenhum")
-        return ChatOutcome(True, "local", r.text, r.provider, r.model)
+        if self.ollama.available():
+            try:
+                r: ChatReply = self.ollama.chat(messages)
+                self.audit.append("chat.local", model=r.model, egress="nenhum")
+                return ChatOutcome(True, "local", r.text, r.provider, r.model)
+            except ProviderUnavailable as exc:
+                self.audit.append("chat.local.falhou", motivo=str(exc))
+        oc = self.openai_compat
+        if oc is not None and oc.available():
+            try:
+                r = oc.chat(messages)
+                self.audit.append("chat.local.openai", model=r.model,
+                                  egress="nenhum")
+                return ChatOutcome(True, "local", r.text, r.provider, r.model)
+            except ProviderUnavailable as exc:
+                self.audit.append("chat.local.openai.falhou", motivo=str(exc))
+        return None
 
     def _try_cloud(self, messages, passphrase: str | None) -> ChatOutcome:
         d_net = self.policy.decide(Category.NET_EGRESS, target=CLOUD_TARGET)
@@ -117,7 +127,8 @@ class Router:
         pelo chat normal). Backend sem stream => resposta completa emitida de
         uma vez pelo mesmo callback (fallback honesto, nunca quebra)."""
         for backend, rotulo in ((self.embutido, "chat.embutido"),
-                                (self.ollama, "chat.local")):
+                                (self.ollama, "chat.local"),
+                                (self.openai_compat, "chat.local.openai")):
             if backend is None:
                 continue
             pronto = backend.disponivel() if hasattr(backend, "disponivel") \

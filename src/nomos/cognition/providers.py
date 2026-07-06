@@ -180,3 +180,49 @@ class OpenAICompatProvider:
             raise ProviderUnavailable("resposta do servidor local sem conteúdo")
         return ChatReply(text=text, provider=self.name,
                          model=data.get("model", self.model))
+
+    def available(self) -> bool:
+        """Probe leve no /models (loopback). Sem servidor => False, sem exceção."""
+        try:
+            with _abrir_http(f"{self.base}/models", 1.5) as r:
+                return r.status == 200
+        except Exception:
+            return False
+
+    def chat_stream(self, messages: list[dict], on_token) -> ChatReply:
+        """Streaming SSE OpenAI (MC31): cada delta vai ao callback na hora.
+
+        Formato: linhas ``data: {json}`` com ``choices[0].delta.content`` e
+        terminador ``data: [DONE]``. Loopback apenas (garantido no __init__).
+        """
+        body = json.dumps({"model": self.model, "messages": messages,
+                           "stream": True}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self.base}/chat/completions", data=body,
+            headers={"Content-Type": "application/json"})
+        pedacos: list[str] = []
+        modelo = self.model
+        try:
+            with _abrir_http(req, self.timeout) as resp:
+                for linha in resp:
+                    linha = linha.strip()
+                    if not linha or not linha.startswith(b"data:"):
+                        continue
+                    payload = linha[5:].strip()
+                    if payload == b"[DONE]":
+                        break
+                    evento = json.loads(payload)
+                    modelo = evento.get("model", modelo)
+                    escolhas = evento.get("choices") or [{}]
+                    tok = (escolhas[0].get("delta") or {}).get("content", "")
+                    if tok:
+                        pedacos.append(tok)
+                        on_token(tok)
+        except KeyboardInterrupt:
+            raise                                   # interrupção é do usuário
+        except Exception as exc:
+            raise ProviderUnavailable(
+                f"stream openai-compat falhou: {type(exc).__name__}") from None
+        if not pedacos:
+            raise ProviderUnavailable("stream openai-compat sem conteúdo")
+        return ChatReply(text="".join(pedacos), provider=self.name, model=modelo)

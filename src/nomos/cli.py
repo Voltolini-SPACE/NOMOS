@@ -1114,10 +1114,13 @@ def _router(ctx):
     host = os.environ.get("NOMOS_OLLAMA_HOST", "http://127.0.0.1:11434")
     model = os.environ.get("NOMOS_OLLAMA_MODEL", "llama3.2")
     from nomos.cognition.embutido import EmbeddedProvider
+    from nomos.cognition.providers import OpenAICompatProvider
+    oc_base = os.environ.get("NOMOS_OPENAI_COMPAT_BASE", "http://127.0.0.1:1234/v1")
     return Router(policy=ctx["policy"], gate=gate, approver=interactive_approver,
                   audit=ctx["audit"], vault=ctx["vault"],
                   ollama=OllamaProvider(host=host, model=model),
-                  embutido=EmbeddedProvider(ctx["home"]))
+                  embutido=EmbeddedProvider(ctx["home"]),
+                  openai_compat=OpenAICompatProvider(base=oc_base))
 
 
 def cmd_chat(ctx, args) -> int:
