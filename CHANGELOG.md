@@ -4,6 +4,29 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased] — 2026-07-05 (Motor Council — Fases MC10–MC27 + site: contrato único de flags proibidas, site com brandbook congelado e update agent read-only)
 
+### Added (MC29 — plano profissional: 7 implementações)
+- **Política formal de segurança** (`docs/governance/SECURITY_POLICY.md`):
+  invariantes SEC-01…SEC-12 (escada A0–A6, fail-closed, cadeado, segredos)
+  como contrato executável — testes provam cada uma e a sincronia doc↔testes.
+- **Brand + Site Sync Agent (MC29.0)**: update agent vira guardião da marca —
+  checks `brand:paleta`, `brand:tagline`, `brand:instalacao_oficial` e
+  `brand:versao_coerente` no gate de CI.
+- **Sistema de evidências** (`kernel/evidencia.py` + `nomos evidencia
+  criar/verificar`): pacote auditável por missão (relatório, manifesto,
+  SHA256SUMS), redigido (segredos nunca tocam o disco) e verificável offline.
+- **Git Agent seguro** (`tools/nomos_git_agent.py`): --check/--suggest/
+  --handoff; git só por allowlist de LEITURA; sem --push/--commit por
+  contrato — push é sempre decisão humana.
+- **Roteador explicável** (`engine_router.relatorio_decisao` + `nomos motores
+  recomendar <mod> --json`): decisão + trace com todos os candidatos, motivos
+  e regras aplicadas; contrato de `rotear()` inalterado.
+- **Catálogo de capacidades** (`ext/skill_catalogo.py` + `nomos skills
+  catalogo [--json]`): 8 campos por skill (nome, descrição, entrada, saída,
+  risco, status, permissões, exemplos), risco sempre visível.
+- **Painel web**: seções novas de Evidências de missões (verificação real de
+  integridade) e Política de permissões A0–A6 viva; segue loopback-only e
+  somente leitura.
+
 ### Added (ARBITRAGEM + MC-VALIDACAO-E2E)
 - **Arbitragem real entre motores** (`cognition/arbitragem.py` + CLI
   `nomos motores arbitrar "<pergunta>"`): motores prontos geram candidatos

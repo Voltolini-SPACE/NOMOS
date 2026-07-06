@@ -44,7 +44,7 @@ Fonte: `src/nomos/kernel/policy.py` (`DEFAULT_RULES`), `src/nomos/kernel/localid
 | SEC-08 | Aprovador que lança exceção **nunca** autoriza | `kernel/policy.py::gate` | `test_sec08_*` |
 | SEC-09 | Cadeado de localidade: ausência de estado = **ligado**; egress não-loopback ⇒ DENY | `kernel/localidade.py::esta_ligado/bloqueia_egress` | `test_sec09_*` |
 | SEC-10 | Segredos nunca ecoam em saída/auditoria (redação em caminhos novos e antigos) | `council/safe_output.py`, `kernel/audit.py` | `test_sec10_*` + `tests/test_no_secret_leak_regression.py` |
-| SEC-11 | Docs oficiais **não** recomendam `pip install nomos` puro (nome no PyPI é de terceiros) | docs + site | `test_sec11_*` + `tests/test_missao_validacao_anti_regressao.py` |
+| SEC-11 | Docs oficiais **não** recomendam instalar pelo nome puro `nomos` do PyPI (nome de terceiros) | docs + site | `test_sec11_*` + `tests/test_missao_validacao_anti_regressao.py` |
 | SEC-12 | Brandbook congelado íntegro por SHA-256; mudança exige nova versão aprovada | `docs/brand/frozen/SHA256SUMS` | `test_sec12_*` + `tests/test_missao_validacao_anti_regressao.py` |
 
 ## 3. Superfícies e comandos
@@ -56,8 +56,8 @@ Fonte: `src/nomos/kernel/policy.py` (`DEFAULT_RULES`), `src/nomos/kernel/localid
   (`tools/nomos_update_agent.py`) tem `--apply` bloqueado fail-closed e
   `auto_push_enabled=false`; qualquer agente futuro de git segue o mesmo molde —
   **push jamais é automático**.
-- **Instalação oficial**: GitHub/instaladores de release. `pip install nomos`
-  puro é proibido nos docs (SEC-11).
+- **Instalação oficial**: GitHub/instaladores de release. Instalar pelo nome
+  puro `nomos` do PyPI é proibido nos docs (SEC-11) — o nome é de terceiros.
 - **Arbitragem/roteador**: local-first; nuvem só participa com opt-in explícito;
   sem motor pronto ⇒ bloqueia e explica (nunca inventa resposta).
 
