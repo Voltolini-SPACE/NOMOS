@@ -14,6 +14,12 @@ custo. Regras invioláveis:
 
 A saída é um EngineRouteDecision — dados, não ação: quem executa continua
 passando pelo gate. O roteador não tem poder de autorizar nada.
+
+Explicabilidade (MC29): além de `rotear()` (contrato inalterado), o módulo
+expõe `relatorio_decisao()` — o MESMO roteamento com o trace completo:
+candidatos considerados, motivo de aceite/rejeição de cada um, ranking final
+e regras aplicadas. Roteamento explicável é requisito de produto: o usuário
+sempre pode perguntar "por quê?" e receber a resposta verdadeira.
 """
 from __future__ import annotations
 
@@ -25,6 +31,9 @@ from nomos.kernel import config, localidade
 
 # limiar (chars) a partir do qual vale resumir o contexto antes de responder
 CONTEXTO_GRANDE = 8000
+
+# versão do contrato do relatório explicável (MC29)
+CONTRATO_RELATORIO = 1
 
 
 @dataclass(frozen=True)
@@ -81,23 +90,46 @@ def _custo(motor) -> str:
     return motor.custo if motor else "zero"
 
 
-def rotear(tarefa: Tarefa, home=None, catalogo: cat_mod.Catalogo | None = None,
-           chave_configurada: bool | None = None) -> EngineRouteDecision:
+def _rotear_com_trace(tarefa: Tarefa, home=None,
+                      catalogo: cat_mod.Catalogo | None = None,
+                      chave_configurada: bool | None = None
+                      ) -> tuple[EngineRouteDecision, dict]:
+    """Roteia E devolve o trace explicável. Mesma lógica, dois consumidores."""
     home = home or config.nomos_home()
     so_local = localidade.esta_ligado(home)
     catalogo = catalogo or cat_mod.construir(home)
 
+    trace: dict = {
+        "tipo": tarefa.tipo,
+        "modalidade": tarefa.modalidade,
+        "dados_sensiveis": tarefa.dados_sensiveis,
+        "local_only": so_local,
+        "candidatos": [],
+        "ranking": [],
+        "regras_aplicadas": [],
+    }
+
     candidatos = catalogo.por_modalidade(tarefa.modalidade)
     if not candidatos:
+        trace["regras_aplicadas"].append(
+            "R6: nenhum motor conhece a modalidade — decisão vazia com diagnóstico")
         return EngineRouteDecision(
             None, None,
             f"nenhum motor conhece a modalidade '{tarefa.modalidade}'",
-            "total (não sai da máquina)", False, "zero", so_local, 1.0)
+            "total (não sai da máquina)", False, "zero", so_local, 1.0), trace
 
     elegiveis: list[tuple] = []
     motivos: list[str] = []
     for m in candidatos:
         e = pol.elegivel(m, home, tarefa.dados_sensiveis, chave_configurada)
+        trace["candidatos"].append({
+            "id": m.id,
+            "local": bool(m.local),
+            "qualidade": m.qualidade,
+            "custo": m.custo,
+            "elegivel": bool(e.ok),
+            "motivo": e.motivo,
+        })
         if e.ok:
             elegiveis.append((m, e))
         else:
@@ -117,21 +149,30 @@ def rotear(tarefa: Tarefa, home=None, catalogo: cat_mod.Catalogo | None = None,
     elegiveis.sort(key=lambda pair: (not pair[0].local,
                                      _voto(pair[0]),
                                      ordem_q.get(pair[0].qualidade, 3)))
+    trace["regras_aplicadas"].append(
+        "ordem: privacidade (local primeiro) > seu feedback > qualidade > custo")
 
     if not elegiveis:
         # Regra 6: não inventa — diagnóstico acionável
         dica = _proximo_passo(tarefa, so_local)
+        trace["regras_aplicadas"].append(
+            "R6: nenhum motor elegível — decisão vazia com próximo passo")
+        trace["proximo_passo"] = dica
         return EngineRouteDecision(
             None, None,
             "nenhum motor disponível para esta tarefa — "
             + "; ".join(motivos[:3]) + f". Próximo passo: {dica}",
-            "total (não sai da máquina)", False, "zero", so_local, 1.0)
+            "total (não sai da máquina)", False, "zero", so_local, 1.0), trace
 
     # Regra 2: texto simples prefere motor leve local pronto
     if tarefa.tipo == "conversa" and tarefa.tamanho_contexto <= CONTEXTO_GRANDE:
         leves = [p for p in elegiveis if p[0].local and p[0].tipo == "embutido"]
         if leves and not any(p[0].local and p[0].qualidade == "alta" for p in elegiveis):
             elegiveis = leves + [p for p in elegiveis if p not in leves]
+            trace["regras_aplicadas"].append(
+                "R2: conversa simples — motor leve local sobe para o topo")
+
+    trace["ranking"] = [p[0].id for p in elegiveis]
 
     escolhido, eleg = elegiveis[0]
     fallback = elegiveis[1][0] if len(elegiveis) > 1 else None
@@ -141,6 +182,8 @@ def rotear(tarefa: Tarefa, home=None, catalogo: cat_mod.Catalogo | None = None,
         assert escolhido.local, "invariante violada: nuvem escolhida com só-local ligado"
         if fallback is not None and not fallback.local:
             fallback = None
+        trace["regras_aplicadas"].append(
+            "R1: cadeado só-local ligado — nuvem excluída (até de fallback)")
 
     # Regra 3: raciocínio complexo sem local forte => explica em vez de fingir
     if (tarefa.tipo == "raciocinio" and escolhido.local
@@ -148,6 +191,8 @@ def rotear(tarefa: Tarefa, home=None, catalogo: cat_mod.Catalogo | None = None,
         aviso = (" · aviso: só encontrei um motor local leve; para raciocínio "
                  "pesado, instale um modelo forte (ollama pull hermes3) — vou "
                  "tentar, mas sem inventar certeza")
+        trace["regras_aplicadas"].append(
+            "R3: raciocínio sem local forte — avisa em vez de fingir")
     else:
         aviso = ""
 
@@ -160,6 +205,8 @@ def rotear(tarefa: Tarefa, home=None, catalogo: cat_mod.Catalogo | None = None,
         steps = steps + ("guardar resultado na memória local",)
     if tarefa.precisa_ferramenta:
         steps = ("verificar permissões da skill no gate",) + steps
+    if steps:
+        trace["regras_aplicadas"].append("R7: tarefa decomposta em pipeline")
 
     taxa_votos = fb.taxa(home, escolhido.id)
     confianca = 0.9 if escolhido.local and escolhido.pronto else 0.6
@@ -168,7 +215,7 @@ def rotear(tarefa: Tarefa, home=None, catalogo: cat_mod.Catalogo | None = None,
         confianca = round(min(0.99, max(0.3, confianca * (0.6 + 0.4 * taxa_votos))), 2)
         nota_fb = f" · seu feedback local: {int(taxa_votos * 100)}% positivo"
 
-    return EngineRouteDecision(
+    decisao = EngineRouteDecision(
         selected_engine=escolhido.id,
         fallback_engine=fallback.id if fallback else None,
         reason=(f"{'local-first' if escolhido.local else 'nuvem (opt-in)'}: "
@@ -179,6 +226,31 @@ def rotear(tarefa: Tarefa, home=None, catalogo: cat_mod.Catalogo | None = None,
         local_only_preserved=escolhido.local,
         confidence=confianca,
         steps=steps)
+    return decisao, trace
+
+
+def rotear(tarefa: Tarefa, home=None, catalogo: cat_mod.Catalogo | None = None,
+           chave_configurada: bool | None = None) -> EngineRouteDecision:
+    """Contrato original (inalterado): só a decisão."""
+    return _rotear_com_trace(tarefa, home, catalogo, chave_configurada)[0]
+
+
+def relatorio_decisao(tarefa: Tarefa, home=None,
+                      catalogo: cat_mod.Catalogo | None = None,
+                      chave_configurada: bool | None = None) -> dict:
+    """Roteamento explicável (MC29): decisão + trace completo, estável p/ JSON.
+
+    Estrutura: ``{"contrato": 1, "decisao": {...EngineRouteDecision...},
+    "trace": {tipo, modalidade, dados_sensiveis, local_only, candidatos[],
+    ranking[], regras_aplicadas[], proximo_passo?}}``. Dados, não ação: nada
+    aqui autoriza execução — o gate continua mandando.
+    """
+    decisao, trace = _rotear_com_trace(tarefa, home, catalogo, chave_configurada)
+    return {
+        "contrato": CONTRATO_RELATORIO,
+        "decisao": decisao.dict(),
+        "trace": trace,
+    }
 
 
 def _proximo_passo(tarefa: Tarefa, so_local: bool) -> str:

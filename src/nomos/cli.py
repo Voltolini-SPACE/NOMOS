@@ -716,6 +716,12 @@ def cmd_motores(ctx, args) -> int:
                   f"(use: {', '.join(cat_mod.MODALIDADES_V011)})", file=sys.stderr)
             return EXIT_ERROR
         tarefa = erouter.Tarefa(tipo=modalidade, modalidade=modalidade)
+        if getattr(args, "json", False):
+            rel = erouter.relatorio_decisao(
+                tarefa, home=ctx["home"],
+                chave_configurada=epol.chave_cloud_configurada(ctx["vault"]))
+            print(json.dumps(rel, ensure_ascii=False, indent=2))
+            return EXIT_OK if rel["decisao"]["selected_engine"] else EXIT_ERROR
         dec = erouter.rotear(tarefa, home=ctx["home"],
                              chave_configurada=epol.chave_cloud_configurada(ctx["vault"]))
         if dec.selected_engine:
@@ -1404,6 +1410,8 @@ def build_parser() -> argparse.ArgumentParser:
     marb.set_defaults(fn=cmd_motores)
     mr = mosub.add_parser("recomendar")
     mr.add_argument("modalidade", nargs="?")
+    mr.add_argument("--json", action="store_true",
+                    help="relatório de decisão explicável (candidatos, motivos, regras)")
     mr.set_defaults(fn=cmd_motores)
     ma = mosub.add_parser("auto")
     ma.add_argument("estado", choices=["on", "off"])
