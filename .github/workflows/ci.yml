@@ -42,6 +42,12 @@ jobs:
       - name: Testes (pytest)
         run: python -m pytest -q
 
+      - name: "Gate read-only: consistência docs + marca (update agent)"
+        run: python tools/nomos_update_agent.py --check --json
+
+      - name: "Gate read-only: saúde do git (git agent)"
+        run: python tools/nomos_git_agent.py --check --json
+
   cobertura:
     name: cobertura (informativa)
     runs-on: ubuntu-latest
