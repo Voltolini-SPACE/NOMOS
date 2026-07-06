@@ -111,3 +111,56 @@ def test_cli_pasta_inexistente_e003(tmp_path):
     proc = _cli(["missao", "planejar", "organizar", str(tmp_path / "nao")],
                 tmp_path)
     assert proc.returncode == 1 and "NOMOS-E003" in proc.stderr
+
+
+# ---------------------------------------------------------------- P2: renomear
+def test_p2_renomear_plano_mostra_diff_e_nao_toca(tmp_path):
+    d = tmp_path / "docs"
+    d.mkdir()
+    for nome in ("relatorio final v1.txt", "relatorio final v2.txt", "outro.md"):
+        (d / nome).write_text("x", encoding="utf-8")
+    plano = ms.planejar_renomeacao(d, " final ", "-")
+    assert plano.executavel and len(plano.passos) == 2
+    assert plano.passos[0].destino == "relatorio-v1.txt"
+    assert "relatorio final v1.txt  →  relatorio-v1.txt" in plano.resumo()
+    assert (d / "relatorio final v1.txt").exists()      # dry-run de verdade
+
+
+def test_p2_renomear_colisao_invalida(tmp_path):
+    d = tmp_path / "docs"
+    d.mkdir()
+    (d / "a_x.txt").write_text("1", encoding="utf-8")
+    (d / "a_y.txt").write_text("2", encoding="utf-8")
+    plano = ms.planejar_renomeacao(d, "_x", "_z")
+    assert plano.executavel                               # sem colisão: ok
+    plano2 = ms.planejar_renomeacao(d, "x", "y")          # a_x→a_y JÁ existe
+    assert not plano2.executavel and plano2.conflitos
+
+
+def test_p2_renomear_executa_e_desfaz(tmp_path):
+    d = tmp_path / "docs"
+    d.mkdir()
+    (d / "IMG 001.png").write_text("x", encoding="utf-8")
+    (d / "IMG 002.png").write_text("x", encoding="utf-8")
+    plano = ms.planejar_renomeacao(d, "IMG ", "ferias-")
+    pacote = ms.executar(plano, aprovado=True, evidencias_dir=tmp_path / "e")
+    assert (d / "ferias-001.png").exists() and not (d / "IMG 001.png").exists()
+    assert ms.desfazer(pacote, d, aprovado=True) == 2
+    assert (d / "IMG 001.png").exists()
+
+
+def test_p2_cli_renomear_sem_de_e010(tmp_path):
+    d = tmp_path / "docs"
+    d.mkdir()
+    proc = _cli(["missao", "planejar", "renomear", str(d)], tmp_path)
+    assert proc.returncode == 1 and "NOMOS-E010" in proc.stderr
+
+
+def test_p2_cli_renomear_executar_sem_tty_nega(tmp_path):
+    d = tmp_path / "docs"
+    d.mkdir()
+    (d / "IMG 1.png").write_text("x", encoding="utf-8")
+    proc = _cli(["missao", "executar", "renomear", str(d),
+                 "--de", "IMG ", "--para", "f-"], tmp_path)
+    assert proc.returncode == 3 and "NOMOS-E002" in proc.stderr
+    assert (d / "IMG 1.png").exists()

@@ -61,12 +61,18 @@ class Plano:
     def resumo(self) -> str:
         linhas = [f"missão: {self.missao} · pasta: {self.dir}",
                   f"passos: {len(self.passos)} (todos nível A1 — escrita local)"]
-        por_cat: dict[str, int] = {}
-        for p in self.passos:
-            por_cat[p.destino.split("/")[0]] = \
-                por_cat.get(p.destino.split("/")[0], 0) + 1
-        linhas += [f"  → {cat}/: {n} arquivo(s)"
-                   for cat, n in sorted(por_cat.items())]
+        if self.missao == "renomear":
+            linhas += [f"  {p.origem}  →  {p.destino}"
+                       for p in self.passos[:20]]
+            if len(self.passos) > 20:
+                linhas.append(f"  … e mais {len(self.passos) - 20}")
+        else:
+            por_cat: dict[str, int] = {}
+            for p in self.passos:
+                por_cat[p.destino.split("/")[0]] = \
+                    por_cat.get(p.destino.split("/")[0], 0) + 1
+            linhas += [f"  → {cat}/: {n} arquivo(s)"
+                       for cat, n in sorted(por_cat.items())]
         if self.conflitos:
             linhas.append(f"⚠ CONFLITOS (plano NÃO executável): {self.conflitos}")
         return "\n".join(linhas)
@@ -94,6 +100,37 @@ def planejar_organizacao(dir_alvo: Path) -> Plano:
             plano.conflitos.append(destino)
             continue
         plano.passos.append(Passo(origem=item.name, destino=destino))
+    return plano
+
+
+def planejar_renomeacao(dir_alvo: Path, de: str, para: str) -> Plano:
+    """Missão embutida v2 (MC32/P2): renomear em lote com diff-prévia.
+
+    Substituição LITERAL de ``de`` por ``para`` nos nomes dos arquivos do topo
+    da pasta. Determinístico, sem tocar o disco; colisões (dois arquivos caindo
+    no mesmo nome, ou destino já existente) invalidam o plano.
+    """
+    dir_alvo = Path(dir_alvo)
+    if not dir_alvo.is_dir():
+        raise MissaoErro(f"pasta não encontrada: {dir_alvo}")
+    if not de:
+        raise MissaoErro("--de não pode ser vazio")
+    plano = Plano(missao="renomear", dir=dir_alvo)
+    destinos_vistos: set[str] = set()
+    for item in sorted(dir_alvo.iterdir()):
+        if not item.is_file() or item.name.startswith("."):
+            continue
+        novo = item.name.replace(de, para)
+        if novo == item.name:
+            continue
+        if not novo or novo.startswith(".") or "/" in novo:
+            plano.conflitos.append(f"{item.name} → nome inválido: {novo!r}")
+            continue
+        if novo in destinos_vistos or (dir_alvo / novo).exists():
+            plano.conflitos.append(f"{item.name} → {novo} (colisão)")
+            continue
+        destinos_vistos.add(novo)
+        plano.passos.append(Passo(origem=item.name, destino=novo))
     return plano
 
 

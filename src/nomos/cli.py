@@ -1330,7 +1330,15 @@ def cmd_missao(ctx, args) -> int:
     sub = getattr(args, "missao_cmd", None)
     if sub in ("planejar", "executar"):
         try:
-            plano = ms.planejar_organizacao(Path(args.pasta))
+            if args.tipo == "renomear":
+                if not getattr(args, "de", None):
+                    print(fmt("E010", "renomear exige --de e --para"),
+                          file=sys.stderr)
+                    return EXIT_ERROR
+                plano = ms.planejar_renomeacao(Path(args.pasta), args.de,
+                                               getattr(args, "para", "") or "")
+            else:
+                plano = ms.planejar_organizacao(Path(args.pasta))
         except ms.MissaoErro as exc:
             print(fmt("E003", str(exc)), file=sys.stderr)
             return EXIT_ERROR
@@ -1346,8 +1354,8 @@ def cmd_missao(ctx, args) -> int:
             print(fmt("E002", "plano com conflitos — resolva-os antes de "
                       "executar; nada foi movido."), file=sys.stderr)
             return EXIT_DENIED
-        decision = ctx["policy"].decide(Category.WRITE_LOCAL,
-                                        target=f"missao:organizar:{args.pasta}")
+        decision = ctx["policy"].decide(
+            Category.WRITE_LOCAL, target=f"missao:{args.tipo}:{args.pasta}")
         if not gate(decision, _approver_for(ctx, args)):
             print(fmt("E002", "mover arquivos é nível A1 — exige sua aprovação "
                       "num terminal interativo. Nada foi movido."),
@@ -1706,8 +1714,10 @@ def build_parser() -> argparse.ArgumentParser:
     misub = mip.add_subparsers(dest="missao_cmd")
     for nome_m in ("planejar", "executar"):
         mm = misub.add_parser(nome_m)
-        mm.add_argument("tipo", choices=["organizar"])
+        mm.add_argument("tipo", choices=["organizar", "renomear"])
         mm.add_argument("pasta")
+        mm.add_argument("--de")
+        mm.add_argument("--para", default="")
         mm.set_defaults(fn=cmd_missao)
     md = misub.add_parser("desfazer")
     md.add_argument("pacote")
