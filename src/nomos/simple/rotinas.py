@@ -261,9 +261,9 @@ def exportar(home: Path, formato: str | None = None) -> tuple[list[Path], str]:
 
     if formato == "launchd":
         plist = destino / "br.com.se7enpay.nomos.rotinas.plist"
+        # sem DOCTYPE: launchd aceita, e o código-fonte permanece sem NENHUMA
+        # URL externa (prova estática de egress-zero cobre até strings geradas)
         plist.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
- "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>br.com.se7enpay.nomos.rotinas</string>
   <key>ProgramArguments</key>
