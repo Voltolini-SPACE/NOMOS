@@ -101,34 +101,42 @@ def run_onboarding(ask=input, say=print, host_ollama: str = "http://127.0.0.1:11
         say(c("verde", f"   achei o modelo '{modelo}'{extra} — será o padrão."))
         modo = "local"
     else:
-        say(c("amarelo", "   não achei o Ollama rodando — sem problema."))
-        say("   Para ter um cérebro local depois: instale o Ollama (ollama.com)")
-        say("   e rode:  ollama pull hermes3   — eu detecto sozinho.")
+        say(c("amarelo", "   não achei um cérebro local rodando — sem problema."))
+        say("   O caminho mais fácil (sem GPU, sem Ollama, ~400 MB, uma vez):")
+        say("     nomos cerebro baixar    — o cérebro leve embutido do NOMOS.")
+        say("   Prefere o Ollama? instale (ollama.com) e rode: ollama pull hermes3")
+        say("   — qualquer um dos dois eu detecto sozinho.")
         say("   Por enquanto fico em MODO DEMO: converso sobre o que sei fazer,")
         say("   guardo suas anotações, mas não invento respostas de IA.")
         modo, modelo = "demo", None
 
     # 4) senha-mestra (opcional)
     say("")
-    say(c("negrito", "4/4 · Caixa-forte de chaves (opcional)"))
-    say(c("fraco", "   Guarda suas chaves e senhas trancadas. Pode criar agora (senha de"))
-    say(c("fraco", "   10+ caracteres) ou apertar Enter para deixar para depois."))
+    say(c("negrito", "4/4 · Cofre de chaves (opcional)"))
     vault = Vault(config.nomos_home() / "vault.json")
-    while True:
-        senha = ask_secret("senha-mestra (Enter pula)> ")
-        if not senha.strip():
-            say("   ok, sem caixa-forte por enquanto — dá para criar quando quiser, é só")
-            say("   pedir /chaves no chat.")
-            cofre = False
-            break
-        try:
-            if not vault.exists():
+    if vault.exists():
+        # cofre pré-existente: NÃO pedir senha aqui — qualquer coisa digitada
+        # seria ignorada e a pessoa sairia acreditando numa senha errada
+        say(c("verde", "   você já tem um cofre — mantive a sua senha atual."))
+        say(c("fraco", "   (para trocar a senha: nomos vault rotate)"))
+        cofre = True
+    else:
+        say(c("fraco", "   Guarda suas chaves e senhas trancadas. Pode criar agora (senha de"))
+        say(c("fraco", "   10+ caracteres) ou apertar Enter para deixar para depois."))
+        while True:
+            senha = ask_secret("senha-mestra (Enter pula)> ")
+            if not senha.strip():
+                say("   ok, sem cofre por enquanto — dá para criar quando quiser, é só")
+                say("   pedir /chaves no chat.")
+                cofre = False
+                break
+            try:
                 vault.init(senha)
-            cofre = True
-            say(c("verde", "   caixa-forte criada e trancada."))
-            break
-        except VaultError as exc:
-            say(f"   {exc} — tente de novo ou Enter para pular.")
+                cofre = True
+                say(c("verde", "   cofre criado e trancado."))
+                break
+            except VaultError as exc:
+                say(f"   {exc} — tente de novo ou Enter para pular.")
 
     say("")
     say(c("fraco", "   Outros motores que sei usar (veja depois com /motores):"))

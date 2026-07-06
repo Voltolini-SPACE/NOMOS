@@ -183,7 +183,7 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
             cadeado = "só-local 🔒" if localidade.esta_ligado(ctx["home"]) else "nuvem plugada 🔌"
             cofre_txt = "sim" if perfil.get("cofre") else "ainda não"
             say(f"cérebro: {cerebro} · memórias: {mem.count()} · "
-                f"caixa-forte: {cofre_txt} · {cadeado} · tudo no seu computador")
+                f"cofre: {cofre_txt} · {cadeado} · tudo no seu computador")
             continue
         if linha.startswith("/nuvem"):
             pergunta = linha[6:].strip()

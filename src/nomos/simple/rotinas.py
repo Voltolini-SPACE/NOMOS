@@ -332,7 +332,10 @@ WantedBy=timers.target
 def linha_agendador(home: Path) -> str:
     """A linha que VOCÊ pode colar no seu agendador. O NOMOS não mexe nele."""
     import sys
-    exe = Path(sys.executable).name
+    # caminho COMPLETO do Python, entre aspas (como em exportar()): o cron tem
+    # PATH mínimo — só o basename cairia no Python do sistema, sem o nomos,
+    # e a rotina falharia em silêncio (pior ainda em venv/pipx)
+    exe = f'"{sys.executable}"'
     return (f"# roda as rotinas devidas a cada 15 min (cole no `crontab -e`):\n"
             f"*/15 * * * * NOMOS_HOME={home} {exe} -m nomos.cli rotinas executar\n"
             f"# Windows (Agendador de Tarefas → nova tarefa):\n"

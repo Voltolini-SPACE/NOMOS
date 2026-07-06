@@ -38,7 +38,7 @@ def test_ajuda_lista_comandos(tmp_path):
 def test_status_mostra_local_e_cerebro(tmp_path, monkeypatch):
     monkeypatch.setattr(motores, "modelos_ollama", lambda *a, **k: [])
     _, tela = _chat(["/status", "/sair"], tmp_path=tmp_path)
-    assert "só-local" in tela and "caixa-forte" in tela
+    assert "só-local" in tela and "cofre" in tela
 
 
 def test_cerebro_orienta_baixar(tmp_path, monkeypatch):

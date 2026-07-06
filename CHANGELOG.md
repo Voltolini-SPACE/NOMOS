@@ -32,6 +32,51 @@ segurança e robustez, cada item com teste de regressão em
   (400/405/409/413) agora respondem página mínima com link de volta ao painel
   em vez de texto cru sem saída.
 
+### Changed (MC36 — revisão loop-100: usabilidade e coerência)
+Bloco 2 — UX da CLI, do painel e fluxos simples:
+- **Painel/terminal falam a língua de quem decide**: a categoria da aprovação
+  aparece como rótulo humano ("A2 · sair para a rede") no card do painel, no
+  painel antigo e em `nomos approvals list` — o id técnico continua visível.
+- **Auto-recarregar do painel deixou de atrapalhar**: virou JS próprio,
+  pausável — não recarrega enquanto você digita no filtro ou há aprovação na
+  tela (o meta refresh antigo recarregava no meio da decisão); estado visível
+  ("auto: Ns"/"pausado"); botões APROVAR/NEGAR desabilitam quando o pedido
+  expira (clicar só renderia 409).
+- **Painel**: contador acessível no filtro ("N de M itens", aria-live);
+  marcador ↗ nos itens da sidebar que saem da página; botão "buscar" na
+  auditoria; `scope="col"` nos cabeçalhos; tipografia mínima .72rem; borda do
+  campo de busca com contraste ≥3:1; `// ` decorativo dos títulos legível.
+- **Painel antigo (`approvals serve`)** herdou o hardening do 4.0: headers de
+  segurança (CSP/nosniff/no-referrer/no-store), PRG 303 pós-decisão (F5 não
+  reenvia mais a decisão) e 405 para POST em rota errada.
+- **`nomos painel`**: `--somente-leitura` (nenhum POST aceito), `--sem-abrir`
+  (a URL com segredo não passa pelo argv do abridor — visível em `ps`) e
+  cache curto (2 s) da coleta para aguentar polling de `health/`; help do
+  argparse não diz mais "somente leitura" (não era verdade no 4.0).
+- **CLI 100% pt-BR na superfície de descoberta**: descrição do programa e
+  `help=` nos 13 subcomandos que apareciam sem explicação (`init`, `agent`,
+  `vault`, `consent`, `panic`, `run`, `skill`, `approvals`, `chat`, `memory`,
+  `status`, `logs`).
+- **Comandos pelados = default útil** (mesmo padrão de `nomos motores`):
+  `nomos memoria` → candidatas · `nomos evidencia` → listar · `nomos mcp` →
+  tools. O site ensina esses comandos sem subcomando; terminar em "uso: …"
+  com erro era a UX quebrando a própria instrução.
+- **Onboarding honesto**: com cofre já existente, o passo 4 avisa e NÃO pede
+  senha (antes, qualquer senha digitada era ignorada e "confirmada"); sem
+  motor local, o caminho recomendado agora começa pelo cérebro embutido
+  (`nomos cerebro baixar`, ~400 MB, sem GPU) antes do Ollama.
+- **Terminologia unificada**: "cofre" em todas as superfícies (site, doutor,
+  chaves, onboarding, status) — eram 4 nomes para a mesma coisa.
+- **`nomos chaves` não destrói mais a chave colada com senha errada**:
+  `absorver_arquivo` valida a senha-mestra ANTES de ler/apagar o arquivo
+  (novo `Vault.verify_passphrase`, com o mesmo lockout progressivo).
+- **Rotinas**: a linha de crontab usa o caminho COMPLETO do Python entre
+  aspas (com basename, cron de venv/pipx falhava em silêncio).
+- **`comparar_versoes`**: metadado de build (`1.2.3+build`) não é mais
+  tratado como pré-release.
+- Coleta do painel: registry de agentes instanciado uma vez por coleta;
+  conexão sqlite de conversas fechada em `finally`.
+
 ### Added (MC34.1 — downloads no site + sinais reais)
 - **Site § Baixar & instalar**: três caminhos claros — 🍎 macOS/Linux
   (`install.sh`), 🪟 Windows (`install.ps1`) e 🐙 pelo código (git clone +

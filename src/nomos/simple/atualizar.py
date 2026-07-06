@@ -29,8 +29,11 @@ def comparar_versoes(a: str, b: str) -> int:
         v = (v or "").strip().lstrip("vV")
         nums = re.findall(r"\d+", v.split("-")[0].split("+")[0])[:3]
         base = tuple(int(n) for n in nums) + (0,) * (3 - len(nums))
-        # versão com sufixo (rc/beta) ordena ANTES da final de mesmo número
-        sufixo = 0 if re.search(r"(rc|a|b|dev)", v.lower()) else 1
+        # versão com sufixo (rc/beta) ordena ANTES da final de mesmo número.
+        # metadado de build (semver `+build`) NÃO é pré-release: fica fora
+        # da detecção — senão "1.2.3+build" ordenaria antes de "1.2.3"
+        nucleo = v.split("+")[0].lower()
+        sufixo = 0 if re.search(r"(rc|a|b|dev)", nucleo) else 1
         return base + (sufixo,)
     pa, pb = partes(a), partes(b)
     return (pa > pb) - (pa < pb)

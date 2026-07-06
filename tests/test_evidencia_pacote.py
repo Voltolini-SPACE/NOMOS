@@ -106,7 +106,10 @@ def test_cli_evidencia_verificar_detecta_adulteracao(tmp_path):
     assert "NÃO confere" in proc.stderr
 
 
-def test_cli_evidencia_sem_subcomando_orienta_e_sai_erro(tmp_path):
+def test_cli_evidencia_sem_subcomando_lista(tmp_path):
+    # MC36: `nomos evidencia` pelado = listar (default útil, como `nomos
+    # motores`) — o site ensina o comando sem subcomando; erro de uso era
+    # a UX quebrando a própria instrução
     proc = _cli(["evidencia"], tmp_path)
-    assert proc.returncode == 1
-    assert "uso:" in proc.stderr
+    assert proc.returncode == 0, proc.stderr
+    assert "nenhum pacote de evidências" in proc.stdout

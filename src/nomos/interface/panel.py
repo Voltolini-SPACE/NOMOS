@@ -5,7 +5,10 @@ Garantias:
 - URL contém segmento secreto aleatório — sem ele, 404 em tudo;
 - aprovar/negar é POST com o token single-use da solicitação; token errado,
   reutilizado ou expirado = recusa (a fila garante; o painel só transporta);
-- HTML autossuficiente (zero assets externos, zero JS de terceiros).
+- HTML autossuficiente (zero assets externos, zero JS de terceiros);
+- mesmos headers de segurança do painel 4.0 (CSP/nosniff/no-referrer/
+  no-store — páginas carregam tokens; nada pode ir ao cache) e o mesmo
+  PRG: decidir → 303 → recarregar (F5 não reenvia a decisão).
 """
 from __future__ import annotations
 
@@ -15,7 +18,9 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
 
+from nomos.interface.painel_web import _HEADERS_SEGURANCA
 from nomos.kernel.approvals import ApprovalError, ApprovalQueue
+from nomos.kernel.policy import rotulo_categoria
 
 _PAGE = """<!doctype html><html lang="pt-br"><meta charset="utf-8">
 <title>NOMOS — aprovações</title>
@@ -32,7 +37,7 @@ _PAGE = """<!doctype html><html lang="pt-br"><meta charset="utf-8">
 </html>"""
 
 _ITEM = """<div class="req">
- <div class="cat">{category}</div>
+ <div class="cat">{category} <small>({cat_raw})</small></div>
  <div>alvo: <span class="alvo">{target}</span></div>
  <div>motivo: {reason}</div>
  <div><small>expira em {left:.0f}s · id {rid}</small></div>
@@ -68,6 +73,8 @@ class PanelServer:
                 self.send_response(code)
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.send_header("Content-Length", str(len(data)))
+                for k, v in _HEADERS_SEGURANCA.items():
+                    self.send_header(k, v)
                 self.end_headers()
                 self.wfile.write(data)
 
@@ -76,14 +83,21 @@ class PanelServer:
                 self.send_response(code)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(data)))
+                for k, v in _HEADERS_SEGURANCA.items():
+                    self.send_header(k, v)
                 self.end_headers()
                 self.wfile.write(data)
 
             def do_GET(self):
                 base = f"/p/{panel.secret}"
-                if self.path.rstrip("/") != base:
+                caminho, _, query = self.path.partition("?")
+                if caminho.rstrip("/") != base:
                     return self._deny()
                 items = []
+                # feedback pós-PRG: só valores do vocabulário (nunca eco livre)
+                decidido = (parse_qs(query).get("decidido") or [""])[0]
+                if decidido in ("aprovada", "negada"):
+                    items.append(f"<p>✔ solicitação <b>{decidido}</b>.</p>")
                 now = panel.queue.clock()
                 for a in panel.queue.pending():
                     try:
@@ -93,7 +107,8 @@ class PanelServer:
                     items.append(_ITEM.format(
                         base=base, rid=a.id,
                         token=html.escape(token),
-                        category=html.escape(a.category),
+                        category=html.escape(rotulo_categoria(a.category)),
+                        cat_raw=html.escape(a.category),
                         target=html.escape(a.target),
                         reason=html.escape(a.reason),
                         left=max(0.0, a.expires - now),
@@ -103,8 +118,10 @@ class PanelServer:
 
             def do_POST(self):
                 base = f"/p/{panel.secret}"
+                if not self.path.startswith(base):
+                    return self._deny()          # sem o segredo: 404 uniforme
                 if self.path != f"{base}/decide":
-                    return self._deny()
+                    return self._deny(405, "só existe POST em decide")
                 try:
                     length = int(self.headers.get("Content-Length") or 0)
                 except ValueError:
@@ -123,10 +140,12 @@ class PanelServer:
                     status = panel.queue.decide(rid, token, approve=(action == "aprovar"))
                 except ApprovalError as exc:
                     return self._deny(409, f"recusado: {exc}")
-                self._html(200, _PAGE.format(
-                    body=f"<p>solicitação {html.escape(rid)}: "
-                         f"<b>{html.escape(status)}</b>.</p>"
-                         f'<p><a href="{base}/">voltar</a></p>'))
+                # PRG: F5 depois de decidir NÃO reenvia o POST (que daria 409)
+                self.send_response(303)
+                self.send_header("Location", f"{base}/?decidido={status}")
+                for k, v in _HEADERS_SEGURANCA.items():
+                    self.send_header(k, v)
+                self.end_headers()
 
         self._server = ThreadingHTTPServer((host, port), Handler)
         self.port = self._server.server_port

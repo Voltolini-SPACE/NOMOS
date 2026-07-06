@@ -43,10 +43,10 @@ def diagnostico(home=None) -> list[dict]:
 
     if home.joinpath("vault.json").exists():
         n = len(_nomes_seguro())
-        itens.append(_linha(True, "Caixa-forte de chaves criada",
+        itens.append(_linha(True, "Cofre de chaves criado",
                             f"{n} chave(s) guardada(s)"))
     else:
-        itens.append(_linha(True, "Caixa-forte ainda não criada",
+        itens.append(_linha(True, "Cofre ainda não criado",
                             "opcional — crie quando precisar guardar uma chave (/chaves)"))
 
     mapa = motores.detectar()
@@ -147,7 +147,7 @@ def diagnostico_v011(home=None, ctx: dict | None = None) -> list[dict]:
     # cofre
     cofre = home.joinpath("vault.json").exists()
     n_chaves = len(_nomes_seguro()) if cofre else 0
-    itens.append(_item(True, "Caixa-forte " + ("criada" if cofre else "ainda não criada"),
+    itens.append(_item(True, "Cofre " + ("criado" if cofre else "ainda não criado"),
                        f"{n_chaves} chave(s) guardada(s)" if cofre
                        else "opcional — crie quando precisar guardar uma chave",
                        "" if cofre else "quando quiser: nomos chaves"))

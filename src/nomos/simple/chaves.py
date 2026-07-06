@@ -29,7 +29,7 @@ ARQUIVO_SOLTE = "COLE_SUA_CHAVE_AQUI.txt"
 MODELO_ARQUIVO = (
     "# Cole a sua chave na linha de baixo (só a chave, nada mais) e salve o\n"
     "# arquivo. Depois volte ao NOMOS e escolha 'absorver'. Assim que eu\n"
-    "# guardar na caixa-forte, este arquivo é apagado automaticamente.\n"
+    "# guardar no cofre, este arquivo é apagado automaticamente.\n"
 )
 
 
@@ -108,6 +108,15 @@ def absorver_arquivo(home: Path, nome_interno: str, senha_mestra: str) -> str:
         raise ChaveError(
             f"não encontrei o arquivo {ARQUIVO_SOLTE} na sua pasta — "
             "peça para eu criá-lo primeiro")
+    v = _vault()
+    if v.exists():
+        # valida a senha-mestra ANTES de ler/apagar o arquivo: um typo na
+        # senha não pode custar a chave colada — com senha errada o arquivo
+        # fica intacto e a pessoa só tenta de novo
+        try:
+            v.verify_passphrase(senha_mestra)
+        except VaultError as exc:
+            raise ChaveError(str(exc)) from None
     linhas = [ln.strip() for ln in p.read_text(encoding="utf-8").splitlines()
               if ln.strip() and not ln.lstrip().startswith("#")]
     if not linhas:
@@ -125,7 +134,7 @@ def absorver_arquivo(home: Path, nome_interno: str, senha_mestra: str) -> str:
 def _pedir_senha_mestra(ask_secret, say, confirmar: bool) -> str:
     if caixa_forte_existe():
         return ask_secret("sua senha-mestra: ")
-    say("Vou criar sua caixa-forte agora. Escolha uma senha-mestra (10+")
+    say("Vou criar seu cofre agora. Escolha uma senha-mestra (10+")
     say("caracteres) — é ela que protege todas as chaves. Guarde-a bem:")
     s1 = ask_secret("nova senha-mestra: ")
     if confirmar:
@@ -156,7 +165,7 @@ def menu_chaves(home, ask=input, say=print, ask_secret=None):
     import getpass as _gp
     ask_secret = ask_secret or _gp.getpass
     say("")
-    say("🔑 Suas chaves ficam numa caixa-forte cifrada. Nunca aparecem na tela")
+    say("🔑 Suas chaves ficam num cofre cifrado. Nunca aparecem na tela")
     say("   nem no nosso histórico. O que você quer fazer?")
     say("   1) guardar uma chave digitando (não aparece na tela)")
     say("   2) guardar por arquivo (colo num .txt e o NOMOS absorve)")

@@ -71,9 +71,9 @@ _CSS = """
  .brand .cursor{animation:pisca 1.2s steps(1) infinite}
  @keyframes pisca{50%{opacity:0}}
  @media (prefers-reduced-motion:reduce){.brand .cursor{animation:none}}
- .tagline{color:var(--fraco);font-size:.66rem;margin:.15rem 0 1.1rem}
+ .tagline{color:var(--fraco);font-size:.72rem;margin:.15rem 0 1.1rem}
  nav.menu{display:flex;flex-direction:column;gap:.1rem}
- nav.menu .grupo{color:var(--fraco);font-size:.62rem;text-transform:uppercase;
+ nav.menu .grupo{color:var(--fraco);font-size:.72rem;text-transform:uppercase;
    letter-spacing:.16em;margin:.9rem 0 .25rem}
  nav.menu a{color:var(--fraco);text-decoration:none;font-size:.78rem;
    padding:.28rem .5rem;border-radius:6px;border-left:2px solid transparent;
@@ -82,8 +82,9 @@ _CSS = """
  nav.menu a.ativo{color:var(--neon);border-left-color:var(--neon);
    background:var(--surface)}
  nav.menu .ico{width:1.1em;text-align:center;opacity:.85}
+ nav.menu .ext{margin-left:auto;opacity:.6;font-size:.72rem}
  .badge{color:var(--bg);background:var(--neon);border-radius:10px;
-   padding:0 .4rem;font-size:.66rem;margin-left:auto;font-weight:700}
+   padding:0 .4rem;font-size:.72rem;margin-left:auto;font-weight:700}
  .badge.alerta{background:var(--amarelo)}
 
  /* ---- bloco Sistema (rodapé da sidebar) ---- */
@@ -91,7 +92,7 @@ _CSS = """
    padding-top:.8rem;font-size:.7rem;color:var(--fraco)}
  .sysbox b{color:var(--txt)}
  .chip{display:inline-block;border-radius:4px;padding:.05rem .45rem;
-   font-size:.68rem;font-weight:700}
+   font-size:.72rem;font-weight:700}
  .chip.ok{background:rgba(90,247,142,.15);color:var(--neon)}
  .chip.warn{background:rgba(242,193,78,.15);color:var(--amarelo)}
  .chip.err{background:rgba(255,92,87,.15);color:var(--vermelho)}
@@ -106,24 +107,30 @@ _CSS = """
  .sub{color:var(--fraco);font-size:.72rem;margin:.2rem 0 0}
  .acoes{display:flex;gap:.6rem;align-items:center;margin-top:.5rem;
    flex-wrap:wrap}
- .acoes input{background:var(--surface);border:1px solid var(--line);
+ .acoes input{background:var(--surface);border:1px solid #3a5544;
    color:var(--txt);border-radius:6px;padding:.3rem .6rem;font:inherit;
    font-size:.76rem;width:230px;max-width:60vw}
  .acoes a{font-size:.72rem;color:var(--fraco)}
  .acoes a:hover{color:var(--neon)}
+ .acoes a.ativo{color:var(--neon)}
+ .acoes button{font:inherit;font-size:.72rem;border-radius:6px;
+   padding:.3rem .7rem;cursor:pointer;border:1px solid #3a5544;
+   background:var(--surface2);color:var(--txt)}
+ .acoes button:hover{border-color:var(--dim);color:var(--neon)}
+ #filtro-n{font-size:.72rem;color:var(--fraco)}
 
  /* ---- seções ---- */
  h2{font-size:.82rem;text-transform:uppercase;letter-spacing:.14em;
    color:var(--dim);margin:2.1rem 0 .7rem;border-left:3px solid var(--neon);
    padding-left:.6rem;scroll-margin-top:5.5rem}
- h2::before{content:"// ";color:var(--line)}
+ h2::before{content:"// ";color:var(--fraco)}
  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));
    gap:1px;background:var(--line);border:1px solid var(--line);
    border-radius:8px;overflow:hidden;margin:1rem 0 .4rem}
  .kpi{background:var(--surface);padding:.7rem .8rem}
  .kpi b{display:block;color:var(--neon);font-size:1.12rem;
    text-shadow:var(--glow)}
- .kpi span{color:var(--fraco);font-size:.68rem}
+ .kpi span{color:var(--fraco);font-size:.72rem}
  .card{background:var(--surface);border:1px solid var(--line);
    border-radius:8px;padding:.75rem .95rem;margin:.55rem 0}
  .card.ok{border-left:4px solid var(--neon)}
@@ -137,7 +144,7 @@ _CSS = """
  td,th{padding:.32rem .55rem;text-align:left;border-bottom:1px solid
    var(--line)}
  th{color:var(--fraco);font-weight:normal;text-transform:uppercase;
-   font-size:.68rem;letter-spacing:.1em}
+   font-size:.72rem;letter-spacing:.1em}
  .pill{display:inline-block;border:1px solid var(--line);border-radius:20px;
    padding:.05rem .55rem;font-size:.7rem;color:var(--fraco);
    margin-right:.3rem}
@@ -158,7 +165,7 @@ _CSS = """
  .conta{color:var(--amarelo)}
 
  /* ---- rail ---- */
- .rail h3{font-size:.66rem;text-transform:uppercase;letter-spacing:.16em;
+ .rail h3{font-size:.72rem;text-transform:uppercase;letter-spacing:.16em;
    color:var(--fraco);margin:1.1rem 0 .4rem}
  .rail .mini{background:var(--surface);border:1px solid var(--line);
    border-radius:8px;padding:.5rem .6rem;font-size:.72rem;margin:.3rem 0}
@@ -197,21 +204,45 @@ _JS = """
   },{rootMargin:'-20% 0px -70% 0px'});
   document.querySelectorAll('h2[id]').forEach(function(h){obs.observe(h);});
  }catch(e){}
- // filtro rápido: esconde cards/linhas que não batem com o texto
+ // filtro rápido: esconde cards/linhas que não batem + contador acessível
  var f=document.getElementById('filtro');
  if(f){f.addEventListener('input',function(){
-   var q=f.value.toLowerCase();
+   var q=f.value.toLowerCase(),vis=0,tot=0;
    document.querySelectorAll('.filtravel').forEach(function(el){
-     el.style.display=(el.textContent.toLowerCase().indexOf(q)>=0)?'':'none';});
+     var mostra=el.textContent.toLowerCase().indexOf(q)>=0;
+     el.style.display=mostra?'':'none';
+     tot+=1;if(mostra)vis+=1;});
+   var n=document.getElementById('filtro-n');
+   if(n)n.textContent=q?(vis+' de '+tot+' itens'):'';
  });}
- // contagem regressiva das aprovações (expiram sozinhas em 5 min)
+ // contagem regressiva das aprovações (expiram sozinhas em 5 min);
+ // em 0, os botões são desabilitados — clicar só renderia um 409
  function tique(){
   document.querySelectorAll('[data-expira]').forEach(function(el){
     var s=Math.max(0,Math.round(+el.getAttribute('data-expira')-Date.now()/1000));
     el.textContent=s>0?(Math.floor(s/60)+'m'+('0'+s%60).slice(-2)+'s')
-                      :'expirada — recarregue';});
+                      :'expirada — recarregue';
+    if(s<=0){var card=el.closest('.aprov');
+      if(card){card.querySelectorAll('button').forEach(function(b){
+        b.disabled=true;});}}});
  }
  tique(); setInterval(tique,1000);
+ // auto-recarregar OPT-IN (?refresh=N) em JS, cancelável: pausa enquanto
+ // você filtra ou há aprovação na tela (o antigo meta refresh recarregava
+ // no meio da decisão e apagava o filtro digitado)
+ var mr=document.querySelector('meta[name="nomos-refresh"]');
+ if(mr){
+  var total=parseInt(mr.getAttribute('content'),10)||0,resta=total;
+  var st=document.getElementById('auto-estado');
+  if(total>0){setInterval(function(){
+    var ocupado=(f&&(f.value||document.activeElement===f))
+                ||document.querySelector('.aprov [data-expira]');
+    if(ocupado){if(st)st.textContent='auto: pausado';return;}
+    resta-=1;
+    if(st)st.textContent='auto: '+resta+'s';
+    if(resta<=0){location.reload();}
+  },1000);}
+ }
  // relógio local no bloco Sistema
  var rel=document.getElementById('relogio');
  if(rel){rel.textContent=new Date().toLocaleTimeString();
@@ -233,11 +264,17 @@ _HEADERS_SEGURANCA = {
 }
 
 
-def _doc(titulo: str, corpo: str, meta_refresh: str = "") -> str:
-    """Documento HTML completo, autossuficiente (CSS/JS inline, nada externo)."""
+def _doc(titulo: str, corpo: str, refresh: int | None = None) -> str:
+    """Documento HTML completo, autossuficiente (CSS/JS inline, nada externo).
+
+    ``refresh``: opt-in de auto-recarga — vira <meta name="nomos-refresh">
+    lida pelo JS próprio (cancelável/pausável); NÃO usamos http-equiv, que
+    recarregaria no meio de uma decisão e apagaria o filtro digitado."""
+    meta = (f'\n<meta name="nomos-refresh" content="{int(refresh)}">'
+            if refresh else "")
     return ("<!doctype html><html lang=\"pt-br\"><meta charset=\"utf-8\">\n"
             "<meta name=\"viewport\" content=\"width=device-width, "
-            "initial-scale=1\">" + meta_refresh + "\n<title>" +
+            "initial-scale=1\">" + meta + "\n<title>" +
             html.escape(titulo) + "</title>\n<style>" + _CSS + "</style>\n" +
             corpo + "\n<script>" + _JS + "</script>\n</html>")
 
@@ -313,14 +350,16 @@ def dados_dashboard(ctx) -> dict:
         from nomos.conversations.store import ConversationStore
         from nomos.kernel.audit import redact_text
         _cs = ConversationStore(home / "conversas.db")
-        for c in _cs.listar(limite=8):
-            # título é metadado (1ªs palavras) — redigido contra padrões de
-            # segredo; o CORPO das mensagens nunca é lido nem exibido aqui
-            conversas.append({"id": c.id,
-                              "titulo": redact_text(c.titulo or "(sem título)"),
-                              "motor": c.motor, "fixada": bool(c.fixada),
-                              "turnos": c.n_turnos})
-        _cs.close()
+        try:
+            for c in _cs.listar(limite=8):
+                # título é metadado (1ªs palavras) — redigido contra padrões
+                # de segredo; o CORPO das mensagens nunca é lido nem exibido
+                conversas.append({"id": c.id,
+                                  "titulo": redact_text(c.titulo or "(sem título)"),
+                                  "motor": c.motor, "fixada": bool(c.fixada),
+                                  "turnos": c.n_turnos})
+        finally:
+            _cs.close()   # exceção no meio do loop não vaza a conexão sqlite
     except Exception:
         conversas = []
 
@@ -328,10 +367,11 @@ def dados_dashboard(ctx) -> dict:
     agentes = []
     try:
         from nomos.agents.registry import AgentRegistry
-        for a in AgentRegistry(home).listar():
+        reg = AgentRegistry(home)   # UMA instância: reusa o parse dos manifests
+        for a in reg.listar():
             agentes.append({"nome": a.nome, "risco_max": a.risco_max,
                             "ferramentas": list(a.ferramentas),
-                            "ativo": AgentRegistry(home).ativo(a.nome)})
+                            "ativo": reg.ativo(a.nome)})
     except Exception:
         agentes = []
 
@@ -474,6 +514,11 @@ def _sidebar(d: dict, n_aprov: int) -> str:
                 extra = badge_mem
             elif href == "#aprovacoes":
                 extra = badge_apr
+            if not href.startswith("#") and not extra:
+                # sai da página principal (subpágina/JSON): marca visual —
+                # âncora e navegação não podem parecer a mesma coisa
+                extra = ('<span class="ext" aria-hidden="true" '
+                         'title="abre outra página">↗</span>')
             itens.append(f'<a href="{e(href)}"><span class="ico">{ico}</span>'
                          f"{e(rotulo)}{extra}</a>")
     classe = {"PRONTO": "ok", "PARCIAL": "warn",
@@ -555,7 +600,7 @@ def _secao_aprovacoes(aprovacoes: list[dict] | None, n_meta: int) -> str:
     corpo = ['<h2 id="aprovacoes">Aprovações — você decide</h2>']
     if aprovacoes is None:
         rodape = (f"{n_meta} pendente(s) na fila — decida no terminal "
-                  "(<code>nomos aprovacoes</code>)" if n_meta else
+                  "(<code>nomos approvals list</code>)" if n_meta else
                   "nenhuma solicitação pendente")
         corpo.append(f'<div class="card">{rodape}<br><small>este modo do '
                      "painel é somente leitura; para decidir aqui, rode "
@@ -569,9 +614,11 @@ def _secao_aprovacoes(aprovacoes: list[dict] | None, n_meta: int) -> str:
                      "único, expira sozinho em 5 min (fail-closed)</small>"
                      "</div>")
         return "\n".join(corpo)
+    from nomos.kernel.policy import rotulo_categoria
     for a in aprovacoes:
         corpo.append(
-            f'<div class="card aprov filtravel"><b>{e(a["category"])}</b> '
+            f'<div class="card aprov filtravel">'
+            f'<b>{e(rotulo_categoria(a["category"]))}</b> '
             f'<span class="pill">expira em <span class="conta" '
             f'data-expira="{a["expira_epoch"]:.0f}">'
             f'{a["restante"]:.0f}s</span></span><br>'
@@ -606,8 +653,6 @@ def render_html(d: dict, refresh: int | None = None,
     o mesmo contrato de sempre). Lista (mesmo vazia) ⇒ fila anexada.
     """
     e = html.escape
-    meta_refresh = (f'\n<meta http-equiv="refresh" content="{int(refresh)}">'
-                    if refresh else "")
     classe = {"PRONTO": "ok", "PARCIAL": "warn",
               "BLOQUEADO": "err"}[d["status_geral"]]
     n_aprov = (len(aprovacoes) if aprovacoes is not None
@@ -622,10 +667,14 @@ def render_html(d: dict, refresh: int | None = None,
         "recarregue para atualizar</p>"
         '<div class="acoes"><input id="filtro" type="search" '
         'placeholder="filtrar seções e tabelas…" aria-label="filtrar"> '
-        '<a href="?refresh=30">auto-recarregar 30s</a> '
-        '<a href="./">parar</a> <a href="api/">api/</a> '
-        '<a href="audit/">audit/</a> <a href="roteador/">roteador/</a> '
-        '<a href="health/">health/</a></div></header>')
+        '<span id="filtro-n" aria-live="polite"></span> '
+        + ('<a class="ativo" href="./">auto: ligado — parar</a> '
+           f'<span id="auto-estado">auto: {int(refresh)}s</span> '
+           if refresh else
+           '<a href="?refresh=30">auto-recarregar 30s</a> ')
+        + '<a href="api/">api/ ↗</a> '
+        '<a href="audit/">audit/ ↗</a> <a href="roteador/">roteador/ ↗</a> '
+        '<a href="health/">health/ ↗</a></div></header>')
 
     # --- KPIs ---
     memo = d.get("memoria", {})
@@ -673,15 +722,15 @@ def render_html(d: dict, refresh: int | None = None,
 
     # --- motores ---
     corpo.append('<h2 id="motores">Motores prontos por modalidade</h2><table>'
-                 "<tr><th>modalidade</th><th>motores</th></tr>")
+                 "<tr><th scope='col'>modalidade</th><th scope='col'>motores</th></tr>")
     for mod, ms in d["modalidades"].items():
         corpo.append(f'<tr class="filtravel"><td>{e(mod)}</td>'
                      f"<td>{e(', '.join(ms)) if ms else '—'}</td></tr>")
     corpo.append("</table>")
 
     corpo.append("<h2>Motores (catálogo completo)</h2><table>"
-                 "<tr><th>motor</th><th>onde</th><th>custo</th>"
-                 "<th>qualidade</th><th>pronto</th></tr>")
+                 "<tr><th scope='col'>motor</th><th scope='col'>onde</th><th scope='col'>custo</th>"
+                 "<th scope='col'>qualidade</th><th scope='col'>pronto</th></tr>")
     for m in d.get("motores", []):
         corpo.append(
             f'<tr class="filtravel"><td>{e(m["rotulo"])}</td>'
@@ -791,7 +840,7 @@ def render_html(d: dict, refresh: int | None = None,
     pol = d.get("politica", {})
     if pol:
         corpo.append('<h2 id="politica">Política de permissões (A0–A6)</h2>'
-                     "<table><tr><th>categoria</th><th>default</th></tr>")
+                     "<table><tr><th scope='col'>categoria</th><th scope='col'>default</th></tr>")
         for cat_nome, efeito in pol["regras"].items():
             corpo.append(f'<tr class="filtravel"><td><code>{e(cat_nome)}'
                          f"</code></td><td>{e(efeito)}</td></tr>")
@@ -810,7 +859,7 @@ def render_html(d: dict, refresh: int | None = None,
                  f"<p><small>cadeia de hash: {cadeia} · "
                  f"{aud.get('eventos_total', 0)} eventos no total · "
                  f'<a href="audit/">trilha completa com busca</a></small></p>'
-                 "<table><tr><th>quando (ts)</th><th>evento</th></tr>")
+                 "<table><tr><th scope='col'>quando (ts)</th><th scope='col'>evento</th></tr>")
     for ev in d["eventos"]:
         corpo.append(f'<tr class="filtravel"><td>{e(str(ev["ts"]))}</td>'
                      f'<td><code>{e(str(ev["evento"]))}</code></td></tr>')
@@ -842,7 +891,7 @@ def render_html(d: dict, refresh: int | None = None,
     # --- ajuda rápida ---
     corpo.append(
         '<h2 id="ajuda">Ajuda rápida</h2><table>'
-        "<tr><th>comando</th><th>o que faz</th></tr>"
+        "<tr><th scope='col'>comando</th><th scope='col'>o que faz</th></tr>"
         '<tr class="filtravel"><td><code>nomos</code></td>'
         "<td>menu principal amigável</td></tr>"
         '<tr class="filtravel"><td><code>nomos doutor</code></td>'
@@ -853,7 +902,7 @@ def render_html(d: dict, refresh: int | None = None,
         "<td>baixa o cérebro leve embutido (uma vez)</td></tr>"
         '<tr class="filtravel"><td><code>nomos skills</code></td>'
         "<td>instalar e governar habilidades</td></tr>"
-        '<tr class="filtravel"><td><code>nomos aprovacoes</code></td>'
+        '<tr class="filtravel"><td><code>nomos approvals list</code></td>'
         "<td>fila de aprovações no terminal</td></tr>"
         '<tr class="filtravel"><td><code>nomos logs verify</code></td>'
         "<td>verifica a cadeia de hash da auditoria</td></tr>"
@@ -873,7 +922,7 @@ def render_html(d: dict, refresh: int | None = None,
                 '<div class="app">' + _sidebar(d, n_aprov)
                 + '<main id="conteudo" class="main">' + "\n".join(corpo)
                 + "</main>" + _rail(d, n_aprov) + "</div>")
-    return _doc("NOMOS — painel local", conteudo, meta_refresh)
+    return _doc("NOMOS — painel local", conteudo, refresh)
 
 
 # ---------------------------------------------------------------------------
@@ -900,11 +949,17 @@ class DashboardServer:
     """
 
     def __init__(self, ctx, host: str = "127.0.0.1", port: int = 0,
-                 fila_aprovacoes=None):
+                 fila_aprovacoes=None, cache_s: float = 0.0):
         if host != "127.0.0.1":
             raise ValueError("painel é LOCAL por projeto: bind permitido só em 127.0.0.1")
         self.ctx = ctx
         self.secret = secrets.token_urlsafe(16)
+        # cache opcional da coleta (dados_dashboard refaz verify() + probes a
+        # cada GET; com health/ em polling isso multiplica leituras). 0 =
+        # desligado (padrão: cada GET reflete o estado na hora).
+        self.cache_s = float(cache_s)
+        self._cache: tuple[float, dict | None] = (0.0, None)
+        self._cache_lock = threading.Lock()
         if fila_aprovacoes is False:
             self.fila = None
         elif fila_aprovacoes is not None:
@@ -917,6 +972,18 @@ class DashboardServer:
             except Exception:
                 self.fila = None   # sem fila ⇒ painel vira somente leitura
         painel = self
+
+        def _dados() -> dict:
+            """Coleta com cache opcional (TTL curto) — ver cache_s acima."""
+            if painel.cache_s <= 0:
+                return dados_dashboard(painel.ctx)
+            with painel._cache_lock:
+                ts, dados = painel._cache
+                agora = time.time()
+                if dados is None or agora - ts > painel.cache_s:
+                    dados = dados_dashboard(painel.ctx)
+                    painel._cache = (agora, dados)
+                return dados
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *a):
@@ -953,7 +1020,7 @@ class DashboardServer:
                     if m and 5 <= int(m.group(1)) <= 3600:
                         refresh = int(m.group(1))   # fora da faixa: ignorado
                     try:
-                        corpo = render_html(dados_dashboard(painel.ctx),
+                        corpo = render_html(_dados(),
                                             refresh=refresh,
                                             aprovacoes=self._aprovacoes(base))
                     except Exception as exc:   # painel nunca derruba nada
@@ -998,7 +1065,7 @@ class DashboardServer:
 
             def _api(self, query: str):
                 try:
-                    dados = dados_dashboard(painel.ctx)
+                    dados = _dados()
                 except Exception as exc:
                     return self._responder(
                         500, f"api indisponível: {type(exc).__name__}",
@@ -1029,7 +1096,7 @@ class DashboardServer:
                 bloqueado E nenhum aviso pendente.
                 """
                 try:
-                    d = dados_dashboard(painel.ctx)
+                    d = _dados()
                     n_pend = (len(painel.fila.pending())
                               if painel.fila is not None
                               else d.get("aprovacoes", {}).get("pendentes", 0))
@@ -1086,10 +1153,11 @@ class DashboardServer:
                           'style="margin:.6rem 0">'
                           f'<input type="search" name="q" value="{e(q)}" '
                           'placeholder="buscar evento… (ex.: approval)" '
-                          'aria-label="buscar na auditoria"></form>']
+                          'aria-label="buscar na auditoria">'
+                          '<button type="submit">buscar</button></form>']
                 trilha = Path(painel.ctx["home"]) / "logs" / "audit.jsonl"
                 mostrados = 0
-                tabela = ["<table><tr><th>quando (ts)</th><th>evento</th></tr>"]
+                tabela = ["<table><tr><th scope='col'>quando (ts)</th><th scope='col'>evento</th></tr>"]
                 if trilha.exists():
                     for linha in trilha.read_text(
                             encoding="utf-8",

@@ -35,6 +35,36 @@ class Category(str, Enum):
     DESTRUCTIVE = "A6_DESTRUCTIVE"
 
 
+# rótulos humanos das categorias — quem decide APROVAR/NEGAR não deveria
+# precisar decifrar um identificador técnico (painel e terminal usam isto)
+ROTULOS_CATEGORIA = {
+    "A0_READ_LOCAL": "A0 · ler arquivos locais",
+    "A1_WRITE_LOCAL": "A1 · escrever arquivos locais",
+    "A2_NET_EGRESS": "A2 · sair para a rede",
+    "A3_CRED_USE": "A3 · usar credencial",
+    "A3_CONNECTOR_USE": "A3 · usar conector",
+    "A4_DEVICE_MIC": "A4 · usar microfone",
+    "A4_DEVICE_CAM": "A4 · usar câmera",
+    "A4_DEVICE_SCREEN": "A4 · capturar tela",
+    "A5_CODE_EXEC": "A5 · executar código",
+    "A5_SKILL_INSTALL": "A5 · instalar skill",
+    "A6_DESTRUCTIVE": "A6 · ação destrutiva",
+}
+
+
+def rotulo_categoria(categoria) -> str:
+    """Rótulo humano ('A2 · sair para a rede') para qualquer forma da
+    categoria: Category, 'A2_NET_EGRESS' ou 'Category.NET_EGRESS'.
+    Desconhecida ⇒ devolve como veio (nunca esconde informação)."""
+    s = str(categoria)
+    if s.startswith("Category."):
+        try:
+            s = Category[s.split(".", 1)[1]].value
+        except KeyError:
+            pass
+    return ROTULOS_CATEGORIA.get(s, s)
+
+
 class Effect(str, Enum):
     ALLOW = "ALLOW"
     DENY = "DENY"

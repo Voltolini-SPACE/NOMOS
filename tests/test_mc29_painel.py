@@ -88,6 +88,10 @@ def test_painel_mostra_capacidades_do_catalogo(nomos_home):
 
 
 def test_painel_refresh_opt_in_e_validado(nomos_home):
+    # MC36: o auto-recarregar deixou de ser <meta http-equiv> (recarregava no
+    # meio de uma decisão e apagava o filtro) e virou JS próprio, pausável,
+    # sinalizado por <meta name="nomos-refresh"> — a validação de faixa do
+    # servidor continua idêntica (5..3600; fora disso, ignora).
     import urllib.request
 
     from nomos.interface.painel_web import DashboardServer
@@ -96,13 +100,15 @@ def test_painel_refresh_opt_in_e_validado(nomos_home):
     try:
         with urllib.request.urlopen(f"{url}?refresh=10", timeout=5) as r:  # nosec B310
             com = r.read().decode()
-        assert 'http-equiv="refresh" content="10"' in com
+        assert 'name="nomos-refresh" content="10"' in com
+        assert "http-equiv" not in com                  # nunca mais meta refresh
         with urllib.request.urlopen(url, timeout=5) as r2:  # nosec B310
             sem = r2.read().decode()
-        assert "http-equiv=\"refresh\"" not in sem      # padrão: sem refresh
+        # padrão: sem a META (o JS que a procura sempre existe na página)
+        assert 'name="nomos-refresh" content=' not in sem
         with urllib.request.urlopen(f"{url}?refresh=2", timeout=5) as r3:  # nosec B310
             fora = r3.read().decode()
-        assert "http-equiv=\"refresh\"" not in fora     # fora da faixa: ignora
+        assert 'name="nomos-refresh" content=' not in fora   # fora da faixa: ignora
     finally:
         srv.stop()
 

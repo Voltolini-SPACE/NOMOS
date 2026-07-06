@@ -12,10 +12,18 @@ def test_leitura_local_permitida_por_padrao(tmp_path):
 
 def test_acoes_sensiveis_exigem_aprovacao(tmp_path):
     e = _engine(tmp_path)
-    for cat in (Category.WRITE_LOCAL, Category.NET_EGRESS, Category.CRED_USE,
+    for cat in (Category.WRITE_LOCAL, Category.CRED_USE,
                 Category.DEVICE_MIC, Category.DEVICE_CAM, Category.DEVICE_SCREEN,
                 Category.CODE_EXEC, Category.SKILL_INSTALL):
         assert e.decide(cat).effect is Effect.REQUIRE_APPROVAL, cat
+    # NET_EGRESS com alvo LOCAL segue na regra de aprovação…
+    d = e.decide(Category.NET_EGRESS, "http://127.0.0.1:11434")
+    assert d.effect is Effect.REQUIRE_APPROVAL
+    # …mas com alvo vazio/desconhecido e cadeado ligado (padrão), NEGA já na
+    # política (MC36: não-parseável ≠ loopback — fail-closed de verdade)
+    d = e.decide(Category.NET_EGRESS)
+    assert d.effect is Effect.DENY
+    assert "só-local" in d.reason
 
 
 def test_destrutiva_negada_por_padrao(tmp_path):

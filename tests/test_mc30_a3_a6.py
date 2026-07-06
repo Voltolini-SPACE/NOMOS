@@ -42,10 +42,19 @@ def test_a6_nuvem_sem_terminal_emite_e012(tmp_path):
 
 # ----------------------------------------------------------------- A3
 def test_a3_doutor_no_repo_mostra_guardioes(tmp_path):
-    proc = _cli(["doutor"], tmp_path, cwd=ROOT)
+    # MC36: o guardião virou OPT-IN (--repo) — rodar scripts do CWD sem
+    # pedido explícito era exec fail-open (ver test_revisao_seguranca_2026)
+    proc = _cli(["doutor", "--repo"], tmp_path, cwd=ROOT)
     assert proc.returncode == 0, proc.stderr
     assert "Guardião do repositório" in proc.stdout
     assert "docs & marca" in proc.stdout and "git:" in proc.stdout
+
+
+def test_a3_doutor_no_repo_sem_flag_nao_executa(tmp_path):
+    # sem --repo, mesmo DENTRO do repo: nada do CWD roda nem aparece
+    proc = _cli(["doutor"], tmp_path, cwd=ROOT)
+    assert proc.returncode == 0, proc.stderr
+    assert "Guardião do repositório" not in proc.stdout
 
 
 def test_a3_doutor_fora_do_repo_nao_mostra_secao(tmp_path):

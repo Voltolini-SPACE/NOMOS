@@ -573,16 +573,27 @@ def cmd_atualizar(ctx, args) -> int:
 
 def cmd_painel(ctx, args) -> int:
     from nomos.interface.painel_web import DashboardServer
-    srv = DashboardServer(ctx, port=getattr(args, "port", 0) or 0)
+    fila = False if getattr(args, "somente_leitura", False) else None
+    srv = DashboardServer(ctx, port=getattr(args, "port", 0) or 0,
+                          fila_aprovacoes=fila, cache_s=2.0)
     url = srv.start()
     print(f"painel local: {url}")
-    print("ler é livre; agir só pela fila de aprovações (token de uso único).")
+    if fila is False:
+        print("modo somente leitura: nenhum POST é aceito.")
+    else:
+        print("ler é livre; agir só pela fila de aprovações (token de uso único).")
     print("só funciona neste computador (127.0.0.1). Ctrl+C encerra.")
-    try:
-        import webbrowser
-        webbrowser.open(url)
-    except Exception:
-        print("(não consegui abrir o navegador — copie a URL acima)")
+    if getattr(args, "sem_abrir", False):
+        # a URL carrega o segmento secreto: com --sem-abrir ela não passa
+        # pelo argv do abridor do navegador (visível em `ps` na janela de
+        # abertura em máquinas multiusuário) — a pessoa cola no navegador
+        print("(--sem-abrir: copie a URL acima no seu navegador)")
+    else:
+        try:
+            import webbrowser
+            webbrowser.open(url)
+        except Exception:
+            print("(não consegui abrir o navegador — copie a URL acima)")
     try:
         import signal as _sig
         if hasattr(_sig, "pause"):
@@ -1125,11 +1136,13 @@ def cmd_approvals(ctx, args) -> int:
             srv.stop()
         return EXIT_OK
     if args.appr_cmd == "list":
+        from nomos.kernel.policy import rotulo_categoria
         pend = q.pending()
         if not pend:
             print("nenhuma solicitação pendente.")
         for a in pend:
-            print(f"[{a.id}] {a.category} alvo={a.target} motivo={a.reason}")
+            print(f"[{a.id}] {rotulo_categoria(a.category)} "
+                  f"alvo={a.target} motivo={a.reason}")
         return EXIT_OK
     return EXIT_ERROR
 
@@ -1438,7 +1451,8 @@ def cmd_mcp(ctx, args) -> int:
     """MCP server local (MC31/C1): NOMOS como servidor de tools, read-only."""
     from nomos.interface import mcp_server
     sub = getattr(args, "mcp_cmd", None)
-    if sub == "tools":
+    # sem subcomando = mostrar as tools (default útil, somente leitura)
+    if sub in (None, "tools"):
         for t in mcp_server.TOOLS:
             print(f"  ◆ {t['name']} — {t['description']}")
         print(f"\n{len(mcp_server.TOOLS)} tools, todas SOMENTE LEITURA (A0).")
@@ -1601,7 +1615,9 @@ def cmd_memoria(ctx, args) -> int:
     from nomos.cognition.memory import Memory
     mem = Memory(ctx["home"] / "memory.db")
     sub = getattr(args, "memoria_cmd", None)
-    if sub == "candidatas":
+    # sem subcomando = o default útil (mesmo padrão de `nomos motores`):
+    # o site ensina `nomos memoria` pelado — não pode terminar em erro de uso
+    if sub in (None, "candidatas"):
         fila = mem.candidatas()
         if getattr(args, "json", False):
             print(json.dumps({"contrato": 1, "total_memorias": mem.count(),
@@ -1670,7 +1686,8 @@ def cmd_evidencia(ctx, args) -> int:
         print("verificação imediata: " + ("OK ✓" if ok else f"FALHOU: {problemas}"))
         print(f"para conferir depois: cd {pacote} && sha256sum -c SHA256SUMS")
         return EXIT_OK if ok else EXIT_ERROR
-    if sub == "listar":
+    # sem subcomando = listar (o site ensina `nomos evidencia` pelado)
+    if sub in (None, "listar"):
         raiz = ctx["home"] / "evidencias"
         pacotes = sorted(raiz.glob("EVIDENCIA_*")) if raiz.exists() else []
         if not pacotes:
@@ -1715,7 +1732,7 @@ def cmd_evidencia(ctx, args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="nomos",
-                                description="NOMOS Personal Agent Foundry")
+                                description="NOMOS — seu agente pessoal, 100% local: instala, configura, governa e executa (local por lei)")
     p.add_argument("--version", action="version", version=f"nomos {__version__}")
     sub = p.add_subparsers(dest="cmd", required=False)
 
@@ -1775,8 +1792,14 @@ def build_parser() -> argparse.ArgumentParser:
                         help="checa se há versão nova (opt-in; nunca atualiza sozinho)")
     at.add_argument("--panel", action="store_true")
     at.set_defaults(fn=cmd_atualizar)
-    pn = sub.add_parser("painel", help="painel local no navegador (somente leitura)")
-    pn.add_argument("--port", type=int, default=0)
+    pn = sub.add_parser("painel", help="painel local no navegador (ler é livre; "
+                        "decidir aprovações usa token de uso único)")
+    pn.add_argument("--port", type=int, default=0,
+                    help="porta fixa (padrão: aleatória)")
+    pn.add_argument("--somente-leitura", action="store_true",
+                    help="painel 100%% somente leitura (nenhum POST aceito)")
+    pn.add_argument("--sem-abrir", action="store_true",
+                    help="não abre o navegador; só imprime a URL")
     pn.set_defaults(fn=cmd_painel)
     ro = sub.add_parser("rotinas", help="rotinas locais: briefing, check-up e mais")
     rosub = ro.add_subparsers(dest="rotinas_cmd")
@@ -1951,14 +1974,14 @@ def build_parser() -> argparse.ArgumentParser:
     skssub.add_parser("atualizar").set_defaults(fn=cmd_skills)
     skssub.add_parser("diagnostico").set_defaults(fn=cmd_skills)
     sks.set_defaults(fn=cmd_skills, skills_cmd=None)
-    sub.add_parser("init").set_defaults(fn=cmd_init)
+    sub.add_parser("init", help="cria a estrutura do NOMOS (~/.nomos) do zero").set_defaults(fn=cmd_init)
 
-    ag = sub.add_parser("agent").add_subparsers(dest="agent_cmd", required=True)
+    ag = sub.add_parser("agent", help="identidade do agente (técnico; o amigável é nomos agentes)").add_subparsers(dest="agent_cmd", required=True)
     c = ag.add_parser("create")
     c.add_argument("--name", required=True)
     c.set_defaults(fn=cmd_agent_create)
 
-    va = sub.add_parser("vault").add_subparsers(dest="vault_cmd", required=True)
+    va = sub.add_parser("vault", help="cofre de chaves (técnico; o amigável é nomos chaves)").add_subparsers(dest="vault_cmd", required=True)
     va.add_parser("init").set_defaults(fn=cmd_vault)
     s = va.add_parser("set")
     s.add_argument("name")
@@ -1970,7 +1993,7 @@ def build_parser() -> argparse.ArgumentParser:
     va.add_parser("list").set_defaults(fn=cmd_vault)
     va.add_parser("rotate").set_defaults(fn=cmd_vault)
 
-    co = sub.add_parser("consent").add_subparsers(dest="consent_cmd", required=True)
+    co = sub.add_parser("consent", help="consentimentos concedidos (list/grant/revoke)").add_subparsers(dest="consent_cmd", required=True)
     co.add_parser("status").set_defaults(fn=cmd_consent)
     gr = co.add_parser("grant")
     gr.add_argument("device", choices=DEVICES)
@@ -1980,9 +2003,9 @@ def build_parser() -> argparse.ArgumentParser:
     rv.add_argument("device", choices=DEVICES)
     rv.set_defaults(fn=cmd_consent)
 
-    sub.add_parser("panic").set_defaults(fn=cmd_panic)
+    sub.add_parser("panic", help="botão de pânico: revoga consentimentos e tranca tudo").set_defaults(fn=cmd_panic)
 
-    rn = sub.add_parser("run")
+    rn = sub.add_parser("run", help="executa uma ação governada (passa pelo gate A0–A6)")
     rn.add_argument("cmd")
     rn.add_argument("--timeout", type=int, default=30)
     rn.add_argument("--allow-network", dest="allow_network", action="store_true")
@@ -1990,7 +2013,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="aprovação via painel local (aguarda decisão humana)")
     rn.set_defaults(fn=cmd_run)
 
-    sk = sub.add_parser("skill").add_subparsers(dest="skill_cmd", required=True)
+    sk = sub.add_parser("skill", help="skills assinadas (técnico; o amigável é nomos skills)").add_subparsers(dest="skill_cmd", required=True)
     si = sk.add_parser("install")
     si.add_argument("path")
     si.add_argument("--panel", action="store_true")
@@ -2014,19 +2037,19 @@ def build_parser() -> argparse.ArgumentParser:
     sr.add_argument("name")
     sr.set_defaults(fn=cmd_skill)
 
-    ap = sub.add_parser("approvals").add_subparsers(dest="appr_cmd", required=True)
+    ap = sub.add_parser("approvals", help="fila de aprovações: listar e decidir no terminal").add_subparsers(dest="appr_cmd", required=True)
     aps = ap.add_parser("serve")
     aps.add_argument("--port", type=int, default=0)
     aps.set_defaults(fn=cmd_approvals)
     ap.add_parser("list").set_defaults(fn=cmd_approvals)
 
-    ch = sub.add_parser("chat")
+    ch = sub.add_parser("chat", help="conversa com o agente no terminal")
     ch.add_argument("prompt", nargs="*")
     ch.add_argument("--cloud", action="store_true",
                     help="opt-in cloud (exige aprovação A2+A3 em TTY)")
     ch.set_defaults(fn=cmd_chat)
 
-    me = sub.add_parser("memory").add_subparsers(dest="mem_cmd", required=True)
+    me = sub.add_parser("memory", help="memória local (técnico; o amigável é nomos memoria)").add_subparsers(dest="mem_cmd", required=True)
     m1 = me.add_parser("search")
     m1.add_argument("query", nargs="+")
     m1.add_argument("-k", type=int, default=5)
@@ -2057,8 +2080,8 @@ def build_parser() -> argparse.ArgumentParser:
     co.add_argument("resto", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
     co.set_defaults(fn=cmd_conselho)
 
-    sub.add_parser("status").set_defaults(fn=cmd_status)
-    lg = sub.add_parser("logs").add_subparsers(dest="logs_cmd", required=True)
+    sub.add_parser("status", help="resumo do estado: motores, cofre, cadeado, auditoria").set_defaults(fn=cmd_status)
+    lg = sub.add_parser("logs", help="auditoria: ver e verificar a cadeia de hash").add_subparsers(dest="logs_cmd", required=True)
     lgv = lg.add_parser("verify", help="verifica a cadeia e a âncora HMAC do audit log")
     lgv.add_argument("--cofre", action="store_true",
                      help="também valida o HMAC da âncora (pede a passphrase do cofre)")

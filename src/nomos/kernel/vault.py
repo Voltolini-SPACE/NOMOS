@@ -241,6 +241,13 @@ class Vault:
         return new_f, data
 
     # ---------- operações ----------
+    def verify_passphrase(self, passphrase: str) -> None:
+        """Valida a passphrase (sob o mesmo bloqueio progressivo) sem ler nem
+        gravar entrada nenhuma — para fluxos que precisam confirmar a senha
+        ANTES de consumir material sensível (ex.: absorver arquivo de chave).
+        Levanta VaultLocked/VaultLockedOut em falha; silêncio = ok."""
+        self._unlock(passphrase)
+
     def set(self, name: str, secret: str, passphrase: str) -> None:
         f, data = self._unlock(passphrase)
         data["entries"][name] = f.encrypt(secret.encode("utf-8")).decode()
