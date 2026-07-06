@@ -3,13 +3,16 @@
 Layout de aplicativo (sidebar de navegação · conteúdo · rail de status),
 inspirado em painéis de agente modernos, com a marca NOMOS congelada.
 
-Princípios (os mesmos de sempre, agora com UMA porta de ação):
+Princípios:
 - escuta EXCLUSIVAMENTE em 127.0.0.1 (qualquer outro bind é recusado);
 - URL com segmento secreto aleatório — sem ele, 404 para tudo;
-- LER é livre; AGIR só existe numa única porta: ``aprovacoes/decidir``,
-  que transporta o token SINGLE-USE da fila de aprovações (kernel.approvals,
-  TTL 5 min, comparação em tempo constante, tudo auditado). Qualquer outro
-  POST é 405. Sem fila anexada, o painel é 100% somente leitura;
+- LER é livre; AGIR existe em DUAS portas governadas (MC38):
+  1. ``aprovacoes/decidir`` — token SINGLE-USE da fila (kernel.approvals,
+     TTL 5 min, comparação em tempo constante, tudo auditado);
+  2. ``chat/enviar`` — chat LOCAL (token CSRF por servidor; roda só motor
+     local, fail-closed sem motor, cada turno auditado; nuvem só no terminal).
+  Qualquer outro POST é 405. Sem fila, aprovações somem; com ``--sem-chat``
+  ou sem chat habilitado, o chat vira histórico read-only;
 - HTML autossuficiente: zero assets externos, zero JavaScript de terceiros
   (o único <script> é nosso, inline, sem rede: scrollspy/filtro/relógio);
 - headers de segurança em toda resposta (CSP restritiva, nosniff,
@@ -190,6 +193,43 @@ _CSS = """
  @media(max-width:640px){.colunas2{grid-template-columns:1fr}}
  ul.lista{margin:.4rem 0 0;padding-left:1.1rem}
  ul.lista li{margin:.2rem 0;font-size:.82rem}
+ /* ---- chat estilo ChatGPT (MC38): histórico | thread + composer ---- */
+ .chat-wrap{display:grid;grid-template-columns:230px minmax(0,1fr);gap:1rem;
+   margin-top:.6rem}
+ @media(max-width:720px){.chat-wrap{grid-template-columns:1fr}}
+ .chat-hist{border:1px solid var(--line);border-radius:8px;background:
+   var(--surface);padding:.5rem;max-height:60vh;overflow:auto}
+ .chat-hist a{display:block;color:var(--fraco);text-decoration:none;
+   font-size:.76rem;padding:.35rem .5rem;border-radius:6px;
+   border-left:2px solid transparent;word-break:break-word}
+ .chat-hist a:hover{color:var(--txt);background:var(--surface2)}
+ .chat-hist a.aberta{color:var(--neon);border-left-color:var(--neon);
+   background:var(--surface2)}
+ .chat-hist .nova{color:var(--neon);border:1px dashed var(--dim);
+   text-align:center;margin-bottom:.4rem}
+ .chat-thread{border:1px solid var(--line);border-radius:8px;background:
+   var(--surface);padding:.9rem;min-height:200px;display:flex;
+   flex-direction:column;gap:.6rem}
+ .bolha{max-width:82%;padding:.55rem .8rem;border-radius:12px;font-size:.86rem;
+   line-height:1.5;white-space:pre-wrap;word-break:break-word}
+ .bolha.user{align-self:flex-end;background:var(--dim);color:var(--bg);
+   border-bottom-right-radius:3px}
+ .bolha.assistant{align-self:flex-start;background:var(--surface2);
+   border:1px solid var(--line);border-bottom-left-radius:3px}
+ .bolha.note{align-self:center;background:transparent;color:var(--amarelo);
+   font-size:.78rem;border:1px dashed #4a3f1e;max-width:100%}
+ .bolha .quem{display:block;font-size:.66rem;opacity:.7;margin-bottom:.15rem}
+ .chat-vazio{color:var(--fraco);font-size:.84rem;margin:auto}
+ .composer{display:flex;gap:.5rem;margin-top:.2rem}
+ .composer textarea{flex:1;background:var(--surface2);color:var(--txt);
+   border:1px solid #4f7660;border-radius:8px;padding:.5rem .7rem;font:inherit;
+   font-size:.84rem;resize:vertical;min-height:2.6rem}
+ .composer button{font:inherit;font-size:.84rem;border-radius:8px;
+   padding:.4rem 1.1rem;cursor:pointer;border:1px solid var(--dim);
+   background:var(--surface2);color:var(--neon);align-self:flex-end}
+ .composer button:hover{background:rgba(90,247,142,.12)}
+ .chat-nota{color:var(--fraco);font-size:.72rem;margin:.4rem 0 0}
+
  /* recolhíveis: detalhe dá acesso sem poluir (fecha por padrão) */
  details.mais{margin:.6rem 0}
  details.mais>summary{cursor:pointer;color:var(--dim);font-size:.8rem;
@@ -360,6 +400,59 @@ def _doc(titulo: str, corpo: str, refresh: int | None = None) -> str:
             "initial-scale=1\">" + meta + "\n" + boot + "\n<title>" +
             html.escape(titulo) + "</title>\n<style>" + _CSS + "</style>\n" +
             corpo + "\n<script>" + _JS + "</script>\n</html>")
+
+
+# ---------------------------------------------------------------------------
+# chat local — 2ª porta de escrita (MC38). LOCAL por lei: nuvem só via
+# terminal com opt-in; sem motor pronto = fail-closed (nunca finge).
+# ---------------------------------------------------------------------------
+def responder_local(ctx, messages):
+    """Roda SÓ o motor local (o mesmo caminho de `nomos chat`, sem nuvem).
+
+    Devolve o texto da resposta, ou None se nenhum motor local estiver pronto
+    — o painel então grava uma nota honesta, jamais uma resposta inventada.
+    """
+    import os
+
+    from nomos.cognition.embutido import EmbeddedProvider
+    from nomos.cognition.providers import OllamaProvider, OpenAICompatProvider
+    from nomos.cognition.router import Router
+
+    home = ctx["home"]
+    try:
+        ollama = OllamaProvider(
+            host=os.environ.get("NOMOS_OLLAMA_HOST", "http://127.0.0.1:11434"),
+            model=os.environ.get("NOMOS_OLLAMA_MODEL", "llama3.2"))
+    except ValueError:
+        ollama = None   # host não-loopback no ambiente: ignora (cadeado)
+    try:
+        oc = OpenAICompatProvider(
+            base=os.environ.get("NOMOS_OPENAI_COMPAT_BASE",
+                                "http://127.0.0.1:1234/v1"))
+    except ValueError:
+        oc = None
+    router = Router(
+        policy=ctx.get("policy"), gate=lambda *a, **k: False,
+        approver=lambda *a, **k: False, audit=ctx["audit"], vault=None,
+        ollama=ollama, embutido=EmbeddedProvider(home), openai_compat=oc)
+    try:
+        outcome = router._try_local(messages)   # None = nenhum motor local
+    except Exception:
+        return None
+    return outcome.text if (outcome and outcome.ok) else None
+
+
+def _contexto_chat(store, conversa_id: int, texto_usuario: str) -> list[dict]:
+    """Monta as mensagens (system + histórico curto + fala nova)."""
+    import contextlib
+    msgs = [{"role": "system",
+             "content": "Você é o agente pessoal do usuário no NOMOS. "
+                        "Responda em português, direto."}]
+    with contextlib.suppress(Exception):
+        # turnos_para_contexto já devolve {role, content} de user/assistant
+        msgs.extend(store.turnos_para_contexto(conversa_id, n=6))
+    msgs.append({"role": "user", "content": texto_usuario})
+    return msgs
 
 
 # ---------------------------------------------------------------------------
@@ -561,6 +654,7 @@ def dados_dashboard(ctx) -> dict:
 # (data-aba, ícone, rótulo) — a ordem é a ordem da sidebar
 _ABAS_NAV: list[tuple[str, str, str]] = [
     ("visao", "◉", "visão geral"),
+    ("chat", "❯", "chat"),
     ("cerebro", "⚙", "cérebro"),
     ("capacidades", "❖", "capacidades"),
     ("operacao", "≡", "operação"),
@@ -622,6 +716,85 @@ def _bloco_atencao(d: dict, n_aprov: int) -> str:
                 "precisar de você, aparece aqui</small></div>")
     linhas = "".join(f"<li>⚠ {x}</li>" for x in itens)
     return f'<div class="card warn"><b>Precisa de você</b><ul class="lista">{linhas}</ul></div>'
+
+
+def _secao_chat(d: dict, chat: dict | None) -> str:
+    """Aba chat (MC38) — estilo ChatGPT: histórico | thread + composer.
+
+    ``chat=None`` ou desligado ⇒ SEM <form> (o painel puro segue read-only);
+    o histórico (títulos redigidos) aparece de qualquer forma. Habilitado ⇒
+    a 2ª porta de escrita governada: enviar roda motor LOCAL (fail-closed),
+    conteúdo redigido na exibição, cada turno auditado.
+    """
+    e = html.escape
+    corpo = ['<h2 id="chat">Chat local</h2>']
+    hist = d.get("conversas", [])
+    ligado = bool(chat and chat.get("habilitado") and chat.get("token"))
+
+    if not ligado:
+        corpo.append(
+            '<div class="card">conversar aqui exige o painel local com a porta '
+            "do chat ligada — rode <code>nomos painel</code> (motor local, "
+            "fail-closed; <code>--sem-chat</code> desliga). Esta visão é "
+            "somente leitura.</div>")
+        corpo.append('<h3 id="conversas" class="mini-h">histórico</h3>')
+        if not hist:
+            corpo.append("<p>nenhuma conversa ainda. <code>nomos chat</code></p>")
+        for c in hist:
+            pino = "📌 " if c.get("fixada") else ""
+            corpo.append(f'<div class="card filtravel">{pino}<b>#{c["id"]}</b> '
+                         f'{e(c["titulo"])} <small>· {c.get("turnos", 0)} '
+                         "turno(s)</small></div>")
+        if hist:
+            corpo.append("<p><small>só títulos e metadados aqui — o conteúdo "
+                         "aparece quando você abre o chat local</small></p>")
+        return "\n".join(corpo)
+
+    base, token = chat["base"], chat["token"]
+    aberta = chat.get("aberta")
+    corpo.append('<div class="chat-wrap">')
+    # coluna 1: histórico (a "barra lateral" do ChatGPT)
+    corpo.append('<nav class="chat-hist" id="conversas" '
+                 'aria-label="histórico de conversas">')
+    corpo.append('<a class="nova" href="?conversa=nova#chat">+ nova conversa</a>')
+    for c in hist:
+        cls = "aberta" if (aberta and c["id"] == aberta.get("id")) else ""
+        pino = "📌 " if c.get("fixada") else ""
+        corpo.append(f'<a class="{cls}" href="?conversa={c["id"]}#chat">{pino}'
+                     f'{e(c["titulo"])}<br><small>{c.get("turnos", 0)} '
+                     "turno(s)</small></a>")
+    if not hist:
+        corpo.append('<div class="chat-vazio">sem conversas ainda</div>')
+    corpo.append("</nav>")
+    # coluna 2: thread + composer
+    corpo.append('<div><div class="chat-thread">')
+    msgs = chat.get("mensagens", [])
+    if not aberta:
+        corpo.append('<div class="chat-vazio">comece uma conversa nova abaixo '
+                     "— ou escolha uma do histórico</div>")
+    elif not msgs:
+        corpo.append('<div class="chat-vazio">conversa vazia — mande a primeira '
+                     "mensagem</div>")
+    for m in msgs:
+        role = m.get("role", "note")
+        cls = role if role in ("user", "assistant") else "note"
+        quem = {"user": "você", "assistant": "agente"}.get(role, "nota")
+        corpo.append(f'<div class="bolha {cls}"><span class="quem">{quem}'
+                     f'</span>{e(m.get("text", ""))}</div>')
+    corpo.append("</div>")  # fim thread
+    cid = aberta.get("id") if aberta else "nova"
+    corpo.append(
+        f'<form class="composer" method="post" action="{base}/chat/enviar">'
+        f'<input type="hidden" name="token" value="{e(token)}">'
+        f'<input type="hidden" name="conversa" value="{e(str(cid))}">'
+        '<textarea name="mensagem" required rows="2" '
+        'placeholder="escreva sua mensagem…" aria-label="mensagem"></textarea>'
+        '<button type="submit">enviar</button></form>')
+    corpo.append('<p class="chat-nota">roda só motor <b>local</b> (o cadeado '
+                 "vale; nuvem só no terminal, com opt-in). Sem motor pronto, o "
+                 "NOMOS avisa — nunca inventa. Cada turno fica na auditoria.</p>")
+    corpo.append("</div></div>")  # fim coluna 2 + wrap
+    return "\n".join(corpo)
 
 
 def _bloco_ao_vivo(d: dict) -> str:
@@ -718,11 +891,12 @@ def _secao_aprovacoes(aprovacoes: list[dict] | None, n_meta: int) -> str:
 # página principal
 # ---------------------------------------------------------------------------
 def render_html(d: dict, refresh: int | None = None,
-                aprovacoes: list[dict] | None = None) -> str:
-    """Página única com todas as seções (âncoras estáveis desde o MC33).
+                aprovacoes: list[dict] | None = None,
+                chat: dict | None = None) -> str:
+    """Página única (abas) com todas as seções — âncoras estáveis (MC33).
 
-    ``aprovacoes=None`` ⇒ nenhum <form> na página (modo somente leitura,
-    o mesmo contrato de sempre). Lista (mesmo vazia) ⇒ fila anexada.
+    ``aprovacoes=None`` ⇒ nenhum <form> de aprovação (read-only). ``chat=None``
+    ou desligado ⇒ nenhum <form> de chat (a aba chat vira histórico read-only).
     """
     e = html.escape
     classe = {"PRONTO": "ok", "PARCIAL": "warn",
@@ -791,8 +965,8 @@ def render_html(d: dict, refresh: int | None = None,
                          f'{e(it["titulo"])}{det}</div>')
 
     # ============================= ABA: cérebro =============================
-    aba_cerebro = [_subnav([("motores", "motores"), ("conversas", "conversas"),
-                            ("memoria", "memória")])]
+    # (conversas migraram para a aba CHAT no MC38)
+    aba_cerebro = [_subnav([("motores", "motores"), ("memoria", "memória")])]
     aba_cerebro.append('<h2 id="motores">Motores prontos por modalidade</h2>'
                        "<table><tr><th scope='col'>modalidade</th>"
                        "<th scope='col'>motores</th></tr>")
@@ -813,20 +987,8 @@ def render_html(d: dict, refresh: int | None = None,
             f"<td>{'✓' if m['pronto'] else '—'}</td></tr>")
     aba_cerebro.append("</table></details>")
     aba_cerebro.append('<p><small>decisão explicada por modalidade: '
-                       '<a href="roteador/">roteador/ ↗</a></small></p>')
-    aba_cerebro.append('<h2 id="conversas">Conversas</h2>')
-    if not d.get("conversas"):
-        aba_cerebro.append("<p>nenhuma conversa ainda. <code>nomos chat</code></p>")
-    for c in d.get("conversas", []):
-        pino = "📌 " if c.get("fixada") else ""
-        aba_cerebro.append(f'<div class="card filtravel">{pino}<b>#{c["id"]}</b> '
-                           f'{e(c["titulo"])} <small>· {c.get("turnos", 0)} turno(s)'
-                           f'{" · " + e(c["motor"]) if c.get("motor") else ""}'
-                           "</small></div>")
-    if d.get("conversas"):
-        aba_cerebro.append("<p><small>só títulos e metadados — o conteúdo nunca "
-                           "aparece no painel. Abra no terminal: <code>nomos "
-                           "conversas</code></small></p>")
+                       '<a href="roteador/">roteador/ ↗</a> · '
+                       'conversas na aba <a href="#chat">chat</a></small></p>')
     pend = memo.get("candidatas", 0)
     aviso = (f'⚠️ <b>{pend}</b> candidata(s) aguardando SUA revisão — '
              f"<code>nomos memoria revisar</code>" if pend
@@ -835,6 +997,10 @@ def render_html(d: dict, refresh: int | None = None,
                        f'{memo.get("total", 0)} memórias guardadas · {aviso}'
                        f"<br><small>aprovar/descartar é sempre decisão sua, "
                        f"no terminal — o painel só mostra</small></div>")
+
+    # =============================== ABA: chat ==============================
+    aba_chat = [_subnav([("chat", "conversa"), ("conversas", "histórico")]),
+                _secao_chat(d, chat)]
 
     # ============================ ABA: capacidades ==========================
     aba_capac = [_subnav([("skills", "skills"), ("agentes", "agentes"),
@@ -989,6 +1155,7 @@ def render_html(d: dict, refresh: int | None = None,
                 f'aria-label="{nome}">' + "\n".join(partes) + "</section>")
 
     corpo.append(_aba("visao", True, aba_visao))
+    corpo.append(_aba("chat", False, aba_chat))
     corpo.append(_aba("cerebro", False, aba_cerebro))
     corpo.append(_aba("capacidades", False, aba_capac))
     corpo.append(_aba("operacao", False, aba_op))
@@ -1029,11 +1196,16 @@ class DashboardServer:
     """
 
     def __init__(self, ctx, host: str = "127.0.0.1", port: int = 0,
-                 fila_aprovacoes=None, cache_s: float = 0.0):
+                 fila_aprovacoes=None, cache_s: float = 0.0,
+                 chat_habilitado: bool = False):
         if host != "127.0.0.1":
             raise ValueError("painel é LOCAL por projeto: bind permitido só em 127.0.0.1")
         self.ctx = ctx
         self.secret = secrets.token_urlsafe(16)
+        # 2ª porta de escrita (MC38): o chat local. Nasce DESLIGADO — o painel
+        # puro segue read-only; `nomos painel` liga. Token CSRF por servidor.
+        self.chat_habilitado = bool(chat_habilitado)
+        self.chat_token = secrets.token_urlsafe(32)
         # cache opcional da coleta (dados_dashboard refaz verify() + probes a
         # cada GET; com health/ em polling isso multiplica leituras). 0 =
         # desligado (padrão: cada GET reflete o estado na hora).
@@ -1102,7 +1274,8 @@ class DashboardServer:
                     try:
                         corpo = render_html(_dados(),
                                             refresh=refresh,
-                                            aprovacoes=self._aprovacoes(base))
+                                            aprovacoes=self._aprovacoes(base),
+                                            chat=self._chat(base, query))
                     except Exception as exc:   # painel nunca derruba nada
                         return self._responder(
                             500, f"painel indisponível: {type(exc).__name__}",
@@ -1119,6 +1292,36 @@ class DashboardServer:
                 if caminho.startswith(base + "/ev/"):
                     return self._servir_evidencia(caminho[len(base) + 4:])
                 return self._responder(404, "não encontrado", "text/plain")
+
+            def _chat(self, base, query) -> dict | None:
+                """Dados da aba chat: histórico + conversa aberta (conteúdo
+                REDIGIDO). Sem chat habilitado ⇒ None (aba vira read-only)."""
+                if not painel.chat_habilitado:
+                    return None
+                dados = {"habilitado": True, "token": painel.chat_token,
+                         "base": base, "aberta": None, "mensagens": []}
+                import contextlib
+                sel = (parse_qs(query).get("conversa") or [""])[0]
+                if sel and sel != "nova":
+                    # id inválido/ilegível: trata como conversa nova (não quebra)
+                    with contextlib.suppress(Exception):
+                        from nomos.conversations.store import ConversationStore
+                        from nomos.kernel.audit import redact_text
+                        cid = int(sel)
+                        cs = ConversationStore(Path(painel.ctx["home"]) /
+                                               "conversas.db")
+                        try:
+                            conv, turnos = cs.abrir(cid)
+                        finally:
+                            cs.close()
+                        if conv is not None:
+                            dados["aberta"] = {"id": conv.id,
+                                               "titulo": conv.titulo or ""}
+                            dados["mensagens"] = [
+                                {"role": t.role,
+                                 "text": redact_text(t.text or "")}
+                                for t in turnos]
+                return dados
 
             def _aprovacoes(self, base) -> list | None:
                 """Pendências da fila com token single-use — só para o HTML."""
@@ -1311,13 +1514,101 @@ class DashboardServer:
                                 "text/plain")
 
             # ---------------- POST ----------------
-            def do_POST(self):
-                """UMA porta de escrita: aprovacoes/decidir com token single-use.
+            def _corpo_post(self, base, limite=8192):
+                """Lê e valida o corpo de um POST (comum às duas portas).
+                Devolve (form, None) ou (None, (code, titulo, msg))."""
+                try:
+                    tam = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    return None, (400, "pedido inválido", "Content-Length não numérico")
+                if tam < 0:
+                    return None, (400, "pedido inválido", "Content-Length negativo")
+                if tam > limite:
+                    return None, (413, "pedido grande demais",
+                                  f"corpo acima de {limite} bytes não é desta porta")
+                try:
+                    return parse_qs(self.rfile.read(tam).decode()), None
+                except UnicodeDecodeError:
+                    return None, (400, "pedido inválido", "corpo não é UTF-8")
 
-                Tudo o mais continua 405 — o painel não executa nada; quem
-                decide é a fila (kernel.approvals), com TTL e auditoria.
+            def _post_chat(self, base):
+                """2ª porta de escrita (MC38): envia uma mensagem ao motor
+                LOCAL. Token CSRF por servidor; fail-closed sem motor."""
+                def _erro(code, titulo, msg, ancora="#chat"):
+                    corpo = (f"<p>{html.escape(msg)}</p><p><a href=\"{base}/"
+                             f'{ancora}">← voltar ao painel</a></p>')
+                    return self._responder(code, _subpagina(titulo, corpo, base))
+
+                import hmac
+                form, err = self._corpo_post(base)
+                if err:
+                    return _erro(*err)
+                token = (form.get("token") or [""])[0]
+                if not hmac.compare_digest(token, painel.chat_token):
+                    return _erro(403, "recusado",
+                                 "token do chat inválido (recarregue o painel)")
+                msg = (form.get("mensagem") or [""])[0].strip()
+                if not msg:
+                    return _erro(400, "mensagem vazia", "escreva algo para enviar")
+                if len(msg) > 6000:
+                    return _erro(413, "mensagem longa demais",
+                                 "reduza a mensagem (máx ~6000 caracteres)")
+                sel = (form.get("conversa") or ["nova"])[0]
+                from nomos.conversations.store import ConversationStore
+                cs = ConversationStore(Path(painel.ctx["home"]) / "conversas.db")
+                try:
+                    try:
+                        cid = int(sel)
+                        conv, _ = cs.abrir(cid)
+                        if conv is None:
+                            cid = cs.nova_conversa(motor="painel")
+                    except (ValueError, TypeError):
+                        cid = cs.nova_conversa(motor="painel")
+                    cs.add_turno(cid, "user", msg)
+                    painel.ctx["audit"].append("chat.painel.enviou",
+                                               conversa=cid, egress="nenhum")
+                    contexto = _contexto_chat(cs, cid, msg)
+                    resposta = responder_local(painel.ctx, contexto)
+                    if resposta:
+                        cs.add_turno(cid, "assistant", resposta)
+                        painel.ctx["audit"].append("chat.painel.respondeu",
+                                                    conversa=cid, egress="nenhum")
+                    else:
+                        # fail-closed: nunca finge. Grava nota honesta.
+                        cs.add_turno(
+                            cid, "note",
+                            "sem motor local pronto — instale o cérebro "
+                            "(nomos cerebro baixar) ou ligue o Ollama. "
+                            "Nenhuma resposta foi inventada.")
+                        painel.ctx["audit"].append("chat.painel.sem_motor",
+                                                   conversa=cid)
+                finally:
+                    cs.close()
+                # PRG: volta à conversa (evita reenvio no F5)
+                self.send_response(303)
+                self.send_header("Location", f"{base}/?conversa={cid}#chat")
+                for k, v in _HEADERS_SEGURANCA.items():
+                    self.send_header(k, v)
+                self.end_headers()
+                return None
+
+            def do_POST(self):
+                """Duas portas de escrita (MC38): aprovacoes/decidir (token
+                single-use, TTL) e chat/enviar (token CSRF, motor local,
+                fail-closed). Qualquer outra coisa = 405.
                 """
                 base = f"/d/{painel.secret}"
+                rota = self.path.rstrip("/")
+
+                # porta 2: chat local (só se habilitado)
+                if rota == base + "/chat/enviar":
+                    if not painel.chat_habilitado:
+                        corpo = ('<p>o chat está desligado neste painel '
+                                 "(<code>--sem-chat</code>).</p>"
+                                 f'<p><a href="{base}/#chat">← voltar</a></p>')
+                        return self._responder(
+                            405, _subpagina("chat desligado", corpo, base))
+                    return self._post_chat(base)
 
                 def _erro(code: int, titulo: str, msg: str):
                     # beco sem saída, nunca: todo erro do fluxo de decisão
@@ -1328,11 +1619,12 @@ class DashboardServer:
                     return self._responder(code,
                                            _subpagina(titulo, corpo, base))
 
+                # porta 1: aprovações
                 if (painel.fila is None
-                        or self.path.rstrip("/") != base + "/aprovacoes/decidir"):
+                        or rota != base + "/aprovacoes/decidir"):
                     return _erro(405, "método não permitido",
-                                 "escrever só existe na porta de aprovações "
-                                 "(token de uso único)")
+                                 "escrever só existe nas portas de aprovações "
+                                 "e chat local")
                 from nomos.kernel.approvals import ApprovalError
                 try:
                     tam = int(self.headers.get("Content-Length") or 0)

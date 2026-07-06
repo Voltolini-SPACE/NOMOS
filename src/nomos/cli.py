@@ -574,14 +574,19 @@ def cmd_atualizar(ctx, args) -> int:
 def cmd_painel(ctx, args) -> int:
     from nomos.interface.painel_web import DashboardServer
     fila = False if getattr(args, "somente_leitura", False) else None
+    somente_leitura = getattr(args, "somente_leitura", False)
+    chat_on = not (getattr(args, "sem_chat", False) or somente_leitura)
     srv = DashboardServer(ctx, port=getattr(args, "port", 0) or 0,
-                          fila_aprovacoes=fila, cache_s=2.0)
+                          fila_aprovacoes=fila, cache_s=2.0,
+                          chat_habilitado=chat_on)
     url = srv.start()
     print(f"painel local: {url}")
     if fila is False:
         print("modo somente leitura: nenhum POST é aceito.")
     else:
-        print("ler é livre; agir só pela fila de aprovações (token de uso único).")
+        print("ler é livre; agir passa pelo gate — duas portas: aprovações "
+              "(token de uso único) e chat local"
+              + (" (desligado)" if not chat_on else "") + ".")
     print("só funciona neste computador (127.0.0.1). Ctrl+C encerra.")
     if getattr(args, "sem_abrir", False):
         # a URL carrega o segmento secreto: com --sem-abrir ela não passa
@@ -1806,6 +1811,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="porta fixa (padrão: aleatória)")
     pn.add_argument("--somente-leitura", action="store_true",
                     help="painel 100%% somente leitura (nenhum POST aceito)")
+    pn.add_argument("--sem-chat", action="store_true",
+                    help="desliga a porta do chat local (só aprovações escrevem)")
     pn.add_argument("--sem-abrir", action="store_true",
                     help="não abre o navegador; só imprime a URL")
     pn.set_defaults(fn=cmd_painel)

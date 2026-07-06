@@ -41,12 +41,13 @@ def _html(home):
 
 
 # ---------------------------------------------------------------- abas
-def test_cinco_abas_e_so_visao_ativa(nomos_home):
+def test_seis_abas_e_so_visao_ativa(nomos_home):
+    # MC38: entrou a aba "chat" (estilo ChatGPT) — 6 abas agora
     corpo = _html(nomos_home)
-    for aba in ("visao", "cerebro", "capacidades", "operacao", "ajuda"):
+    for aba in ("visao", "chat", "cerebro", "capacidades", "operacao", "ajuda"):
         assert f'data-aba="{aba}"' in corpo, f"aba {aba} ausente"
     # a sidebar (link) e a seção (section) — 2 ocorrências por aba
-    assert corpo.count('data-aba="visao"') >= 2
+    assert corpo.count('data-aba="chat"') >= 2
     # só a visão geral começa aberta (ativa)
     ativas = re.findall(r'class="aba ativa" data-aba="(\w+)"', corpo)
     assert ativas == ["visao"], f"deveria abrir só na visão geral, veio {ativas}"

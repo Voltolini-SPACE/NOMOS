@@ -4,6 +4,27 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC38 — chat local no painel, estilo ChatGPT)
+Chat funcional embutido no painel, com histórico de conversas e conteúdo
+visível, rodando **só motor local**. Testes: `tests/test_chat_painel.py` (7).
+- **Aba "chat"** nova: histórico de conversas à esquerda (a "barra lateral" do
+  ChatGPT), thread com bolhas usuário/agente à direita, composer embaixo. As
+  conversas saem do ConversationStore real (o mesmo do `nomos chat`).
+- **2ª porta de escrita governada** (`chat/enviar`): o painel deixa de ter
+  "uma porta" e passa a ter duas — aprovações (token single-use) e chat. A
+  porta do chat tem token CSRF por servidor, roda **apenas motor local**
+  (respeita o cadeado; nuvem só no terminal, com opt-in), é **fail-closed**
+  (sem motor pronto → grava uma nota honesta "instale o cérebro", jamais
+  inventa resposta) e audita cada turno (`chat.painel.enviou/respondeu/
+  sem_motor`).
+- **Fail-closed por padrão**: no construtor do servidor o chat nasce
+  DESLIGADO (o `render_html` puro segue sem `<form>`); `nomos painel` liga;
+  `nomos painel --sem-chat` desliga.
+- **Privacidade**: o conteúdo aparece (sua máquina, 127.0.0.1), passando por
+  `redact_text` — chaves/tokens saem redigidos na exibição (testado).
+- Conversas migraram da aba "cérebro" para a aba "chat" (âncora `#conversas`
+  preservada). Site e cópia atualizados para "duas portas de escrita".
+
 ### Changed (MC37 — menos poluição visual, mais usabilidade)
 Redesenho do painel para reduzir densidade, com tema claro/escuro. Testes:
 `tests/test_painel_tema_e_abas.py` (6 casos) + contratos de layout atualizados.
