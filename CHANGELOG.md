@@ -4,6 +4,16 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC32 — planejamento)
+- `docs/ROADMAP_4.md`: plano de potência real — trilha P (executor de missões
+  aprovável, skills A1 com diff-prévia, visão de tela via OmniParser V2 local
+  em 3 fases gateadas por A4), trilha M (MCP client com manifesto de risco,
+  trust store, server v2 com Tasks, HTTP loopback), trilha I (OmniParser,
+  faster-whisper, embeddings locais, OCR, docling, SearXNG opt-in, VLMs) e
+  trilha Q (bancada de motores, harness via arbitragem). 12 missões
+  priorizadas; fatos externos pesquisados e citados (licenças AGPL/MIT do
+  OmniParser exigem processo separado; MCP estável 2025-11-25, RC 2026-07-28).
+
 ### Added (MC31 — B1 provado e completado)
 - **NOMOS como servidor MCP (C1)**: `nomos mcp servir` — Model Context
   Protocol sobre stdio (sem rede), 5 tools somente leitura (status,
