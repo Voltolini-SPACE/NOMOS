@@ -4,7 +4,13 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
-_(nada ainda)_
+### Added
+- `docs/ROADMAP_3.md` (MC30): plano de aprimoramentos, funcionalidades e
+  conexões pós-rc17 — ondas A (aprimorar), B (produto), C (conexões gateadas:
+  MCP server/client, motores OpenAI-compatíveis, Telegram, e-mail, CalDAV,
+  pasta viva, webhooks loopback) e D (PyPI nome próprio, brew/winget,
+  atualização assinada, SBOM, marketplace de skills), com top-10 priorizado
+  e anti-metas.
 
 ## [1.3.0rc17] — 2026-07-05 (Motor Council MC10–MC27 + site + arbitragem real + MC29 governança/agentes/evidências: contrato único de flags proibidas, site com brandbook congelado e update agent read-only)
 
