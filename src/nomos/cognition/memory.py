@@ -175,12 +175,14 @@ class Memory:
                 "ORDER BY bm25(memories_fts), m.ts DESC LIMIT ?",
                 (match, int(k)),
             ).fetchall()
-        else:  # fallback transparente
-            like = f"%{query}%"
+        else:  # fallback transparente: OR de termos (LIKE de frase inteira não
+            # casaria "pagamento aluguel" com "pagamento do aluguel")
+            terms = re.findall(r"\w+", query, flags=re.UNICODE) or [query]
+            cond = " OR ".join("text LIKE ?" for _ in terms)
             rows = self.conn.execute(
-                "SELECT id, ts, role, text FROM memories WHERE text LIKE ? "
+                f"SELECT id, ts, role, text FROM memories WHERE {cond} "  # nosec B608 - placeholders
                 "ORDER BY ts DESC LIMIT ?",
-                (like, int(k)),
+                (*[f"%{t}%" for t in terms], int(k)),
             ).fetchall()
         return [MemoryItem(*r) for r in rows]
 
@@ -237,7 +239,12 @@ class Memory:
                 m = pat.search(item.text)
                 if not m:
                     continue
-                trecho = m.group(m.lastindex or 1).strip(" .,;")
+                if (m.lastindex or 1) >= 2:
+                    # padrões com qualificador: "meu email é X" → "email: X"
+                    # (sem isso a nota vira só "fato: X", ambígua no recall)
+                    trecho = f"{m.group(1).strip()}: {m.group(2).strip(' .,;')}"
+                else:
+                    trecho = m.group(1).strip(" .,;")
                 nota = f"{prefixo} {trecho}"[:160]
                 if nota not in ja_notado and len(trecho) > 3:
                     self.remember("note", nota)

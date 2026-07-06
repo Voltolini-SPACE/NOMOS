@@ -96,6 +96,12 @@ class Router:
             self.audit.append("chat.cloud.negado", etapa="cofre", motivo=str(exc))
             return ChatOutcome(False, "degradada", "",
                                reason=f"chave '{CLOUD_KEY_NAME}' indisponível no cofre: {exc}")
+        except Exception as exc:   # cofre corrompido/ilegível: degrada, não quebra
+            self.audit.append("chat.cloud.negado", etapa="cofre",
+                              motivo=type(exc).__name__)
+            return ChatOutcome(False, "degradada", "",
+                               reason=f"cofre ilegível ({type(exc).__name__}) — "
+                                      "rode: nomos doutor --consertar")
         try:
             r = self.cloud_factory(api_key=key).chat(messages)
         except ProviderUnavailable as exc:

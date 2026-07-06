@@ -44,14 +44,28 @@ def salvar_perfil(extras: dict) -> dict:
     dados = config.load_agent() or {}
     dados.update(extras)
     path = config.nomos_home() / config.AGENT_FILE
-    path.write_text(json.dumps(dados, ensure_ascii=False, indent=2))
+    # escrita atômica + utf-8: crash no meio não corrompe o perfil e acentos
+    # não quebram fora de UTF-8 (Windows/cp1252)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(dados, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    tmp.replace(path)
     os.chmod(path, 0o600)
     return dados
 
 
 def run_onboarding(ask=input, say=print, host_ollama: str = "http://127.0.0.1:11434",
-                   colorido: bool = True) -> dict:
+                   colorido: bool = True, ask_secret=None) -> dict:
     c = lambda n, t: cor(n, t, colorido)
+    # a senha-mestra do cofre NUNCA deve ecoar: getpass num terminal real;
+    # fora de TTY (ou com ask_secret injetado nos testes), cai no ask normal
+    if ask_secret is None:
+        import getpass
+        import sys as _sys
+        if _sys.stdin.isatty():
+            ask_secret = lambda p: getpass.getpass(p)
+        else:
+            ask_secret = ask
     from nomos.simple.marca import banner
     say(banner())
     say(c("negrito", "  Bem-vindo(a) ao NOMOS — seu agente pessoal"))
@@ -101,7 +115,7 @@ def run_onboarding(ask=input, say=print, host_ollama: str = "http://127.0.0.1:11
     say(c("fraco", "   10+ caracteres) ou apertar Enter para deixar para depois."))
     vault = Vault(config.nomos_home() / "vault.json")
     while True:
-        senha = ask("senha-mestra (Enter pula)> ")
+        senha = ask_secret("senha-mestra (Enter pula)> ")
         if not senha.strip():
             say("   ok, sem caixa-forte por enquanto — dá para criar quando quiser, é só")
             say("   pedir /chaves no chat.")

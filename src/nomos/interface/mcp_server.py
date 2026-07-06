@@ -120,6 +120,9 @@ def _rodar_tool(ctx, nome: str, argumentos: dict) -> dict:
 def _despachar(ctx, msg: dict) -> dict | None:
     mid = msg.get("id")
     metodo = msg.get("method", "")
+    if not isinstance(metodo, str):
+        return {"jsonrpc": "2.0", "id": mid,
+                "error": {"code": -32600, "message": "method deve ser string"}}
     if metodo == "initialize":
         from nomos import __version__
         return {"jsonrpc": "2.0", "id": mid, "result": {
@@ -136,8 +139,16 @@ def _despachar(ctx, msg: dict) -> dict | None:
         return {"jsonrpc": "2.0", "id": mid, "result": {"tools": TOOLS}}
     if metodo == "tools/call":
         params = msg.get("params") or {}
+        if not isinstance(params, dict):
+            return {"jsonrpc": "2.0", "id": mid,
+                    "error": {"code": -32602,
+                              "message": "params deve ser objeto (não lista)"}}
         nome = str(params.get("name", ""))
         argumentos = params.get("arguments") or {}
+        if not isinstance(argumentos, dict):
+            return {"jsonrpc": "2.0", "id": mid,
+                    "error": {"code": -32602,
+                              "message": "arguments deve ser objeto"}}
         try:
             resultado = _rodar_tool(ctx, nome, argumentos)
         except (LookupError, ValueError) as exc:
@@ -172,7 +183,20 @@ def servir(ctx, entrada=None, saida=None) -> int:
             saida.write(json.dumps(resposta, ensure_ascii=False) + "\n")
             saida.flush()
             continue
-        resposta = _despachar(ctx, msg)
+        if not isinstance(msg, dict):
+            # JSON válido mas não-objeto (batch/escalar): erro sem derrubar o loop
+            resposta = {"jsonrpc": "2.0", "id": None,
+                        "error": {"code": -32600,
+                                  "message": "requisição deve ser objeto JSON"}}
+            saida.write(json.dumps(resposta, ensure_ascii=False) + "\n")
+            saida.flush()
+            continue
+        try:
+            resposta = _despachar(ctx, msg)
+        except Exception as exc:            # promessa do módulo: loop nunca cai
+            resposta = {"jsonrpc": "2.0", "id": msg.get("id"),
+                        "error": {"code": -32603,
+                                  "message": f"erro interno: {type(exc).__name__}"}}
         if resposta is not None:
             saida.write(json.dumps(resposta, ensure_ascii=False) + "\n")
             saida.flush()

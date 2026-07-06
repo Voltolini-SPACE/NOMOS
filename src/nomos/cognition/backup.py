@@ -11,6 +11,7 @@ import base64
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -33,9 +34,18 @@ def _chave(senha: str, sal: bytes) -> bytes:
 
 
 def exportar(mem, destino: Path, senha: str) -> int:
-    """Exporta TODAS as memórias cifradas. Devolve a quantidade exportada."""
-    itens = [{"ts": i.ts, "role": i.role, "text": i.text}
-             for i in mem.recent(n=1_000_000)]
+    """Exporta TODAS as memórias cifradas. Devolve a quantidade exportada.
+
+    Fiel ao F4: preserva ts e os metadados tipados (tipo/fonte/confianca) —
+    sem eles o ciclo exportar→importar degradava a memória silenciosamente.
+    """
+    rows = mem.conn.execute(
+        "SELECT ts, role, text, tipo, fonte, confianca FROM memories "
+        "ORDER BY id").fetchall()
+    itens = [{"ts": r[0], "role": r[1], "text": r[2],
+              "tipo": r[3] or "", "fonte": r[4] or "",
+              "confianca": r[5] if r[5] is not None else 1.0}
+             for r in rows]
     sal = os.urandom(16)
     corpo = json.dumps({"formato": MAGICO, "itens": itens},
                        ensure_ascii=False).encode()
@@ -66,12 +76,31 @@ def importar(mem, origem: Path, senha: str) -> tuple[int, int]:
     if dados.get("formato") != MAGICO:
         raise BackupError("este arquivo não é um backup de memórias do NOMOS")
     existentes = {(i.role, i.text) for i in mem.recent(n=1_000_000)}
+    roles_ok = {"user", "assistant", "system", "note"}
     novas = ignoradas = 0
     for item in dados.get("itens", []):
-        chave = (item.get("role", "note"), item.get("text", ""))
+        role = item.get("role", "note")
+        if role not in roles_ok:
+            role = "note"
+        chave = (role, item.get("text", ""))
         if chave in existentes or not chave[1]:
             ignoradas += 1
             continue
-        mem.remember(chave[0], chave[1])
+        # restaura ts e metadados tipados (backups v1 antigos: defaults seguros)
+        try:
+            ts = float(item.get("ts") or time.time())
+        except (TypeError, ValueError):
+            ts = time.time()
+        try:
+            conf = float(item.get("confianca", 1.0))
+        except (TypeError, ValueError):
+            conf = 1.0
+        mem.conn.execute(
+            "INSERT INTO memories(ts, role, text, tipo, fonte, confianca) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (ts, role, chave[1], str(item.get("tipo") or ""),
+             str(item.get("fonte") or ""), conf))
+        existentes.add(chave)
         novas += 1
+    mem.conn.commit()
     return novas, ignoradas

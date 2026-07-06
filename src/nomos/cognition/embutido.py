@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess  # nosec B404 - só para ler a RAM no macOS (sysctl), sem shell
+import sys
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -171,6 +172,13 @@ def baixar(home: Path, modelo: ModeloGGUF, progresso=None, timeout: float = 60.0
         raise CerebroIndisponivel(
             f"não consegui baixar o cérebro ({type(exc).__name__}). "
             "Verifique a internet e tente de novo.") from None
+    if total and recebidos < total:
+        # conexão caiu antes do fim: read() devolve b"" sem levantar erro.
+        # Sem esta checagem, um GGUF truncado viraria "cérebro pronto".
+        tmp.unlink(missing_ok=True)
+        raise CerebroIndisponivel(
+            f"download incompleto ({recebidos // (1 << 20)} de "
+            f"{total // (1 << 20)} MB) — verifique a internet e tente de novo.")
     tmp.replace(destino)
     chmod_privado(destino, 0o600)
     return destino
@@ -239,7 +247,10 @@ def instalar_motor() -> tuple[bool, str]:
     """Instala o llama-cpp-python via pip (roda na máquina do usuário)."""
     if llama_disponivel():
         return True, "o motor do cérebro já está instalado."
-    py = shutil.which("python3") or shutil.which("python")
+    # sys.executable: instala no MESMO interpretador que roda o NOMOS
+    # (which("python3") acharia o Python do sistema em venv/pipx — o pacote
+    # iria para outro ambiente e o cérebro continuaria "não instalado")
+    py = sys.executable or shutil.which("python3") or shutil.which("python")
     if not py:
         return False, "não achei o Python para instalar o motor."
     try:

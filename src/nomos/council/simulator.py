@@ -211,7 +211,8 @@ class OfflineCouncilSimulator:
                             risk_level=CouncilRiskLevel.A1, local_only=True,
                             private_mode=False, contains_sensitive_data=False,
                             council_enabled=True, gate=None,
-                            provider_failure=None) -> OfflineCouncilResult:
+                            provider_failure=None,
+                            session_id: str = "offline-sim") -> OfflineCouncilResult:
         """Núcleo do pipeline sobre candidatos JÁ construídos (AnswerCandidate).
 
         Reutilizado pela integração de motores LOCAIS (MC3): só os candidatos
@@ -234,7 +235,8 @@ class OfflineCouncilSimulator:
         anon = [c.anonymized(alias=alias_por_candidato[c.candidate_id])
                 for c in elegiveis]
         session = CouncilSession(
-            session_id="offline-sim", mode=mode, risk_level=risk_level,
+            session_id=str(session_id or "offline-sim"), mode=mode,
+            risk_level=risk_level,
             local_only=local_only, private_mode=private_mode,
             candidate_count=len(candidates), judge_count=len(judge_fixtures))
         gate = gate or SimulatedPolicyGateResult()
@@ -267,16 +269,21 @@ class OfflineCouncilSimulator:
 
         nao_conflito = [r for r in reviews if not r.is_self_judging]
         efetivas = nao_conflito if nao_conflito else reviews
-        # todos os juízes são autores (sem juiz limpo) ⇒ fail-closed
-        if judge_fixtures and not nao_conflito:
-            return _bloqueado(CouncilFailureCode.INSUFFICIENT_JUDGES,
-                              "todos os juízes são autores (conflito)", reviews)
+        # sem juiz limpo — inclusive ZERO juízes — ⇒ fail-closed (um conselho
+        # sem revisão jamais aprova com confiança)
+        if not nao_conflito:
+            return _bloqueado(
+                CouncilFailureCode.INSUFFICIENT_JUDGES,
+                ("todos os juízes são autores (conflito)" if judge_fixtures
+                 else "nenhum juiz no conselho"), reviews)
 
         if any(jf.has_critical_alert for jf in judge_fixtures):
             return _bloqueado(CouncilFailureCode.ARBITER_UNSAFE_OUTPUT,
                               "alerta crítico de juiz", efetivas)
 
-        overalls = [jf.overall for jf in judge_fixtures]
+        # estatísticas SÓ sobre reviews limpas: autojulgamento excluído não
+        # pode decidir vencedor nem inflar/mascarar desacordo
+        overalls = [r.score.get("overall", 0) for r in efetivas]
         spread = (max(overalls) - min(overalls)) if overalls else 0
         nivel = (CouncilDisagreementLevel.HIGH if spread >= _DISAGREEMENT_HIGH
                  else CouncilDisagreementLevel.MEDIUM if spread >= _DISAGREEMENT_MED
@@ -290,7 +297,7 @@ class OfflineCouncilSimulator:
             return _bloqueado(CouncilFailureCode.POLICY_GATE_DENIED,
                               f"gate negou: {gate.reason}", efetivas, disagreement)
 
-        melhor_alias = self._melhor_alias(judge_fixtures, anon)
+        melhor_alias = self._melhor_alias(efetivas, anon)
         confianca = (CouncilConfidence.HIGH if nivel is CouncilDisagreementLevel.LOW
                      else CouncilConfidence.MEDIUM)
         decisao = ArbiterDecision(
@@ -301,12 +308,19 @@ class OfflineCouncilSimulator:
                             disagreement, decisao, gate, private_mode, None)
 
     @staticmethod
-    def _melhor_alias(judge_fixtures, anon) -> str | None:
+    def _melhor_alias(reviews, anon) -> str | None:
+        """Vencedor a partir das reviews LIMPAS, restrito a aliases que
+        correspondem a candidatos reais (nota para alias inexistente não elege
+        ninguém)."""
         if not anon:
             return None
+        validos = {a.candidate_id for a in anon}
         soma: dict[str, int] = {}
-        for jf in judge_fixtures:
-            soma[jf.candidate_alias] = soma.get(jf.candidate_alias, 0) + jf.overall
+        for r in reviews:
+            alias = r.candidate_alias
+            if alias not in validos:
+                continue
+            soma[alias] = soma.get(alias, 0) + int(r.score.get("overall", 0))
         if soma:
             return sorted(soma.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
         return anon[0].candidate_id

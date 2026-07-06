@@ -357,9 +357,9 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
             convs = conv_store.listar(20)
             if not convs:
                 say(f"{nome}: ainda não há conversas guardadas.")
-            for c in convs:
-                fix = "📌 " if c.fixada else ""
-                say(f"  {fix}#{c.id} {c.titulo or '(sem título)'} ({c.n_turnos} turnos)")
+            for cv in convs:
+                fix = "📌 " if cv.fixada else ""
+                say(f"  {fix}#{cv.id} {cv.titulo or '(sem título)'} ({cv.n_turnos} turnos)")
             continue
         if linha == "/fixar":
             conv_store.fixar(conversa_id, True)
@@ -502,7 +502,11 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
             say(f"{nome}: posso usar a skill '{sugestao['name']}' para isso"
                 + (f" — {sugestao['description']}" if sugestao["description"] else "")
                 + ". Quer? (sim/não)")
-            resp = ask("> ").strip().casefold()
+            try:
+                resp = ask("> ").strip().casefold()
+            except (EOFError, KeyboardInterrupt):
+                say("")
+                resp = "não"
             if resp == "sim":
                 ok, msg = _rodar_skill_conversa(ctx, sugestao["name"], None,
                                                 aprovador, origem="oferta")
@@ -515,6 +519,10 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
         contexto = [{"role": "system", "content": system_prompt(perfil)}]
         if bloco_rag:
             contexto.append({"role": "system", "content": bloco_rag})
+        # /continuar: injeta o contexto retomado uma única vez (antes do recente)
+        retomado = estado_privado.pop("retomado", None)
+        if retomado:
+            contexto += retomado
         contexto += [
             {"role": ("assistant" if m.role == "assistant" else "user"), "content": m.text}
             for m in reversed(mem.recent(6)) if m.role in {"user", "assistant"}

@@ -21,3 +21,5 @@ htmlcov/
 /nomos-[0-9]*/
 # macOS metadata
 .DS_Store
+# trava do loop (efêmera, nunca versionar)
+loop/.lock

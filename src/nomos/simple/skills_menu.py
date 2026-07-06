@@ -132,8 +132,12 @@ def menu(ctx, ask=input, say=print, instalar_fn=None) -> int:
         elif op == "3":
             nome = ask("qual skill desativar?> ").strip()
             if nome:
-                st.ativar(home, nome, False)
-                say(f"'{nome}' desativada. Reative com: nomos skills ativar {nome}")
+                instaladas = {it["name"] for it in st.status_todas(home, skills_dir, trust)}
+                if nome not in instaladas:
+                    say(f"skill '{nome}' não encontrada — nada foi alterado.")
+                else:
+                    st.ativar(home, nome, False)
+                    say(f"'{nome}' desativada. Reative com: nomos skills ativar {nome}")
         elif op == "4":
             for it in st.status_todas(home, skills_dir, trust):
                 say(f"  {it['name']}: {', '.join(it['permissions']) or 'apenas leitura local'}")

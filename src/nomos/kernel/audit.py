@@ -73,16 +73,21 @@ class AuditLog:
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def _last_hash(self) -> str:
+        # tolerante a linha final parcial (crash/disco cheio no meio de um
+        # append): usa o ÚLTIMO registro válido — sem isso, json.loads
+        # estouraria aqui e travaria TODA auditoria futura
         if not self.path.exists():
             return GENESIS
-        last = None
-        with self.path.open() as fh:
+        tip = GENESIS
+        with self.path.open(encoding="utf-8") as fh:
             for line in fh:
-                if line.strip():
-                    last = line
-        if last is None:
-            return GENESIS
-        return json.loads(last).get("hash", GENESIS)
+                if not line.strip():
+                    continue
+                try:
+                    tip = json.loads(line).get("hash", tip)
+                except json.JSONDecodeError:
+                    continue
+        return tip
 
     def append(self, event: str, **fields) -> dict:
         record = {
@@ -95,7 +100,7 @@ class AuditLog:
             (record["prev"] + _canonical({k: v for k, v in record.items() if k != "hash"}))
             .encode("utf-8")
         ).hexdigest()
-        with self.path.open("a") as fh:
+        with self.path.open("a", encoding="utf-8") as fh:
             fh.write(_canonical(record) + "\n")
         return record
 
@@ -104,7 +109,7 @@ class AuditLog:
         count, tip = 0, GENESIS
         if not self.path.exists():
             return 0, GENESIS
-        with self.path.open() as fh:
+        with self.path.open(encoding="utf-8") as fh:
             for line in fh:
                 if line.strip():
                     count += 1
@@ -121,7 +126,7 @@ class AuditLog:
         if not self.path.exists():
             return None
         i = 0
-        with self.path.open() as fh:
+        with self.path.open(encoding="utf-8") as fh:
             for line in fh:
                 if not line.strip():
                     continue
@@ -138,7 +143,7 @@ class AuditLog:
         if not self.path.exists():
             return True, -1
         prev = GENESIS
-        with self.path.open() as fh:
+        with self.path.open(encoding="utf-8") as fh:
             for idx, line in enumerate(fh):
                 if not line.strip():
                     continue

@@ -32,7 +32,12 @@ def _abrir_http(url_ou_req, timeout: float):
 
 
 MODALIDADES = ("texto", "codigo", "imagem", "audio")
-OLLAMA = os.environ.get("NOMOS_OLLAMA_HOST", "http://127.0.0.1:11434")
+_OLLAMA_PADRAO = "http://127.0.0.1:11434"
+OLLAMA = os.environ.get("NOMOS_OLLAMA_HOST", _OLLAMA_PADRAO)
+# motor "local" é local por lei: host não-loopback no env NUNCA é sondado
+# (senão o catálogo marcaria como "privacidade total" algo que sai da máquina)
+if not localidade.eh_loopback(OLLAMA):
+    OLLAMA = _OLLAMA_PADRAO
 SD_WEBUI = "http://127.0.0.1:7860"
 COMFYUI = "http://127.0.0.1:8188"
 

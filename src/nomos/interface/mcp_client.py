@@ -21,6 +21,7 @@ Manifesto (exemplo):
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
 from pathlib import Path
@@ -90,9 +91,26 @@ class ClienteMCP:
         self._mid = 0
 
     def __enter__(self) -> "ClienteMCP":
+        import queue as _queue
+        import threading as _threading
         self._proc = subprocess.Popen(
             self.manifesto["comando"], stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+            encoding="utf-8")
+        # leitor em thread: readline direto bloquearia PARA SEMPRE se o
+        # comando do manifesto não falar MCP — o timeout precisa valer
+        self._fila: _queue.Queue = _queue.Queue()
+        proc = self._proc
+
+        def _ler() -> None:
+            # leitor daemon: erro de I/O só encerra o stream — o None
+            # abaixo sinaliza o fim para quem consome a fila
+            with contextlib.suppress(Exception):
+                for linha in proc.stdout:
+                    self._fila.put(linha)
+            self._fila.put(None)          # EOF/erro: sinaliza fim
+
+        _threading.Thread(target=_ler, daemon=True).start()
         init = self._rpc("initialize", {
             "protocolVersion": PROTOCOLO,
             "capabilities": {}, "clientInfo": {"name": "nomos-mcp-client"}})
@@ -117,20 +135,33 @@ class ClienteMCP:
         self._enviar({"jsonrpc": "2.0", "method": metodo})
 
     def _rpc(self, metodo: str, params: dict | None = None) -> dict:
+        import queue as _queue
+        import time as _time
         self._mid += 1
         self._enviar({"jsonrpc": "2.0", "id": self._mid, "method": metodo,
                       **({"params": params} if params is not None else {})})
-        assert self._proc and self._proc.stdout
-        linha = self._proc.stdout.readline()
-        if not linha:
-            raise McpErro("server MCP encerrou sem responder (handshake?)")
-        try:
-            msg = json.loads(linha)
-        except Exception:
-            raise McpErro("server MCP respondeu algo que não é JSON") from None
-        if "error" in msg:
-            raise McpErro(str(msg["error"].get("message", "erro do server")))
-        return msg.get("result", {})
+        prazo = _time.monotonic() + self.timeout
+        while True:
+            restante = prazo - _time.monotonic()
+            if restante <= 0:
+                raise McpErro(f"server MCP não respondeu em {self.timeout:.0f}s "
+                              "(o comando do manifesto fala MCP?)")
+            try:
+                linha = self._fila.get(timeout=restante)
+            except _queue.Empty:
+                raise McpErro(f"server MCP não respondeu em {self.timeout:.0f}s "
+                              "(o comando do manifesto fala MCP?)") from None
+            if linha is None:
+                raise McpErro("server MCP encerrou sem responder (handshake?)")
+            try:
+                msg = json.loads(linha)
+            except Exception:
+                raise McpErro("server MCP respondeu algo que não é JSON") from None
+            if not isinstance(msg, dict) or msg.get("id") != self._mid:
+                continue                  # notificação/log: não é a resposta
+            if "error" in msg:
+                raise McpErro(str(msg["error"].get("message", "erro do server")))
+            return msg.get("result", {})
 
     def tools(self) -> list[dict]:
         """tools/list anotada com o nível A de cada tool (do manifesto)."""

@@ -9,6 +9,7 @@ modalidade e recomenda UM próximo passo acionável.
 """
 from __future__ import annotations
 
+import os
 import sys
 
 from nomos import __version__
@@ -40,7 +41,7 @@ def diagnostico(home=None) -> list[dict]:
                         "tudo fica na sua máquina" if so_local
                         else "você plugou motores externos; cada uso pede permissão"))
 
-    if config.nomos_home().joinpath("vault.json").exists():
+    if home.joinpath("vault.json").exists():
         n = len(_nomes_seguro())
         itens.append(_linha(True, "Caixa-forte de chaves criada",
                             f"{n} chave(s) guardada(s)"))
@@ -53,7 +54,7 @@ def diagnostico(home=None) -> list[dict]:
     texto = motores.ativo("texto", mapa)
     if texto and texto.get("local"):
         itens.append(_linha(True, "Cérebro local pronto", f"{texto['detalhe']}"))
-    elif any(_emb.esta_baixado(config.nomos_home(), m) for m in _emb.CATALOGO):
+    elif any(_emb.esta_baixado(home, m) for m in _emb.CATALOGO):
         itens.append(_linha(False, "Cérebro baixado, falta o motor",
                             "rode uma vez: nomos cerebro instalar"))
     else:
@@ -269,7 +270,7 @@ def diagnosticar_consertos(home) -> list[dict]:
         if not p.exists():
             return False
         try:
-            _json.loads(p.read_text())
+            _json.loads(p.read_text(encoding="utf-8"))
             return False
         except Exception:
             return True
@@ -326,14 +327,20 @@ def consertar(home, confirmar, say=print, audit=None) -> tuple[int, list[str]]:
             feitos.append(f"pasta {alvo}/ criada")
         elif tipo == "arquivo":
             p = home / alvo
-            p.rename(p.with_suffix(p.suffix + ".corrompido"))
+            destino = p.with_suffix(p.suffix + ".corrompido")
+            n = 1
+            while destino.exists():           # no Windows renomear p/ destino
+                destino = p.with_suffix(p.suffix + f".corrompido.{n}")
+                n += 1                        # existente falharia — preserva ambos
+            os.replace(p, destino)
             if alvo == "localidade.json":
                 localidade.definir(home, True)          # o padrão mais seguro
             elif alvo == "policy.json":
                 from nomos.kernel.policy import PolicyEngine as _PE
                 _PE(p)                                   # recria default fail-closed
             else:
-                p.write_text('{"rotinas": []}' if alvo == "rotinas.json" else "{}")
+                p.write_text('{"rotinas": []}' if alvo == "rotinas.json" else "{}",
+                             encoding="utf-8")
                 chmod_privado(p, 0o600)
             feitos.append(f"{alvo} recriado com padrão seguro (original preservado)")
         if audit is not None:

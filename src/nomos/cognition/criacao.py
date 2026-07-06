@@ -81,7 +81,11 @@ def gerar_imagem(prompt: str, home, policy, gate, approver,
     imagens = data.get("images") or []
     if not imagens:
         raise CriacaoIndisponivel("o gerador respondeu sem imagem — nada foi salvo")
-    png = base64.b64decode(imagens[0])
+    try:
+        png = base64.b64decode(imagens[0])
+    except Exception:
+        raise CriacaoIndisponivel(
+            "resposta do gerador não é base64 válido — nada foi salvo") from None
     if not png.startswith(PNG_MAGIC):
         raise CriacaoIndisponivel("resposta não é um PNG válido — nada foi salvo")
     destino = _destino(home, "imagem", prompt, "png")

@@ -29,11 +29,23 @@ class ConsentRegistry:
             self._write({d: {"granted": False, "expires_at": None} for d in DEVICES})
 
     def _read(self) -> dict:
-        return json.loads(self.path.read_text())
+        # registro corrompido/truncado ⇒ tudo revogado (fail-closed), sem
+        # estourar JSONDecodeError em is_granted/status
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {d: {"granted": False, "expires_at": None} for d in DEVICES}
+        if not isinstance(data, dict):
+            return {d: {"granted": False, "expires_at": None} for d in DEVICES}
+        return data
 
     def _write(self, data: dict) -> None:
+        # escrita atômica (tmp + replace): crash no meio não corrompe o registro
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(data, indent=2))
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        chmod_privado(tmp, 0o600)
+        tmp.replace(self.path)
         chmod_privado(self.path, 0o600)
 
     def grant(self, device: str, ttl_minutes: int = DEFAULT_TTL_MIN) -> dict:

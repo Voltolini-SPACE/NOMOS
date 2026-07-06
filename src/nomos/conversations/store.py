@@ -55,12 +55,25 @@ class ConversationStore:
             self.conn.execute(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS turnos_fts USING fts5("
                 "text, content='turnos', content_rowid='id')")
+            # bases antigas não tinham o trigger de DELETE: o índice FTS
+            # mantinha texto de turnos apagados (vazamento + rowid reusado).
+            tinha_delete = self.conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='t_ad'"
+            ).fetchone() is not None
             self.conn.executescript(
                 """
                 CREATE TRIGGER IF NOT EXISTS t_ai AFTER INSERT ON turnos BEGIN
                   INSERT INTO turnos_fts(rowid, text) VALUES (new.id, new.text);
                 END;
+                CREATE TRIGGER IF NOT EXISTS t_ad AFTER DELETE ON turnos BEGIN
+                  INSERT INTO turnos_fts(turnos_fts, rowid, text)
+                    VALUES ('delete', old.id, old.text);
+                END;
                 """)
+            if not tinha_delete:
+                # reconstrói o índice a partir do conteúdo real (remove órfãos)
+                self.conn.execute(
+                    "INSERT INTO turnos_fts(turnos_fts) VALUES('rebuild')")
             self.fts = True
         except sqlite3.OperationalError:
             self.fts = False
@@ -102,15 +115,17 @@ class ConversationStore:
                           (titulo, tags, conversa_id))
         self.conn.commit()
 
-    def fixar(self, conversa_id: int, fixada: bool = True) -> None:
-        self.conn.execute("UPDATE conversas SET fixada=? WHERE id=?",
-                          (1 if fixada else 0, conversa_id))
+    def fixar(self, conversa_id: int, fixada: bool = True) -> bool:
+        cur = self.conn.execute("UPDATE conversas SET fixada=? WHERE id=?",
+                                (1 if fixada else 0, conversa_id))
         self.conn.commit()
+        return cur.rowcount > 0
 
-    def definir_usar_memoria(self, conversa_id: int, usar: bool) -> None:
-        self.conn.execute("UPDATE conversas SET usar_memoria=? WHERE id=?",
-                          (1 if usar else 0, conversa_id))
+    def definir_usar_memoria(self, conversa_id: int, usar: bool) -> bool:
+        cur = self.conn.execute("UPDATE conversas SET usar_memoria=? WHERE id=?",
+                                (1 if usar else 0, conversa_id))
         self.conn.commit()
+        return cur.rowcount > 0
 
     def esquecer(self, conversa_id: int) -> bool:
         c = self.conn.execute("DELETE FROM conversas WHERE id=?", (conversa_id,))

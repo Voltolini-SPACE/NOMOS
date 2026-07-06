@@ -127,9 +127,13 @@ def restaurar(home: Path, origem: Path, senha: str,
     chmod_privado(home, 0o700)
     restaurados = 0
     with tarfile.open(fileobj=io.BytesIO(dados), mode="r:gz") as tar:
+        raiz = home.resolve()
         for m in tar.getmembers():
             alvo = (home / m.name).resolve()
-            if not str(alvo).startswith(str(home.resolve())):
+            # comparação por PREFIXO de string aceitaria um irmão como
+            # ~/.nomos-evil (começa com ~/.nomos); is_relative_to compara
+            # componentes de caminho e barra o escape via ../
+            if alvo != raiz and raiz not in alvo.parents:
                 raise BackupTotalError(f"caminho suspeito no backup: {m.name}")
             if m.isfile():
                 alvo.parent.mkdir(parents=True, exist_ok=True)

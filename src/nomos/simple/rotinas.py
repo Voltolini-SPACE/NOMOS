@@ -42,7 +42,7 @@ def _ler(home: Path) -> list[dict]:
     if not p.exists():
         return []
     try:
-        dados = json.loads(p.read_text())
+        dados = json.loads(p.read_text(encoding="utf-8"))
         return dados.get("rotinas", []) if isinstance(dados, dict) else []
     except Exception:
         return []   # corrompido: nada roda (fail-closed)
@@ -51,7 +51,13 @@ def _ler(home: Path) -> list[dict]:
 def _gravar(home: Path, rotinas: list[dict]) -> None:
     p = _caminho(home)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps({"rotinas": rotinas}, ensure_ascii=False, indent=2))
+    # escrita atômica + utf-8: crash no meio não apaga todas as rotinas e
+    # emojis/acentos não quebram fora de UTF-8
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"rotinas": rotinas}, ensure_ascii=False, indent=2),
+                   encoding="utf-8")
+    chmod_privado(tmp, 0o600)
+    tmp.replace(p)
     chmod_privado(p, 0o600)
 
 
@@ -256,7 +262,9 @@ def exportar(home: Path, formato: str | None = None) -> tuple[list[Path], str]:
     destino = home / "agendadores"
     destino.mkdir(parents=True, exist_ok=True)
     exe = sys.executable
-    cmd = f"{exe} -m nomos.cli rotinas executar"
+    # exe entre aspas: caminho do Python com espaços (ex.: "Program Files") não
+    # quebra a linha gerada no systemd/schtasks
+    cmd = f'"{exe}" -m nomos.cli rotinas executar'
     arquivos: list[Path] = []
 
     if formato == "launchd":
@@ -287,7 +295,7 @@ Description=NOMOS — executa rotinas devidas (local, sem rede)
 
 [Service]
 Type=oneshot
-Environment=NOMOS_HOME={home}
+Environment="NOMOS_HOME={home}"
 ExecStart={cmd}
 """, encoding="utf-8")
         timer.write_text("""[Unit]
@@ -306,11 +314,14 @@ WantedBy=timers.target
                      f"  systemctl --user enable --now nomos-rotinas.timer")
     else:  # windows
         cmdfile = destino / "nomos-rotinas.cmd"
+        # dentro do /tr "..." as aspas do exe precisam ser DUPLICADAS (\"\")
+        # para caminho com espaços não quebrar o comando do schtasks
+        cmd_win = f'\"\"{exe}\"\" -m nomos.cli rotinas executar'
         cmdfile.write_text(
             f"@echo off\r\nrem NOMOS — crie a tarefa VOCÊ MESMO executando "
             f"este arquivo uma vez:\r\n"
             f"schtasks /create /tn \"NOMOS Rotinas\" /sc minute /mo 15 "
-            f"/tr \"cmd /c set NOMOS_HOME={home}&& {cmd}\"\r\n",
+            f"/tr \"cmd /c set NOMOS_HOME={home}&& {cmd_win}\"\r\n",
             encoding="utf-8")
         arquivos.append(cmdfile)
         instrucao = (f"instale VOCÊ MESMO (uma vez): dê dois cliques em "

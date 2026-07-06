@@ -54,6 +54,7 @@ class AdapterFailureCode(str, Enum):
     ADAPTER_LOOPBACK_DENIED = "ADAPTER_LOOPBACK_DENIED"
     ADAPTER_PROMPT_TOO_LARGE = "ADAPTER_PROMPT_TOO_LARGE"
     ADAPTER_ENGINE_INELIGIBLE = "ADAPTER_ENGINE_INELIGIBLE"
+    ADAPTER_SENSITIVE_DATA_DENIED = "ADAPTER_SENSITIVE_DATA_DENIED"
 
 
 # Mapeamento para o CouncilFailureCode usado pelo pipeline/provider.
@@ -68,6 +69,8 @@ _PARA_COUNCIL = {
     AdapterFailureCode.ADAPTER_LOOPBACK_DENIED: CouncilFailureCode.CLOUD_BLOCKED_BY_LOCAL_LOCK,
     AdapterFailureCode.ADAPTER_PROMPT_TOO_LARGE: CouncilFailureCode.ENGINE_FAILED,
     AdapterFailureCode.ADAPTER_DRY_RUN_ONLY: CouncilFailureCode.NO_ELIGIBLE_LOCAL_ENGINE,
+    AdapterFailureCode.ADAPTER_SENSITIVE_DATA_DENIED:
+        CouncilFailureCode.SENSITIVE_DATA_CLOUD_DENIED,
 }
 
 
@@ -268,6 +271,12 @@ class DryRunLocalEngineAdapter:
         if len(request.prompt) > self.policy.max_prompt_chars:
             return LocalAdapterFailure(AdapterFailureCode.ADAPTER_PROMPT_TOO_LARGE,
                                        "prompt excede max_prompt_chars")
+        # contrato MC3: dado sensível exige motor que declare suporte —
+        # senão o prompt sensível chegaria ao motor na fase de execução real
+        if request.contains_sensitive_data and not descriptor.supports_sensitive_data:
+            return LocalAdapterFailure(
+                AdapterFailureCode.ADAPTER_SENSITIVE_DATA_DENIED,
+                "dado sensível exige motor com supports_sensitive_data")
         return None
 
     def plan(self, descriptor: LocalEngineDescriptor,

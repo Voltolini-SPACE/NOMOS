@@ -62,10 +62,16 @@ def load_manifest(src: Path) -> dict:
     mf_path = src / "skill.json"
     if not mf_path.exists():
         raise SkillError("manifesto skill.json ausente")
-    mf = json.loads(mf_path.read_text())
-    for field in ("name", "version", "permissions", "entry", "files"):
+    mf = json.loads(mf_path.read_text(encoding="utf-8"))
+    # `entrypoint` é alias aceito de `entry` (v2). Usamos um entry EFETIVO
+    # sem mutar `mf`: mutá-lo aqui invalidaria a assinatura, que é verificada
+    # sobre o corpo original do manifesto.
+    entry_efetivo = mf.get("entry") or mf.get("entrypoint")
+    for field in ("name", "version", "permissions", "files"):
         if field not in mf:
             raise SkillError(f"manifesto inválido: campo obrigatório ausente: {field}")
+    if not entry_efetivo:
+        raise SkillError("manifesto inválido: campo obrigatório ausente: entry")
     known = {c.value for c in Category}
     for perm in mf["permissions"]:
         if perm not in known:
@@ -74,14 +80,14 @@ def load_manifest(src: Path) -> dict:
     # relativos seguros dentro da skill (nada de '..', absoluto ou drive).
     if not isinstance(mf["files"], dict) or not mf["files"]:
         raise SkillError("manifesto inválido: 'files' deve mapear arquivo->sha256")
-    for rel in list(mf["files"].keys()) + [mf["entry"]]:
+    for rel in list(mf["files"].keys()) + [entry_efetivo]:
         if not _rel_segura(rel):
             raise SkillError(f"caminho inseguro no manifesto (traversal/absoluto): {rel!r}")
     # entry tem de ser um arquivo verificado por checksum (constar em files),
     # senão rodaria código sem integridade garantida.
-    if mf["entry"] not in mf["files"]:
+    if entry_efetivo not in mf["files"]:
         raise SkillError(
-            f"entry '{mf['entry']}' precisa estar em 'files' (para ter checksum)")
+            f"entry '{entry_efetivo}' precisa estar em 'files' (para ter checksum)")
     return mf
 
 
@@ -144,9 +150,13 @@ def list_installed(skills_dir: Path) -> list[dict]:
     for child in sorted(skills_dir.iterdir()):
         mf = child / "skill.json"
         if mf.exists():
-            data = json.loads(mf.read_text())
-            out.append({"name": data["name"], "version": data["version"],
-                        "permissions": data["permissions"]})
+            try:
+                data = json.loads(mf.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue          # entrada ilegível não derruba a listagem toda
+            out.append({"name": data.get("name", child.name),
+                        "version": data.get("version", "?"),
+                        "permissions": data.get("permissions", [])})
     return out
 
 

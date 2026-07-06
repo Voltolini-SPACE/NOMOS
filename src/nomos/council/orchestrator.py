@@ -95,10 +95,20 @@ class OrchestratorError(CouncilModelError):
 
 
 def _step_metadata_sensivel(metadata: dict) -> str | None:
+    def _valor_sensivel(v) -> bool:
+        if isinstance(v, str):
+            return any(m in v.lower() for m in _SENSITIVE_VALUE_MARKS_STEP)
+        if isinstance(v, dict):
+            return any(str(k).lower() in _SENSITIVE_KEYS_STEP
+                       or _valor_sensivel(x) for k, x in v.items())
+        if isinstance(v, (list, tuple, set)):
+            return any(_valor_sensivel(x) for x in v)
+        return False
+
     for k, v in (metadata or {}).items():
         if str(k).lower() in _SENSITIVE_KEYS_STEP:
             return f"chave sensível: {k}"
-        if isinstance(v, str) and any(m in v.lower() for m in _SENSITIVE_VALUE_MARKS_STEP):
+        if _valor_sensivel(v):
             return "valor sensível em metadata"
     return None
 
@@ -415,9 +425,12 @@ class CouncilOrchestratorDryRun:
             falha_provider = CouncilOrchestrationFailure(
                 OrchestrationFailureCode.ORCH_NO_CANDIDATES, "nenhum motor local elegível")
         elif local_result.failure_code is not None:
+            # provider plugável pode devolver string em vez do enum: nunca
+            # deixar um `.value` inexistente estourar para fora do run()
+            _fc = local_result.failure_code
             falha_provider = CouncilOrchestrationFailure(
                 OrchestrationFailureCode.ORCH_PROVIDER_FAILED,
-                f"provider falhou: {local_result.failure_code.value}")
+                f"provider falhou: {getattr(_fc, 'value', str(_fc))}")
         elif not local_result.candidates:
             falha_provider = CouncilOrchestrationFailure(
                 OrchestrationFailureCode.ORCH_NO_CANDIDATES,
@@ -430,22 +443,25 @@ class CouncilOrchestratorDryRun:
             n_engines = len(self._provider.list_engines())
         except Exception:
             n_engines = 0
+        _fc_meta = local_result.failure_code
         steps.append(CouncilOrchestrationStep(
             name=CouncilOrchestrationStepName.LOCAL_PROVIDER_EVALUATED, ok=provider_ok,
             failure_code=(falha_provider.code if falha_provider else None),
             metadata={"engine_count": n_engines,
                       "candidate_count": len(local_result.candidates),
-                      "council_failure_code": (local_result.failure_code.value
-                                               if local_result.failure_code else None)}))
+                      "council_failure_code": (getattr(_fc_meta, "value", str(_fc_meta))
+                                               if _fc_meta is not None else None)}))
 
-        # 3. CANDIDATES_CREATED
+        # 3. CANDIDATES_CREATED (candidato malformado de provider plugável não
+        # pode derrubar o run(): getattr com fallback; o simulador bloqueia
+        # depois, fail-closed)
         candidatos = list(local_result.candidates)
         alias_por_candidato: dict[str, str] = {}
         engine_por_alias: dict[str, str] = {}
         for i, c in enumerate(candidatos):
             alias = _ALFABETO[i] if i < len(_ALFABETO) else f"C{i}"
-            alias_por_candidato[c.candidate_id] = alias
-            engine_por_alias[alias] = c.engine_id
+            alias_por_candidato[getattr(c, "candidate_id", f"cand-{i}")] = alias
+            engine_por_alias[alias] = getattr(c, "engine_id", "desconhecido")
         steps.append(CouncilOrchestrationStep(
             name=CouncilOrchestrationStepName.CANDIDATES_CREATED, ok=True,
             metadata={"candidate_count": len(candidatos)}))
@@ -464,7 +480,8 @@ class CouncilOrchestratorDryRun:
                 private_mode=entrada.private_mode,
                 contains_sensitive_data=entrada.contains_sensitive_data,
                 council_enabled=True, gate=None,
-                provider_failure=local_result.failure_code)
+                provider_failure=local_result.failure_code,
+                session_id=entrada.session_id)
             erro_sim = None
         except Exception as exc:
             sim_result = None
@@ -485,13 +502,18 @@ class CouncilOrchestratorDryRun:
                                          if sim_result and sim_result.failure_code
                                          else None)}))
 
-        if sim_result is None:   # pragma: no cover - inalcançável (pipeline puro)
+        if sim_result is None:   # simulador plugável levantou exceção
+            codigo = (raiz.code if raiz
+                      else OrchestrationFailureCode.ORCH_SIMULATOR_FAILED)
+            steps.append(CouncilOrchestrationStep(
+                name=CouncilOrchestrationStepName.ORCHESTRATION_BLOCKED, ok=False,
+                failure_code=codigo,
+                metadata={"failure_code": codigo.value}))
             trace_falha = CouncilOrchestrationTrace(steps=steps,
                                                     private_mode=entrada.private_mode)
             return CouncilOrchestrationResult(
                 session_id=entrada.session_id, allowed=False,
-                failure_code=raiz.code if raiz else
-                OrchestrationFailureCode.ORCH_SIMULATOR_FAILED,
+                failure_code=codigo,
                 final_envelope={}, audit_result={}, trace=trace_falha.to_dict())
 
         # 5. POLICY_GATE_EVALUATED

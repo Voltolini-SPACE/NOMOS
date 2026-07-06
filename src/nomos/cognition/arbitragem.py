@@ -276,7 +276,7 @@ def arbitrar(prompt: str, runners: list[EngineRunner], *,
 
     # 4) Arbitrar
     vivos = [c for c in candidatos if c.content and c.failure_code is None]
-    if len(vivos) < min_candidatos and len(vivos) == 0:
+    if len(vivos) == 0:
         return _bloqueio(CouncilFailureCode.INSUFFICIENT_JUDGES,
                          "nenhum candidato com conteúdo real", rounds_run=rounds_run)
 
@@ -313,6 +313,18 @@ def arbitrar(prompt: str, runners: list[EngineRunner], *,
     else:
         confianca = CouncilConfidence.HIGH
 
+    razoes = [
+        f"vencedor={melhor_cand.engine_id}",
+        f"agregado={round(agregados[melhor_id], 3)}",
+        f"consenso/segurança verificados; {len(vivos)} candidatos reais",
+    ]
+    # jamais finge certeza: abaixo do mínimo de candidatos não houve
+    # verificação cruzada suficiente — a confiança nunca é HIGH
+    if len(vivos) < max(1, min_candidatos) and confianca is CouncilConfidence.HIGH:
+        confianca = CouncilConfidence.MEDIUM
+        razoes.append(f"candidatos abaixo do mínimo ({len(vivos)}<"
+                      f"{min_candidatos}): sem verificação cruzada suficiente")
+
     decisao = ArbiterDecision(
         decision_id="arb",
         selected_candidate_alias=melhor_id,
@@ -320,11 +332,7 @@ def arbitrar(prompt: str, runners: list[EngineRunner], *,
         confidence=confianca,
         requires_policy_gate=True,
         blocked=False,
-        reasons=[
-            f"vencedor={melhor_cand.engine_id}",
-            f"agregado={round(agregados[melhor_id], 3)}",
-            f"consenso/segurança verificados; {len(vivos)} candidatos reais",
-        ],
+        reasons=razoes,
     )
     return ArbitrationOutcome(
         status="ok", decision=decisao, disagreement=desacordo,
@@ -389,7 +397,12 @@ class EmbeddedRunner:
         for nome in ("chat", "responder", "gerar", "complete"):
             fn = getattr(prov, nome, None)
             if callable(fn):
-                out = fn([{"role": "user", "content": prompt}]) if nome == "chat" else fn(prompt)
+                if nome == "chat":
+                    msgs = ([{"role": "system", "content": system}] if system
+                            else []) + [{"role": "user", "content": prompt}]
+                    out = fn(msgs)
+                else:
+                    out = fn(prompt)
                 return getattr(out, "text", out) if not isinstance(out, str) else out
         raise RuntimeError("EmbeddedProvider sem método de geração conhecido")
 

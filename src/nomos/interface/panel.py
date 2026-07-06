@@ -105,8 +105,17 @@ class PanelServer:
                 base = f"/p/{panel.secret}"
                 if self.path != f"{base}/decide":
                     return self._deny()
-                length = int(self.headers.get("Content-Length") or 0)
-                form = parse_qs(self.rfile.read(length).decode())
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    return self._deny(400, "Content-Length inválido")
+                if not 0 <= length <= 65536:      # formulário pequeno por natureza
+                    return self._deny(400, "corpo grande demais")
+                try:
+                    form = parse_qs(self.rfile.read(length).decode("utf-8",
+                                                                   errors="strict"))
+                except UnicodeDecodeError:
+                    return self._deny(400, "corpo não é UTF-8")
                 rid = (form.get("id") or [""])[0]
                 token = (form.get("token") or [""])[0]
                 action = (form.get("action") or [""])[0]

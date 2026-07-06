@@ -225,11 +225,10 @@ def instalar(src: Path, skills_dir: Path, engine: PolicyEngine, approver,
         except Exception:
             raise RegistroError("confirmador falhou — negado (fail-closed)") from None
 
-    # v1 exige "entry": garante alias antes de delegar
-    if "entry" not in bruto and bruto.get("entrypoint"):
-        bruto = dict(bruto)
-        bruto["entry"] = bruto["entrypoint"]
-        mf_path.write_text(json.dumps(bruto, ensure_ascii=False, indent=2))
+    # NÃO reescrevemos o skill.json: `_skills.load_manifest` já aceita
+    # `entrypoint` como alias de `entry`. Reescrever o arquivo invalidaria a
+    # assinatura (verificada sobre o corpo original) e alteraria o diretório
+    # de origem do autor.
     instalado = _skills.install(src, Path(skills_dir), engine, approver, trust=trust)
     return normalizar_manifesto(instalado)
 
@@ -305,7 +304,9 @@ def executar(name: str, skills_dir: Path, engine: PolicyEngine, approver,
         from nomos.runtime import sandbox as _sb
         sandbox_run = lambda cmd, **kw: _sb.run(cmd, **kw)
 
-    cmd = f'python3 "{entry}"'
+    # argv como LISTA (sem shell): elimina injeção via aspas/`;`/`$` num nome
+    # de entry que passe em _rel_segura mas contenha metacaracteres de shell
+    cmd = ["python3", str(entry)]
     args_path = None
     if argumentos is not None:
         import os
@@ -313,8 +314,9 @@ def executar(name: str, skills_dir: Path, engine: PolicyEngine, approver,
         args_dir = Path(skills_dir).parent / "sandbox"
         args_dir.mkdir(parents=True, exist_ok=True)
         args_path = args_dir / f"skill-args-{name}-{os.getpid()}-{int(_t.time())}.json"
-        args_path.write_text(json.dumps(argumentos, ensure_ascii=False))
-        cmd = f'python3 "{entry}" "{args_path}"'
+        args_path.write_text(json.dumps(argumentos, ensure_ascii=False),
+                             encoding="utf-8")
+        cmd = ["python3", str(entry), str(args_path)]
     try:
         r = sandbox_run(cmd, timeout=timeout, allow_network=quer_rede)
     except Exception as exc:

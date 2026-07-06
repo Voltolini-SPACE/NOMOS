@@ -7,6 +7,7 @@ O roteamento por intenção é determinístico (keywords), como skill_intencao.
 from __future__ import annotations
 
 import json
+import os
 import unicodedata
 from pathlib import Path
 
@@ -45,15 +46,20 @@ class AgentRegistry:
         if problemas:
             raise AgentError("manifesto inválido: " + "; ".join(problemas))
         self.dir.mkdir(parents=True, exist_ok=True)
-        (self.dir / f"{manifesto.name}.json").write_text(
-            json.dumps(manifesto.dict(), ensure_ascii=False, indent=2))
+        # escrita atômica + utf-8 (espelha mcp_catalogo._gravar): crash no meio
+        # não deixa manifesto pela metade; acentos/emojis não quebram fora de UTF-8
+        alvo = self.dir / f"{manifesto.name}.json"
+        tmp = alvo.with_suffix(".tmp")
+        tmp.write_text(json.dumps(manifesto.dict(), ensure_ascii=False, indent=2),
+                       encoding="utf-8")
+        os.replace(tmp, alvo)
         return manifesto
 
     def listar(self) -> list[AgentManifest]:
         vistos, out = set(), []
         for f in self._fontes():
             try:
-                mf = AgentManifest.de_dict(json.loads(f.read_text()))
+                mf = AgentManifest.de_dict(json.loads(f.read_text(encoding="utf-8")))
             except Exception:
                 continue
             if mf.name in vistos or validar(mf):

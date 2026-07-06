@@ -4,6 +4,93 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC34.1 — downloads no site + sinais reais)
+- **Site § Baixar & instalar**: três caminhos claros — 🍎 macOS/Linux
+  (`install.sh`), 🪟 Windows (`install.ps1`) e 🐙 pelo código (git clone +
+  `pip install .`) — com botões apontando para os assets REAIS da release
+  atual (tag verificada, SHA256 conferido no GitHub), versão visível,
+  link "todas as versões" e instrução de verificação `SHA256SUMS`.
+  Comentário de manutenção no HTML lembra de atualizar a tag a cada release.
+- **`health/` virou sinal de verdade**: além de `ok/versao`, devolve
+  `saudavel`, `status_geral`, `proximo_passo`, `avisos[]` (aprovações
+  pendentes, memórias a revisar, cadeia de auditoria, evidências quebradas)
+  e `motores_prontos` — pronto para rotinas, scripts e integrações locais.
+- Testes novos: `tests/test_site_downloads.py` (8 casos — assets por tag,
+  tag consistente entre instaladores, git visível, SHA256SUMS, nenhum
+  link relativo quebrado, âncoras da nav íntegras) e cobertura dos avisos
+  reais do health.
+
+### Fixed (MC34.1)
+- **9 links relativos quebrados no site** (`../docs/...`, `../README.md`)
+  trocados por URLs absolutas do GitHub — funcionam de onde o site for
+  servido (o site vive em `site/` e esses links 404avam fora do repo).
+- **Último aviso do ruff no repo** (S110 em `mcp_client.py`): leitor daemon
+  agora usa `contextlib.suppress` (idioma recomendado) — `ruff check .`
+  100% limpo.
+
+### Security & Fixed (MC35 — vistoria de ponta a ponta)
+Vistoria completa do código com correções mínimas e anti-regressão (suíte 100%
+verde após cada mudança). Destaques:
+- **Cadeado local-first reforçado**: `OllamaProvider`/`OpenAICompatProvider`
+  agora recusam host não-loopback na construção (`NOMOS_OLLAMA_HOST` remoto era
+  aceito silenciosamente e a auditoria registrava `egress="nenhum"`); o catálogo
+  de motores ignora host não-loopback do ambiente.
+- **Conselho — quórum e integridade**: conselho sem juiz limpo (inclusive zero
+  juízes) agora é fail-closed `INSUFFICIENT_JUDGES` (antes aprovava com confiança
+  HIGH); estatísticas e vencedor calculados só sobre reviews limpas (autojulgamento
+  não elege mais o vencedor); `session_id` real propagado aos envelopes de
+  auditoria; provider/simulador plugável malformado não derruba mais `run()`.
+- **Auditoria resiliente**: linha final parcial (crash no meio de um append) não
+  trava mais toda a auditoria; `encoding="utf-8"` explícito preserva a cadeia de
+  hash fora de UTF-8.
+- **Redação de auditoria** passou a inspecionar listas/tuplas aninhadas (segredo
+  dentro de lista era serializado sem redação).
+- **Assinatura de skills**: manifesto assinado só com `entrypoint` instala
+  corretamente (a reescrita para adicionar `entry` invalidava a assinatura
+  legítima); chave privada ed25519 criada já com permissão `0600` (sem janela de
+  exposição); execução de skill via argv (sem shell).
+- **Servidores locais**: loop MCP resiste a JSON válido não-objeto (batch/escalar);
+  painel exibe a contagem real de eventos (usava o índice de violação); redirect
+  301 para a URL canônica; `panel` valida `Content-Length`.
+- **Robustez**: memória tipada preservada no ciclo backup export→import; download
+  de cérebro rejeita GGUF truncado; instalação do motor usa `sys.executable`;
+  `/continuar` injeta o contexto retomado; `/conversas` não quebra mais o chat;
+  FTS de conversas com trigger de DELETE (texto "esquecido" some do índice);
+  escrita atômica e `encoding="utf-8"` em perfis, rotinas e consentimento;
+  `signal.pause` com fallback no Windows.
+
+### Added (MC34 — Painel 4.0: cockpit local)
+- **Layout de aplicativo**: sidebar de navegação agrupada (agora/cérebro/
+  capacidades/operação/ajuda) com badges de atenção, conteúdo central e rail
+  de status à direita (motor ao vivo por modalidade, atenção, atividade);
+  bloco Sistema no rodapé da sidebar (status, agente, modo, auditoria,
+  relógio). Marca congelada intacta; responsivo (rail some, menu vira pills);
+  acessível (skip-link, aria-label, focus-visible, prefers-reduced-motion).
+- **Aprovações no painel (única porta de ação)**: a fila file-based de
+  `kernel.approvals` agora aparece no painel com APROVAR/NEGAR — POST existe
+  SÓ em `aprovacoes/decidir`, transportando o token single-use da própria
+  solicitação (TTL 5 min, comparação constante, tudo auditado; PRG 303).
+  Qualquer outro POST segue 405; `fila_aprovacoes=False` volta ao modo 100%
+  somente leitura. Token jamais aparece em `api/`/JSON.
+- **`health/`**: sinal de vida em JSON (ok, versão, só-local, pendências)
+  para scripts e monitoramento.
+- **`api/?secao=<chave>`**: recorte de uma seção só; desconhecida ⇒ 404 com
+  a lista de disponíveis.
+- **`audit/?q=`**: busca server-side na trilha (metadados redigidos), sempre
+  escapada (anti-XSS testado), com contagem e limpar-filtro.
+- **Dados novos no painel**: `sistema` (python/plataforma/home/bancos),
+  `roteador_vivo` (decisão explicada por modalidade) e `aprovacoes`
+  (contagem). Seções novas: Sistema e Ajuda rápida (comandos + leis da casa).
+- **Headers de segurança** em toda resposta: CSP restritiva (default-src
+  'none'), nosniff, no-referrer, no-store.
+- **JS próprio inline** (zero terceiros, zero rede): scrollspy na sidebar,
+  filtro rápido de cards/tabelas, contagem regressiva das aprovações e
+  relógio. Página degrada 100% sem JS.
+- Testes: `tests/test_painel_v4_hermes.py` (15 casos — layout, health,
+  api?secao, busca+XSS, aprovar/negar/token errado/reuso/405/sem fila,
+  headers, vazamento de token). Os contratos MC29/MC33/v017 passam SEM
+  alteração.
+
 ### Added (MC33 — regra: site sempre reflete o produto)
 - **Gate `brand:site_atualizado`** no update agent (MC33.0): introspecta os
   comandos top-level do CLI e exige que cada capacidade voltada ao usuário

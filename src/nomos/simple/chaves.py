@@ -82,7 +82,7 @@ def caminho_modelo(home: Path) -> Path:
 
 def criar_arquivo_modelo(home: Path) -> Path:
     p = caminho_modelo(home)
-    p.write_text(MODELO_ARQUIVO)
+    p.write_text(MODELO_ARQUIVO, encoding="utf-8")
     chmod_privado(p, 0o600)
     return p
 
@@ -108,7 +108,7 @@ def absorver_arquivo(home: Path, nome_interno: str, senha_mestra: str) -> str:
         raise ChaveError(
             f"não encontrei o arquivo {ARQUIVO_SOLTE} na sua pasta — "
             "peça para eu criá-lo primeiro")
-    linhas = [ln.strip() for ln in p.read_text().splitlines()
+    linhas = [ln.strip() for ln in p.read_text(encoding="utf-8").splitlines()
               if ln.strip() and not ln.lstrip().startswith("#")]
     if not linhas:
         raise ChaveError(
@@ -140,7 +140,10 @@ def _escolher_servico(ask, say):
     for k, (rotulo, _) in SERVICOS.items():
         say(f"   {k}) {rotulo}")
     esc = (ask("número> ").strip() or "1")
-    rotulo, interno = SERVICOS.get(esc, SERVICOS["1"])
+    if esc not in SERVICOS:
+        say(f"opção inválida: {esc!r} — não guardei nada (escolha um número da lista).")
+        return None
+    rotulo, interno = SERVICOS[esc]
     if interno is None:
         nome = ask("nome curto para essa chave (ex.: meu_servico)> ").strip()
         interno = "".join(c for c in nome.lower().replace(" ", "_")
@@ -163,7 +166,10 @@ def menu_chaves(home, ask=input, say=print, ask_secret=None):
     op = ask("opção> ").strip()
 
     if op == "1":
-        rotulo, interno = _escolher_servico(ask, say)
+        escolha = _escolher_servico(ask, say)
+        if escolha is None:
+            return
+        rotulo, interno = escolha
         try:
             senha = _pedir_senha_mestra(ask_secret, say, confirmar=not caixa_forte_existe())
             valor = ask_secret(f"cole a chave de {rotulo} (não vou mostrar): ")
@@ -174,7 +180,10 @@ def menu_chaves(home, ask=input, say=print, ask_secret=None):
         return
 
     if op == "2":
-        rotulo, interno = _escolher_servico(ask, say)
+        escolha = _escolher_servico(ask, say)
+        if escolha is None:
+            return
+        rotulo, interno = escolha
         p = criar_arquivo_modelo(home)
         say(f"criei o arquivo: {p}")
         say("Abra, cole SÓ a chave na primeira linha livre, salve — e volte aqui.")

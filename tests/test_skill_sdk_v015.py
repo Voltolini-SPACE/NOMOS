@@ -75,8 +75,8 @@ def test_executar_passa_argumentos_por_arquivo(tmp_path, nomos_home):
 
     def fake_run(cmd, timeout=30, allow_network=False):
         capturado["cmd"] = cmd
-        # o arquivo de args existe NO MOMENTO da execução e contém o JSON
-        caminho = cmd.split('"')[-2]
+        # argv agora é LISTA (sem shell): o arquivo de args é o último elemento
+        caminho = cmd[-1]
         capturado["args"] = json.loads(Path(caminho).read_text())
         return _R()
 
@@ -84,7 +84,7 @@ def test_executar_passa_argumentos_por_arquivo(tmp_path, nomos_home):
                              lambda d: True, sandbox_run=fake_run,
                              argumentos={"n": 7})
     assert rc == 0 and capturado["args"] == {"n": 7}
-    assert "skill-args-io-skill" in capturado["cmd"]
+    assert any("skill-args-io-skill" in str(p) for p in capturado["cmd"])
     sobras = list((nomos_home / "sandbox").glob("skill-args-*"))
     assert sobras == []                           # efêmero: limpo após rodar
 

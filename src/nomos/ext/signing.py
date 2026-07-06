@@ -47,13 +47,24 @@ def fingerprint(pub_raw: bytes) -> str:
 # ---------- lado do autor ----------
 def keygen(dirpath: Path) -> tuple[Path, str]:
     """Gera par de chaves; privada PEM 0600; devolve (caminho, pubkey_b64)."""
+    import os
     dirpath = Path(dirpath)
     dirpath.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(dirpath, 0o700)
+    except OSError:            # ex.: FS sem suporte — segue com o do arquivo
+        pass
     priv = Ed25519PrivateKey.generate()
     priv_path = dirpath / "skill_signing_ed25519.pem"
-    priv_path.write_bytes(priv.private_bytes(
-        Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()))
-    chmod_privado(priv_path, 0o600)
+    pem = priv.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+    # cria o arquivo JÁ restrito (0600): escrever antes do chmod deixaria a
+    # chave privada legível por outros usuários durante uma janela
+    fd = os.open(priv_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, pem)
+    finally:
+        os.close(fd)
+    chmod_privado(priv_path, 0o600)   # reafirma (ex.: arquivo pré-existente)
     pub_raw = priv.public_key().public_bytes_raw()
     return priv_path, base64.b64encode(pub_raw).decode()
 

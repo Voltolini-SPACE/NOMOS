@@ -36,7 +36,7 @@ def extrair_texto(caminho: Path) -> tuple[str, str]:
             f"limite {LIMITE_BYTES // (1024*1024)} MB) — divida em partes")
     ext = p.suffix.lower()
     if ext in FORMATOS_TEXTO:
-        return p.read_text(errors="replace"), ext.lstrip(".")
+        return p.read_text(encoding="utf-8", errors="replace"), ext.lstrip(".")
     if ext == ".pdf":
         try:
             from pypdf import PdfReader   # dependência opcional [arquivos]
@@ -126,7 +126,7 @@ def processar(caminho, ctx, approver, router=None, salvar: bool = False):
         def _salvar(texto):
             destino = Path(caminho).with_suffix(Path(caminho).suffix + ".resumo.md")
             corpo = render_resultado(Path(caminho), estado)
-            destino.write_text(corpo)
+            destino.write_text(corpo, encoding="utf-8")
             estado["salvo_em"] = str(destino)
             return texto
         passos.append(PipelineStep("salvar-resumo", "arquivo-local",
@@ -169,15 +169,28 @@ def transcrever(caminho, transcritor=None, timeout: int = 300) -> str:
     if not bin_whisper:
         raise ArquivoError("nenhum transcritor local encontrado — instale o "
                            "whisper e deixe no PATH (o áudio nunca sai da máquina)")
+    # flags diferem por binário: openai-whisper usa --output_format/--output_dir;
+    # whisper.cpp (whisper-cpp) usa -f/-otxt/-of — as flags erradas fariam o
+    # whisper-cpp falhar (ou devolver vazio "com sucesso")
+    if "whisper-cpp" in Path(bin_whisper).name:
+        argv = [bin_whisper, "-f", str(p), "-otxt", "-of", str(p.with_suffix(""))]
+    else:
+        argv = [bin_whisper, str(p), "--output_format", "txt",
+                "--output_dir", str(p.parent)]
     try:
-        r = subprocess.run([bin_whisper, str(p), "--output_format", "txt",
-                            "--output_dir", str(p.parent)],
-                           capture_output=True, text=True, timeout=timeout)  # nosec B603
+        r = subprocess.run(argv, capture_output=True, text=True,
+                           timeout=timeout)  # nosec B603
     except subprocess.TimeoutExpired:
         raise ArquivoError("transcrição demorou demais e foi interrompida") from None
     if r.returncode != 0:
         raise ArquivoError(f"whisper falhou (rc={r.returncode})")
     gerado = p.with_suffix(".txt")
+    texto = ""
     if gerado.exists():
-        return gerado.read_text(errors="replace").strip()
-    return (r.stdout or "").strip()
+        texto = gerado.read_text(encoding="utf-8", errors="replace").strip()
+    else:
+        texto = (r.stdout or "").strip()
+    if not texto:
+        raise ArquivoError("a transcrição saiu vazia — o whisper não produziu "
+                           "texto para este áudio")
+    return texto

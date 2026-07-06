@@ -28,6 +28,26 @@ DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-5"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
 
+def _exigir_loopback(url: str, quem: str) -> None:
+    """Motor 'local' é LOCAL por lei (MC30-C3): host fora do loopback é
+    recusado na construção. Sem isso, um NOMOS_OLLAMA_HOST remoto enviaria a
+    conversa para fora da máquina com o cadeado ligado e auditoria dizendo
+    egress="nenhum"."""
+    import ipaddress
+    from urllib.parse import urlparse
+    host = urlparse(url).hostname or ""
+    if host == "localhost":
+        return
+    try:
+        if ipaddress.ip_address(host).is_loopback:
+            return
+    except ValueError:
+        pass
+    raise ValueError(
+        f"{quem} é LOCAL por lei — o host deve ser loopback "
+        f"(ex.: 127.0.0.1), não {host or url!r}")
+
+
 class ProviderUnavailable(Exception):
     """Backend indisponível/erro — o chamador decide rota alternativa."""
 
@@ -59,6 +79,7 @@ class OllamaProvider:
 
     def __init__(self, host: str = DEFAULT_OLLAMA_HOST, model: str = DEFAULT_OLLAMA_MODEL,
                  timeout: float = 120.0, probe_timeout: float = 1.5):
+        _exigir_loopback(host, "o Ollama do NOMOS")
         self.host = host.rstrip("/")
         self.model = model
         self.timeout = timeout
@@ -157,11 +178,7 @@ class OpenAICompatProvider:
 
     def __init__(self, base: str = "http://127.0.0.1:1234/v1",
                  model: str = "local", timeout: float = 120.0):
-        from urllib.parse import urlparse
-        host = urlparse(base).hostname or ""
-        if host not in {"127.0.0.1", "localhost", "::1"}:
-            raise ValueError(
-                "servidor OpenAI-compatível é LOCAL por lei — use 127.0.0.1")
+        _exigir_loopback(base, "o servidor OpenAI-compatível")
         self.base = base.rstrip("/")
         self.model = model
         self.timeout = timeout

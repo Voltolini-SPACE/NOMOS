@@ -80,18 +80,48 @@ class CouncilAuditEnvelopeFailure:
 
 # --------------------------- redaction helpers ---------------------------
 
-def _has_sensitive(metadata: dict) -> str | None:
-    """Devolve motivo se a metadata tiver chave/valor sensível; senão None."""
-    for k, v in (metadata or {}).items():
-        if str(k).lower() in _SENSITIVE_KEYS:
-            return f"chave sensível: {k}"
-        if isinstance(v, str) and any(m in v.lower() for m in _SENSITIVE_VALUE_MARKS):
+def _valor_sensivel(v) -> str | None:
+    """Motivo se o VALOR (str/dict/lista/tupla, recursivo) for sensível."""
+    if isinstance(v, str):
+        if any(m in v.lower() for m in _SENSITIVE_VALUE_MARKS):
             return "valor sensível em metadata"
-        if isinstance(v, dict):
-            sub = _has_sensitive(v)
+        return None
+    if isinstance(v, dict):
+        return _has_sensitive(v)
+    if isinstance(v, (list, tuple, set)):
+        for item in v:
+            sub = _valor_sensivel(item)
             if sub:
                 return sub
     return None
+
+
+def _has_sensitive(metadata: dict) -> str | None:
+    """Devolve motivo se a metadata tiver chave/valor sensível; senão None.
+
+    Inspeciona também LISTAS/TUPLAS (aninhadas) — sem isso, um segredo dentro
+    de uma lista passava batido pela detecção E pela redação."""
+    for k, v in (metadata or {}).items():
+        if str(k).lower() in _SENSITIVE_KEYS:
+            return f"chave sensível: {k}"
+        sub = _valor_sensivel(v)
+        if sub:
+            return sub
+    return None
+
+
+def _redigir_valor(v):
+    if isinstance(v, str):
+        if any(m in v.lower() for m in _SENSITIVE_VALUE_MARKS):
+            return REDIGIDO
+        return v
+    if isinstance(v, dict):
+        return _safe_metadata(v)
+    if isinstance(v, (list, tuple)):
+        return [_redigir_valor(item) for item in v]
+    if isinstance(v, set):
+        return [_redigir_valor(item) for item in sorted(v, key=str)]
+    return v
 
 
 def _safe_metadata(metadata: dict) -> dict:
@@ -100,12 +130,8 @@ def _safe_metadata(metadata: dict) -> dict:
     for k, v in (metadata or {}).items():
         if str(k).lower() in _SENSITIVE_KEYS:
             out[k] = REDIGIDO
-        elif isinstance(v, str) and any(m in v.lower() for m in _SENSITIVE_VALUE_MARKS):
-            out[k] = REDIGIDO
-        elif isinstance(v, dict):
-            out[k] = _safe_metadata(v)
         else:
-            out[k] = v
+            out[k] = _redigir_valor(v)
     return out
 
 

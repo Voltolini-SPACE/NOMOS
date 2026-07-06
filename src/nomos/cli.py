@@ -190,9 +190,10 @@ def cmd_skill(ctx, args) -> int:
     if args.skill_cmd == "sign":
         import json as _json
         src = __import__("pathlib").Path(args.path)
-        mf = _json.loads((src / "skill.json").read_text())
+        mf = _json.loads((src / "skill.json").read_text(encoding="utf-8"))
         signed = signing.sign_manifest(mf, args.key)
-        (src / "skill.json").write_text(_json.dumps(signed, indent=2, ensure_ascii=False))
+        (src / "skill.json").write_text(
+            _json.dumps(signed, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"assinada por {signed['signature']['publisher']}.")
         return EXIT_OK
     if args.skill_cmd == "trust":
@@ -290,7 +291,12 @@ def cmd_cerebro(ctx, args) -> int:
         print(msg)
         return EXIT_OK if ok else EXIT_ERROR
     if sub == "baixar":
-        modelo = emb.por_id(args.qual) if getattr(args, "qual", None) else rec
+        try:
+            modelo = emb.por_id(args.qual) if getattr(args, "qual", None) else rec
+        except emb.CerebroIndisponivel as exc:
+            print(f"{exc} — veja os disponíveis: nomos cerebro status",
+                  file=sys.stderr)
+            return EXIT_ERROR
         d = ctx["policy"].decide(Category.NET_EGRESS, target="huggingface.co")
         d = type(d)(category=d.category, target=d.target, effect=d.effect,
                     reason=f"baixar o cérebro {modelo.id} (~{modelo.mb} MB), uma única vez")
@@ -459,7 +465,9 @@ def cmd_conversas(ctx, args) -> int:
         print("esquecida." if ok else "id não encontrado.")
         return EXIT_OK if ok else EXIT_ERROR
     if sub == "fixar":
-        store.fixar(args.id, True)
+        if not store.fixar(args.id, True):
+            print("id não encontrado.", file=sys.stderr)
+            return EXIT_ERROR
         print(f"conversa #{args.id} fixada 📌 (não expira na retenção).")
         return EXIT_OK
     if sub in {"exportar", "importar"}:
@@ -568,8 +576,12 @@ def cmd_painel(ctx, args) -> int:
         print("(não consegui abrir o navegador — copie a URL acima)")
     try:
         import signal as _sig
-        _sig.pause()
-    except (KeyboardInterrupt, AttributeError):
+        if hasattr(_sig, "pause"):
+            _sig.pause()
+        else:                       # Windows não tem signal.pause: bloqueia igual
+            import threading
+            threading.Event().wait()
+    except KeyboardInterrupt:
         pass
     finally:
         srv.stop()
@@ -1093,8 +1105,12 @@ def cmd_approvals(ctx, args) -> int:
         print("Ctrl+C encerra. Solicitações expiram sozinhas em 5 min.")
         try:
             import signal as _sig
-            _sig.pause()
-        except (KeyboardInterrupt, AttributeError):
+            if hasattr(_sig, "pause"):
+                _sig.pause()
+            else:                   # Windows não tem signal.pause: bloqueia igual
+                import threading
+                threading.Event().wait()
+        except KeyboardInterrupt:
             pass
         finally:
             srv.stop()
@@ -1117,11 +1133,18 @@ def _router(ctx):
     from nomos.cognition.embutido import EmbeddedProvider
     from nomos.cognition.providers import OpenAICompatProvider
     oc_base = os.environ.get("NOMOS_OPENAI_COMPAT_BASE", "http://127.0.0.1:1234/v1")
+    try:
+        ollama = OllamaProvider(host=host, model=model)
+        openai_compat = OpenAICompatProvider(base=oc_base)
+    except ValueError as exc:      # host não-loopback no ambiente: erro claro
+        raise config.ConfigError(
+            f"{exc} — confira NOMOS_OLLAMA_HOST/NOMOS_OPENAI_COMPAT_BASE"
+        ) from None
     return Router(policy=ctx["policy"], gate=gate, approver=interactive_approver,
                   audit=ctx["audit"], vault=ctx["vault"],
-                  ollama=OllamaProvider(host=host, model=model),
+                  ollama=ollama,
                   embutido=EmbeddedProvider(ctx["home"]),
-                  openai_compat=OpenAICompatProvider(base=oc_base))
+                  openai_compat=openai_compat)
 
 
 def cmd_chat(ctx, args) -> int:
@@ -1348,8 +1371,12 @@ def cmd_missao(ctx, args) -> int:
             print("nada a fazer — pasta sem arquivos soltos no topo.")
             return EXIT_OK
         if sub == "planejar":
-            print("\n(plano apenas — nada foi movido; para agir: "
-                  f"nomos missao executar organizar {args.pasta})")
+            if args.tipo == "renomear":
+                dica = (f"nomos missao executar renomear {args.pasta} "
+                        f"--de {args.de} --para {getattr(args, 'para', '') or ''}")
+            else:
+                dica = f"nomos missao executar organizar {args.pasta}"
+            print(f"\n(plano apenas — nada foi movido; para agir: {dica})")
             return EXIT_OK
         if not plano.executavel:
             print(fmt("E002", "plano com conflitos — resolva-os antes de "
