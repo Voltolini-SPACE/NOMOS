@@ -60,6 +60,25 @@ def dados_dashboard(ctx) -> dict:
                 eventos.append({"ts": reg.get("ts"), "evento": reg.get("event")})
             except Exception:
                 continue
+    # Evidências de missões (MC29): pacotes auditáveis em ~/.nomos/evidencias
+    evidencias = []
+    dir_ev = home / "evidencias"
+    if dir_ev.exists():
+        from nomos.kernel import evidencia as ev_mod
+        for pac in sorted(dir_ev.glob("EVIDENCIA_*"))[-8:]:
+            integro, _ = ev_mod.verificar_pacote(pac)
+            evidencias.append({"nome": pac.name, "integro": integro})
+
+    # Política viva (MC29): o painel mostra o contrato, não uma cópia dele
+    from nomos.council import forbidden_flags as ff
+    from nomos.council import local_harness as lh
+    from nomos.kernel.policy import DEFAULT_RULES
+    politica = {
+        "regras": dict(DEFAULT_RULES),
+        "execucao_real_council": bool(lh.REAL_LOCAL_ENGINE_EXECUTION_ENABLED),
+        "flags_proibidas": len(ff.FORBIDDEN_FLAGS),
+    }
+
     return {
         "versao": __version__,
         "so_local": localidade.esta_ligado(home),
@@ -70,6 +89,8 @@ def dados_dashboard(ctx) -> dict:
         "skills": st.status_todas(home, home / "skills"),
         "rotinas": rot.listar(home),
         "eventos": list(reversed(eventos)),
+        "evidencias": evidencias,
+        "politica": politica,
     }
 
 
@@ -108,6 +129,29 @@ def render_html(d: dict) -> str:
         marca = "✓" if r.get("ativa", True) else "·"
         corpo.append(f'<div class="card">[{marca}] {e(r["hora"])} — '
                      f'{e(r["nome"])} <small>({e(r["acao"])})</small></div>')
+
+    corpo.append("<h2>Evidências de missões</h2>")
+    if not d.get("evidencias"):
+        corpo.append('<p>nenhum pacote ainda. '
+                     '<code>nomos evidencia criar "título"</code></p>')
+    for ev_i in d.get("evidencias", []):
+        marca = "✅ íntegro" if ev_i["integro"] else "❌ NÃO confere"
+        corpo.append(f'<div class="card">{e(ev_i["nome"])} — {marca}</div>')
+
+    pol = d.get("politica", {})
+    if pol:
+        corpo.append("<h2>Política de permissões (A0–A6)</h2>"
+                     "<table><tr><th>categoria</th><th>default</th></tr>")
+        for cat_nome, efeito in pol["regras"].items():
+            corpo.append(f"<tr><td><code>{e(cat_nome)}</code></td>"
+                         f"<td>{e(efeito)}</td></tr>")
+        corpo.append("</table>")
+        conselho = ("DESLIGADA (dry-run apenas)"
+                    if not pol["execucao_real_council"] else "LIGADA")
+        corpo.append(f'<div class="card ok">Conselho: execução real de motor '
+                     f'<b>{e(conselho)}</b> · {pol["flags_proibidas"]} flags '
+                     f'proibidas fail-closed · aprovação humana obrigatória '
+                     f'para ações sensíveis</div>')
 
     corpo.append("<h2>Últimos eventos da auditoria</h2>"
                  "<table><tr><th>quando (ts)</th><th>evento</th></tr>")

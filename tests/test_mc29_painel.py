@@ -1,0 +1,74 @@
+"""MC29 — Painel web local: seções de evidências e política viva.
+
+O painel continua loopback-only e somente leitura; agora mostra também os
+pacotes de evidências (com verificação real de integridade) e a política de
+permissões A0–A6 lida do código (contrato vivo, não cópia).
+"""
+import io
+
+import pytest
+
+from nomos.cognition import motores
+from nomos.interface.painel_web import dados_dashboard, render_html
+from nomos.kernel import evidencia as ev
+from nomos.kernel.audit import AuditLog
+from nomos.kernel.policy import PolicyEngine
+
+
+@pytest.fixture(autouse=True)
+def _iso(nomos_home, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    monkeypatch.setattr(motores, "modelos_ollama", lambda *a, **k: [])
+    monkeypatch.setattr(motores, "_http_ok", lambda *a, **k: False)
+    monkeypatch.setattr("shutil.which", lambda *a, **k: None)
+    motores.limpar_cache()
+    yield
+    motores.limpar_cache()
+
+
+def _ctx(nomos_home):
+    nomos_home.mkdir(parents=True, exist_ok=True)
+    (nomos_home / "skills").mkdir(exist_ok=True)
+    return {"home": nomos_home,
+            "policy": PolicyEngine(nomos_home / "policy.json"),
+            "audit": AuditLog(nomos_home / "logs" / "audit.jsonl"),
+            "skills": nomos_home / "skills"}
+
+
+# 1. dados: chaves novas com contrato vivo
+def test_dados_incluem_politica_e_evidencias(nomos_home):
+    d = dados_dashboard(_ctx(nomos_home))
+    assert d["evidencias"] == []
+    pol = d["politica"]
+    assert pol["execucao_real_council"] is False
+    assert pol["flags_proibidas"] == 10
+    assert pol["regras"]["A0_READ_LOCAL"] == "ALLOW"
+    assert pol["regras"]["A6_DESTRUCTIVE"] == "DENY"
+
+
+# 2. render: política visível e honesta
+def test_render_mostra_politica_e_dry_run(nomos_home):
+    corpo = render_html(dados_dashboard(_ctx(nomos_home)))
+    assert "Política de permissões (A0–A6)" in corpo
+    assert "A6_DESTRUCTIVE" in corpo and "DENY" in corpo
+    assert "DESLIGADA (dry-run apenas)" in corpo
+    assert "aprovação humana obrigatória" in corpo
+
+
+# 3. evidências: pacote real aparece com verificação de integridade REAL
+def test_render_lista_evidencias_com_integridade(nomos_home):
+    ctx = _ctx(nomos_home)
+    pacote = ev.gerar_pacote(nomos_home / "evidencias", "missão painel",
+                             status="PASS")
+    corpo = render_html(dados_dashboard(ctx))
+    assert pacote.name in corpo and "íntegro" in corpo
+    # adulterou => o painel conta a verdade
+    (pacote / "RELATORIO.md").write_text("adulterado", encoding="utf-8")
+    corpo2 = render_html(dados_dashboard(ctx))
+    assert "NÃO confere" in corpo2
+
+
+# 4. sem pacotes: orienta o comando certo
+def test_sem_evidencias_orienta_comando(nomos_home):
+    corpo = render_html(dados_dashboard(_ctx(nomos_home)))
+    assert "nomos evidencia criar" in corpo
