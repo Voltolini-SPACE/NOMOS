@@ -397,7 +397,77 @@ class EmbeddedRunner:
 def montar_runners_producao(home) -> list[EngineRunner]:
     """Monta os motores REAIS locais para arbitragem (cérebro embutido + Ollama).
 
-    Cada runner só participa se `available()` for True de fato. Nuvem não entra aqui
-    (é opt-in e depende de chave do cofre) — arbitragem com nuvem fica para etapa futura.
+    Cada runner só participa se `available()` for True de fato. Nuvem não entra
+    aqui: é opt-in explícito via ``montar_runner_nuvem`` (gates A2+A3 + cofre).
     """
     return [EmbeddedRunner(home=home), OllamaRunner()]
+
+
+# ----------------------------------------------------------------------------
+# Nuvem opt-in (MC29): o runner de nuvem SÓ NASCE depois de todos os gates.
+# Mesmo trilho do Router._try_cloud: cadeado -> A2 egress -> A3 credencial ->
+# cofre. Qualquer etapa negada => (None, motivo) — fail-closed, sem exceção
+# silenciosa. `arbitrar` continua excluindo não-locais sem allow_cloud=True.
+# ----------------------------------------------------------------------------
+CLOUD_KEY_NAME = "anthropic_api_key"
+CLOUD_TARGET = "api.anthropic.com"
+
+
+class CloudRunner:
+    """Runner de NUVEM já autorizado. Recebe a chave após os gates; nunca a
+    expõe em repr/log; `local=False` garante exclusão sem opt-in."""
+
+    engine_id = "claude"
+    local = False
+
+    def __init__(self, api_key: str, factory=None):
+        self._api_key = api_key
+        self._factory = factory
+
+    def __repr__(self) -> str:  # chave jamais aparece
+        return "CloudRunner(engine_id='claude')"
+
+    def available(self) -> bool:
+        return bool(self._api_key)
+
+    def run(self, prompt: str, *, system: str = "") -> str:
+        factory = self._factory
+        if factory is None:
+            from nomos.cognition.providers import AnthropicProvider
+            factory = AnthropicProvider
+        msgs = ([{"role": "system", "content": system}] if system else [])
+        msgs.append({"role": "user", "content": prompt})
+        return factory(api_key=self._api_key).chat(msgs).text
+
+
+def montar_runner_nuvem(home, *, policy, vault, approver,
+                        passphrase: str | None,
+                        gate=None, factory=None):
+    """Constrói o runner de nuvem SOMENTE se todas as barreiras passarem.
+
+    Ordem (cada uma fail-closed): 1) cadeado de localidade desligado;
+    2) gate A2 (egress) aprovado; 3) gate A3 (credencial) aprovado;
+    4) passphrase fornecida e chave presente no cofre.
+    Devolve ``(runner, "")`` ou ``(None, motivo)``.
+    """
+    from nomos.kernel import localidade
+    from nomos.kernel.policy import Category
+    from nomos.kernel.policy import gate as gate_padrao
+    g = gate or gate_padrao
+
+    if localidade.esta_ligado(home):
+        return None, ("cadeado só-local LIGADO — nuvem não participa "
+                      "(decisão consciente: nomos local off)")
+    d_net = policy.decide(Category.NET_EGRESS, target=CLOUD_TARGET)
+    if not g(d_net, approver):
+        return None, "egress negado no gate A2 (sem aprovação)"
+    d_cred = policy.decide(Category.CRED_USE, target=f"vault:{CLOUD_KEY_NAME}")
+    if not g(d_cred, approver):
+        return None, "uso de credencial negado no gate A3"
+    if not passphrase:
+        return None, "passphrase do cofre não fornecida"
+    try:
+        key = vault.get(CLOUD_KEY_NAME, passphrase)
+    except Exception as exc:
+        return None, f"chave '{CLOUD_KEY_NAME}' indisponível no cofre: {exc}"
+    return CloudRunner(api_key=key, factory=factory), ""

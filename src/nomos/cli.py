@@ -743,7 +743,28 @@ def cmd_motores(ctx, args) -> int:
             print("uso: nomos motores arbitrar \"<pergunta>\"", file=sys.stderr)
             return EXIT_ERROR
         runners = arbmod.montar_runners_producao(ctx["home"])
-        out = arbmod.arbitrar(prompt, runners)
+        allow_cloud = False
+        if getattr(args, "nuvem", False):
+            if not (sys.stdin.isatty() and sys.stdout.isatty()):
+                print("--nuvem exige terminal interativo: plugar a nuvem é "
+                      "decisão humana (aprovação + passphrase do cofre).",
+                      file=sys.stderr)
+                return EXIT_DENIED
+            import getpass
+            frase = getpass.getpass("passphrase do cofre (ler a chave da nuvem)> ")
+            runner_nuvem, motivo = arbmod.montar_runner_nuvem(
+                ctx["home"], policy=ctx["policy"], vault=ctx["vault"],
+                approver=_approver_for(ctx, args), passphrase=frase)
+            if runner_nuvem is None:
+                print(f"nuvem não plugada (fail-closed): {motivo}",
+                      file=sys.stderr)
+                ctx["audit"].append("motores.arbitrar.nuvem_negada")
+                return EXIT_DENIED
+            ctx["audit"].append("motores.arbitrar.nuvem_aprovada",
+                                egress=arbmod.CLOUD_TARGET)
+            runners = runners + [runner_nuvem]
+            allow_cloud = True
+        out = arbmod.arbitrar(prompt, runners, allow_cloud=allow_cloud)
         ctx["audit"].append("motores.arbitrar", status=out.status,
                             motores=len(out.engines_ready), bloqueado=out.decision.blocked)
         if out.status == "no_engine":
@@ -1429,6 +1450,9 @@ def build_parser() -> argparse.ArgumentParser:
     marb = mosub.add_parser("arbitrar",
                             help="vários motores debatem e convergem na melhor resposta real")
     marb.add_argument("prompt")
+    marb.add_argument("--nuvem", action="store_true",
+                      help="opt-in: incluir motor de nuvem (exige local off, "
+                           "aprovação A2+A3 e passphrase do cofre)")
     marb.set_defaults(fn=cmd_motores)
     mr = mosub.add_parser("recomendar")
     mr.add_argument("modalidade", nargs="?")
