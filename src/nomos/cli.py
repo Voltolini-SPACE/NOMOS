@@ -1299,6 +1299,29 @@ def cmd_evidencia(ctx, args) -> int:
         print("verificação imediata: " + ("OK ✓" if ok else f"FALHOU: {problemas}"))
         print(f"para conferir depois: cd {pacote} && sha256sum -c SHA256SUMS")
         return EXIT_OK if ok else EXIT_ERROR
+    if sub == "listar":
+        raiz = ctx["home"] / "evidencias"
+        pacotes = sorted(raiz.glob("EVIDENCIA_*")) if raiz.exists() else []
+        if not pacotes:
+            print("nenhum pacote de evidências ainda.")
+            print('  crie um: nomos evidencia criar "título da missão"')
+            return EXIT_OK
+        if getattr(args, "json", False):
+            itens = []
+            for p in pacotes:
+                ok, problemas = ev.verificar_pacote(p)
+                itens.append({"nome": p.name, "integro": ok,
+                              "problemas": problemas})
+            print(json.dumps({"contrato": 1, "pacotes": itens},
+                             ensure_ascii=False, indent=2))
+            return EXIT_OK
+        print(f"Pacotes de evidências ({len(pacotes)}):\n")
+        for p in pacotes:
+            ok, _ = ev.verificar_pacote(p)
+            print(f"  {'✅ íntegro   ' if ok else '❌ NÃO confere'} {p.name}")
+        print("\nver um relatório: abra RELATORIO.md dentro do pacote "
+              "(ou o painel: nomos painel)")
+        return EXIT_OK
     if sub == "verificar":
         ok, problemas = ev.verificar_pacote(Path(args.pacote))
         ctx["audit"].append("evidencia.verificada", ok=ok)
@@ -1310,7 +1333,8 @@ def cmd_evidencia(ctx, args) -> int:
             print(f"  · {p}", file=sys.stderr)
         return EXIT_ERROR
     print("uso: nomos evidencia criar \"<título>\" [--status S] [--nota N] "
-          "[--anexo ARQ ...]\n     nomos evidencia verificar <pasta-do-pacote>",
+          "[--anexo ARQ ...]\n     nomos evidencia listar [--json]\n"
+          "     nomos evidencia verificar <pasta-do-pacote>",
           file=sys.stderr)
     return EXIT_ERROR
 
@@ -1437,6 +1461,9 @@ def build_parser() -> argparse.ArgumentParser:
     evv = evsub.add_parser("verificar")
     evv.add_argument("pacote")
     evv.set_defaults(fn=cmd_evidencia)
+    evl = evsub.add_parser("listar")
+    evl.add_argument("--json", action="store_true")
+    evl.set_defaults(fn=cmd_evidencia)
     evd.set_defaults(fn=cmd_evidencia, evidencia_cmd=None)
     ck = sub.add_parser("chaves", help="guardar chaves com segurança (sem digitar no chat)")
     cksub = ck.add_subparsers(dest="chaves_cmd")

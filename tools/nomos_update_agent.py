@@ -358,6 +358,37 @@ class NomosUpdateAgent:
                              f"{AGENT_VERSION} no documento de governança."),
             })
 
+        # MC30-A1: deriva de marca não é só acusada — vem com proposta de correção.
+        sonda = NomosUpdateAgent(self.repo_root)
+        sonda._check_brand_paleta()
+        sonda._check_brand_tagline()
+        sonda._check_instalacao_oficial()
+        sonda._check_versao_coerente()
+        propostas_marca = {
+            "brand:paleta": (LANDING_REL, "Aplicar as cores do brandbook congelado "
+                             f"({', '.join(PALETA_CONGELADA)}) no CSS do site."),
+            "brand:tagline": (README_REL, "Restaurar a tagline canônica "
+                              f"'{TAGLINE_CANONICA}' e a assinatura "
+                              f"'{ASSINATURA_CANONICA}' no README e no site."),
+            "brand:instalacao_oficial": (
+                MANUAL_REL, "Trocar a instalação pelo nome puro no PyPI por "
+                "'pip install git+https://github.com/Voltolini-SPACE/NOMOS' "
+                "com o aviso de colisão de nome."),
+            "brand:versao_coerente": (
+                PYPROJECT_REL, "Igualar 'version' do pyproject.toml e "
+                "nomos.__version__ (uma única fonte de verdade)."),
+        }
+        for chk in sonda.report.checks:
+            if chk.ok or chk.name not in propostas_marca:
+                continue
+            caminho, proposta = propostas_marca[chk.name]
+            patches.append({
+                "path": caminho,
+                "reason": "deriva_de_marca",
+                "risk": "low",
+                "proposal": f"[{chk.name}] {proposta} Detalhe: {chk.detail}",
+            })
+
         return {
             "agent_version": AGENT_VERSION,
             "mode": "diff",
