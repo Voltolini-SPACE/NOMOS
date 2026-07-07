@@ -4,6 +4,19 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC41.1 — briefing agendado, com a verdade na frente)
+- **`nomos rotinas briefing --panel`**: em uso agendado, a aprovação vem
+  da fila do painel (just-in-time, TTL 5 min) — A3 nunca se auto-aprova;
+  ninguém aprovou ⇒ não sai (fail-closed, auditado).
+- **`nomos rotinas agendar --telegram <CHAT_ID>`**: além das linhas de
+  sempre, imprime a linha PRONTA do cron para o briefing das 08:00
+  entregue no Telegram — com os avisos honestos no próprio comentário
+  (trocar SEU_TOKEN; aprovar no painel em até 5 min; senão não sai).
+- **Dash Hub**: atalho copiável do briefing→Telegram (+ dica do agendar).
+- Testes: contrato antigo do agendador intacto; linha nova com --panel,
+  placeholder de token, TTL e fail-closed declarados; parser; atalho no
+  Dash. Suíte completa: 1390 passed.
+
 ### Added (MC41 — a primeira automação de ponta a ponta: briefing → Telegram)
 - **`nomos rotinas briefing --telegram <CHAT_ID>`**: o briefing do dia
   (gerado 100% localmente) ENTREGUE pelo conector MCP confiado — juntando

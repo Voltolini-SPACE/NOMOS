@@ -384,14 +384,32 @@ WantedBy=timers.target
     return arquivos, instrucao
 
 
-def linha_agendador(home: Path) -> str:
+def linha_agendador(home: Path, telegram: str | None = None,
+                    manifesto: str | None = None) -> str:
     """A linha que VOCÊ pode colar no seu agendador. O NOMOS não mexe nele."""
     import sys
     # caminho COMPLETO do Python, entre aspas (como em exportar()): o cron tem
     # PATH mínimo — só o basename cairia no Python do sistema, sem o nomos,
     # e a rotina falharia em silêncio (pior ainda em venv/pipx)
     exe = f'"{sys.executable}"'
-    return (f"# roda as rotinas devidas a cada 15 min (cole no `crontab -e`):\n"
+    base = (f"# roda as rotinas devidas a cada 15 min (cole no `crontab -e`):\n"
             f"*/15 * * * * NOMOS_HOME={home} {exe} -m nomos.cli rotinas executar\n"
             f"# Windows (Agendador de Tarefas → nova tarefa):\n"
             f"#   programa: {exe} · argumentos: -m nomos.cli rotinas executar")
+    if not telegram:
+        return base
+    # MC41.1: briefing entregue no Telegram, agendado — com a verdade na
+    # frente: nível A3 nunca se auto-aprova. --panel enfileira o pedido na
+    # fila de aprovações (TTL 5 min): você aprova no painel/Dash e ele sai;
+    # ninguém aprovou ⇒ não sai (fail-closed), e fica auditado.
+    mf = manifesto or "examples/mcp/telegram/manifesto.json"
+    return (base + "\n\n"
+            "# briefing das 08:00 entregue no seu Telegram "
+            "(aprovação just-in-time):\n"
+            "#   ATENÇÃO: troque SEU_TOKEN pelo token do @BotFather — o "
+            "cron tem ambiente mínimo;\n"
+            "#   a entrega é A3: aprove no painel em até 5 min, senão NÃO "
+            "sai (fail-closed).\n"
+            f"0 8 * * * NOMOS_HOME={home} NOMOS_TELEGRAM_TOKEN=SEU_TOKEN "
+            f"{exe} -m nomos.cli rotinas briefing "
+            f"--telegram {telegram} --manifesto {mf} --panel")

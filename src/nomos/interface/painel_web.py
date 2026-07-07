@@ -1560,6 +1560,12 @@ def render_dash(versao: str) -> str:
         '<button class="copiar" data-cmd="nomos mcp confiar '
         'examples/mcp/telegram/manifesto.json">copiar</button>'
         "<small>liga o conector Telegram (Bot API oficial)</small></li>"
+        '<li><code>nomos rotinas briefing --telegram SEU_CHAT_ID</code>'
+        '<button class="copiar" data-cmd="nomos rotinas briefing '
+        '--telegram SEU_CHAT_ID">copiar</button>'
+        "<small>o briefing do dia no seu Telegram — com o seu OK (A3); "
+        "agende com: nomos rotinas agendar --telegram SEU_CHAT_ID</small>"
+        "</li>"
         "</ul></div>"
         "</main>"
         "<footer><span>NOMOS v" + e(versao) + "</span>"

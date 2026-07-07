@@ -678,7 +678,9 @@ def cmd_rotinas(ctx, args) -> int:
               file=sys.stdout if ok else sys.stderr)
         return EXIT_OK if ok else EXIT_DENIED
     if sub == "agendar":
-        print(rot.linha_agendador(ctx["home"]))
+        print(rot.linha_agendador(ctx["home"],
+                                  telegram=getattr(args, "telegram", None),
+                                  manifesto=getattr(args, "manifesto", None)))
         print("\n(o NOMOS nunca altera seu agendador sozinho — colar é com você)")
         return EXIT_OK
     if sub == "exportar":
@@ -1856,8 +1858,16 @@ def build_parser() -> argparse.ArgumentParser:
     rob.add_argument("--manifesto", default=None,
                      help="caminho do manifesto MCP (padrão: o conector "
                      "telegram do repositório)")
+    rob.add_argument("--panel", action="store_true",
+                     help="aprovar pela fila do painel (just-in-time, TTL "
+                     "5 min) — para uso agendado")
     rob.set_defaults(fn=cmd_rotinas)
-    rosub.add_parser("agendar").set_defaults(fn=cmd_rotinas)
+    roa = rosub.add_parser(
+        "agendar", help="linhas prontas p/ SEU agendador (cron/Tarefas); "
+        "--telegram inclui o briefing entregue com aprovação just-in-time")
+    roa.add_argument("--telegram", metavar="CHAT_ID", default=None)
+    roa.add_argument("--manifesto", default=None)
+    roa.set_defaults(fn=cmd_rotinas)
     ro.set_defaults(fn=cmd_rotinas, rotinas_cmd=None)
     aq = sub.add_parser("arquivo", help="ler e resumir um arquivo, tudo local")
     aq.add_argument("caminho")

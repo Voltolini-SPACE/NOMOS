@@ -133,3 +133,37 @@ def test_cli_briefing_sem_telegram_continua_igual(nomos_home, capsys):
     print(rot.briefing(ctx))
     saida = capsys.readouterr().out
     assert "Briefing local" in saida and "nada saiu dela" in saida
+
+
+# ---------------------------------------------------------------------------
+# MC41.1 — agendável com aprovação just-in-time (a verdade na frente)
+# ---------------------------------------------------------------------------
+def test_linha_agendador_sem_telegram_continua_igual(nomos_home):
+    linha = rot.linha_agendador(nomos_home)
+    assert "rotinas executar" in linha
+    assert "--telegram" not in linha              # contrato antigo intacto
+
+
+def test_linha_agendador_com_telegram_e_honesta(nomos_home):
+    linha = rot.linha_agendador(nomos_home, telegram="424242")
+    assert "--telegram 424242" in linha
+    assert "--panel" in linha                     # aprovação just-in-time
+    assert "NOMOS_TELEGRAM_TOKEN=SEU_TOKEN" in linha   # cron tem env mínimo
+    assert "fail-closed" in linha                 # a verdade, no comentário
+    assert "5 min" in linha                       # TTL dito na cara
+
+
+def test_parser_aceita_panel_e_agendar_telegram():
+    from nomos.cli import build_parser
+    p = build_parser()
+    a1 = p.parse_args(["rotinas", "briefing", "--telegram", "1", "--panel"])
+    assert a1.telegram == "1" and a1.panel is True
+    a2 = p.parse_args(["rotinas", "agendar", "--telegram", "77"])
+    assert a2.telegram == "77"
+
+
+def test_dash_tem_atalho_do_briefing_telegram():
+    from nomos.interface.painel_web import render_dash
+    corpo = render_dash("1.0.0")
+    assert "nomos rotinas briefing --telegram SEU_CHAT_ID" in corpo
+    assert "nomos rotinas agendar --telegram" in corpo
