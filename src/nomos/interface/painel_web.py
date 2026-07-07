@@ -648,6 +648,33 @@ def dados_dashboard(ctx) -> dict:
             except Exception:
                 continue
 
+    # Conexões (MC40 — Dash Hub): o que está LIGADO e o que dá para ligar.
+    # Tudo estado real: trust store de MCPs, motores prontos, skills,
+    # rotinas — e os conectores de exemplo que acompanham o NOMOS.
+    conexoes = {"mcp_confiaveis": [], "conectores_disponiveis": [],
+                "motores_prontos": 0, "skills": 0, "rotinas_ativas": 0}
+    with contextlib.suppress(Exception):
+        conexoes["mcp_confiaveis"] = [
+            s.get("nome", "?") for s in mcp.get("confiaveis", [])]
+        conexoes["motores_prontos"] = sum(
+            len(v) for v in modalidades.values())
+        conexoes["skills"] = len(st.status_todas(home, home / "skills"))
+        conexoes["rotinas_ativas"] = sum(
+            1 for r in rot.listar(home) if r.get("ativa", True))
+        raiz_ex = Path(__file__).resolve().parents[3] / "examples" / "mcp"
+        if raiz_ex.exists():
+            ligados = set(conexoes["mcp_confiaveis"])
+            for mf in sorted(raiz_ex.glob("*/manifesto.json")):
+                try:
+                    dados_mf = json.loads(mf.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                nome_c = str(dados_mf.get("nome", mf.parent.name))
+                conexoes["conectores_disponiveis"].append(
+                    {"nome": nome_c, "ligado": nome_c in ligados,
+                     "manifesto": f"examples/mcp/{mf.parent.name}/"
+                                  "manifesto.json"})
+
     # Sistema (Painel 4.0): metadados locais da instalação — nada sensível
     try:
         from nomos.simple.onboarding import carregar_perfil
@@ -693,6 +720,7 @@ def dados_dashboard(ctx) -> dict:
         "sistema": sistema,
         "atividade_24h": atividade_24h,
         "atividade_7d": atividade_7d,
+        "conexoes": conexoes,
     }
 
 
@@ -1296,6 +1324,15 @@ _CSS_DASH = """
  .lista .mot{color:var(--neon)} .lista .mod{color:var(--fraco)}
  svg.spark{width:100%;height:64px;display:block}
  svg.spark rect{fill:var(--dim)} svg.spark rect.hoje{fill:var(--neon)}
+ .lista.atalhos li{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}
+ .lista.atalhos code{background:#0c1410;color:var(--neon);padding:.06rem .4rem;
+   border-radius:4px;border:1px solid var(--line);font-size:.74rem}
+ .lista.atalhos small{flex-basis:100%;margin:0}
+ button.copiar{font:inherit;font-size:.64rem;background:var(--surface2);
+   color:var(--fraco);border:1px solid var(--line);border-radius:5px;
+   padding:.02rem .45rem;cursor:pointer}
+ button.copiar:hover{color:var(--neon);border-color:var(--dim)}
+ .conx-ok{color:var(--neon)} .conx-off{color:var(--fraco)}
  .faixa{float:right;display:inline-flex;gap:.25rem}
  .faixa-bt{font:inherit;font-size:.66rem;background:var(--surface2);
    color:var(--fraco);border:1px solid var(--line);border-radius:5px;
@@ -1364,6 +1401,30 @@ _JS_DASH = """
        var mot=document.createElement('span'); mot.className='mot';
        mot.textContent=r.motor||'— nenhum pronto';
        li.appendChild(mod); li.appendChild(mot); ul.appendChild(li); }); }
+   if(d.secao==='conexoes'){ var uc=$('conexoes'); if(uc){ uc.textContent='';
+     var c=d.dados;
+     function li(html_ok, txt, extra){ var el=document.createElement('li');
+       var b=document.createElement('span');
+       b.className=html_ok?'conx-ok':'conx-off';
+       b.textContent=html_ok?'● ':'○ '; el.appendChild(b);
+       el.appendChild(document.createTextNode(txt));
+       if(extra){ var s=document.createElement('small');
+         s.textContent=extra; el.appendChild(s); }
+       uc.appendChild(el); }
+     li(c.motores_prontos>0, c.motores_prontos+' motor(es) pronto(s)',
+        c.motores_prontos?'':'ligue um: nomos cerebro baixar');
+     li(c.skills>0, c.skills+' skill(s) instalada(s)',
+        c.skills?'':'instale: nomos skills');
+     li(c.rotinas_ativas>0, c.rotinas_ativas+' rotina(s) ativa(s)',
+        c.rotinas_ativas?'':'automatize: nomos rotinas');
+     (c.conectores_disponiveis||[]).forEach(function(k){
+       li(k.ligado, 'conector '+k.nome+(k.ligado?' — confiado':''),
+          k.ligado?'':'ligar: nomos mcp confiar '+k.manifesto); });
+     (c.mcp_confiaveis||[]).forEach(function(n){
+       var achou=(c.conectores_disponiveis||[]).some(function(k){
+         return k.nome===n; });
+       if(!achou) li(true, 'MCP '+n+' — confiado'); });
+   }}
    if(d.secao==='memoria'){ poe('memrev', d.dados.candidatas,
      d.dados.candidatas?'warn':''); }
    if(d.secao==='auditoria'){ poe('cadeia',
@@ -1377,8 +1438,16 @@ _JS_DASH = """
  function ciclo5(){ if(pausado||document.hidden) return; pega('../health/',saude); }
  function ciclo30(){ if(pausado||document.hidden) return;
    ['atividade_24h','atividade_7d','roteador_vivo','memoria','auditoria',
-    'aprovacoes'].forEach(function(s){
+    'aprovacoes','conexoes'].forEach(function(s){
      pega('../api/?secao='+s, dados); }); }
+ document.addEventListener('click', function(ev){
+   var bt=ev.target.closest('button.copiar'); if(!bt) return;
+   var cmd=bt.getAttribute('data-cmd')||'';
+   function feito(){ var t=bt.textContent; bt.textContent='copiado ✓';
+     setTimeout(function(){ bt.textContent=t; }, 1200); }
+   if(navigator.clipboard&&navigator.clipboard.writeText){
+     navigator.clipboard.writeText(cmd).then(feito).catch(function(){});
+   } });
  ['bt24','bt7d'].forEach(function(id){ var bt=$(id); if(!bt) return;
    bt.addEventListener('click', function(){
      faixa=(id==='bt24')?'24h':'7d';
@@ -1469,6 +1538,29 @@ def render_dash(versao: str) -> str:
         # linha 3 — avisos honestos
         '<div class="w c12"><h2>atenção</h2>'
         '<ul class="lista" id="avisos"><li>carregando…</li></ul></div>'
+        # linha 4 — Dash Hub (MC40): ligar ferramentas + encurtar o dia a dia
+        '<div class="w c6"><h2>conexões — ligue suas ferramentas</h2>'
+        '<ul class="lista" id="conexoes"><li>carregando…</li></ul>'
+        "<small>ligar passa pelo gate no terminal — o Dash mostra o "
+        "caminho, você decide</small></div>"
+        '<div class="w c6"><h2>atalhos do dia a dia</h2>'
+        '<ul class="lista atalhos">'
+        '<li><code>nomos missao planejar organizar ~/Downloads</code>'
+        '<button class="copiar" data-cmd="nomos missao planejar organizar '
+        '~/Downloads">copiar</button><small>arruma a bagunça com plano + '
+        "desfazer</small></li>"
+        '<li><code>nomos rotinas</code>'
+        '<button class="copiar" data-cmd="nomos rotinas">copiar</button>'
+        "<small>briefing e check-up automáticos, na sua hora</small></li>"
+        '<li><code>nomos backup</code>'
+        '<button class="copiar" data-cmd="nomos backup">copiar</button>'
+        "<small>seu NOMOS inteiro num arquivo cifrado</small></li>"
+        '<li><code>nomos mcp confiar examples/mcp/telegram/manifesto.json'
+        "</code>"
+        '<button class="copiar" data-cmd="nomos mcp confiar '
+        'examples/mcp/telegram/manifesto.json">copiar</button>'
+        "<small>liga o conector Telegram (Bot API oficial)</small></li>"
+        "</ul></div>"
         "</main>"
         "<footer><span>NOMOS v" + e(versao) + "</span>"
         '<span id="modo">—</span>'

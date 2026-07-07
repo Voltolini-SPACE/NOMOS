@@ -1,0 +1,11 @@
+{
+  "nome": "telegram-bot",
+  "descricao": "Ponte oficial com a Bot API do Telegram: enviar mensagens e ler as recebidas pelo SEU bot. Token só por variável de ambiente (NOMOS_TELEGRAM_TOKEN); toda tool exige sua aprovação (A3: credencial + rede).",
+  "comando": ["python3", "examples/mcp/telegram/servidor.py"],
+  "nivel_padrao": "A3",
+  "tools": {
+    "telegram_quem_sou": "A3",
+    "telegram_enviar": "A3",
+    "telegram_atualizacoes": "A3"
+  }
+}

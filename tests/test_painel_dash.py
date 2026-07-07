@@ -17,6 +17,8 @@ import json
 import urllib.error
 import urllib.request
 
+from pathlib import Path
+
 import pytest
 
 from nomos.cognition import motores
@@ -174,6 +176,41 @@ def test_shell_tem_toggle_e_placar(nomos_home):
     corpo = render_dash("1.0.0")
     for marcador in ('id="bt24"', 'id="bt7d"', 'id="decisoes"', 'id="mem"'):
         assert marcador in corpo, marcador
+
+
+# ---------------------------------------------------------------------------
+# 3c. MC40 — Dash Hub: conexões reais + atalhos
+# ---------------------------------------------------------------------------
+def test_conexoes_refletem_trust_store_real(nomos_home):
+    from nomos.interface import mcp_catalogo as cat
+    from nomos.interface.mcp_client import carregar_manifesto
+    ctx = _ctx(nomos_home)
+    raiz = Path(__file__).resolve().parent.parent
+    cat.confiar(nomos_home, carregar_manifesto(
+        raiz / "examples" / "mcp" / "telegram" / "manifesto.json"))
+    c = dados_dashboard(ctx)["conexoes"]
+    assert "telegram-bot" in c["mcp_confiaveis"]
+    estados = {k["nome"]: k["ligado"] for k in c["conectores_disponiveis"]}
+    assert estados.get("telegram-bot") is True        # confiado = ligado
+    assert estados.get("whatsapp-cloud") is False     # disponível, desligado
+    srv = DashboardServer(ctx)
+    url = srv.start()
+    try:
+        _, corpo, _ = _get(f"{url}api/?secao=conexoes")
+        via = json.loads(corpo)["dados"]
+        assert via["mcp_confiaveis"] == c["mcp_confiaveis"]
+    finally:
+        srv.stop()
+
+
+def test_shell_tem_hub_de_conexoes_e_atalhos(nomos_home):
+    corpo = render_dash("1.0.0")
+    assert 'id="conexoes"' in corpo
+    assert "atalhos do dia a dia" in corpo
+    assert corpo.count('class="copiar"') >= 4         # comandos copiáveis
+    assert "nomos mcp confiar examples/mcp/telegram/manifesto.json" in corpo
+    # ligar é no terminal com gate — o Dash só mostra o caminho
+    assert "passa pelo gate" in corpo
 
 
 # ---------------------------------------------------------------------------

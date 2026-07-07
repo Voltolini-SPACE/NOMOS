@@ -4,6 +4,32 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC40 — conexões: redes sociais via MCP + Dash Hub)
+- **Conector Telegram (`examples/mcp/telegram/`)**: servidor MCP local em
+  stdlib pura sobre a Bot API OFICIAL — `telegram_quem_sou`,
+  `telegram_enviar`, `telegram_atualizacoes`. Token SÓ por ambiente
+  (`NOMOS_TELEGRAM_TOKEN`), jamais em arquivo; sem token, falha fechado
+  com instrução; token redigido de qualquer erro (testado). Todas as
+  tools **A3** (credencial+rede) ⇒ gate de aprovação a cada chamada.
+- **Conector WhatsApp Cloud (`examples/mcp/whatsapp-cloud/`)**: envio de
+  texto e templates pela Business Cloud API OFICIAL da Meta (credenciais
+  por ambiente; receber exige webhook público — dito na cara, não
+  escondido). Mesmas garantias e nível A3.
+- **`docs/CONECTORES_SOCIAIS.md`**: o mapa honesto dos 4 canais —
+  Telegram pronto, WhatsApp envio pronto, Instagram/TikTok mapeados com
+  requisitos reais (apps aprovados) e o porquê de NÃO usarmos bibliotecas
+  não-oficiais (violam termos, derrubam contas).
+- **Dash Hub**: o Dash virou hub do dia a dia — widget **conexões** (o
+  que está ligado ● e o que dá para ligar ○, direto do trust store, com
+  o comando exato; ligar continua passando pelo gate no terminal) e
+  **atalhos copiáveis** (organizar pasta com desfazer, rotinas, backup,
+  ligar o Telegram). Nova seção `conexoes` em `dados_dashboard`/API.
+- Testes: `test_mcp_telegram.py` (10 — dialeto stdio em processo real,
+  fail-closed, API mockada, redação de token, manifesto/trust store,
+  integração com o ClienteMCP do NOMOS) + `test_mcp_whatsapp.py` (5) +
+  Dash Hub (2). E2E: conexões ao vivo no navegador (telegram ● /
+  whatsapp ○), 4 atalhos copiáveis, zero erros de console. Suíte: 1382.
+
 ### Added (MC39.1 — Dash: mais profundidade, mesma calma)
 - **Sparkline com faixa 24h ↔ 7d**: nova série real `atividade_7d`
   (eventos/dia, mesma passada única na trilha); alternância no próprio
