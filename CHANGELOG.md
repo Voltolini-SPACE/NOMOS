@@ -4,6 +4,18 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (MC46.4 — Windows: home directory sem USERPROFILE)
+- **2ª causa raiz, revelada quando a 1ª foi corrigida** (o Python já
+  bootava, mas o CLI estourava): `config.nomos_home()` avaliava o default
+  `str(Path.home() / ".nomos")` de forma ANSIOSA — mesmo com `NOMOS_HOME`
+  setado. Num ambiente sem as variáveis de home (Windows sem USERPROFILE,
+  como no subprocesso dos testes), `Path.home()` levantava
+  `RuntimeError: Could not determine home directory`. Agora a avaliação é
+  preguiçosa: com `NOMOS_HOME`, `Path.home()` NEM é chamado — bug de
+  produto real, corrigido, com teste de regressão (`test_config_home.py`).
+- `tests/_cli_env.py` também passou a preservar as variáveis de home
+  (USERPROFILE/HOMEDRIVE/HOMEPATH/HOME) — defesa em profundidade.
+
 ### Fixed (MC46.3 — Windows de volta: causa raiz corrigida)
 - **Causa raiz das ~28 falhas de teste no Windows, achada no log real**
   (`gh run view --log-failed`): os testes de CLI rodavam o subprocesso com

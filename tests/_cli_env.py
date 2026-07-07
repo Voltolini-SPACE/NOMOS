@@ -22,6 +22,9 @@ _ESSENCIAIS = (
     "SystemRoot", "SYSTEMROOT", "SystemDrive", "windir", "TEMP", "TMP",
     "PATHEXT", "COMSPEC", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE",
     "PROCESSOR_IDENTIFIER", "APPDATA", "LOCALAPPDATA",
+    # variáveis de home — sem elas Path.home()/expanduser estoura
+    # (Windows: USERPROFILE ou HOMEDRIVE+HOMEPATH; POSIX: HOME)
+    "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "HOME", "USERNAME",
     "PYTHONUTF8", "PYTHONIOENCODING", "LANG", "LC_ALL",
 )
 

@@ -20,8 +20,14 @@ class ConfigError(Exception):
 
 
 def nomos_home() -> Path:
-    """Home de dados do NOMOS. NOMOS_HOME permite isolamento em testes."""
-    return Path(os.environ.get("NOMOS_HOME", str(Path.home() / ".nomos")))
+    """Home de dados do NOMOS. NOMOS_HOME permite isolamento em testes.
+
+    Com NOMOS_HOME definido, ``Path.home()`` NÃO é chamado — antes o default
+    era avaliado de forma ansiosa e, num ambiente sem as variáveis de home
+    (ex.: Windows sem USERPROFILE), estourava mesmo com NOMOS_HOME setado.
+    """
+    definido = os.environ.get("NOMOS_HOME")
+    return Path(definido) if definido else Path.home() / ".nomos"
 
 
 def ensure_home() -> Path:
