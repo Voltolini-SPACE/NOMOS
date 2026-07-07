@@ -70,8 +70,16 @@ def validar_acao(acao: str, skills_dir: Path | None = None) -> str | None:
         if skills_dir is not None and not (Path(skills_dir) / nome).exists():
             return f"skill '{nome}' não está instalada"
         return None
+    if acao.startswith("briefing-telegram:"):
+        chat = acao.split(":", 1)[1].strip()
+        if re.fullmatch(r"-?\d{1,20}", chat) or re.fullmatch(r"@\w{3,64}",
+                                                             chat):
+            return None
+        return ("briefing-telegram precisa de um chat válido: número "
+                "(ex.: briefing-telegram:424242) ou @canal")
     return (f"ação desconhecida: {acao!r} — permitidas: "
-            f"{', '.join(ACOES_INTERNAS)} ou skill:<nome>")
+            f"{', '.join(ACOES_INTERNAS)}, skill:<nome> ou "
+            "briefing-telegram:<chat_id>")
 
 
 def criar(home: Path, nome: str, hora: str, acao: str, policy, approver,
@@ -241,16 +249,29 @@ def prever_acao(acao: str) -> str:
         nome = acao.split(":", 1)[1]
         return (f"tentaria rodar a skill '{nome}' — mas só se ela for A0 "
                 "(skills que pedem aprovação nunca rodam em rotina)")
+    if acao.startswith("briefing-telegram:"):
+        chat = acao.split(":", 1)[1]
+        return (f"geraria o briefing e o ENTREGARIA no Telegram (chat "
+                f"{chat}) — nível A3: só sai com aprovação sua (interativa "
+                "ou pela fila do painel)")
     return f"ação desconhecida: {acao}"
 
 
-def executar_acao(ctx, acao: str, say=print, simular: bool = False) -> tuple[bool, str]:
+def executar_acao(ctx, acao: str, say=print, simular: bool = False,
+                  approver=None) -> tuple[bool, str]:
     """Executa UMA ação de rotina. `simular=True` só descreve, não executa.
-    Sem aprovador: sensível é negado na hora."""
+    Sem aprovador: sensível é negado na hora (o approver da fila do painel
+    — `--panel` — é um aprovador válido: um humano decide, com TTL)."""
     if simular:
         prev = prever_acao(acao)
         say(f"[simulação] {prev}")
         return True, f"simulado: {prev}"
+    if acao.startswith("briefing-telegram:"):
+        import os as _os
+        chat = acao.split(":", 1)[1]
+        manifesto = (_os.environ.get("NOMOS_TELEGRAM_MANIFESTO")
+                     or "examples/mcp/telegram/manifesto.json")
+        return enviar_briefing(ctx, chat, manifesto, approver, say=say)
     if acao == "briefing":
         texto = briefing(ctx)
         say(texto)
@@ -281,12 +302,13 @@ def executar_acao(ctx, acao: str, say=print, simular: bool = False) -> tuple[boo
 
 
 def executar_devidas(ctx, agora: datetime | None = None, say=print,
-                     simular: bool = False) -> list[dict]:
+                     simular: bool = False, approver=None) -> list[dict]:
     """Roda (ou simula) as rotinas devidas. Em simulação: nada executa, nada
     é marcado como executado, e a auditoria registra apenas o dry-run."""
     resultados = []
     for r in devidas(Path(ctx["home"]), agora):
-        ok, detalhe = executar_acao(ctx, r["acao"], say=say, simular=simular)
+        ok, detalhe = executar_acao(ctx, r["acao"], say=say, simular=simular,
+                                    approver=approver)
         if not simular:
             _marcar_execucao(Path(ctx["home"]), r["id"])
         if ctx.get("audit") is not None:
@@ -392,10 +414,14 @@ def linha_agendador(home: Path, telegram: str | None = None,
     # PATH mínimo — só o basename cairia no Python do sistema, sem o nomos,
     # e a rotina falharia em silêncio (pior ainda em venv/pipx)
     exe = f'"{sys.executable}"'
-    base = (f"# roda as rotinas devidas a cada 15 min (cole no `crontab -e`):\n"
-            f"*/15 * * * * NOMOS_HOME={home} {exe} -m nomos.cli rotinas executar\n"
+    base = (f"# roda as rotinas devidas a cada 15 min (cole no `crontab -e`);\n"
+            f"# --panel: rotinas sensíveis (ex.: briefing-telegram) pedem sua\n"
+            f"# aprovação na fila do painel — sem aprovação, não rodam:\n"
+            f"*/15 * * * * NOMOS_HOME={home} {exe} -m nomos.cli rotinas "
+            f"executar --panel\n"
             f"# Windows (Agendador de Tarefas → nova tarefa):\n"
-            f"#   programa: {exe} · argumentos: -m nomos.cli rotinas executar")
+            f"#   programa: {exe} · argumentos: -m nomos.cli rotinas "
+            f"executar --panel")
     if not telegram:
         return base
     # MC41.1: briefing entregue no Telegram, agendado — com a verdade na

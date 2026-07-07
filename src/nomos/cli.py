@@ -654,7 +654,8 @@ def cmd_rotinas(ctx, args) -> int:
         return EXIT_OK if ok else EXIT_ERROR
     if sub == "executar":
         simular = getattr(args, "simular", False)
-        resultados = rot.executar_devidas(ctx, simular=simular)
+        resultados = rot.executar_devidas(ctx, simular=simular,
+                                          approver=_approver_for(ctx, args))
         if not resultados:
             print("nada devido agora — tudo em dia.")
             return EXIT_OK
@@ -1848,6 +1849,9 @@ def build_parser() -> argparse.ArgumentParser:
     rex = rosub.add_parser("executar")
     rex.add_argument("--simular", action="store_true",
                      help="mostra o que faria, sem executar (dry-run)")
+    rex.add_argument("--panel", action="store_true",
+                     help="rotinas sensíveis (ex.: briefing-telegram) pedem "
+                     "aprovação pela fila do painel (TTL 5 min)")
     rex.set_defaults(fn=cmd_rotinas)
     rob = rosub.add_parser(
         "briefing", help="briefing do dia; --telegram entrega pelo conector "

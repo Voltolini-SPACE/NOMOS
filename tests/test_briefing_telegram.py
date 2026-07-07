@@ -167,3 +167,71 @@ def test_dash_tem_atalho_do_briefing_telegram():
     corpo = render_dash("1.0.0")
     assert "nomos rotinas briefing --telegram SEU_CHAT_ID" in corpo
     assert "nomos rotinas agendar --telegram" in corpo
+
+
+# ---------------------------------------------------------------------------
+# MC42 — briefing-telegram como AÇÃO DE ROTINA (automação completa)
+# ---------------------------------------------------------------------------
+def test_validar_acao_briefing_telegram():
+    assert rot.validar_acao("briefing-telegram:424242") is None
+    assert rot.validar_acao("briefing-telegram:-100123") is None
+    assert rot.validar_acao("briefing-telegram:@meucanal") is None
+    assert rot.validar_acao("briefing-telegram:") is not None
+    assert rot.validar_acao("briefing-telegram:; rm -rf /") is not None
+    assert "briefing-telegram" in rot.validar_acao("acao-inventada")
+
+
+def test_prever_acao_briefing_telegram_e_honesta():
+    prev = rot.prever_acao("briefing-telegram:424242")
+    assert "424242" in prev and "A3" in prev and "aprovação" in prev
+
+
+def test_rotina_sem_approver_nega_fechado(nomos_home):
+    """Cron sem --panel: A3 não se auto-aprova — nega e explica."""
+    from nomos.interface import mcp_catalogo as cat
+    from nomos.interface.mcp_client import carregar_manifesto
+    ctx = _ctx(nomos_home)
+    cat.confiar(nomos_home, carregar_manifesto(MANIFESTO))
+    ok, detalhe = rot.executar_acao(ctx, "briefing-telegram:424242",
+                                    say=lambda *a: None, approver=None)
+    assert not ok and "aprovação" in detalhe
+    assert "rotina.briefing.entrega_negada" in (
+        nomos_home / "logs" / "audit.jsonl").read_text()
+
+
+def test_e2e_rotina_devida_entrega_no_telegram(nomos_home, monkeypatch):
+    """A AUTOMAÇÃO COMPLETA: rotina criada → devida agora → executar_devidas
+    com aprovador humano (fila/interativo) → briefing chega na Bot API fake.
+    Zero internet; o marcador de execução e a auditoria ficam corretos."""
+    from datetime import datetime
+
+    from nomos.interface import mcp_catalogo as cat
+    from nomos.interface.mcp_client import carregar_manifesto
+    ctx = _ctx(nomos_home)
+    cat.confiar(nomos_home, carregar_manifesto(MANIFESTO))
+    rot.criar(nomos_home, "Briefing TG", "08:00",
+              "briefing-telegram:424242", ctx["policy"],
+              approver=lambda d: True)
+    fake = _BotApiFake()
+    monkeypatch.setenv("NOMOS_TELEGRAM_API", fake.url)
+    monkeypatch.setenv("NOMOS_TELEGRAM_TOKEN", "999:TESTE")
+    monkeypatch.setenv("NOMOS_TELEGRAM_MANIFESTO", str(MANIFESTO))
+    try:
+        oito = datetime.now().replace(hour=8, minute=0)
+        resultados = rot.executar_devidas(ctx, agora=oito,
+                                          say=lambda *a: None,
+                                          approver=lambda d: True)
+        assert len(resultados) == 1 and resultados[0]["ok"], resultados
+        assert len(fake.recebidos) == 1
+        assert fake.recebidos[0]["corpo"]["chat_id"] == "424242"
+        assert "Briefing local" in fake.recebidos[0]["corpo"]["text"]
+        trilha = (nomos_home / "logs" / "audit.jsonl").read_text()
+        assert "rotina.briefing.entregue" in trilha
+        assert "rotina.executada" in trilha
+    finally:
+        fake.parar()
+
+
+def test_linha_agendador_base_ganhou_panel(nomos_home):
+    linha = rot.linha_agendador(nomos_home)
+    assert "--panel" in linha            # rotinas A3 pedem fila do painel

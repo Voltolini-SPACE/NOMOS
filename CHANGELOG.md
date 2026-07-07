@@ -4,6 +4,22 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC42 — briefing-telegram vira AÇÃO DE ROTINA)
+- **Nova ação `briefing-telegram:<chat_id>`** no vocabulário de rotinas
+  (`nomos rotinas criar "Briefing TG" 08:00 briefing-telegram:424242`):
+  o agendador de 15 min passa a entregar o briefing sozinho — com
+  aprovação humana SEMPRE (`rotinas executar --panel` usa a fila do
+  painel; sem aprovador, A3 nega fechado e audita). `prever_acao` diz a
+  verdade ("só sai com aprovação sua"); chat validado (número ou @canal;
+  injeção recusada); manifesto por `NOMOS_TELEGRAM_MANIFESTO` (cron tem
+  cwd/env mínimos). `executar_acao`/`executar_devidas` ganham `approver`
+  opcional (compat total); linha base do agendador agora inclui
+  `--panel` com o porquê no comentário.
+- Teste-coroa: a automação COMPLETA — rotina criada → devida às 08:00 →
+  `executar_devidas` com aprovador → briefing chega na Bot API fake local
+  (zero internet), com `rotina.executada` + `rotina.briefing.entregue`
+  na trilha. Suíte completa: 1395 passed.
+
 ### Added (MC41.1 — briefing agendado, com a verdade na frente)
 - **`nomos rotinas briefing --panel`**: em uso agendado, a aprovação vem
   da fila do painel (just-in-time, TTL 5 min) — A3 nunca se auto-aprova;
