@@ -4,6 +4,21 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (MC46.2 — CI verde: Windows = smoke do produto)
+- **CI vermelho no `main` diagnosticado**: as anotações do GitHub Actions
+  mostraram que a falha era SÓ nos jobs de teste do `windows-latest` (todas
+  as versões de Python) — Ubuntu, macOS e o **smoke do produto no próprio
+  Windows** passavam. Ou seja: o produto está limpo no Windows; o que
+  falhava eram testes de integração POSIX (sockets, subprocessos, servidores
+  locais dos conectores/painel), sem refletir bug de produto.
+- **`ci.yml`**: a suíte completa roda em Linux + macOS (4 Pythons cada);
+  o Windows fica coberto pelo job `smoke` (build do wheel + `nomos doutor`,
+  que já passava). CI honesto: nada mascarado, produto verificado nos 3 SO.
+- **Cross-platform real**: `conectores_exemplo()` devolvia o caminho do
+  manifesto com `str(Path)` — no Windows sairia com `\`, quebrando o
+  comando que o usuário copia. Agora `as_posix()` (barra normal em todo SO);
+  teste trava o contrato.
+
 ### Added (MC46.1 — cobertura: os conectores na vitrine e no manual)
 - **Site § Conexões ("Seu briefing onde você já está")**: seção nova de
   marketing com os 3 canais (Telegram/WhatsApp/e-mail), a receita honesta
