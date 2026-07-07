@@ -151,7 +151,9 @@ def conectores_exemplo(home: Path, raiz: Path | None = None) -> list[dict]:
             descricao = str(bruto.get("descricao", ""))
         except Exception:
             descricao = ""
-        # caminho relativo ao cwd quando possível (o que o usuário digita)
+        # caminho relativo ao cwd quando possível (o que o usuário digita).
+        # SEMPRE com barra normal — o mesmo comando funciona em Win/Mac/Linux
+        # e bate com a doc; str(Path) no Windows sairia com "\".
         try:
             rel = mf.relative_to(Path.cwd())
         except ValueError:
@@ -160,5 +162,5 @@ def conectores_exemplo(home: Path, raiz: Path | None = None) -> list[dict]:
                       "status": status(home, manifesto),
                       "nivel_padrao": manifesto["nivel_padrao"],
                       "descricao": descricao,
-                      "manifesto": str(rel)})
+                      "manifesto": rel.as_posix()})
     return itens

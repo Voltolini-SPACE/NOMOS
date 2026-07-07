@@ -26,6 +26,17 @@ def test_lista_os_conectores_do_repo(nomos_home):
         assert c["manifesto"].endswith("manifesto.json")
 
 
+def test_manifesto_sempre_com_barra_normal(nomos_home):
+    """Cross-platform: o caminho do manifesto é o que o usuário COPIA para
+    `nomos mcp confiar` — tem de usar barra normal em todo SO (no Windows,
+    str(Path) sairia com '\\', quebrando o comando e a paridade com a doc)."""
+    nomos_home.mkdir(parents=True, exist_ok=True)
+    for c in cat.conectores_exemplo(nomos_home, raiz=EXEMPLOS):
+        assert "\\" not in c["manifesto"], c["manifesto"]
+        assert c["manifesto"].startswith("examples/mcp/") or \
+            c["manifesto"].endswith("/manifesto.json")
+
+
 def test_status_reflete_o_trust_store(nomos_home):
     nomos_home.mkdir(parents=True, exist_ok=True)
     # antes de confiar: tudo experimental (disponível, desligado)
