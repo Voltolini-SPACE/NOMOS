@@ -1,0 +1,6 @@
+# sdist = o código completo que a release distribui — inclui os conectores
+# MCP de exemplo (telegram, whatsapp-cloud) e as skills de exemplo, que os
+# READMEs e o Dash Hub ensinam a usar a partir da raiz do projeto.
+recursive-include examples *.py *.json *.md
+recursive-include docs *.md
+include README.md CHANGELOG.md LICENSE
