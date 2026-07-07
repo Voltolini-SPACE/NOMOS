@@ -65,6 +65,7 @@ integridade, backup automático e rollback. Detalhes: [docs/INSTALL.md](docs/INS
 | `nomos backup criar <arquivo>` | seu NOMOS inteiro num arquivo cifrado (memórias, chaves, tudo) |
 | `nomos painel` | cockpit web local (status, aprovações, chat) + **NOMOS Dash** ao vivo |
 | `nomos mcp exemplos` | conectores que acompanham o NOMOS (Telegram, WhatsApp, e-mail) e como ligar |
+| `nomos conselho status` / `modos` / `simular` | Motor Council: estado e modos (informativo) + simulação segura em dry-run |
 | `nomos rotinas criar "Briefing" 08:00 briefing-telegram:<chat>` | briefing diário entregue no seu canal (com seu OK, A3) |
 | `nomos doutor --consertar` | aplica correções seguras com a sua confirmação |
 | `nomos atualizar` | checa se há versão nova (com sua aprovação; **nunca** atualiza sozinho) |
@@ -106,21 +107,24 @@ arbitra respostas antes de entregá-las — está disponível em modo
 **pre-release**, não a versão "latest" do repositório). **Ainda não é
 produção** e **não executa motor de verdade**.
 
-Superfícies disponíveis (ambas em dry-run, chamando só o orquestrador
-simulado):
+Superfícies disponíveis hoje (nenhuma executa motor real):
 
 ```bash
-nomos conselho simular "seu texto"     # CLI
-/conselho simular seu texto            # dentro do chat
+nomos conselho status                  # estado + travas (informativo)
+nomos conselho modos                   # os 4 modos, em linguagem simples
+nomos conselho modos --avancado        #   + mapeamento interno CouncilMode
+nomos conselho simular "seu texto"     # simulação segura (dry-run)
+/conselho simular seu texto            # o mesmo, dentro do chat
 ```
 
 Garantias atuais (todas verificadas por teste, não por convenção):
 
 - **Execução de motor real:** desligada — trava literal
   `REAL_LOCAL_ENGINE_EXECUTION_ENABLED = False`, sem API para ativar.
-- **CLI e chat:** só o subcomando `simular` roda (dry-run); `conselho`/
-  `/conselho` sem subcomando e os demais (`perguntar`, `revisar`, `status`,
-  `modos`, `explicar`, `diagnostico`) continuam **desabilitados/fail-closed**.
+- **CLI:** `status` e `modos` são **informativos puros** (só imprimem fatos
+  estáticos — nada de motor, prompt, rede ou disco); `simular` roda em
+  **dry-run**; e `perguntar`, `revisar`, `explicar`, `diagnostico` — que
+  exigiriam execução real — seguem **desabilitados/fail-closed**.
 - **Policy/Audit/Vault reais:** não são chamados (o gate e o audit são só
   dry-run; A0–A6 simulado, `would_write_audit=false`).
 - **Nuvem / rede / subprocess:** não usados por nenhum módulo do Council.

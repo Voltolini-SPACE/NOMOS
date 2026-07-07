@@ -44,8 +44,10 @@ def test_cli_conselho_disabled(capsys):
     assert rc == cli_disabled.DISABLED_EXIT_CODE
 
 
-def test_cli_conselho_status_disabled(capsys):
-    rc, out = _run(capsys, "conselho", "status")
+def test_cli_conselho_revisar_disabled(capsys):
+    # `status` foi finalizado (informativo) na MC23-UX; `revisar` — que exigiria
+    # execução real — SEGUE desabilitado e declara as travas fail-closed.
+    rc, out = _run(capsys, "conselho", "revisar", "arquivo.md")
     assert cli_disabled.DISABLED_CODE in out
     assert "CLI_ENABLED=false" in out
     assert rc == cli_disabled.DISABLED_EXIT_CODE

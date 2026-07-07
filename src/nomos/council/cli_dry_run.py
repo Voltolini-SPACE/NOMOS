@@ -30,6 +30,7 @@ provado por AST em `tests/council/test_cli_conselho_dry_run.py`.
 from __future__ import annotations
 
 from nomos.council.cli_disabled import run_disabled
+from nomos.council.cli_info import run_modos, run_status
 from nomos.council.forbidden_flags import FORBIDDEN_FLAGS, is_forbidden_flag
 from nomos.council.safe_output import build_safe_output, render_json_output
 
@@ -111,6 +112,13 @@ def route_conselho(tokens: list) -> int:
     toks = list(tokens or [])
     if toks and toks[0] == "simular":
         return simular(toks[1:])
+    # MC23-UX: subcomandos PURAMENTE INFORMATIVOS (fatos estáticos; não
+    # executam motor, não leem prompt, não gravam nada). `status`/`modos` já
+    # foram finalizados — `perguntar`/`revisar` seguem fail-closed abaixo.
+    if toks and toks[0] == "status":
+        return run_status(toks[1:])
+    if toks and toks[0] == "modos":
+        return run_modos(toks[1:])
     # raiz e todos os demais subcomandos: fail-closed / desabilitado
     return run_disabled()
 

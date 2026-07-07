@@ -4,20 +4,23 @@
 
 ```text
 SPEC_ONLY=true
-IMPLEMENTATION=partial      # atualizado em MC19 — ver "Current implementation status"
+IMPLEMENTATION=partial      # atualizado em MC23-UX — ver "Current implementation status"
 ```
 
-> **Current implementation status (atualizado em MC19).** Este documento
+> **Current implementation status (atualizado em MC23-UX).** Este documento
 > nasceu SPEC-only, mas parte dele já foi implementada. Estado real por
 > comando:
 >
 > ```text
-> nomos conselho            -> registrado; help/desabilitado (fail-closed)
+> nomos conselho            -> registrado; raiz desabilitada (fail-closed)
+> nomos conselho status     -> INFORMATIVO disponível (MC23-UX; fatos estáticos)
+> nomos conselho modos      -> INFORMATIVO disponível (MC23-UX; [--avancado])
 > nomos conselho simular    -> DRY-RUN disponível (MC15-UX)
 > /conselho                 -> registrado; desabilitado (fail-closed)
 > /conselho simular         -> DRY-RUN disponível (MC18-UX)
-> {perguntar, revisar, status, modos, explicar, diagnostico}
->                           -> desabilitados/fail-closed nas duas superfícies
+> {perguntar, revisar, explicar, diagnostico}
+>                           -> desabilitados/fail-closed (exigiriam execução real)
+> {status, modos} no chat   -> ainda desabilitados (só a CLI foi finalizada)
 > REAL_ENGINE_EXECUTION=false  REAL_POLICY=false  REAL_AUDIT=false
 > REAL_VAULT=false  CLOUD=false  PERSISTENCE=false
 > ```

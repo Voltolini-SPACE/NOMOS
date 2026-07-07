@@ -4,6 +4,29 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC23-UX — Motor Council: `status` e `modos` finalizados)
+- `nomos conselho status` e `nomos conselho modos [--avancado]` saíram do
+  esqueleto desabilitado e agora funcionam como comandos **puramente
+  informativos**: imprimem fatos estáticos (estado das travas; os 4 modos)
+  sem executar motor, ler prompt, tocar rede/disco ou construir
+  policy/vault/audit. `perguntar`/`revisar` — que exigiriam execução real —
+  seguem **fail-closed**, e a trava `REAL_LOCAL_ENGINE_EXECUTION_ENABLED =
+  False` do harness permanece intocada.
+- Novo módulo puro `nomos.council.cli_info` (só stdlib + contrato de flags
+  proibidas), com pureza provada por AST e ~15 testes novos em
+  `tests/council/test_cli_conselho_info.py` (sem eco de prompt, sem
+  persistência, recusa de flags proibidas, não chama harness/orquestrador).
+- README e docs atualizados para refletir o novo estado (docs ↔ código).
+
+### Added (MC47 — Site: seção "Prova" com evidências reais)
+- Nova seção `#prova` na landing: **saídas reais** do CLI embutidas como
+  terminais (`nomos doutor`, `nomos mcp exemplos`), uma tira de prova técnica
+  (CI 12/12 em 3 SO × 4 Pythons, cobertura, `SEC-01…12`, zero telemetria) e
+  o card do **Motor Council** (honesto: dry-run/fail-closed). Hero ganhou a
+  estatística `12/12` de CI. Nada inventado — travado por `tests/test_site_prova.py`,
+  inclusive um teste que impede o marketing de anunciar mais testes do que
+  existem no repositório.
+
 ### Fixed (MC46.5 — Windows: último teste, métrica de memória)
 - Corrigidas as 2 causas raiz anteriores, sobrou **1 teste** no Windows:
   `test_health_tem_uptime` exigia `mem_pico_mb > 0`. A função `_mem_pico_mb`

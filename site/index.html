@@ -122,6 +122,22 @@
         .stat b { color: var(--neon); font-size: 1.5rem; display: block; text-shadow: var(--glow); }
         .stat span { color: var(--fraco); font-size: 0.8rem; }
 
+        /* Prova (evidências): strip técnica + terminais reais */
+        .prova-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 1.6rem 0 2.2rem; }
+        .pcard { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--neon-dim); border-radius: 10px; padding: 16px 18px; }
+        .pcard b { color: var(--neon); font-size: 1.35rem; display: block; text-shadow: var(--glow); margin-bottom: 4px; }
+        .pcard span { color: var(--texto2); font-size: 0.82rem; line-height: 1.5; }
+        .term { background: var(--surface2); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 0.6rem 0 1.6rem; box-shadow: 0 6px 22px rgba(0,0,0,0.25); }
+        .term-bar { display: flex; align-items: center; gap: 7px; padding: 9px 14px; background: var(--surface); border-bottom: 1px solid var(--line); }
+        .td { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+        .td.red { background: #FF5C57; } .td.yellow { background: #F2C14E; } .td.green { background: #28C840; }
+        .term-title { color: var(--fraco); font-size: 0.76rem; margin-left: 8px; letter-spacing: 0.5px; }
+        .term-body { margin: 0; padding: 16px 18px; font-size: clamp(11px, 1.55vw, 13px); line-height: 1.5; color: var(--texto); overflow-x: auto; white-space: pre; }
+        .term-body .ok { color: var(--neon); } .term-body .warn { color: var(--amarelo); }
+        .term-body .dim { color: var(--fraco); } .term-body .cmd { color: var(--ciano); }
+        .term-body .a3 { color: var(--rosa); font-weight: 700; }
+        .nota { color: var(--fraco); font-size: 0.86rem; border-left: 2px solid var(--line); padding-left: 12px; margin-top: 0.4rem; }
+
         section { padding: 52px 0 8px; border-top: 1px solid var(--line2); }
         .tag { color: var(--fraco); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; }
         h2 { font-size: clamp(20px, 3.4vw, 27px); color: var(--neon); margin: 0.2em 0 0.5em; text-shadow: var(--glow); }
@@ -206,6 +222,7 @@
         <div class="wrap">
             <span class="brand">◤ NOMOS</span>
             <nav aria-label="Navegação principal">
+                <a href="#prova">prova</a>
                 <a href="#recursos">recursos</a>
                 <a href="#motores">motores</a>
                 <a href="#seguranca">segurança</a>
@@ -240,7 +257,8 @@
                 <div class="stat"><b>100%</b><span>local por padrão</span></div>
                 <div class="stat"><b>0</b><span>telemetria / rastreio</span></div>
                 <div class="stat"><b>A0–A6</b><span>níveis de risco governados</span></div>
-                <div class="stat"><b>1.330+</b><span>testes automatizados</span></div>
+                <div class="stat"><b>1.300+</b><span>testes automatizados</span></div>
+                <div class="stat"><b>12/12</b><span>CI verde: 3 SO × 4 Python</span></div>
             </div>
         </div>
     </section>
@@ -256,6 +274,70 @@
                 <div class="card"><div class="ico" aria-hidden="true">✋</div><h3>Pede licença</h3><p>Toda ação sensível é aprovada por você. Em scripts e CI a resposta é sempre "não" — fail-closed, sem flag de bypass.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">🎯</div><h3>Nunca finge</h3><p>Sem cérebro conectado, o NOMOS avisa. Jamais inventa uma resposta ou finge um dado que não tem.</p></div>
             </div>
+        </div>
+    </section>
+
+    <!-- Prova / Evidências -->
+    <section id="prova" aria-labelledby="prova-t">
+        <div class="wrap">
+            <div class="tag">// prova</div>
+            <h2 id="prova-t">Evidência, não promessa</h2>
+            <p class="lead">A lei da casa também vale para o marketing: aqui, cada afirmação é verificável. Abaixo estão <strong>saídas reais</strong> do NOMOS na sua máquina — e a prova técnica que roda sozinha a cada <span class="k">git push</span>.</p>
+
+            <div class="prova-grid">
+                <div class="pcard"><b>12/12</b><span>combinações de CI verdes — 3 sistemas (Linux · macOS · Windows) × 4 versões de Python (3.10 → 3.13), sem <em>fail-fast</em>.</span></div>
+                <div class="pcard"><b>1.300+</b><span>testes automatizados a cada push, com cobertura ≥ 80% e checagem de tipos (mypy) num job à parte.</span></div>
+                <div class="pcard"><b>0</b><span>telemetria, rastreio ou "casa" para ligar. O modo só-local é a política — não um botão que dá para esquecer desligado.</span></div>
+                <div class="pcard"><b>SEC-01…12</b><span>invariantes de segurança que <em>são</em> testes: se o código divergir da política, a suíte inteira falha.</span></div>
+            </div>
+
+            <h3 class="grupo-recursos"><span aria-hidden="true">🩺</span> nomos doutor — check-up honesto (saída real)</h3>
+            <div class="term">
+                <div class="term-bar"><span class="td red"></span><span class="td yellow"></span><span class="td green"></span><span class="term-title">bash — ~ — nomos doutor</span></div>
+<pre class="term-body"><span class="cmd">$ nomos doutor</span>
+Check-up do NOMOS
+STATUS GERAL: <span class="warn">PARCIAL ⚠️</span>
+<span class="dim">============================================</span>
+<span class="ok">✅ Python 3.12.3</span>
+<span class="dim">    compatível</span>
+<span class="ok">✅ Pasta do NOMOS: ~/.nomos</span>
+<span class="dim">    criada</span>
+<span class="warn">⚠️ Ainda sem agente</span>
+<span class="dim">    dê um nome e conheça o seu</span>
+<span class="ok">✅ Modo só-local LIGADO 🔒</span>
+<span class="dim">    tudo fica na sua máquina</span>
+<span class="ok">✅ Cofre ainda não criado</span>
+<span class="dim">    opcional — crie quando precisar guardar uma chave</span>
+<span class="ok">✅ Auditoria íntegra</span>
+<span class="dim">    cadeia de hash conferida</span>
+<span class="warn">⚠️ Sem cérebro de IA ainda</span>
+<span class="dim">    leve (~1100 MB), roda em qualquer PC</span>
+<span class="warn">⚠️ Nenhuma skill instalada</span>
+<span class="dim">    opcional</span>
+<span class="dim">============================================</span>
+Próximo passo recomendado: rode: <span class="cmd">nomos start</span></pre>
+            </div>
+            <p class="nota">Repare no <strong>PARCIAL ⚠️</strong>: o NOMOS <em>admite</em> o que ainda não tem, em vez de fingir. É o princípio "nunca finge" impresso na própria tela.</p>
+
+            <h3 class="grupo-recursos"><span aria-hidden="true">🔌</span> nomos mcp exemplos — conectores que já vêm juntos (saída real)</h3>
+            <div class="term">
+                <div class="term-bar"><span class="td red"></span><span class="td yellow"></span><span class="td green"></span><span class="term-title">bash — ~ — nomos mcp exemplos</span></div>
+<pre class="term-body"><span class="cmd">$ nomos mcp exemplos</span>
+conectores que acompanham o NOMOS (3):
+
+  ○ disponível  email-smtp <span class="a3">[A3]</span>
+<span class="dim">      Envio de e-mail pelo SEU servidor SMTP (biblioteca padrão, sem dependências).</span>
+      ligar: <span class="cmd">nomos mcp confiar examples/mcp/email-smtp/manifesto.json</span>
+  ○ disponível  telegram-bot <span class="a3">[A3]</span>
+<span class="dim">      Ponte oficial com a Bot API do Telegram: enviar e ler mensagens pelo SEU bot.</span>
+      ligar: <span class="cmd">nomos mcp confiar examples/mcp/telegram/manifesto.json</span>
+  ○ disponível  whatsapp-cloud <span class="a3">[A3]</span>
+<span class="dim">      Envio pela WhatsApp Business Cloud API OFICIAL da Meta (texto e templates).</span>
+      ligar: <span class="cmd">nomos mcp confiar examples/mcp/whatsapp-cloud/manifesto.json</span>
+
+<span class="dim">(ligar é decisão sua, num terminal; toda chamada dessas tools passa pelo gate de aprovação)</span></pre>
+            </div>
+            <p class="nota">Todo conector nasce <strong>desligado</strong> e marcado <span class="k">A3</span>: você liga no terminal e cada chamada ainda passa pela fila de aprovação. Veja o fluxo ponta a ponta em <a href="#conexoes">conexões →</a></p>
         </div>
     </section>
 
@@ -282,6 +364,7 @@
             <div class="grid">
                 <div class="card"><div class="ico" aria-hidden="true">🎯</div><h3>Missões que fazem</h3><p>Não só responde: <span class="k">nomos missao</span> monta um plano legível, pede UMA aprovação, executa passo a passo e fecha com evidência — e um comando desfaz tudo. Nunca sobrescreve, nunca age sem seu "sim".</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">✅</div><h3>Fila de aprovações</h3><p>Toda ação sensível passa por uma fila (<span class="k">nomos approvals</span>) que você aprova — no terminal ou no painel local. Em scripts, a resposta é sempre "não".</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">⚖️</div><h3>Motor Council</h3><p>Um conselho de motores locais: vários respondem, revisam às cegas e um árbitro converge na melhor execução — sob o gate A0–A6. Já disponível: <span class="k">nomos conselho simular</span> (simulação segura), <span class="k">status</span> e <span class="k">modos</span>. A execução real nasce <strong>fail-closed</strong> e só liga numa fase aprovada — honesto sobre o que ainda não faz.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">🔐</div><h3>Cofre e backup</h3><p>Cofre de chaves com senha-mestra; segredos criptografados, nunca em logs. Seu NOMOS inteiro cabe num arquivo cifrado (<span class="k">nomos backup</span>) — memórias, chaves e tudo.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">🧩</div><h3>Skills governadas</h3><p>Habilidades instaláveis e assinadas que só fazem o que declaram, com risco visível e aprovação.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">🤖</div><h3>Agentes com escopo</h3><p>Agentes oficiais e próprios, cada um com ferramentas, motores preferidos e risco máximo definidos.</p></div>

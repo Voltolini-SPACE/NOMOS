@@ -161,14 +161,24 @@ def test_cli_conselho_revisar_still_disabled(capsys):
     assert "[NOMOS-MC-CLI-DISABLED]" in out
 
 
-def test_cli_conselho_status_still_disabled(capsys):
+def test_cli_conselho_status_now_informational(capsys):
+    # MC23-UX: `status` foi finalizado como comando PURAMENTE INFORMATIVO.
+    # Não executa motor, não lê prompt, não grava — só imprime fatos estáticos.
     rc, out = _run(capsys, "conselho", "status")
-    assert "[NOMOS-MC-CLI-DISABLED]" in out
+    assert "[NOMOS-MC-STATUS]" in out
+    assert "REAL_ENGINE_EXECUTION=false" in out
+    assert "[NOMOS-MC-CLI-DISABLED]" not in out
+    assert rc == 0
 
 
-def test_cli_conselho_modos_still_disabled(capsys):
+def test_cli_conselho_modos_now_informational(capsys):
+    # MC23-UX: `modos` finalizado — lista os 4 modos em linguagem simples.
     rc, out = _run(capsys, "conselho", "modos")
-    assert "[NOMOS-MC-CLI-DISABLED]" in out
+    assert "[NOMOS-MC-MODOS]" in out
+    for modo in ("rapido", "balanceado", "critico", "paranoico"):
+        assert modo in out, modo
+    assert "[NOMOS-MC-CLI-DISABLED]" not in out
+    assert rc == 0
 
 
 def test_cli_conselho_unknown_still_disabled(capsys):
