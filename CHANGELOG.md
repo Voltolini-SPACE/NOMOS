@@ -4,6 +4,21 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC44 — descoberta dos conectores pelo terminal)
+- **`nomos mcp exemplos`**: lista os conectores que acompanham o NOMOS
+  (Telegram, WhatsApp…) com o estado real de confiança (● ligado /
+  ○ disponível / ✗ revogado), o nível de risco e o comando exato para
+  ligar cada um — o equivalente terminal do widget "conexões" do Dash.
+  `--json` para scripts. Honesto quando a pasta `examples/` não está
+  presente (ex.: wheel instalado): explica em vez de apontar para o vazio.
+- **`mcp_catalogo.conectores_exemplo(home, raiz=None)`**: helper com uma
+  fonte de verdade — resolve `examples/mcp` a partir do cwd/projeto,
+  cruza cada manifesto com o trust store, ignora manifesto torto
+  (fail-closed). Raiz explícita é soberana (sem fallback).
+- Testes: `tests/test_mcp_exemplos.py` (6 — lista do repo, status reflete
+  o trust store, pasta ausente ⇒ vazio, manifesto torto ignorado, CLI
+  texto+JSON, parser). Suíte completa: 1401 passed.
+
 ### Added (MC42 — briefing-telegram vira AÇÃO DE ROTINA)
 - **Nova ação `briefing-telegram:<chat_id>`** no vocabulário de rotinas
   (`nomos rotinas criar "Briefing TG" 08:00 briefing-telegram:424242`):

@@ -1479,6 +1479,32 @@ def cmd_mcp(ctx, args) -> int:
         print("servidor MCP do NOMOS no stdio (somente leitura; Ctrl+C sai)…",
               file=sys.stderr)
         return mcp_server.servir(ctx)
+    if sub == "exemplos":
+        # descoberta: os conectores que acompanham o NOMOS + como ligar
+        from nomos.interface import mcp_catalogo as cat
+        conns = cat.conectores_exemplo(ctx["home"])
+        if getattr(args, "json", False):
+            print(json.dumps({"conectores": conns}, ensure_ascii=False,
+                             indent=2))
+            return EXIT_OK
+        if not conns:
+            print("nenhum conector de exemplo encontrado aqui.")
+            print("  rode a partir da pasta do projeto (onde há examples/), "
+                  "ou veja: https://github.com/Voltolini-SPACE/NOMOS")
+            return EXIT_OK
+        marca = {"confiavel": "● ligado", "experimental": "○ disponível",
+                 "revogado": "✗ revogado"}
+        print(f"conectores que acompanham o NOMOS ({len(conns)}):\n")
+        for c in conns:
+            print(f"  {marca.get(c['status'], c['status'])}  {c['nome']} "
+                  f"[{c['nivel_padrao']}]")
+            if c["descricao"]:
+                print(f"      {c['descricao'][:96]}")
+            if c["status"] != "confiavel":
+                print(f"      ligar: nomos mcp confiar {c['manifesto']}")
+        print("\n(ligar é decisão sua, num terminal; toda chamada dessas "
+              "tools passa pelo gate de aprovação)")
+        return EXIT_OK
     if sub in ("catalogo", "confiar", "revogar"):
         from nomos.interface import mcp_catalogo as cat
         from nomos.interface import mcp_client as mc
@@ -1919,6 +1945,11 @@ def build_parser() -> argparse.ArgumentParser:
     mcpsub = mcpp.add_subparsers(dest="mcp_cmd")
     mcpsub.add_parser("servir").set_defaults(fn=cmd_mcp)
     mcpsub.add_parser("tools").set_defaults(fn=cmd_mcp)
+    mex = mcpsub.add_parser(
+        "exemplos", help="lista os conectores que acompanham o NOMOS "
+        "(Telegram, WhatsApp…) e como ligar cada um")
+    mex.add_argument("--json", action="store_true")
+    mex.set_defaults(fn=cmd_mcp)
     mcc = mcpsub.add_parser("conectar")
     mcc.add_argument("manifesto")
     mcc.set_defaults(fn=cmd_mcp)

@@ -104,3 +104,61 @@ def listar(home: Path) -> dict:
     return {"confiaveis": [{"impressao": fp[:16] + "…", **info}
                            for fp, info in d["confiaveis"].items()],
             "revogadas": len(d["revogadas"])}
+
+
+def _raiz_exemplos(raiz: Path | None = None) -> Path | None:
+    """Onde vivem os conectores de exemplo (examples/mcp).
+
+    Procura a partir do diretório de trabalho (o repositório/sdist) — no
+    wheel instalado o pacote NÃO carrega ``examples/``, então aqui é
+    honesto retornar None em vez de apontar para dentro do site-packages.
+    """
+    if raiz is not None:
+        # raiz explícita é soberana: sem fallback (o chamador sabe onde é)
+        r = Path(raiz)
+        return r if r.is_dir() else None
+    candidatos = [
+        Path.cwd() / "examples" / "mcp",
+        # raiz do projeto relativa a este arquivo (repo/sdist)
+        Path(__file__).resolve().parents[3] / "examples" / "mcp",
+    ]
+    for c in candidatos:
+        if c.is_dir():
+            return c
+    return None
+
+
+def conectores_exemplo(home: Path, raiz: Path | None = None) -> list[dict]:
+    """Os conectores MCP que acompanham o NOMOS, com o estado de confiança.
+
+    Cada item: nome, status ('confiavel'|'experimental'|'revogado'),
+    descricao, e o caminho do manifesto para ligar. Manifesto inválido é
+    ignorado (fail-closed) — nunca derruba quem chama. Sem a pasta de
+    exemplos (ex.: wheel instalado), devolve lista vazia.
+    """
+    from nomos.interface import mcp_client as mc
+    base = _raiz_exemplos(raiz)
+    if base is None:
+        return []
+    itens = []
+    for mf in sorted(base.glob("*/manifesto.json")):
+        try:
+            manifesto = mc.carregar_manifesto(mf)
+        except Exception:
+            continue                       # manifesto torto: fora, fail-closed
+        try:
+            bruto = json.loads(mf.read_text(encoding="utf-8"))
+            descricao = str(bruto.get("descricao", ""))
+        except Exception:
+            descricao = ""
+        # caminho relativo ao cwd quando possível (o que o usuário digita)
+        try:
+            rel = mf.relative_to(Path.cwd())
+        except ValueError:
+            rel = mf
+        itens.append({"nome": manifesto["nome"],
+                      "status": status(home, manifesto),
+                      "nivel_padrao": manifesto["nivel_padrao"],
+                      "descricao": descricao,
+                      "manifesto": str(rel)})
+    return itens
