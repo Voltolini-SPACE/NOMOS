@@ -10,6 +10,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from _cli_env import cli_env
 
 ROOT = Path(__file__).resolve().parent.parent
 AGENT = ROOT / "tools" / "nomos_update_agent.py"
@@ -89,7 +90,7 @@ def _cli(args, home: Path):
     return subprocess.run(
         [sys.executable, "-m", "nomos", *args],
         capture_output=True, text=True, timeout=60, cwd=str(ROOT),
-        env={"NOMOS_HOME": str(home), "PATH": ""},
+        env=cli_env(home),
     )
 
 

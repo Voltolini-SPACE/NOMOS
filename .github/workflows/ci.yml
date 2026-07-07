@@ -10,19 +10,20 @@ permissions:
   contents: read
 
 jobs:
-  # Suíte completa em Linux + macOS (4 versões de Python cada). O Windows
-  # NÃO roda a suíte completa: vários testes de integração usam sockets,
-  # subprocessos e servidores locais (conectores MCP, painel/Dash E2E) que
-  # são POSIX por natureza e falham só no Windows — SEM refletir bug de
-  # produto. A cobertura do produto no Windows é garantida pelo job `smoke`
-  # abaixo (build do wheel + `nomos doutor`), que roda em windows-latest.
+  # Suíte completa nos 3 SO × 4 versões de Python. O Windows voltou à matriz
+  # depois de corrigida a causa raiz das falhas (MC46.3): os testes de CLI
+  # rodavam o subprocesso com um `env` mínimo que descartava `SystemRoot`,
+  # e sem ele o Python filho morria no Windows com
+  # `_Py_HashRandomization_Init: failed to get random numbers`. Agora o env
+  # dos subprocessos passa por `tests/_cli_env.py`, que preserva o essencial
+  # do SO mantendo o PATH vazio (intenção dos testes de localidade).
   testes:
     name: ${{ matrix.os }} · py${{ matrix.python }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python: ["3.10", "3.11", "3.12", "3.13"]
     env:
       PYTHONUTF8: "1"        # saída pt-BR com emojis também no Windows

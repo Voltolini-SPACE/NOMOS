@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from nomos.ext import skill_catalogo as scat
+from _cli_env import cli_env
 
 ROOT = Path(__file__).resolve().parent.parent
 EXEMPLO = ROOT / "examples" / "skills" / "busca-arquivos"
@@ -67,7 +68,7 @@ def _cli(args, home: Path):
     return subprocess.run(
         [sys.executable, "-m", "nomos", *args],
         capture_output=True, text=True, timeout=60, cwd=str(ROOT),
-        env={"NOMOS_HOME": str(home), "PATH": ""},
+        env=cli_env(home),
     )
 
 

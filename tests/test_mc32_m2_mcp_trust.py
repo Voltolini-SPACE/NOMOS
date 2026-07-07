@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from nomos.interface import mcp_catalogo as cat
+from _cli_env import cli_env
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -27,7 +28,7 @@ def _cli(args, home: Path, entrada=None):
     return subprocess.run(
         [sys.executable, "-m", "nomos", *args],
         input=entrada, capture_output=True, text=True, timeout=90,
-        cwd=str(ROOT), env={"NOMOS_HOME": str(home), "PATH": ""},
+        cwd=str(ROOT), env=cli_env(home),
     )
 
 

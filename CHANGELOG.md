@@ -4,6 +4,27 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (MC46.3 — Windows de volta: causa raiz corrigida)
+- **Causa raiz das ~28 falhas de teste no Windows, achada no log real**
+  (`gh run view --log-failed`): os testes de CLI rodavam o subprocesso com
+  `env={"NOMOS_HOME": …, "PATH": ""}` — um ambiente mínimo que descartava
+  `SystemRoot`. Sem ele, o Python filho morria no arranque com
+  `_Py_HashRandomization_Init: failed to get random numbers`. Todos os
+  demais erros (StopIteration, IndexError, JSONDecodeError, assert 1==0…)
+  eram consequência: subprocesso morto ⇒ stdout vazio.
+- **`tests/_cli_env.py`**: helper único que monta o env dos subprocessos —
+  mantém a intenção (PATH vazio, para provar que o CLI não depende do PATH)
+  e preserva SÓ o essencial do SO (SystemRoot etc.). No POSIX o resultado é
+  idêntico ao dict antigo (zero mudança); no Windows o filho passa a bootar.
+  14 call sites migrados em 13 arquivos.
+- **`test_arbitragem`**: `cwd` era calculado com `str(...).rsplit("/src/")`
+  — no Windows o path usa `\`, o split não cortava e o `cwd` virava um
+  arquivo `.py` (`NotADirectoryError: WinError 267`). Agora
+  `Path(...).parents[3]` (portável).
+- **`ci.yml`**: Windows VOLTOU à matriz completa de testes (3 SO × 4
+  Pythons). O E2E de e-mail (socket cru, frágil) segue Linux-only via
+  skipif; o resto agora roda no Windows.
+
 ### Fixed (MC46.2 — CI verde: Windows = smoke do produto)
 - **CI vermelho no `main` diagnosticado**: as anotações do GitHub Actions
   mostraram que a falha era SÓ nos jobs de teste do `windows-latest` (todas

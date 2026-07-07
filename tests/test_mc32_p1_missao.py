@@ -7,6 +7,7 @@ import pytest
 
 from nomos.kernel import evidencia as ev
 from nomos.kernel import missao as ms
+from _cli_env import cli_env
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -26,7 +27,7 @@ def _cli(args, home: Path):
     return subprocess.run(
         [sys.executable, "-m", "nomos", *args],
         capture_output=True, text=True, timeout=60, cwd=str(ROOT),
-        env={"NOMOS_HOME": str(home), "PATH": ""},
+        env=cli_env(home),
     )
 
 

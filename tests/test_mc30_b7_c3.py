@@ -14,6 +14,7 @@ from nomos.cognition import engine_catalog as cat_mod
 from nomos.cognition import motores as mot
 from nomos.cognition.providers import OpenAICompatProvider, ProviderUnavailable
 from nomos.simple import rotinas as rot
+from _cli_env import cli_env
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -58,7 +59,7 @@ def test_b7_cli_exportar_nunca_instala(tmp_path):
         [sys.executable, "-m", "nomos", "rotinas", "exportar",
          "--formato", "systemd"],
         capture_output=True, text=True, timeout=60, cwd=str(ROOT),
-        env={"NOMOS_HOME": str(tmp_path), "PATH": ""},
+        env=cli_env(tmp_path),
     )
     assert proc.returncode == 0, proc.stderr
     assert "NUNCA instala" in proc.stdout

@@ -12,6 +12,7 @@ from pathlib import Path
 from nomos.cognition import arbitragem as arb
 from nomos.kernel import localidade
 from nomos.kernel.policy import PolicyEngine
+from _cli_env import cli_env
 
 ROOT = Path(__file__).resolve().parent.parent
 APROVA = lambda decision: True          # noqa: E731 — aprovador de teste
@@ -117,7 +118,7 @@ def test_cli_nuvem_nao_interativo_nega(tmp_path):
     proc = subprocess.run(
         [sys.executable, "-m", "nomos", "motores", "arbitrar", "oi", "--nuvem"],
         capture_output=True, text=True, timeout=60, cwd=str(ROOT),
-        env={"NOMOS_HOME": str(tmp_path), "PATH": ""},
+        env=cli_env(tmp_path),
     )
     assert proc.returncode == 3, proc.stdout + proc.stderr
     assert "decisão humana" in proc.stderr

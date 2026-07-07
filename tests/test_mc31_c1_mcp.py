@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from nomos.interface import mcp_server
+from _cli_env import cli_env
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -20,7 +21,7 @@ def _sessao_mcp(home: Path, mensagens: list[dict]) -> list[dict]:
     proc = subprocess.run(
         [sys.executable, "-m", "nomos", "mcp", "servir"],
         input=entrada, capture_output=True, text=True, timeout=60,
-        cwd=str(ROOT), env={"NOMOS_HOME": str(home), "PATH": ""},
+        cwd=str(ROOT), env=cli_env(home),
     )
     return [json.loads(linha) for linha in proc.stdout.splitlines() if linha.strip()]
 
@@ -99,7 +100,7 @@ def test_json_invalido_nao_derruba_o_loop(tmp_path):
         [sys.executable, "-m", "nomos", "mcp", "servir"],
         input='isto não é json\n{"jsonrpc":"2.0","id":9,"method":"tools/list"}\n',
         capture_output=True, text=True, timeout=60, cwd=str(ROOT),
-        env={"NOMOS_HOME": str(tmp_path), "PATH": ""},
+        env=cli_env(tmp_path),
     )
     linhas = [json.loads(x) for x in proc.stdout.splitlines() if x.strip()]
     assert linhas[0]["error"]["code"] == -32700      # parse error
@@ -110,7 +111,7 @@ def test_cli_mcp_tools_lista(tmp_path):
     proc = subprocess.run(
         [sys.executable, "-m", "nomos", "mcp", "tools"],
         capture_output=True, text=True, timeout=60, cwd=str(ROOT),
-        env={"NOMOS_HOME": str(tmp_path), "PATH": ""},
+        env=cli_env(tmp_path),
     )
     assert proc.returncode == 0
     assert "SOMENTE LEITURA" in proc.stdout

@@ -6,9 +6,11 @@ verdade. Provam as invariantes de honestidade: sem motor ⇒ bloqueia sem invent
 falha ⇒ sem conteúdo; final_content vem sempre de um candidato real.
 """
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from nomos.cognition import arbitragem as arb
 from nomos.council.models import CouncilConfidence, CouncilDisagreementLevel, CouncilFailureCode
+from _cli_env import cli_env
 
 
 @dataclass
@@ -201,8 +203,8 @@ def test_cli_arbitrar_honesto_no_sandbox(tmp_path):
     import sys
     proc = subprocess.run(
         [sys.executable, "-m", "nomos", "motores", "arbitrar", "o que é local-first?"],
-        capture_output=True, text=True, env={"NOMOS_HOME": str(tmp_path), "PATH": ""},
-        cwd=str(arb.__file__).rsplit("/src/", 1)[0], timeout=60,
+        capture_output=True, text=True, env=cli_env(tmp_path),
+        cwd=str(Path(arb.__file__).resolve().parents[3]), timeout=60,
     )
     assert proc.returncode == 1                      # fail-closed: sem motor pronto
     assert "nada foi inventado" in proc.stdout
