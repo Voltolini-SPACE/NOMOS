@@ -661,19 +661,14 @@ def dados_dashboard(ctx) -> dict:
         conexoes["skills"] = len(st.status_todas(home, home / "skills"))
         conexoes["rotinas_ativas"] = sum(
             1 for r in rot.listar(home) if r.get("ativa", True))
-        raiz_ex = Path(__file__).resolve().parents[3] / "examples" / "mcp"
-        if raiz_ex.exists():
-            ligados = set(conexoes["mcp_confiaveis"])
-            for mf in sorted(raiz_ex.glob("*/manifesto.json")):
-                try:
-                    dados_mf = json.loads(mf.read_text(encoding="utf-8"))
-                except Exception:
-                    continue
-                nome_c = str(dados_mf.get("nome", mf.parent.name))
-                conexoes["conectores_disponiveis"].append(
-                    {"nome": nome_c, "ligado": nome_c in ligados,
-                     "manifesto": f"examples/mcp/{mf.parent.name}/"
-                                  "manifesto.json"})
+        # MC45.1: uma fonte de verdade — o MESMO helper de `nomos mcp
+        # exemplos`. "ligado" = confiança REAL (impressão), não só o nome;
+        # manifesto torto é ignorado; sem examples/ (wheel), lista vazia.
+        from nomos.interface import mcp_catalogo as _cat
+        conexoes["conectores_disponiveis"] = [
+            {"nome": c["nome"], "ligado": c["status"] == "confiavel",
+             "manifesto": c["manifesto"]}
+            for c in _cat.conectores_exemplo(home)]
 
     # Sistema (Painel 4.0): metadados locais da instalação — nada sensível
     try:
