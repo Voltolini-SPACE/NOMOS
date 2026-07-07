@@ -4,6 +4,22 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (MC40 — modo iniciante realmente liga)
+- **`modo_iniciante` estava morto**: `menu_principal.py` já sabia mostrar o
+  menu reduzido (F4/ISSUE-022), mas nada setava a flag — todo usuário novo
+  caía no menu de 10 opções avançadas logo após o onboarding. Onboarding
+  agora grava `modo_iniciante=True` por padrão; `avancado` no menu ainda
+  destrava tudo.
+- **Onboarding sem despejo de motores**: o bloco que listava
+  código/imagem/áudio detectados no fim do onboarding (jargão antes da
+  primeira conversa) foi removido — já existe `/motores` pra isso.
+- **Mensagem de "cérebro não encontrado" mais curta**: cortado o passo a
+  passo de Ollama/GPU do onboarding; caminho recomendado (`nomos cerebro
+  baixar`) fica em 3 linhas em vez de 6.
+- **Erros agora sugerem o próximo passo**: handler genérico da CLI e do
+  menu principal citam `nomos doutor` na mensagem de erro amigável, em vez
+  de só dizer "algo deu errado".
+
 ### Added (MC39.1 — Dash: mais profundidade, mesma calma)
 - **Sparkline com faixa 24h ↔ 7d**: nova série real `atividade_7d`
   (eventos/dia, mesma passada única na trilha); alternância no próprio

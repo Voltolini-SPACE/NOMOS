@@ -113,6 +113,13 @@ def test_onboarding_senha_curta_reorienta_e_pula(monkeypatch, nomos_home):
     assert perfil["cofre"] is False and "10" in tela   # explicou o mínimo
 
 
+def test_onboarding_liga_modo_iniciante_por_padrao(monkeypatch, nomos_home):
+    # MC40: sem isso, todo mundo cai no menu avançado de 10 opções.
+    perfil, tela = _roda_onboarding(["Luna", "2", "", ""], monkeypatch, nomos_home)
+    assert perfil["modo_iniciante"] is True
+    assert "codigo:" not in tela and "imagem:" not in tela   # sem jargão de motor
+
+
 # ---------- chat amigável ----------
 class RouterFake:
     def __init__(self, ok=True):

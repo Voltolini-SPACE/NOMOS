@@ -2158,7 +2158,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ERRO: {exc}", file=sys.stderr)
             return EXIT_ERROR
         print("Algo deu errado do meu lado, mas nada foi perdido. "
-              "Você pode tentar de novo.", file=sys.stderr)
+              "Você pode tentar de novo, ou rodar  nomos doutor  para ver o "
+              "que fazer.", file=sys.stderr)
         print(f"(detalhe técnico para suporte: {type(exc).__name__}: {exc})",
               file=sys.stderr)
         return EXIT_ERROR
