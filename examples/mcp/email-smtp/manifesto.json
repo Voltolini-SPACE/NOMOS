@@ -1,0 +1,10 @@
+{
+  "nome": "email-smtp",
+  "descricao": "Envio de e-mail pelo SEU servidor SMTP (biblioteca padrão, sem dependências). Credenciais só por ambiente (NOMOS_SMTP_HOST/PORT/USER/PASSWORD/FROM); STARTTLS por padrão; toda tool exige sua aprovação (A3: credencial + rede).",
+  "comando": ["python3", "examples/mcp/email-smtp/servidor.py"],
+  "nivel_padrao": "A3",
+  "tools": {
+    "email_quem_sou": "A3",
+    "email_enviar": "A3"
+  }
+}

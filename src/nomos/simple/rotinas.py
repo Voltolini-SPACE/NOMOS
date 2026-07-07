@@ -83,9 +83,16 @@ def validar_acao(acao: str, skills_dir: Path | None = None) -> str | None:
             return None
         return ("briefing-whatsapp precisa de um número internacional só "
                 "com dígitos (ex.: briefing-whatsapp:5511999998888)")
+    if acao.startswith("briefing-email:"):
+        email = acao.split(":", 1)[1].strip()
+        if re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            return None
+        return ("briefing-email precisa de um e-mail válido (ex.: "
+                "briefing-email:voce@dominio.com)")
     return (f"ação desconhecida: {acao!r} — permitidas: "
             f"{', '.join(ACOES_INTERNAS)}, skill:<nome>, "
-            "briefing-telegram:<chat_id> ou briefing-whatsapp:<numero>")
+            "briefing-telegram:<chat_id>, briefing-whatsapp:<numero> ou "
+            "briefing-email:<endereço>")
 
 
 def criar(home: Path, nome: str, hora: str, acao: str, policy, approver,
@@ -207,6 +214,17 @@ _CANAIS = {
         "manifesto_pad": "examples/mcp/whatsapp-cloud/manifesto.json",
         "rotulo": "WhatsApp",
     },
+    "email": {
+        "tool": "email_enviar",
+        "args": lambda destino, texto: {
+            "destinatario": str(destino),
+            "assunto": (f"Briefing NOMOS — "
+                        f"{datetime.now().strftime('%d/%m/%Y')}"),
+            "texto": texto},
+        "manifesto_env": "NOMOS_EMAIL_MANIFESTO",
+        "manifesto_pad": "examples/mcp/email-smtp/manifesto.json",
+        "rotulo": "e-mail",
+    },
 }
 
 
@@ -299,6 +317,11 @@ def prever_acao(acao: str) -> str:
         numero = acao.split(":", 1)[1]
         return (f"geraria o briefing e o ENTREGARIA no WhatsApp (número "
                 f"{numero}) — nível A3: só sai com aprovação sua (interativa "
+                "ou pela fila do painel)")
+    if acao.startswith("briefing-email:"):
+        email = acao.split(":", 1)[1]
+        return (f"geraria o briefing e o ENTREGARIA por e-mail (para "
+                f"{email}) — nível A3: só sai com aprovação sua (interativa "
                 "ou pela fila do painel)")
     return f"ação desconhecida: {acao}"
 

@@ -4,6 +4,24 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC46 — terceiro canal: briefing por e-mail via SMTP)
+- **Conector `examples/mcp/email-smtp/`**: servidor MCP local em stdlib
+  pura (`smtplib`) — `email_quem_sou` (valida sem enviar) e `email_enviar`.
+  Credenciais SÓ por ambiente (`NOMOS_SMTP_HOST/PORT/USER/PASSWORD/FROM`);
+  STARTTLS por padrão e **recusa texto claro** salvo `NOMOS_SMTP_INSECURE=1`
+  (opt-in local); senha redigida de qualquer erro; sem config, falha
+  fechado. Toda tool **A3** (credencial + rede) ⇒ gate a cada chamada.
+- **Canal `briefing-email:<endereço>`**: a extensibilidade do MC45 rendeu —
+  bastou uma entrada em `_CANAIS` (assunto "Briefing NOMOS — <data>").
+  `validar/prever` honestos; o Dash e `nomos mcp exemplos` já mostram o
+  conector automaticamente (fonte de verdade única do MC45.1).
+- `docs/CONECTORES_SOCIAIS.md` atualizado (linha do e-mail).
+- Testes: `tests/test_mcp_email.py` (9 — dialeto stdio real, fail-closed,
+  smtplib mockado, recusa de texto claro, senha jamais vaza, manifesto/
+  trust store, aparece em conectores_exemplo, e **E2E sem internet** com
+  um servidor SMTP FAKE em socket local recebendo o briefing real após o
+  gate aprovar). Suíte completa: 1417 passed.
+
 ### Added (MC45 — briefing no WhatsApp: paridade de canais)
 - **Ação de rotina `briefing-whatsapp:<numero>`**: simétrica ao
   `briefing-telegram`, entrega o briefing do dia pela WhatsApp Cloud API
