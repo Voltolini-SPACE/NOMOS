@@ -272,6 +272,12 @@ class _SmtpFakeServer:
             pass
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="o servidor SMTP fake (socket cru) deste E2E é frágil fora do "
+    "Linux (trava o handshake no macOS/Windows). O caminho SMTP do conector "
+    "já é coberto em todo SO pelos testes com smtplib mockado; aqui é uma "
+    "verificação de integração da rotina→gate→subprocesso, feita no Linux.")
 def test_e2e_rotina_briefing_email_sem_internet(nomos_home, monkeypatch):
     import io
     from datetime import datetime
