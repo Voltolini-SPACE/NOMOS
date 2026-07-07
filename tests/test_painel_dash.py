@@ -224,7 +224,13 @@ def test_health_tem_uptime(nomos_home):
         h = json.loads(corpo)
         assert isinstance(h["uptime_s"], int) and h["uptime_s"] >= 0
         assert h["uptime_hum"]
-        assert h["mem_pico_mb"] > 0           # RSS real do processo
+        # RSS real onde o módulo `resource` existe (Unix); no Windows ele
+        # não existe e a métrica degrada para 0.0 — a função reflete isso.
+        import importlib.util
+        assert isinstance(h["mem_pico_mb"], (int, float))
+        assert h["mem_pico_mb"] >= 0
+        if importlib.util.find_spec("resource") is not None:
+            assert h["mem_pico_mb"] > 0
     finally:
         srv.stop()
 

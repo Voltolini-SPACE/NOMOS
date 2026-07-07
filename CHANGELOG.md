@@ -4,6 +4,15 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (MC46.5 — Windows: último teste, métrica de memória)
+- Corrigidas as 2 causas raiz anteriores, sobrou **1 teste** no Windows:
+  `test_health_tem_uptime` exigia `mem_pico_mb > 0`. A função `_mem_pico_mb`
+  usa o módulo `resource` (exclusivo de Unix); no Windows ele não existe e
+  a métrica degrada para `0.0` (comportamento correto — o produto não
+  quebra, só omite a métrica). O teste era rígido demais: agora exige
+  `> 0` só onde `resource` existe (Unix) e aceita `>= 0` no resto.
+  Windows: 28 → 0 falhas, matriz completa (3 SO × 4 Pythons) verde.
+
 ### Fixed (MC46.4 — Windows: home directory sem USERPROFILE)
 - **2ª causa raiz, revelada quando a 1ª foi corrigida** (o Python já
   bootava, mas o CLI estourava): `config.nomos_home()` avaliava o default
