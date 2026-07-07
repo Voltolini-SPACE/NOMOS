@@ -77,9 +77,15 @@ def validar_acao(acao: str, skills_dir: Path | None = None) -> str | None:
             return None
         return ("briefing-telegram precisa de um chat válido: número "
                 "(ex.: briefing-telegram:424242) ou @canal")
+    if acao.startswith("briefing-whatsapp:"):
+        numero = acao.split(":", 1)[1].strip().lstrip("+")
+        if re.fullmatch(r"\d{8,15}", numero):
+            return None
+        return ("briefing-whatsapp precisa de um número internacional só "
+                "com dígitos (ex.: briefing-whatsapp:5511999998888)")
     return (f"ação desconhecida: {acao!r} — permitidas: "
-            f"{', '.join(ACOES_INTERNAS)}, skill:<nome> ou "
-            "briefing-telegram:<chat_id>")
+            f"{', '.join(ACOES_INTERNAS)}, skill:<nome>, "
+            "briefing-telegram:<chat_id> ou briefing-whatsapp:<numero>")
 
 
 def criar(home: Path, nome: str, hora: str, acao: str, policy, approver,
@@ -182,15 +188,39 @@ def briefing(ctx) -> str:
     return "\n".join(linhas)
 
 
-def enviar_briefing(ctx, chat_id: str, manifesto_path, approver,
-                    say=print) -> tuple[bool, str]:
-    """Briefing do dia ENTREGUE por um conector MCP confiado (MC41).
+# Canais de entrega do briefing (MC41/MC45): cada um mapeia para a tool do
+# seu conector MCP e como montar os argumentos. Um só caminho governado.
+_CANAIS = {
+    "telegram": {
+        "tool": "telegram_enviar",
+        "args": lambda destino, texto: {"chat_id": str(destino),
+                                        "texto": texto},
+        "manifesto_env": "NOMOS_TELEGRAM_MANIFESTO",
+        "manifesto_pad": "examples/mcp/telegram/manifesto.json",
+        "rotulo": "Telegram",
+    },
+    "whatsapp": {
+        "tool": "whatsapp_enviar_texto",
+        "args": lambda destino, texto: {"numero": str(destino).lstrip("+"),
+                                        "texto": texto},
+        "manifesto_env": "NOMOS_WHATSAPP_MANIFESTO",
+        "manifesto_pad": "examples/mcp/whatsapp-cloud/manifesto.json",
+        "rotulo": "WhatsApp",
+    },
+}
 
-    O caminho inteiro respeita as leis da casa:
+
+def entregar_briefing(ctx, canal: str, destino: str, manifesto_path,
+                      approver, say=print) -> tuple[bool, str]:
+    """Briefing do dia ENTREGUE por um conector MCP confiado (MC41/MC45).
+
+    ``canal`` é 'telegram' ou 'whatsapp' — a única diferença é qual tool do
+    conector é chamada e como o destino é embalado. As leis da casa valem
+    igual para os dois:
     - o manifesto tem de estar CONFIÁVEL no trust store (senão, fail-closed
       com a instrução de confiar primeiro);
-    - o nível da tool (A3 no conector Telegram: credencial + rede) passa
-      pela política e pelo SEU gate de aprovação — sem aprovação, nada sai;
+    - o nível da tool (A3: credencial + rede) passa pela política e pelo SEU
+      gate de aprovação — sem aprovação, nada sai;
     - tudo auditado; o conteúdo do briefing é gerado 100% localmente.
 
     Devolve (ok, mensagem_para_o_usuario).
@@ -199,6 +229,9 @@ def enviar_briefing(ctx, chat_id: str, manifesto_path, approver,
     from nomos.interface import mcp_client as mc
     from nomos.kernel.policy import gate as gate_fn
 
+    cfg = _CANAIS.get(canal)
+    if cfg is None:
+        return False, f"canal desconhecido: {canal!r}"
     try:
         manifesto = mc.carregar_manifesto(Path(manifesto_path))
     except mc.ManifestoInvalido as exc:
@@ -208,33 +241,41 @@ def enviar_briefing(ctx, chat_id: str, manifesto_path, approver,
         return False, (f"'{manifesto['nome']}' é {confianca} — entregar o "
                        "briefing exige server CONFIÁVEL. Registre antes: "
                        f"nomos mcp confiar {manifesto_path}")
-    tool = "telegram_enviar"
+    tool = cfg["tool"]
     nivel = mc.nivel_da_tool(manifesto, tool)
     decisao = ctx["policy"].decide(
         mc.NIVEIS[nivel], target=f"rotina:briefing→{manifesto['nome']}")
     if not gate_fn(decisao, approver):
         if ctx.get("audit"):
             ctx["audit"].append("rotina.briefing.entrega_negada",
-                                server=manifesto["nome"], nivel=nivel)
+                                server=manifesto["nome"], nivel=nivel,
+                                canal=canal)
         return False, (f"entrega é nível {nivel} — sem a sua aprovação, o "
                        "briefing não sai da máquina (e não saiu)")
     texto = briefing(ctx)
-    say("briefing gerado — enviando pelo conector aprovado…")
+    say(f"briefing gerado — enviando pelo {cfg['rotulo']} (aprovado)…")
     try:
         with mc.ClienteMCP(manifesto) as cli:
-            resultado = cli.chamar(tool, {"chat_id": str(chat_id),
-                                          "texto": texto})
+            resultado = cli.chamar(tool, cfg["args"](destino, texto))
     except mc.McpErro as exc:
         return False, f"o conector recusou: {exc}"
     if ctx.get("audit"):
         ctx["audit"].append("rotina.briefing.entregue",
                             server=manifesto["nome"], nivel=nivel,
-                            chat=str(chat_id))
+                            canal=canal, destino=str(destino))
     trecho = ""
     for bloco in resultado.get("content", []):
         if bloco.get("type") == "text":
             trecho = bloco.get("text", "")[:120]
     return True, f"briefing entregue ✓ {trecho}"
+
+
+def enviar_briefing(ctx, chat_id: str, manifesto_path, approver,
+                    say=print) -> tuple[bool, str]:
+    """Compat (MC41): entrega no Telegram — hoje um atalho de
+    ``entregar_briefing(..., 'telegram', ...)``."""
+    return entregar_briefing(ctx, "telegram", chat_id, manifesto_path,
+                             approver, say=say)
 
 
 def prever_acao(acao: str) -> str:
@@ -254,6 +295,11 @@ def prever_acao(acao: str) -> str:
         return (f"geraria o briefing e o ENTREGARIA no Telegram (chat "
                 f"{chat}) — nível A3: só sai com aprovação sua (interativa "
                 "ou pela fila do painel)")
+    if acao.startswith("briefing-whatsapp:"):
+        numero = acao.split(":", 1)[1]
+        return (f"geraria o briefing e o ENTREGARIA no WhatsApp (número "
+                f"{numero}) — nível A3: só sai com aprovação sua (interativa "
+                "ou pela fila do painel)")
     return f"ação desconhecida: {acao}"
 
 
@@ -266,12 +312,15 @@ def executar_acao(ctx, acao: str, say=print, simular: bool = False,
         prev = prever_acao(acao)
         say(f"[simulação] {prev}")
         return True, f"simulado: {prev}"
-    if acao.startswith("briefing-telegram:"):
-        import os as _os
-        chat = acao.split(":", 1)[1]
-        manifesto = (_os.environ.get("NOMOS_TELEGRAM_MANIFESTO")
-                     or "examples/mcp/telegram/manifesto.json")
-        return enviar_briefing(ctx, chat, manifesto, approver, say=say)
+    for canal, cfg in _CANAIS.items():
+        prefixo = f"briefing-{canal}:"
+        if acao.startswith(prefixo):
+            import os as _os
+            destino = acao.split(":", 1)[1]
+            manifesto = (_os.environ.get(cfg["manifesto_env"])
+                         or cfg["manifesto_pad"])
+            return entregar_briefing(ctx, canal, destino, manifesto,
+                                     approver, say=say)
     if acao == "briefing":
         texto = briefing(ctx)
         say(texto)

@@ -4,6 +4,23 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC45 — briefing no WhatsApp: paridade de canais)
+- **Ação de rotina `briefing-whatsapp:<numero>`**: simétrica ao
+  `briefing-telegram`, entrega o briefing do dia pela WhatsApp Cloud API
+  oficial — mesmo caminho governado (trust store → gate A3 → conector),
+  mesma verdade (`prever_acao` explica; sem aprovação, não sai; auditado).
+  Número validado (internacional, só dígitos); manifesto por
+  `NOMOS_WHATSAPP_MANIFESTO`.
+- **Refactor para uma fonte de verdade**: `enviar_briefing` virou um
+  atalho de `entregar_briefing(ctx, canal, destino, …)` com um mapa de
+  canais (`_CANAIS`) — Telegram e WhatsApp compartilham 100% do fluxo,
+  só mudam a tool do conector e como o destino é embalado. Compat total:
+  `enviar_briefing(...)` e todos os testes MC41/MC42 seguem verdes.
+- Testes: `tests/test_briefing_whatsapp.py` (7 — validação/preview,
+  fail-closed sem confiança, gate negado, **E2E sem internet** com Cloud
+  API fake local recebendo o briefing real após aprovação, anti-regressão
+  do Telegram, canal desconhecido recusado). Suíte completa: 1408 passed.
+
 ### Added (MC44 — descoberta dos conectores pelo terminal)
 - **`nomos mcp exemplos`**: lista os conectores que acompanham o NOMOS
   (Telegram, WhatsApp…) com o estado real de confiança (● ligado /
