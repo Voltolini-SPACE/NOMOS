@@ -4,6 +4,22 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC46.1 — cobertura: os conectores na vitrine e no manual)
+- **Site § Conexões ("Seu briefing onde você já está")**: seção nova de
+  marketing com os 3 canais (Telegram/WhatsApp/e-mail), a receita honesta
+  (`nomos mcp exemplos` → confiar → rotina → agendar) e a nota franca
+  sobre Instagram/TikTok. Nav e card de recursos apontam para ela;
+  roadmap do site atualizado (parou no MC32 → agora reflete MC34–MC46).
+- **README**: tabela de comandos ganhou `nomos painel`, `nomos mcp
+  exemplos` e a rotina `briefing-telegram:<chat>`; a doc
+  `CONECTORES_SOCIAIS.md` — que estava **órfã** — agora é linkada no
+  README e no site.
+- **`docs/CONECTORES_SOCIAIS.md`**: linha do e-mail (SMTP) incluída.
+- Testes: `tests/test_cobertura_docs.py` (6) travam a cobertura — site
+  mostra os 3 canais + receita, README documenta, doc não volta a ser
+  órfã, roadmap reflete as fases. Validação visual real (0 erros de
+  console). Suíte completa: 1423 passed.
+
 ### Added (MC46 — terceiro canal: briefing por e-mail via SMTP)
 - **Conector `examples/mcp/email-smtp/`**: servidor MCP local em stdlib
   pura (`smtplib`) — `email_quem_sou` (valida sem enviar) e `email_enviar`.

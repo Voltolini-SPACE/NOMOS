@@ -63,6 +63,9 @@ integridade, backup automático e rollback. Detalhes: [docs/INSTALL.md](docs/INS
 | `nomos chaves` | guarda chaves com segurança, sem digitar no chat |
 | `nomos arquivo <caminho>` | lê e resume um arquivo seu, tudo local (PDF com extra opcional) |
 | `nomos backup criar <arquivo>` | seu NOMOS inteiro num arquivo cifrado (memórias, chaves, tudo) |
+| `nomos painel` | cockpit web local (status, aprovações, chat) + **NOMOS Dash** ao vivo |
+| `nomos mcp exemplos` | conectores que acompanham o NOMOS (Telegram, WhatsApp, e-mail) e como ligar |
+| `nomos rotinas criar "Briefing" 08:00 briefing-telegram:<chat>` | briefing diário entregue no seu canal (com seu OK, A3) |
 | `nomos doutor --consertar` | aplica correções seguras com a sua confirmação |
 | `nomos atualizar` | checa se há versão nova (com sua aprovação; **nunca** atualiza sozinho) |
 
@@ -82,6 +85,7 @@ Ações destrutivas são negadas por padrão. Detalhes e mecanismos:
 - [Modelo de ameaças](docs/THREAT_MODEL.md) — cada garantia com o teste que a prova
 - [Instalação](docs/INSTALL.md) · [Privacidade](docs/PRIVACIDADE.md)
 - [Motores](docs/MOTORES.md) · [Roteador automático](docs/ROTEADOR.md)
+- [Conectores sociais](docs/CONECTORES_SOCIAIS.md) — Telegram, WhatsApp, e-mail (o mapa honesto)
 - [Skills](docs/SKILLS.md) · [Changelog](CHANGELOG.md)
 
 ## Como funciona

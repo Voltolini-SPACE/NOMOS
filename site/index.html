@@ -210,6 +210,7 @@
                 <a href="#motores">motores</a>
                 <a href="#seguranca">segurança</a>
                 <a href="#painel">painel</a>
+                <a href="#conexoes">conexões</a>
                 <a href="#instalar">instalar</a>
                 <a href="https://github.com/Voltolini-SPACE/NOMOS">github</a>
                 <button id="tema-btn" type="button" class="tema-btn" aria-pressed="false" title="alternar tema claro/escuro">◐ tema</button>
@@ -296,7 +297,7 @@
             <div class="grid">
                 <div class="card"><div class="ico" aria-hidden="true">🔌</div><h3>Cidadão do ecossistema MCP</h3><p>O NOMOS é <strong>servidor</strong> Model Context Protocol (tools só-leitura para o Claude Desktop e outros agentes) e <strong>cliente</strong> — usa servers locais como capacidades, cada tool com nível de risco A0–A6 e confiança registrada. Tudo via stdio, sem rede.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">🖥️</div><h3>Painel web local + chat</h3><p>Roda na sua máquina (<span class="k">nomos painel</span>): status, motores, evidências, política A0–A6 viva, auditoria verificada, API JSON — e um <strong>chat local estilo ChatGPT</strong> com histórico embutido. Ler é livre; escrever passa por duas portas governadas: aprovações (token de uso único) e o chat (só motor local, fail-closed, cada turno auditado). Só 127.0.0.1. <a href="#painel">Ver por dentro →</a></p></div>
-                <div class="card"><div class="ico" aria-hidden="true">⏱️</div><h3>Rotinas e briefings</h3><p>Agende tarefas locais e gere briefings — sempre em dry-run, com sua aprovação antes de qualquer efeito.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">⏱️</div><h3>Rotinas e briefings</h3><p>Agende tarefas locais e gere briefings — sempre com sua aprovação antes de qualquer efeito. E entregue o resumo do dia no <strong>Telegram, WhatsApp ou e-mail</strong>, por conector oficial. <a href="#conexoes">Ver conexões →</a></p></div>
                 <div class="card"><div class="ico" aria-hidden="true">⬆️</div><h3>Atualização com licença</h3><p><span class="k">nomos atualizar</span> checa se há versão nova e propõe — mas <strong>nunca</strong> atualiza sozinho. Você decide, sempre.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">🩺</div><h3>Doutor</h3><p><span class="k">nomos doutor</span>: um check-up honesto do que está pronto e qual é o próximo passo.</p></div>
             </div>
@@ -445,6 +446,28 @@
         </div>
     </section>
 
+    <!-- Conexões: briefing nos seus canais -->
+    <section id="conexoes" aria-labelledby="cx-t">
+        <div class="wrap">
+            <div class="tag">// conexões</div>
+            <h2 id="cx-t">Seu briefing onde você já está</h2>
+            <p class="lead">O NOMOS gera o resumo do seu dia — tarefas, rotinas, próximo passo — <strong>100% na sua máquina</strong>, e entrega no canal que você escolher: <strong>Telegram</strong>, <strong>WhatsApp</strong> ou <strong>e-mail</strong>. Cada canal é um conector MCP oficial (nada de bibliotecas que fingem ser o app), com credencial só no seu ambiente e <strong>sua aprovação a cada envio</strong> (nível A3). Sem aprovação, nada sai.</p>
+            <div class="grid">
+                <div class="card"><div class="ico" aria-hidden="true">✈️</div><h3>Telegram</h3><p>Crie um bot no @BotFather (2 min, grátis) e receba o briefing no seu chat. Bot API oficial — enviar, ler, validar.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">💬</div><h3>WhatsApp</h3><p>Pela WhatsApp Business Cloud API oficial da Meta (texto e templates). Só o caminho oficial — sem risco de derrubar seu número.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">✉️</div><h3>E-mail (SMTP)</h3><p>Pelo seu próprio servidor SMTP, com a biblioteca padrão do Python. STARTTLS por padrão; recusa texto claro.</p></div>
+            </div>
+            <div class="term" role="group" aria-label="Ligar um canal e agendar o briefing">
+                <div class="termbar">~/nomos — bash</div>
+                <div><span class="p">$</span> <span class="c">nomos mcp exemplos</span> <span class="o"># descobre os conectores que acompanham o NOMOS</span></div>
+                <div><span class="p">$</span> <span class="c">nomos mcp confiar examples/mcp/telegram/manifesto.json</span></div>
+                <div><span class="p">$</span> <span class="c">nomos rotinas criar "Briefing" 08:00 briefing-telegram:SEU_CHAT_ID</span></div>
+                <div><span class="p">$</span> <span class="c">nomos rotinas agendar</span> <span class="o"># cole a linha no cron — a entrega pede seu OK na hora (TTL 5 min)</span></div>
+            </div>
+            <p>Instagram e TikTok estão mapeados com honestidade: exigem apps aprovados pela plataforma, então ainda não têm conector. O mapa completo dos canais — o que existe, o que exige o quê, e o que <strong>não</strong> vamos fingir — está em <a href="https://github.com/Voltolini-SPACE/NOMOS/blob/main/docs/CONECTORES_SOCIAIS.md">docs/CONECTORES_SOCIAIS.md</a>.</p>
+        </div>
+    </section>
+
     <!-- Segurança A0–A6 -->
     <section id="seguranca" aria-labelledby="seg-t">
         <div class="wrap">
@@ -555,9 +578,10 @@
             <div class="tag">// roadmap</div>
             <h2 id="rm-t">O caminho até aqui e adiante</h2>
             <div class="rm done"><b>✓ MC25–MC29 — Governança executável</b><p>Política SEC-01…12 como teste, evidências auditáveis, agentes guardiões (docs/marca e git) no CI, arbitragem real local-first.</p></div>
-            <div class="rm done"><b>✓ MC30–MC31 — Superfícies e conversa</b><p>Painel 2.0 (API JSON, auditoria verificada, roteador explicado), streaming e <span class="k">/arbitrar</span> no chat, memória 2.0, motor OpenAI-compatível local.</p></div>
-            <div class="rm now"><b>▸ MC32 — Potência real e MCP</b><p>Executor de missões (plano → aprovação → evidência → desfazer), NOMOS como servidor e cliente MCP com níveis A e confiança registrada.</p></div>
-            <div class="rm next"><b>· Próximas etapas</b><p>Visão de tela assistida (OmniParser V2, local, processo isolado), OCR e conversor de documentos locais, personas multi-agente, embeddings locais.</p></div>
+            <div class="rm done"><b>✓ MC30–MC33 — Superfícies e conversa</b><p>Painel (API JSON, auditoria verificada, roteador explicado), streaming e <span class="k">/arbitrar</span> no chat, memória 2.0, motor OpenAI-compatível local, executor de missões e MCP (servidor + cliente com confiança registrada).</p></div>
+            <div class="rm done"><b>✓ MC34–MC39 — Cockpit</b><p>Painel 4.0 em abas com tema claro/escuro, chat local com histórico, aprovações com token de uso único no navegador, e o <strong>NOMOS Dash</strong>: mission control ao vivo (sinais vitais, sparkline 24h/7d, uptime) que se atualiza sozinho.</p></div>
+            <div class="rm now"><b>▸ MC40–MC46 — Conexões e automação</b><p>Conectores MCP oficiais (Telegram, WhatsApp, e-mail), <span class="k">nomos mcp exemplos</span> para descobri-los, e o <strong>briefing diário entregue no seu canal</strong> — automação de ponta a ponta, sempre com seu OK (A3).</p></div>
+            <div class="rm next"><b>· Próximas etapas</b><p>Conectores Instagram/TikTok (quando os apps forem aprovados), mais canais (Slack/Discord), visão de tela assistida local, personas multi-agente.</p></div>
             <p style="margin-top:1.5rem;"><a href="https://github.com/Voltolini-SPACE/NOMOS/blob/main/docs/ROADMAP_4.md">Ver roadmap completo →</a></p>
         </div>
     </section>
