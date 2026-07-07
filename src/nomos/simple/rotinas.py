@@ -174,6 +174,61 @@ def briefing(ctx) -> str:
     return "\n".join(linhas)
 
 
+def enviar_briefing(ctx, chat_id: str, manifesto_path, approver,
+                    say=print) -> tuple[bool, str]:
+    """Briefing do dia ENTREGUE por um conector MCP confiado (MC41).
+
+    O caminho inteiro respeita as leis da casa:
+    - o manifesto tem de estar CONFIÁVEL no trust store (senão, fail-closed
+      com a instrução de confiar primeiro);
+    - o nível da tool (A3 no conector Telegram: credencial + rede) passa
+      pela política e pelo SEU gate de aprovação — sem aprovação, nada sai;
+    - tudo auditado; o conteúdo do briefing é gerado 100% localmente.
+
+    Devolve (ok, mensagem_para_o_usuario).
+    """
+    from nomos.interface import mcp_catalogo as cat
+    from nomos.interface import mcp_client as mc
+    from nomos.kernel.policy import gate as gate_fn
+
+    try:
+        manifesto = mc.carregar_manifesto(Path(manifesto_path))
+    except mc.ManifestoInvalido as exc:
+        return False, f"manifesto recusado (fail-closed): {exc}"
+    confianca = cat.status(ctx["home"], manifesto)
+    if confianca != "confiavel":
+        return False, (f"'{manifesto['nome']}' é {confianca} — entregar o "
+                       "briefing exige server CONFIÁVEL. Registre antes: "
+                       f"nomos mcp confiar {manifesto_path}")
+    tool = "telegram_enviar"
+    nivel = mc.nivel_da_tool(manifesto, tool)
+    decisao = ctx["policy"].decide(
+        mc.NIVEIS[nivel], target=f"rotina:briefing→{manifesto['nome']}")
+    if not gate_fn(decisao, approver):
+        if ctx.get("audit"):
+            ctx["audit"].append("rotina.briefing.entrega_negada",
+                                server=manifesto["nome"], nivel=nivel)
+        return False, (f"entrega é nível {nivel} — sem a sua aprovação, o "
+                       "briefing não sai da máquina (e não saiu)")
+    texto = briefing(ctx)
+    say("briefing gerado — enviando pelo conector aprovado…")
+    try:
+        with mc.ClienteMCP(manifesto) as cli:
+            resultado = cli.chamar(tool, {"chat_id": str(chat_id),
+                                          "texto": texto})
+    except mc.McpErro as exc:
+        return False, f"o conector recusou: {exc}"
+    if ctx.get("audit"):
+        ctx["audit"].append("rotina.briefing.entregue",
+                            server=manifesto["nome"], nivel=nivel,
+                            chat=str(chat_id))
+    trecho = ""
+    for bloco in resultado.get("content", []):
+        if bloco.get("type") == "text":
+            trecho = bloco.get("text", "")[:120]
+    return True, f"briefing entregue ✓ {trecho}"
+
+
 def prever_acao(acao: str) -> str:
     """F5/ISSUE-023: descreve o que a ação FARIA, sem executar nada."""
     if acao == "briefing":

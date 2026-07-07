@@ -665,8 +665,18 @@ def cmd_rotinas(ctx, args) -> int:
             print(f"{'✓' if r['ok'] else '✗'} {r['nome']}: {r['detalhe']}")
         return EXIT_OK if not falhas else EXIT_ERROR
     if sub == "briefing":
-        print(rot.briefing(ctx))
-        return EXIT_OK
+        chat = getattr(args, "telegram", None)
+        if not chat:
+            print(rot.briefing(ctx))
+            return EXIT_OK
+        # MC41: briefing ENTREGUE pelo conector MCP confiado — com gate
+        ok, msg = rot.enviar_briefing(
+            ctx, chat, getattr(args, "manifesto", None) or
+            "examples/mcp/telegram/manifesto.json",
+            _approver_for(ctx, args))
+        print(msg if ok else f"não entreguei: {msg}",
+              file=sys.stdout if ok else sys.stderr)
+        return EXIT_OK if ok else EXIT_DENIED
     if sub == "agendar":
         print(rot.linha_agendador(ctx["home"]))
         print("\n(o NOMOS nunca altera seu agendador sozinho — colar é com você)")
@@ -1837,7 +1847,16 @@ def build_parser() -> argparse.ArgumentParser:
     rex.add_argument("--simular", action="store_true",
                      help="mostra o que faria, sem executar (dry-run)")
     rex.set_defaults(fn=cmd_rotinas)
-    rosub.add_parser("briefing").set_defaults(fn=cmd_rotinas)
+    rob = rosub.add_parser(
+        "briefing", help="briefing do dia; --telegram entrega pelo conector "
+        "MCP confiado (com sua aprovação)")
+    rob.add_argument("--telegram", metavar="CHAT_ID",
+                     help="entrega o briefing nesse chat via conector "
+                     "telegram-bot confiado (gate A3)")
+    rob.add_argument("--manifesto", default=None,
+                     help="caminho do manifesto MCP (padrão: o conector "
+                     "telegram do repositório)")
+    rob.set_defaults(fn=cmd_rotinas)
     rosub.add_parser("agendar").set_defaults(fn=cmd_rotinas)
     ro.set_defaults(fn=cmd_rotinas, rotinas_cmd=None)
     aq = sub.add_parser("arquivo", help="ler e resumir um arquivo, tudo local")

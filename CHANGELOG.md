@@ -4,6 +4,20 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC41 — a primeira automação de ponta a ponta: briefing → Telegram)
+- **`nomos rotinas briefing --telegram <CHAT_ID>`**: o briefing do dia
+  (gerado 100% localmente) ENTREGUE pelo conector MCP confiado — juntando
+  as peças que já existiam: rotinas + trust store + política/gate +
+  ClienteMCP + conector Telegram. Sem confiança registrada ⇒ instrui e
+  para; gate negado ⇒ nada sai (e fica auditado:
+  `rotina.briefing.entrega_negada`); entregue ⇒ `rotina.briefing.entregue`.
+  `--manifesto` aceita outro conector com a mesma tool.
+- Teste-coroa em `tests/test_briefing_telegram.py`: ponta a ponta SEM
+  internet — Bot API fake em 127.0.0.1 recebe o briefing real enviado
+  pelo conector real (processo stdio) depois do gate aprovar; mais os
+  casos fail-closed (sem confiança; gate negado ⇒ conector nem conecta).
+  Suíte completa: 1386 passed.
+
 ### Added (MC40 — conexões: redes sociais via MCP + Dash Hub)
 - **Conector Telegram (`examples/mcp/telegram/`)**: servidor MCP local em
   stdlib pura sobre a Bot API OFICIAL — `telegram_quem_sou`,
