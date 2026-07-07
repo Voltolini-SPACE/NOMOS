@@ -132,6 +132,51 @@ def test_atividade_24h_conta_eventos_reais(nomos_home):
 
 
 # ---------------------------------------------------------------------------
+# 3b. MC39.1: série 7d + placar de decisões (metadados, jamais o token)
+# ---------------------------------------------------------------------------
+def test_atividade_7d_conta_por_dia(nomos_home):
+    ctx = _ctx(nomos_home)
+    for i in range(4):
+        ctx["audit"].append(f"dia.evento{i}", origem="dash")
+    d = dados_dashboard(ctx)
+    a7 = d["atividade_7d"]
+    assert len(a7["buckets"]) == 7
+    assert a7["buckets"][6] >= 4              # bucket 6 = hoje
+    assert a7["total"] >= 4
+
+
+def test_placar_de_decisoes_24h_sem_vazar_token(nomos_home):
+    from nomos.kernel.approvals import ApprovalQueue
+    ctx = _ctx(nomos_home)
+    fila = ApprovalQueue(nomos_home / "approvals", audit=ctx["audit"])
+    r1, _ = fila.request("A2_WRITE_LOCAL", "a.txt", "gravar")
+    fila.decide(r1, fila.token_of(r1), approve=True)
+    r2, _ = fila.request("A4_NET", "https://x", "rede")
+    fila.decide(r2, fila.token_of(r2), approve=False)
+    r3, _ = fila.request("A3_EXEC", "s.sh", "rodar")     # fica pendente
+    token_pendente = fila.token_of(r3)
+    d = dados_dashboard(ctx)
+    ap = d["aprovacoes"]
+    assert ap["aprovadas_24h"] == 1 and ap["negadas_24h"] == 1
+    assert ap["pendentes"] == 1
+    srv = DashboardServer(ctx)
+    url = srv.start()
+    try:
+        _, corpo, _ = _get(f"{url}api/?secao=aprovacoes")
+        via = json.loads(corpo)["dados"]
+        assert via["aprovadas_24h"] == 1 and via["negadas_24h"] == 1
+        assert token_pendente not in corpo    # placar NUNCA carrega token
+    finally:
+        srv.stop()
+
+
+def test_shell_tem_toggle_e_placar(nomos_home):
+    corpo = render_dash("1.0.0")
+    for marcador in ('id="bt24"', 'id="bt7d"', 'id="decisoes"', 'id="mem"'):
+        assert marcador in corpo, marcador
+
+
+# ---------------------------------------------------------------------------
 # 4. health: uptime real
 # ---------------------------------------------------------------------------
 def test_health_tem_uptime(nomos_home):
@@ -142,6 +187,7 @@ def test_health_tem_uptime(nomos_home):
         h = json.loads(corpo)
         assert isinstance(h["uptime_s"], int) and h["uptime_s"] >= 0
         assert h["uptime_hum"]
+        assert h["mem_pico_mb"] > 0           # RSS real do processo
     finally:
         srv.stop()
 

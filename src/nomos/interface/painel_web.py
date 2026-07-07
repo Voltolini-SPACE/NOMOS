@@ -22,6 +22,7 @@ Princípios:
 """
 from __future__ import annotations
 
+import contextlib
 import html
 import json
 import platform as _plataforma
@@ -515,14 +516,15 @@ def dados_dashboard(ctx) -> dict:
     except Exception:
         capacidades = []   # catálogo nunca derruba o painel
 
-    # Atividade 24h (MC39 — Dash): eventos/hora da trilha, SÓ timestamps.
-    # Alimenta a sparkline do dashboard ao vivo com histórico REAL.
+    # Atividade (MC39/MC39.1 — Dash): eventos da trilha, SÓ timestamps —
+    # numa passada única, duas séries REAIS: por hora (24h) e por dia (7d).
     atividade_24h = {"buckets": [0] * 24, "total": 0}
+    atividade_7d = {"buckets": [0] * 7, "total": 0}
     try:
         if trilha.exists():
             agora_ts = time.time()
             for linha in trilha.read_text(encoding="utf-8",
-                                          errors="ignore").splitlines()[-5000:]:
+                                          errors="ignore").splitlines()[-20000:]:
                 try:
                     ts = float(json.loads(linha).get("ts") or 0)
                 except Exception:
@@ -532,8 +534,12 @@ def dados_dashboard(ctx) -> dict:
                     # bucket 23 = hora atual; 0 = 24h atrás (ordem de leitura)
                     atividade_24h["buckets"][23 - int(idade_h)] += 1
                     atividade_24h["total"] += 1
+                if 0 <= idade_h < 24 * 7:
+                    atividade_7d["buckets"][6 - int(idade_h / 24)] += 1
+                    atividade_7d["total"] += 1
     except Exception:
         atividade_24h = {"buckets": [0] * 24, "total": 0}
+        atividade_7d = {"buckets": [0] * 7, "total": 0}
 
     # Memória 2.0 (MC31/B5): fila de candidatas visível — aprovar é no terminal
     try:
@@ -615,13 +621,32 @@ def dados_dashboard(ctx) -> dict:
     except Exception:
         roteador_vivo = []
 
-    # Aprovações (Painel 4.0): SÓ metadados/contagem — token jamais sai daqui
-    try:
+    # Aprovações (Painel 4.0 / MC39.1): SÓ metadados/contagens — o campo
+    # token dos arquivos JAMAIS é lido para cá. Além das pendentes, o Dash
+    # mostra o placar das últimas 24h: aprovadas · negadas · expiradas.
+    aprovacoes = {"pendentes": 0, "aprovadas_24h": 0,
+                  "negadas_24h": 0, "expiradas_24h": 0}
+    with contextlib.suppress(Exception):   # zeros valem se algo falhar
         from nomos.kernel.approvals import ApprovalQueue
         _fila = ApprovalQueue(home / "approvals", audit=ctx.get("audit"))
-        aprovacoes = {"pendentes": len(_fila.pending())}
-    except Exception:
-        aprovacoes = {"pendentes": 0}
+        aprovacoes["pendentes"] = len(_fila.pending())
+        corte = time.time() - 24 * 3600
+        for _p in (home / "approvals").glob("*.json"):
+            try:
+                _reg = json.loads(_p.read_text())
+                quando = float(_reg.get("decided_at") or
+                               _reg.get("expires") or 0)
+                if quando < corte:
+                    continue
+                _status = _reg.get("status")
+                if _status == "aprovada":
+                    aprovacoes["aprovadas_24h"] += 1
+                elif _status == "negada":
+                    aprovacoes["negadas_24h"] += 1
+                elif _status == "expirada":
+                    aprovacoes["expiradas_24h"] += 1
+            except Exception:
+                continue
 
     # Sistema (Painel 4.0): metadados locais da instalação — nada sensível
     try:
@@ -667,6 +692,7 @@ def dados_dashboard(ctx) -> dict:
         "aprovacoes": aprovacoes,
         "sistema": sistema,
         "atividade_24h": atividade_24h,
+        "atividade_7d": atividade_7d,
     }
 
 
@@ -1270,6 +1296,11 @@ _CSS_DASH = """
  .lista .mot{color:var(--neon)} .lista .mod{color:var(--fraco)}
  svg.spark{width:100%;height:64px;display:block}
  svg.spark rect{fill:var(--dim)} svg.spark rect.hoje{fill:var(--neon)}
+ .faixa{float:right;display:inline-flex;gap:.25rem}
+ .faixa-bt{font:inherit;font-size:.66rem;background:var(--surface2);
+   color:var(--fraco);border:1px solid var(--line);border-radius:5px;
+   padding:.05rem .5rem;cursor:pointer;letter-spacing:.08em}
+ .faixa-bt[aria-pressed="true"]{color:var(--neon);border-color:var(--dim)}
  .mudou{animation:pulso .6s ease-out}
  @keyframes pulso{0%{background:rgba(90,247,142,.18)}100%{background:none}}
  @media (prefers-reduced-motion:reduce){.mudou{animation:none}}
@@ -1304,15 +1335,27 @@ _JS_DASH = """
    poe('motores', d.motores_prontos, d.motores_prontos?'':'warn');
    poe('passo', d.proximo_passo);
    poe('uptime', d.uptime_hum||'—');
+   if(d.mem_pico_mb!==undefined){ var m=$('mem'); if(m) m.textContent=d.mem_pico_mb; }
    var ul=$('avisos'); if(ul){ ul.textContent='';
      (d.avisos&&d.avisos.length?d.avisos:['nada pendente ✓']).forEach(function(a){
        var li=document.createElement('li'); li.textContent=a; ul.appendChild(li); }); }
    var lock=$('modo'); if(lock) lock.textContent=d.so_local?'🔒 só-local':'🔌 nuvem plugada';
    ultAt=Date.now(); var es=$('estado');
    es.removeAttribute('data-erro'); es.textContent='ao vivo'; }
+ var series={a24:null,a7:null}, faixa='24h';
+ function pinta(){
+   var s=(faixa==='24h')?series.a24:series.a7; if(!s) return;
+   spark(s.buckets); poe('ev24', s.total);
+   var r=$('ev-rotulo'); if(r) r.textContent=(faixa==='24h')?'últimas 24h':'últimos 7 dias';
+   var svg=$('spark'); if(svg) svg.setAttribute('aria-label',
+     (faixa==='24h')?'eventos por hora, últimas 24 horas':'eventos por dia, últimos 7 dias');
+ }
  function dados(d){
-   if(d.secao==='atividade_24h'){ spark(d.dados.buckets);
-     poe('ev24', d.dados.total); }
+   if(d.secao==='atividade_24h'){ series.a24=d.dados; if(faixa==='24h') pinta(); }
+   if(d.secao==='atividade_7d'){ series.a7=d.dados; if(faixa==='7d') pinta(); }
+   if(d.secao==='aprovacoes'){ var dc=$('decisoes'); if(dc)
+     dc.textContent='24h: ✓'+(d.dados.aprovadas_24h||0)+' aprovadas · ✗'
+       +(d.dados.negadas_24h||0)+' negadas · ⏱'+(d.dados.expiradas_24h||0)+' expiradas'; }
    if(d.secao==='roteador_vivo'){ var ul=$('rotas'); if(!ul) return;
      ul.textContent='';
      d.dados.forEach(function(r){ var li=document.createElement('li');
@@ -1333,8 +1376,15 @@ _JS_DASH = """
  // a página vive em .../dash/ (canônico) — os endpoints ficam um nível acima
  function ciclo5(){ if(pausado||document.hidden) return; pega('../health/',saude); }
  function ciclo30(){ if(pausado||document.hidden) return;
-   ['atividade_24h','roteador_vivo','memoria','auditoria'].forEach(function(s){
+   ['atividade_24h','atividade_7d','roteador_vivo','memoria','auditoria',
+    'aprovacoes'].forEach(function(s){
      pega('../api/?secao='+s, dados); }); }
+ ['bt24','bt7d'].forEach(function(id){ var bt=$(id); if(!bt) return;
+   bt.addEventListener('click', function(){
+     faixa=(id==='bt24')?'24h':'7d';
+     $('bt24').setAttribute('aria-pressed', faixa==='24h'?'true':'false');
+     $('bt7d').setAttribute('aria-pressed', faixa==='7d'?'true':'false');
+     pinta(); }); });
  function relogio(){ var el=$('faz'); if(!el) return;
    el.textContent = ultAt? Math.round((Date.now()-ultAt)/1000)+'s' : '—'; }
  var bt=$('pausa');
@@ -1349,6 +1399,21 @@ _JS_DASH = """
  setInterval(relogio, 1000);
 })();
 """
+
+
+def _mem_pico_mb() -> float:
+    """Pico de memória (RSS) do processo do painel, em MB — stdlib puro.
+
+    ru_maxrss vem em KB no Linux e em BYTES no macOS; normaliza os dois.
+    """
+    try:
+        import resource
+        import sys as _sys
+        pico = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        divisor = 1024 * 1024 if _sys.platform == "darwin" else 1024
+        return round(pico / divisor, 1)
+    except Exception:
+        return 0.0
 
 
 def _uptime_humano(segundos: float) -> str:
@@ -1380,19 +1445,23 @@ def render_dash(versao: str) -> str:
         '<small>doutor: <span id="passo">—</span></small></div>'
         '<div class="w c3"><h2>aprovações à sua espera</h2>'
         '<div class="valor" id="aprov">—</div>'
-        '<small><a href="../#aprovacoes">decidir no painel →</a></small></div>'
+        '<small><a href="../#aprovacoes">decidir no painel →</a></small>'
+        '<small id="decisoes">24h: —</small></div>'
         '<div class="w c3"><h2>memórias a revisar</h2>'
         '<div class="valor" id="memrev">—</div>'
         "<small>aprovar é sempre decisão sua</small></div>"
         '<div class="w c3"><h2>cadeia de auditoria</h2>'
         '<div class="valor" id="cadeia">—</div>'
         "<small>verificação real, a cada ciclo</small></div>"
-        # linha 2 — histórico real (sparkline) + motores
-        '<div class="w c8"><h2>atividade — últimas 24h '
-        "(<span id=\"ev24\">—</span> eventos)</h2>"
+        # linha 2 — histórico real (sparkline 24h/7d) + motores
+        '<div class="w c8"><h2>atividade — <span id="ev-rotulo">últimas 24h'
+        "</span> (<span id=\"ev24\">—</span> eventos) "
+        '<span class="faixa"><button class="faixa-bt" id="bt24" '
+        'aria-pressed="true">24h</button><button class="faixa-bt" id="bt7d" '
+        'aria-pressed="false">7d</button></span></h2>'
         '<svg id="spark" class="spark" viewBox="0 0 480 64" '
         'preserveAspectRatio="none" role="img" '
-        'aria-label="eventos de auditoria por hora, últimas 24 horas"></svg>'
+        'aria-label="eventos de auditoria ao longo do tempo"></svg>'
         "<small>metadados da trilha — conteúdo nunca aparece</small></div>"
         '<div class="w c4"><h2>motores prontos</h2>'
         '<div class="valor" id="motores">—</div>'
@@ -1404,6 +1473,7 @@ def render_dash(versao: str) -> str:
         "<footer><span>NOMOS v" + e(versao) + "</span>"
         '<span id="modo">—</span>'
         '<span>uptime do painel: <span id="uptime">—</span></span>'
+        '<span>pico de memória: <span id="mem">—</span> MB</span>'
         "<span>ao vivo: health/ 5s · seções 30s · pausa sozinho quando a "
         "aba se esconde</span>"
         "<span>local por lei — este dash só LÊ; agir continua no gate</span>"
@@ -1655,6 +1725,7 @@ class DashboardServer:
                         "uptime_s": int(time.time() - painel.iniciado_em),
                         "uptime_hum": _uptime_humano(
                             time.time() - painel.iniciado_em),
+                        "mem_pico_mb": _mem_pico_mb(),
                         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                     }, ensure_ascii=False)
                     return self._responder(200, corpo, "application/json")

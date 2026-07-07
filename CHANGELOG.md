@@ -4,6 +4,18 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC39.1 — Dash: mais profundidade, mesma calma)
+- **Sparkline com faixa 24h ↔ 7d**: nova série real `atividade_7d`
+  (eventos/dia, mesma passada única na trilha); alternância no próprio
+  widget, sem métrica extra na tela (glanceability preservada).
+- **Placar de decisões (24h)** no tile de aprovações: ✓ aprovadas ·
+  ✗ negadas · ⏱ expiradas — contado dos metadados da fila (o campo token
+  jamais é lido; teste garante que não vaza na API).
+- **`mem_pico_mb` no health/** (RSS de pico do processo, stdlib puro,
+  normalizado Linux/macOS) — visível no rodapé do Dash.
+- E2E real: alternância 24↔7 barras no navegador, placar "✓1 · ✗1 · ⏱0"
+  com decisões reais, zero erros de console. Suíte completa: 1365 passed.
+
 ### Added (MC39 — NOMOS Dash: a ferramenta própria de mission control)
 - **`dash/` no painel**: dashboard AO VIVO, uma tela, leitura pura (sem
   nenhum POST). Referências aplicadas (mission-control/glanceability,
