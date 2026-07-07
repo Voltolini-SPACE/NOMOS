@@ -29,11 +29,16 @@ def _ctx(nomos_home):
             "skills": nomos_home / "skills"}
 
 
-# 1. identidade da marca congelada no painel (paleta + monospace)
+# 1. identidade da marca no painel (paleta de acento + monospace residual)
 def test_painel_usa_marca_congelada(nomos_home):
+    # MC40.1 (proposta v1.1, ver docs/brand/frozen/BRANDBOOK_NOMOS.md §8:
+    # "mudanças exigem v1.x com aprovação"): verde-neon mantido como acento
+    # de marca; fundo escurecido (menos "preto absoluto de terminal") e
+    # tipografia de corpo passa a sans-serif humana — monoespaçada sobra pra
+    # código/valores, não pro texto inteiro.
     corpo = render_html(dados_dashboard(_ctx(nomos_home)))
-    assert "--neon:#5AF78E" in corpo and "#0A0F0D" in corpo   # paleta congelada
-    assert "monospace" in corpo                                # tipografia
+    assert "--neon:#5AF78E" in corpo                          # acento de marca
+    assert "monospace" in corpo                                # ainda em code/.k
     assert 'class="kpis"' in corpo                             # faixa de KPIs
     assert "<nav" in corpo and 'aria-label' in corpo           # nav acessível
 

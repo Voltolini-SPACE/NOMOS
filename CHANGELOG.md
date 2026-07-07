@@ -4,6 +4,35 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Proposed (MC40.1 — painel v1.1: menos "hacker de filme", mais gente)
+> Proposta de marca v1.1, não commit direto — muda tokens de cor/tipografia
+> do `docs/brand/frozen/BRANDBOOK_NOMOS.md` §8 ("mudanças exigem v1.x com
+> aprovação"). Testes de marca atualizados e comentados como MC40.1 pra ficar
+> óbvio que é intencional, não regressão.
+- **Tipografia**: corpo do painel passa de monoespaçado 100% pra sans-serif
+  do sistema (`-apple-system`/`Segoe UI`/`system-ui`, zero fonte baixada);
+  monoespaçada (JetBrains Mono) sobra só pra código/valores (`code`, `.k`,
+  KPIs, wordmark) — antes tudo parecia terminal de programador.
+- **Menos "glow" neon**: `--glow` zerado (era `text-shadow` verde em vários
+  elementos); fundo escuro menos "preto absoluto"; cantos mais arredondados
+  (8px→12px) e mais respiro em cards/sidebar/KPIs — pesquisa NN/G aplicada
+  (espaço + previsibilidade geram confiança em quem não é técnico).
+- **Sem decoração `// ` nos títulos de seção**: era estética de comentário
+  de código, sem significado pra quem nunca programou.
+- **Bug real corrigido ao verificar visualmente no browser**: `.topo` (barra
+  fixa do topo) tinha fundo preto FIXO (`rgba(10,15,13,.94)`), não ligado ao
+  tema — coincidia com o fundo escuro por acaso, mas no tema claro (padrão
+  de muito SO) virava uma barra preta cortando o painel. Corrigido com
+  `--bg-rgb` por tema.
+- **Bloco "Precisa de você"**: comandos de terminal (`nomos memoria
+  revisar`, `nomos logs verify`) agora vêm com frase em português antes,
+  não só o comando cru.
+- **Instalador (`install.sh`) simplificado**: mensagem final trocou
+  `nomos init && nomos agent create --name <NomeDoSeuAgente>` (jargão de
+  CLI) por só `nomos` (mesmo texto que o `install.ps1` já usava, e que já
+  cai no onboarding amigável). `cmd_painel` já abria o navegador sozinho —
+  nada a mudar lá.
+
 ### Fixed (MC40 — modo iniciante realmente liga)
 - **`modo_iniciante` estava morto**: `menu_principal.py` já sabia mostrar o
   menu reduzido (F4/ISSUE-022), mas nada setava a flag — todo usuário novo

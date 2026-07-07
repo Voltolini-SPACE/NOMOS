@@ -38,29 +38,34 @@ from urllib.parse import parse_qs
 # identidade visual — paleta da marca CONGELADA (brandbook v1.0)
 # ---------------------------------------------------------------------------
 _CSS = """
- /* tema ESCURO (padrão) — brandbook congelado */
- :root{--bg:#0A0F0D;--surface:#111814;--surface2:#0d1411;--line:#1d2a22;
-   --neon:#5AF78E;--dim:#2BD968;--txt:#E8FFE8;--fraco:#7c9a84;
+ /* tema ESCURO (padrão) — v1.1 (proposta): mesma paleta de marca, menos
+    "hacker de filme" — glow cortado, contraste mantido */
+ :root{--bg:#0d1210;--bg-rgb:13,18,16;--surface:#151b18;--surface2:#101512;
+   --line:#232d28;--neon:#5AF78E;--dim:#2BD968;--txt:#EAF3EC;--fraco:#8fa89a;
    --rosa:#FF5FA2;--ciano:#56E1E9;--amarelo:#F2C14E;--vermelho:#FF5C57;
-   --glow:0 0 8px rgba(90,247,142,.45)}
+   --glow:none;--raio:12px;--espaco:1.5rem}
  /* tema CLARO — mesma marca, contraste WCAG AA (verificado) */
  :root[data-tema="claro"]{
-   --bg:#f4f7f4;--surface:#ffffff;--surface2:#eaf0ea;--line:#b9c8bc;
-   --neon:#0b7a3b;--dim:#0b7a3b;--txt:#10261a;--fraco:#3f6b50;
+   --bg:#f6f8f6;--bg-rgb:246,248,246;--surface:#ffffff;--surface2:#eef3ee;
+   --line:#c4d1c7;--neon:#0b7a3b;--dim:#0b7a3b;--txt:#132318;--fraco:#4a6d57;
    --rosa:#b3266e;--ciano:#0a6d74;--amarelo:#8a6a12;--vermelho:#b3261e;
    --glow:none}
  /* sem escolha explícita, respeita o SO */
  @media (prefers-color-scheme:light){:root:not([data-tema]){
-   --bg:#f4f7f4;--surface:#ffffff;--surface2:#eaf0ea;--line:#b9c8bc;
-   --neon:#0b7a3b;--dim:#0b7a3b;--txt:#10261a;--fraco:#3f6b50;
+   --bg:#f6f8f6;--bg-rgb:246,248,246;--surface:#ffffff;--surface2:#eef3ee;
+   --line:#c4d1c7;--neon:#0b7a3b;--dim:#0b7a3b;--txt:#132318;--fraco:#4a6d57;
    --rosa:#b3266e;--ciano:#0a6d74;--amarelo:#8a6a12;--vermelho:#b3261e;
    --glow:none}}
  *{box-sizing:border-box}
  html{scroll-behavior:smooth}
  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
- body{font-family:'JetBrains Mono','IBM Plex Mono','SF Mono',Menlo,Consolas,
-   monospace;background:var(--bg);color:var(--txt);margin:0;line-height:1.5;
-   font-size:14px}
+ /* v1.1: texto de gente em fonte de gente; monoespaçada só sobra pra
+    código/valores (code,.k,.kpi b) — reduz a leitura "terminal de dev" */
+ body{font-family:-apple-system,'Segoe UI',system-ui,'Helvetica Neue',
+   Arial,sans-serif;background:var(--bg);color:var(--txt);margin:0;
+   line-height:1.6;font-size:15px;letter-spacing:.005em}
+ code,.k,.kpi b,.brand{font-family:'JetBrains Mono','IBM Plex Mono',
+   'SF Mono',Menlo,Consolas,monospace}
  a{color:var(--ciano)}
  .skip{position:absolute;left:-999px;top:0;background:var(--neon);
    color:var(--bg);padding:.4rem .8rem;z-index:99}
@@ -71,8 +76,8 @@ _CSS = """
  .app{display:grid;grid-template-columns:210px minmax(0,1fr);
    min-height:100vh}
  .sidebar{background:var(--surface2);border-right:1px solid var(--line);
-   padding:1rem .9rem;position:sticky;top:0;height:100vh;overflow:auto}
- .main{padding:0 1.4rem 3rem;min-width:0}
+   padding:1.4rem 1.1rem;position:sticky;top:0;height:100vh;overflow:auto}
+ .main{padding:0 var(--espaco) 3.5rem;min-width:0}
  @media(max-width:820px){.app{display:block}
    .sidebar{position:static;height:auto;border-right:0;
      border-bottom:1px solid var(--line)}}
@@ -119,7 +124,8 @@ _CSS = """
  .sysbox .linha{margin:.22rem 0}
 
  /* ---- topo do conteúdo ---- */
- .topo{position:sticky;top:0;z-index:9;background:rgba(10,15,13,.94);
+ .topo{position:sticky;top:0;z-index:9;
+   background:rgba(var(--bg-rgb),.94);   /* v1.1: segue o tema, não fica preto no claro */
    backdrop-filter:blur(6px);border-bottom:1px solid var(--line);
    padding:.75rem 0 .6rem;margin-bottom:.6rem}
  h1{font-size:1.2rem;margin:0;color:var(--neon);text-shadow:var(--glow)}
@@ -143,16 +149,15 @@ _CSS = """
  h2{font-size:.82rem;text-transform:uppercase;letter-spacing:.14em;
    color:var(--dim);margin:2.1rem 0 .7rem;border-left:3px solid var(--neon);
    padding-left:.6rem;scroll-margin-top:5.5rem}
- h2::before{content:"// ";color:var(--fraco)}
  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));
    gap:1px;background:var(--line);border:1px solid var(--line);
-   border-radius:8px;overflow:hidden;margin:1rem 0 .4rem}
- .kpi{background:var(--surface);padding:.7rem .8rem}
+   border-radius:var(--raio);overflow:hidden;margin:1.1rem 0 .5rem}
+ .kpi{background:var(--surface);padding:.9rem 1rem}
  .kpi b{display:block;color:var(--neon);font-size:1.12rem;
    text-shadow:var(--glow)}
  .kpi span{color:var(--fraco);font-size:.72rem}
  .card{background:var(--surface);border:1px solid var(--line);
-   border-radius:8px;padding:.75rem .95rem;margin:.55rem 0}
+   border-radius:var(--raio);padding:1rem 1.15rem;margin:.7rem 0}
  .card.ok{border-left:4px solid var(--neon)}
  .card.warn{border-left:4px solid var(--amarelo)}
  .card.err{border-left:4px solid var(--vermelho)}
@@ -757,11 +762,11 @@ def _bloco_atencao(d: dict, n_aprov: int) -> str:
         itens.append(f'<a href="#aprovacoes">{n_aprov} aprovação(ões) '
                      "esperando decisão</a>")
     if memo.get("candidatas"):
-        itens.append(f'{memo["candidatas"]} memória(s) a revisar '
-                     "(<code>nomos memoria revisar</code>)")
+        itens.append(f'{memo["candidatas"]} memória(s) a revisar — no '
+                     f'terminal, digite: <code>nomos memoria revisar</code>')
     if not d.get("auditoria", {}).get("cadeia_integra"):
-        itens.append("cadeia de auditoria: verificar "
-                     "(<code>nomos logs verify</code>)")
+        itens.append("seu histórico de ações precisa ser conferido — no "
+                     "terminal, digite: <code>nomos logs verify</code>")
     ev_ruins = [x for x in d.get("evidencias", []) if not x.get("integro")]
     if ev_ruins:
         itens.append(f"{len(ev_ruins)} evidência(s) NÃO conferem")
