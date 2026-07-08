@@ -29,10 +29,12 @@ def _iso(monkeypatch):
     yield
 
 
-def test_diagnostico_lista_os_tres(nomos_home):
+def test_diagnostico_lista_os_conectores(nomos_home):
     d = cat.diagnostico_conectores(nomos_home, raiz=EXEMPLOS)
-    nomes = sorted(c["nome"] for c in d["conectores"])
-    assert nomes == ["email-smtp", "telegram-bot", "whatsapp-cloud"]
+    nomes = {c["nome"] for c in d["conectores"]}
+    # os conectores que acompanham o NOMOS estão todos presentes (subconjunto,
+    # para não quebrar quando um novo conector for adicionado)
+    assert {"email-smtp", "telegram-bot", "whatsapp-cloud", "signal-cli"} <= nomes
     tel = next(c for c in d["conectores"] if c["nome"] == "telegram-bot")
     assert tel["credenciais_ok"] is False              # sem env setada
     assert "NOMOS_TELEGRAM_TOKEN" in tel["env_faltando"]
@@ -81,5 +83,5 @@ def test_doutor_cli_json(nomos_home, monkeypatch, capsys):
     rc = cli.main(["mcp", "doutor", "--json"])
     d = json.loads(capsys.readouterr().out)
     assert rc == 0
-    assert len(d["conectores"]) == 3
+    assert len(d["conectores"]) >= 4        # telegram, whatsapp, email, signal…
     assert "raiz" in d and "confiaveis" in d

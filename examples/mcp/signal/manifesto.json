@@ -1,0 +1,11 @@
+{
+  "nome": "signal-cli",
+  "descricao": "Ponte com o Signal via signal-cli LOCAL (o cliente oficial de linha de comando): nada passa por nuvem de terceiros além do próprio Signal — o mais local-first dos conectores. Número da conta só por ambiente (NOMOS_SIGNAL_NUMBER); toda tool exige sua aprovação (A3). Precisa do signal-cli instalado e da conta registrada uma vez.",
+  "comando": ["python3", "examples/mcp/signal/servidor.py"],
+  "nivel_padrao": "A3",
+  "env": ["NOMOS_SIGNAL_NUMBER"],
+  "tools": {
+    "signal_quem_sou": "A3",
+    "signal_enviar": "A3"
+  }
+}

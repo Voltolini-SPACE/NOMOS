@@ -4,6 +4,17 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC49 — conector Signal via signal-cli local)
+- Novo conector de exemplo **`examples/mcp/signal/`** (servidor MCP stdio, stdlib
+  pura): tools `signal_quem_sou` e `signal_enviar` (texto e grupos) através do
+  **signal-cli LOCAL** — nada passa por nuvem de terceiros além do próprio Signal
+  (o mais local-first dos conectores). Número da conta só por
+  `NOMOS_SIGNAL_NUMBER` (nunca em arquivo; redigido em erros e mascarado nas
+  respostas); todas as tools A3; fail-closed sem signal-cli ou sem o número; o
+  binário é chamado **sem shell**. Aparece sozinho em `nomos mcp exemplos` e
+  `nomos mcp doutor`. 12 testes (dialeto MCP em processo real, mock do signal-cli,
+  prova de não-vazamento do número, manifesto/trust/ClienteMCP).
+
 ### Added (MC48 — `nomos mcp doutor`: check-up só-leitura dos conectores)
 - Novo `nomos mcp doutor` (e `--json`): para cada conector de exemplo, mostra o
   **estado de confiança**, se as **credenciais** que o manifesto declara estão
