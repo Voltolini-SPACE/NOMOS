@@ -53,6 +53,16 @@ def test_cli_conselho_revisar_disabled(capsys):
     assert rc == cli_disabled.DISABLED_EXIT_CODE
 
 
+def test_cli_conselho_raiz_aponta_comandos_uteis(capsys):
+    # MC25-UX: a raiz (e o fallback) deixou de mandar "leia só a doc" e agora
+    # aponta o que JÁ funciona — sem afrouxar as travas.
+    rc, out = _run(capsys, "conselho")
+    assert "conselho status" in out
+    assert "conselho modos" in out
+    assert "conselho simular" in out
+    assert "CLI_ENABLED=false" in out          # travas seguem impressas
+
+
 def test_cli_conselho_perguntar_does_not_echo_prompt(capsys):
     rc, out = _run(capsys, "conselho", "perguntar", _SENSIVEL)
     assert _SENSIVEL not in out

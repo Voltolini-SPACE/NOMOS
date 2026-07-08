@@ -4,6 +4,19 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC25-UX — Motor Council: `--json`, raiz útil, prova no site, badges)
+- **`--json`** em `conselho status`/`modos` (CLI e chat): saída estável e
+  versionada (`nomos.council.status.v1` / `nomos.council.modos.v1`) para
+  scripts — fatos estáticos, sem interpolação de entrada.
+- **Raiz mais útil:** `nomos conselho` e `/conselho` deixaram de mandar "leia
+  só a doc" e agora apontam o que **já funciona** (`status`, `modos`,
+  `simular`) — sem afrouxar nenhuma trava (`CLI/CHAT_ENABLED=false` e
+  `REAL_*=false` seguem impressos).
+- **Site:** terceiro terminal real na seção Prova com a saída de
+  `nomos conselho status` (as travas `=false` como evidência do fail-closed).
+- **README:** badges factuais (Python 3.10–3.13 = matriz do CI, licença MIT,
+  local-first) ao lado do badge de CI que já existia.
+
 ### Added (MC24-UX — Motor Council: `status` e `modos` também no chat)
 - `/conselho status` e `/conselho modos [--avancado]` finalizados no chat,
   simétricos à CLI e reusando a **fonte única** de texto (`cli_info`) — info

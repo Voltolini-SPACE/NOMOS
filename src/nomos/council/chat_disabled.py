@@ -45,7 +45,12 @@ FUTURE_SUBCOMMANDS = (
 _DISABLED_MESSAGE = (
     "[NOMOS-MC-CHAT-DISABLED] Motor Council Chat ainda não está habilitado.\n"
     "\n"
-    "Status:\n"
+    "Já disponível no chat (não executa motor):\n"
+    "  /conselho status              — estado e travas\n"
+    "  /conselho modos [--avancado]  — os 4 modos (aceita --json)\n"
+    "  /conselho simular <texto>     — simulação segura (dry-run)\n"
+    "\n"
+    "Ainda desabilitado (exigiria execução real):\n"
     "  CHAT_ENABLED=false\n"
     "  REAL_ENGINE_EXECUTION=false\n"
     "  REAL_POLICY=false\n"
@@ -53,9 +58,8 @@ _DISABLED_MESSAGE = (
     "  REAL_VAULT=false\n"
     "  PERSISTENCE=false\n"
     "\n"
-    "O Motor Council está em dry-run/pre-release. No chat, nada é executado,\n"
-    "nenhum prompt é processado e nada é gravado. Use a documentação do RC4,\n"
-    "ou (fora do chat) o comando de terminal de simulação dry-run."
+    "perguntar/revisar não executam nada, nenhum prompt é processado e nada\n"
+    "é gravado."
 )
 
 

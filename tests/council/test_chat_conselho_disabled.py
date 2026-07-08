@@ -28,6 +28,15 @@ def test_chat_conselho_disabled_root():
     assert "não está habilitado" in out
 
 
+def test_chat_conselho_root_aponta_comandos_uteis():
+    # MC25-UX: aponta o que já funciona no chat, sem afrouxar as travas.
+    out = _resp("/conselho")
+    assert "/conselho status" in out
+    assert "/conselho modos" in out
+    assert "/conselho simular" in out
+    assert "CHAT_ENABLED=false" in out
+
+
 def test_chat_conselho_simular_disabled():
     out = _resp(f"/conselho simular {_SENSIVEL}")
     assert chat_disabled.CHAT_DISABLED_CODE in out
