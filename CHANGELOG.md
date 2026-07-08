@@ -4,6 +4,17 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC26-UX — Motor Council: `conselho diagnostico` (leitura viva da trava))
+- Novo `nomos conselho diagnostico` e `/conselho diagnostico`: **lê a trava
+  `REAL_LOCAL_ENGINE_EXECUTION_ENABLED` ao vivo** (via `real_execution_enabled()`)
+  e reporta o estado fail-closed — prova executável do "evidência, não promessa".
+  Um teste monkeypatcha a trava e comprova que a saída **mudaria** se ela fosse
+  ligada (logo, não é string fixa).
+- Módulo novo `nomos.council.cli_diag`, puro por AST: importa só a LEITURA da
+  trava e o contrato de flags proibidas; nunca chama `LocalExecutionHarness.execute`,
+  não toca rede/subprocess/cloud/kernel/FS/env/tempo. A raiz `conselho`/`/conselho`
+  agora lista os 4 comandos úteis (inclui `diagnostico`).
+
 ### Added (MC25-UX — Motor Council: `--json`, raiz útil, prova no site, badges)
 - **`--json`** em `conselho status`/`modos` (CLI e chat): saída estável e
   versionada (`nomos.council.status.v1` / `nomos.council.modos.v1`) para

@@ -7,20 +7,18 @@ SPEC_ONLY=true
 IMPLEMENTATION=partial      # atualizado em MC23-UX — ver "Current implementation status"
 ```
 
-> **Current implementation status (atualizado em MC24-UX).** Este documento
+> **Current implementation status (atualizado em MC26-UX).** Este documento
 > nasceu SPEC-only, mas parte dele já foi implementada. Estado real por
 > comando:
 >
 > ```text
-> nomos conselho            -> registrado; raiz desabilitada (fail-closed)
+> nomos conselho            -> registrado; raiz desabilitada (aponta os úteis)
 > nomos conselho status     -> INFORMATIVO disponível (MC23-UX; fatos estáticos)
-> nomos conselho modos      -> INFORMATIVO disponível (MC23-UX; [--avancado])
+> nomos conselho modos      -> INFORMATIVO disponível (MC23-UX; [--avancado] [--json])
+> nomos conselho diagnostico-> INFORMATIVO disponível (MC26-UX; lê a trava AO VIVO)
 > nomos conselho simular    -> DRY-RUN disponível (MC15-UX)
-> /conselho                 -> registrado; raiz desabilitada (fail-closed)
-> /conselho status          -> INFORMATIVO disponível (MC24-UX; mesmo texto da CLI)
-> /conselho modos           -> INFORMATIVO disponível (MC24-UX; [--avancado])
-> /conselho simular         -> DRY-RUN disponível (MC18-UX)
-> {perguntar, revisar, explicar, diagnostico}
+> /conselho status|modos|diagnostico|simular -> disponíveis (MC24/MC26-UX)
+> {perguntar, revisar, explicar}
 >                           -> desabilitados/fail-closed nas duas superfícies
 >                              (exigiriam execução real)
 > REAL_ENGINE_EXECUTION=false  REAL_POLICY=false  REAL_AUDIT=false

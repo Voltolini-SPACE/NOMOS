@@ -29,6 +29,7 @@ resultado bruto.
 from __future__ import annotations
 
 from nomos.council.chat_disabled import disabled_message, is_conselho_command
+from nomos.council.cli_diag import diagnostico_message
 from nomos.council.cli_info import (
     modos_json,
     modos_message,
@@ -233,5 +234,11 @@ def handle_chat_dry_run(message: object) -> str | None:
         if as_json:
             return modos_json()
         return modos_message("--avancado" in resto)
+    # MC26-UX: diagnóstico lê a trava real (só leitura) e reporta — não executa.
+    if len(toks) >= 2 and toks[1] == "diagnostico":
+        for tok in toks[2:]:
+            if is_forbidden_flag(tok):
+                return _deny("Este comando não aceita essa opção.")
+        return diagnostico_message()
     # raiz e demais subcomandos (perguntar/revisar/explicar) continuam desabilitados
     return disabled_message()

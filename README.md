@@ -114,8 +114,8 @@ Superfícies disponíveis hoje (nenhuma executa motor real):
 
 ```bash
 nomos conselho status                  # estado + travas (informativo)
-nomos conselho modos                   # os 4 modos, em linguagem simples
-nomos conselho modos --avancado        #   + mapeamento interno CouncilMode
+nomos conselho modos [--avancado]      # os 4 modos (aceita --json)
+nomos conselho diagnostico             # lê a trava REAL do harness, ao vivo
 nomos conselho simular "seu texto"     # simulação segura (dry-run)
 /conselho status                       # os mesmos, dentro do chat
 /conselho modos

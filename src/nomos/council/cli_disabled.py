@@ -52,6 +52,7 @@ _DISABLED_MESSAGE = (
     "Já disponível (não executa motor):\n"
     "  nomos conselho status              — estado e travas\n"
     "  nomos conselho modos [--avancado]  — os 4 modos (aceita --json)\n"
+    "  nomos conselho diagnostico         — lê a trava real e reporta\n"
     "  nomos conselho simular <texto>     — simulação segura (dry-run)\n"
     "\n"
     "Ainda desabilitado (exigiria execução real):\n"

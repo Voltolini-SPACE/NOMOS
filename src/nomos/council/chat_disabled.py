@@ -48,6 +48,7 @@ _DISABLED_MESSAGE = (
     "Já disponível no chat (não executa motor):\n"
     "  /conselho status              — estado e travas\n"
     "  /conselho modos [--avancado]  — os 4 modos (aceita --json)\n"
+    "  /conselho diagnostico         — lê a trava real e reporta\n"
     "  /conselho simular <texto>     — simulação segura (dry-run)\n"
     "\n"
     "Ainda desabilitado (exigiria execução real):\n"
