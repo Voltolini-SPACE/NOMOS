@@ -3,6 +3,7 @@
   "descricao": "Envio pela WhatsApp Business Cloud API OFICIAL da Meta (texto e templates aprovados). Credenciais só por ambiente (NOMOS_WHATSAPP_TOKEN + NOMOS_WHATSAPP_PHONE_ID); toda tool exige sua aprovação (A3). Recebimento exige webhook público — este conector é de envio, e diz isso.",
   "comando": ["python3", "examples/mcp/whatsapp-cloud/servidor.py"],
   "nivel_padrao": "A3",
+  "env": ["NOMOS_WHATSAPP_TOKEN", "NOMOS_WHATSAPP_PHONE_ID"],
   "tools": {
     "whatsapp_enviar_texto": "A3",
     "whatsapp_enviar_template": "A3"

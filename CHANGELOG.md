@@ -4,6 +4,17 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC48 — `nomos mcp doutor`: check-up só-leitura dos conectores)
+- Novo `nomos mcp doutor` (e `--json`): para cada conector de exemplo, mostra o
+  **estado de confiança**, se as **credenciais** que o manifesto declara estão
+  presentes no ambiente (**só a presença — o valor jamais é lido/exibido**) e se
+  o **interpretador** do `comando` existe. Read-only: não executa o conector, não
+  toca rede, não grava nada, não cria a trust store.
+- Os 3 manifestos de exemplo passam a declarar o campo opcional `env` (os nomes
+  das variáveis de credencial exigidas). Também documenta, com honestidade, que
+  no wheel instalado os exemplos não vêm juntos (a correção do empacotamento está
+  planejada em `docs/ROADMAP_MCP_CONEXOES.md`, Fase 1.1).
+
 ### Added (MC27-UX — Motor Council: `conselho ajuda` e `diagnostico --json`)
 - **`nomos conselho ajuda`** e **`/conselho ajuda`**: mapa amigável dos 4
   comandos disponíveis (status, modos, diagnostico, simular) + a nota

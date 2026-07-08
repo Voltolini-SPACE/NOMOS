@@ -164,3 +164,49 @@ def conectores_exemplo(home: Path, raiz: Path | None = None) -> list[dict]:
                       "descricao": descricao,
                       "manifesto": rel.as_posix()})
     return itens
+
+
+def diagnostico_conectores(home: Path, raiz: Path | None = None) -> dict:
+    """Check-up SÓ-LEITURA dos conectores de exemplo (MC48).
+
+    Para cada conector: estado de confiança, se o interpretador do ``comando``
+    existe, e se as credenciais que o manifesto declara (campo opcional ``env``)
+    estão PRESENTES no ambiente — apenas a presença (bool), **nunca o valor**.
+    Não executa o conector, não toca rede, não grava nada.
+    """
+    import os
+    import shutil
+
+    from nomos.interface import mcp_client as mc
+    base = _raiz_exemplos(raiz)
+    itens: list[dict] = []
+    if base is not None:
+        for mf in sorted(base.glob("*/manifesto.json")):
+            try:
+                manifesto = mc.carregar_manifesto(mf)
+            except Exception:
+                continue                       # manifesto torto: fora, fail-closed
+            try:
+                bruto = json.loads(mf.read_text(encoding="utf-8"))
+            except Exception:
+                bruto = {}
+            envs = [e for e in (bruto.get("env") or []) if isinstance(e, str)]
+            # SÓ presença — o valor jamais é lido, guardado ou devolvido
+            faltando = [e for e in envs if not os.environ.get(e)]
+            comando = manifesto["comando"]
+            interp = comando[0] if comando else ""
+            itens.append({
+                "nome": manifesto["nome"],
+                "nivel_padrao": manifesto["nivel_padrao"],
+                "status": status(home, manifesto),
+                "env": envs,
+                "env_faltando": faltando,
+                "credenciais_ok": not faltando,
+                "interpretador": interp,
+                "interpretador_ok": bool(shutil.which(interp)) if interp else False,
+            })
+    snap = listar(home)
+    return {"raiz": str(base) if base is not None else None,
+            "conectores": itens,
+            "confiaveis": len(snap["confiaveis"]),
+            "revogados": snap["revogadas"]}

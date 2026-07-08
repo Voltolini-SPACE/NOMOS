@@ -1505,6 +1505,38 @@ def cmd_mcp(ctx, args) -> int:
         print("\n(ligar é decisão sua, num terminal; toda chamada dessas "
               "tools passa pelo gate de aprovação)")
         return EXIT_OK
+    if sub == "doutor":
+        # check-up SÓ-LEITURA dos conectores: confiança, credenciais (só
+        # presença, nunca o valor) e se o interpretador do comando existe.
+        from nomos.interface import mcp_catalogo as cat
+        d = cat.diagnostico_conectores(ctx["home"])
+        if getattr(args, "json", False):
+            print(json.dumps(d, ensure_ascii=False, indent=2))
+            return EXIT_OK
+        conns = d["conectores"]
+        if not conns:
+            print("check-up dos conectores: nenhum conector de exemplo aqui.")
+            print("  os exemplos vêm no repositório (pasta examples/); rode a "
+                  "partir dele,")
+            print("  ou veja https://github.com/Voltolini-SPACE/NOMOS")
+            return EXIT_OK
+        print(f"check-up dos conectores ({len(conns)}):\n")
+        for c in conns:
+            sinal = "✅" if c["status"] == "confiavel" else "○"
+            print(f"  {sinal} {c['nome']} [{c['nivel_padrao']}] — {c['status']}")
+            if not c["interpretador_ok"]:
+                print(f"      ⚠️ interpretador ausente: {c['interpretador']}")
+            if c["env"]:
+                if c["credenciais_ok"]:
+                    print(f"      ✅ credenciais no ambiente: {', '.join(c['env'])}")
+                else:
+                    print("      ⚠️ faltam no ambiente: "
+                          f"{', '.join(c['env_faltando'])}")
+        print(f"\ntrust store: {d['confiaveis']} confiável(is) · "
+              f"{d['revogados']} revogado(s).")
+        print("(check-up é só leitura: nada é executado, nenhum segredo é "
+              "exibido. Para ligar: nomos mcp exemplos)")
+        return EXIT_OK
     if sub in ("catalogo", "confiar", "revogar"):
         from nomos.interface import mcp_catalogo as cat
         from nomos.interface import mcp_client as mc
@@ -1950,6 +1982,11 @@ def build_parser() -> argparse.ArgumentParser:
         "(Telegram, WhatsApp…) e como ligar cada um")
     mex.add_argument("--json", action="store_true")
     mex.set_defaults(fn=cmd_mcp)
+    mdr = mcpsub.add_parser(
+        "doutor", help="check-up dos conectores: confiança, credenciais no "
+        "ambiente (só presença) e interpretador — tudo só-leitura")
+    mdr.add_argument("--json", action="store_true")
+    mdr.set_defaults(fn=cmd_mcp)
     mcc = mcpsub.add_parser("conectar")
     mcc.add_argument("manifesto")
     mcc.set_defaults(fn=cmd_mcp)
