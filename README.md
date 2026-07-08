@@ -1,6 +1,9 @@
 # NOMOS
 
 [![CI](https://github.com/Voltolini-SPACE/NOMOS/actions/workflows/ci.yml/badge.svg)](https://github.com/Voltolini-SPACE/NOMOS/actions/workflows/ci.yml)
+[![Python 3.10 to 3.13](https://img.shields.io/badge/python-3.10_to_3.13-5AF78E?logo=python&logoColor=white)](https://github.com/Voltolini-SPACE/NOMOS/blob/main/pyproject.toml)
+[![License MIT](https://img.shields.io/badge/license-MIT-5AF78E)](https://github.com/Voltolini-SPACE/NOMOS/blob/main/LICENSE)
+[![local-first](https://img.shields.io/badge/local--first-100%25-5AF78E)](https://github.com/Voltolini-SPACE/NOMOS/blob/main/docs/PRIVACIDADE.md)
 
 **Seu agente. Sua máquina. Suas regras.** — *local por lei.*
 
