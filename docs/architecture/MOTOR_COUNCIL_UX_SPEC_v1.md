@@ -13,11 +13,12 @@ IMPLEMENTATION=partial      # atualizado em MC23-UX — ver "Current implementat
 >
 > ```text
 > nomos conselho            -> registrado; raiz desabilitada (aponta os úteis)
+> nomos conselho ajuda      -> INFORMATIVO disponível (MC27-UX; mapa de comandos)
 > nomos conselho status     -> INFORMATIVO disponível (MC23-UX; fatos estáticos)
 > nomos conselho modos      -> INFORMATIVO disponível (MC23-UX; [--avancado] [--json])
-> nomos conselho diagnostico-> INFORMATIVO disponível (MC26-UX; lê a trava AO VIVO)
+> nomos conselho diagnostico-> INFORMATIVO disponível (MC26-UX; trava AO VIVO [--json])
 > nomos conselho simular    -> DRY-RUN disponível (MC15-UX)
-> /conselho status|modos|diagnostico|simular -> disponíveis (MC24/MC26-UX)
+> /conselho ajuda|status|modos|diagnostico|simular -> disponíveis (MC24/26/27-UX)
 > {perguntar, revisar, explicar}
 >                           -> desabilitados/fail-closed nas duas superfícies
 >                              (exigiriam execução real)

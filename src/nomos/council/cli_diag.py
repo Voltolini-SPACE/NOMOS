@@ -16,6 +16,8 @@ aleatoriedade — provado por AST em `tests/council/test_conselho_diagnostico.py
 """
 from __future__ import annotations
 
+import json
+
 from nomos.council.forbidden_flags import is_forbidden_flag
 from nomos.council.local_harness import real_execution_enabled
 
@@ -50,6 +52,17 @@ def diagnostico_message() -> str:
     )
 
 
+def diagnostico_json() -> str:
+    """`diagnostico --json`: a MESMA leitura viva da trava, legível por máquina
+    (schema v1) — para monitoramento/scripts."""
+    ligada = bool(real_execution_enabled())
+    return json.dumps({
+        "schema": "nomos.council.diagnostico.v1",
+        "real_engine_execution_enabled": ligada,
+        "fail_closed": not ligada,
+    }, ensure_ascii=False, sort_keys=True)
+
+
 def _deny(motivo: str) -> int:
     """Recusa fail-closed. `motivo` é texto FIXO; nunca ecoa o token digitado."""
     print(f"{DIAG_DENIED_CODE} {motivo}")
@@ -57,12 +70,16 @@ def _deny(motivo: str) -> int:
 
 
 def run_diagnostico(tokens: list | None = None) -> int:
-    """`nomos conselho diagnostico`. Só LÊ a trava e imprime; recusa flags
-    proibidas/desconhecidas fail-closed (sem ecoar). Nunca executa nada."""
+    """`nomos conselho diagnostico [--json]`. Só LÊ a trava e imprime; recusa
+    flags proibidas/desconhecidas fail-closed (sem ecoar). Nunca executa nada."""
+    as_json = False
     for tok in list(tokens or []):
         if is_forbidden_flag(tok):
             return _deny("Este comando não aceita essa opção.")
+        if tok == "--json":
+            as_json = True
+            continue
         if isinstance(tok, str) and tok.startswith("--"):
             return _deny("Essa opção não existe para este comando.")
-    print(diagnostico_message())
+    print(diagnostico_json() if as_json else diagnostico_message())
     return DIAG_EXIT_CODE

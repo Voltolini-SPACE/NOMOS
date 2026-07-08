@@ -112,6 +112,25 @@ def test_json_nao_vaza_nada_do_usuario(capsys):
 
 
 # --------------------------------------------------------------------------
+# MC27-UX — `ajuda` (mapa amigável dos comandos)
+# --------------------------------------------------------------------------
+
+def test_ajuda_lista_os_comandos(capsys):
+    rc, out = _run(capsys, "conselho", "ajuda")
+    assert cli_info.AJUDA_CODE in out
+    for cmd in ("status", "modos", "diagnostico", "simular"):
+        assert cmd in out, cmd
+    assert "REAL_LOCAL_ENGINE_EXECUTION_ENABLED = False" in out
+    assert rc == cli_info.INFO_EXIT_CODE
+
+
+def test_ajuda_recusa_flag_proibida(capsys):
+    rc, out = _run(capsys, "conselho", "ajuda", "--enable")
+    assert cli_info.INFO_DENIED_CODE in out
+    assert "--enable" not in out
+
+
+# --------------------------------------------------------------------------
 # Segurança — flags proibidas, sem eco, sem execução real, sem persistência
 # --------------------------------------------------------------------------
 

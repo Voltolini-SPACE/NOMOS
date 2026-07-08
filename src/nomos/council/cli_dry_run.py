@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from nomos.council.cli_diag import run_diagnostico
 from nomos.council.cli_disabled import run_disabled
-from nomos.council.cli_info import run_modos, run_status
+from nomos.council.cli_info import run_ajuda, run_modos, run_status
 from nomos.council.forbidden_flags import FORBIDDEN_FLAGS, is_forbidden_flag
 from nomos.council.safe_output import build_safe_output, render_json_output
 
@@ -116,6 +116,8 @@ def route_conselho(tokens: list) -> int:
     # MC23-UX: subcomandos PURAMENTE INFORMATIVOS (fatos estáticos; não
     # executam motor, não leem prompt, não gravam nada). `status`/`modos` já
     # foram finalizados — `perguntar`/`revisar` seguem fail-closed abaixo.
+    if toks and toks[0] == "ajuda":
+        return run_ajuda(toks[1:])
     if toks and toks[0] == "status":
         return run_status(toks[1:])
     if toks and toks[0] == "modos":

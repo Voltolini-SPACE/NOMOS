@@ -29,8 +29,9 @@ resultado bruto.
 from __future__ import annotations
 
 from nomos.council.chat_disabled import disabled_message, is_conselho_command
-from nomos.council.cli_diag import diagnostico_message
+from nomos.council.cli_diag import diagnostico_json, diagnostico_message
 from nomos.council.cli_info import (
+    ajuda_message,
     modos_json,
     modos_message,
     status_json,
@@ -221,6 +222,12 @@ def handle_chat_dry_run(message: object) -> str | None:
     toks = message.strip().split()
     if len(toks) >= 2 and toks[1] == "simular":
         return _simular(toks[2:])
+    # MC27-UX: `ajuda` — mapa amigável dos comandos (estático, fonte única).
+    if len(toks) >= 2 and toks[1] == "ajuda":
+        for tok in toks[2:]:
+            if is_forbidden_flag(tok):
+                return _deny("Este comando não aceita essa opção.")
+        return ajuda_message()
     # MC24-UX: subcomandos INFORMATIVOS puros (fatos estáticos; sem motor,
     # prompt, rede ou disco) — mesmas mensagens da CLI (fonte única cli_info).
     if len(toks) >= 2 and toks[1] in ("status", "modos"):
@@ -236,9 +243,10 @@ def handle_chat_dry_run(message: object) -> str | None:
         return modos_message("--avancado" in resto)
     # MC26-UX: diagnóstico lê a trava real (só leitura) e reporta — não executa.
     if len(toks) >= 2 and toks[1] == "diagnostico":
-        for tok in toks[2:]:
+        resto = toks[2:]
+        for tok in resto:
             if is_forbidden_flag(tok):
                 return _deny("Este comando não aceita essa opção.")
-        return diagnostico_message()
+        return diagnostico_json() if "--json" in resto else diagnostico_message()
     # raiz e demais subcomandos (perguntar/revisar/explicar) continuam desabilitados
     return disabled_message()

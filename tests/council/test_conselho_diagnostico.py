@@ -71,6 +71,22 @@ def test_diagnostico_le_a_trava_ao_vivo(monkeypatch):
     # e volta ao normal quando o monkeypatch sai de escopo (garantido pelo pytest)
 
 
+def test_diagnostico_json_reflete_a_trava_ao_vivo(capsys, monkeypatch):
+    import json
+    # trava real (False): JSON diz fail_closed=true
+    rc, out = _run(capsys, "conselho", "diagnostico", "--json")
+    d = json.loads(out)
+    assert d["schema"] == "nomos.council.diagnostico.v1"
+    assert d["real_engine_execution_enabled"] is False
+    assert d["fail_closed"] is True
+    # se a trava ligasse, o JSON mudaria (leitura viva)
+    monkeypatch.setattr(local_harness, "REAL_LOCAL_ENGINE_EXECUTION_ENABLED", True)
+    assert cli_diag.diagnostico_json().count("true") >= 1
+    d2 = __import__("json").loads(cli_diag.diagnostico_json())
+    assert d2["real_engine_execution_enabled"] is True
+    assert d2["fail_closed"] is False
+
+
 def test_diagnostico_nunca_chama_o_harness_de_execucao(capsys, monkeypatch):
     def boom(*a, **k):
         raise AssertionError("diagnostico não pode executar o harness")

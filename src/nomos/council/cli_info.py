@@ -28,6 +28,7 @@ from nomos.council.forbidden_flags import is_forbidden_flag
 # Códigos legíveis e estáveis (para logs/testes do usuário).
 STATUS_CODE = "[NOMOS-MC-STATUS]"
 MODOS_CODE = "[NOMOS-MC-MODOS]"
+AJUDA_CODE = "[NOMOS-MC-AJUDA]"
 INFO_DENIED_CODE = "[NOMOS-MC-CLI-DENIED]"
 
 # Ler status/modos com sucesso é um resultado operacional válido → 0.
@@ -80,6 +81,28 @@ _MODOS_AVANCADO_EXTRA = (
     "(avançado) mapeamento interno CouncilMode:\n"
     "  rapido=fast   balanceado=balanced   critico=critical   paranoico=paranoid"
 )
+
+
+# --------------------------------------------------------------------------
+# `ajuda` — mapa amigável dos comandos do Council (fatos estáticos)
+# --------------------------------------------------------------------------
+_AJUDA_MESSAGE = (
+    "[NOMOS-MC-AJUDA] Motor Council — comandos disponíveis\n"
+    "\n"
+    "  status                estado atual e travas (aceita --json)\n"
+    "  modos [--avancado]    os 4 modos de operação (aceita --json)\n"
+    "  diagnostico           lê a trava de execução real ao vivo e reporta\n"
+    "  simular <texto>       simulação segura (dry-run) — não executa motor\n"
+    "\n"
+    "Ainda em fase futura (fail-closed): perguntar, revisar, explicar.\n"
+    "A execução real vive atrás de REAL_LOCAL_ENGINE_EXECUTION_ENABLED = False.\n"
+    "Detalhes: docs/architecture/MOTOR_COUNCIL_INDEX_v1.md"
+)
+
+
+def ajuda_message() -> str:
+    """Texto fixo da `ajuda` — sem interpolação de entrada do usuário."""
+    return _AJUDA_MESSAGE
 
 
 def status_message() -> str:
@@ -138,6 +161,18 @@ def _deny(motivo: str) -> int:
     """Recusa fail-closed. `motivo` é texto FIXO; nunca ecoa o token digitado."""
     print(f"{INFO_DENIED_CODE} {motivo}")
     return INFO_DENIED_EXIT_CODE
+
+
+def run_ajuda(tokens: list | None = None) -> int:
+    """`nomos conselho ajuda`. Só imprime o mapa de comandos; recusa flags
+    proibidas/desconhecidas fail-closed (sem ecoar)."""
+    for tok in list(tokens or []):
+        if is_forbidden_flag(tok):
+            return _deny("Este comando não aceita essa opção.")
+        if isinstance(tok, str) and tok.startswith("--"):
+            return _deny("Essa opção não existe para este comando.")
+    print(_AJUDA_MESSAGE)
+    return INFO_EXIT_CODE
 
 
 def run_status(tokens: list | None = None) -> int:

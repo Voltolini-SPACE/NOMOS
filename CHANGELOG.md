@@ -4,6 +4,15 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC27-UX — Motor Council: `conselho ajuda` e `diagnostico --json`)
+- **`nomos conselho ajuda`** e **`/conselho ajuda`**: mapa amigável dos 4
+  comandos disponíveis (status, modos, diagnostico, simular) + a nota
+  fail-closed. Estático e puro (fonte única em `cli_info`).
+- **`conselho diagnostico --json`** (CLI e chat): a mesma leitura viva da trava
+  em JSON versionado (`nomos.council.diagnostico.v1`, campos
+  `real_engine_execution_enabled` / `fail_closed`) — para monitoramento e
+  scripts. Teste monkeypatcha a trava e prova que o JSON acompanha.
+
 ### Added (MC26-UX — Motor Council: `conselho diagnostico` (leitura viva da trava))
 - Novo `nomos conselho diagnostico` e `/conselho diagnostico`: **lê a trava
   `REAL_LOCAL_ENGINE_EXECUTION_ENABLED` ao vivo** (via `real_execution_enabled()`)

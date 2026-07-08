@@ -113,9 +113,10 @@ produção** e **não executa motor de verdade**.
 Superfícies disponíveis hoje (nenhuma executa motor real):
 
 ```bash
+nomos conselho ajuda                   # mapa dos comandos do Council
 nomos conselho status                  # estado + travas (informativo)
 nomos conselho modos [--avancado]      # os 4 modos (aceita --json)
-nomos conselho diagnostico             # lê a trava REAL do harness, ao vivo
+nomos conselho diagnostico [--json]    # lê a trava REAL do harness, ao vivo
 nomos conselho simular "seu texto"     # simulação segura (dry-run)
 /conselho status                       # os mesmos, dentro do chat
 /conselho modos

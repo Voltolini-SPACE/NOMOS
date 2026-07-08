@@ -172,6 +172,20 @@ def test_chat_conselho_modos_json():
     assert len(d["modes"]) == 4
 
 
+def test_chat_conselho_ajuda():
+    out = _h("/conselho ajuda")
+    assert "[NOMOS-MC-AJUDA]" in out
+    for cmd in ("status", "modos", "diagnostico", "simular"):
+        assert cmd in out, cmd
+
+
+def test_chat_conselho_diagnostico_json():
+    d = json.loads(_h("/conselho diagnostico --json"))
+    assert d["schema"] == "nomos.council.diagnostico.v1"
+    assert d["real_engine_execution_enabled"] is False
+    assert d["fail_closed"] is True
+
+
 def test_chat_conselho_unknown_still_disabled():
     out = _h(f"/conselho frobnicate {_SENSIVEL}")
     assert "[NOMOS-MC-CHAT-DISABLED]" in out
