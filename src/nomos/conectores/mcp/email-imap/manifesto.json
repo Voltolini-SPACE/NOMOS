@@ -1,0 +1,11 @@
+{
+  "nome": "email-imap",
+  "descricao": "LER a sua caixa de entrada por IMAP (biblioteca padrão, sem dependências) — entrada por PULL, sem webhook público, 100% local-first. Credenciais só por ambiente (NOMOS_IMAP_HOST/PORT/USER/PASSWORD); SSL por padrão; toda tool exige sua aprovação (A3). SÓ LEITURA: nunca marca como lido, não apaga, não move, não envia.",
+  "comando": ["python3", "servidor.py"],
+  "nivel_padrao": "A3",
+  "env": ["NOMOS_IMAP_HOST", "NOMOS_IMAP_USER", "NOMOS_IMAP_PASSWORD"],
+  "tools": {
+    "email_imap_quem_sou": "A3",
+    "email_imap_recentes": "A3"
+  }
+}

@@ -14,6 +14,7 @@ O que existe hoje, o que exige o quê, e o que **não** vamos fazer:
 | **WhatsApp** | ✅ envio pronto (`examples/mcp/whatsapp-cloud/`) — texto + template | conta Meta Business + app + número Cloud API (token + phone_id) | **receber** exige webhook público (fora do local-first); fora da janela de 24h, só template aprovado |
 | **E-mail (SMTP)** | ✅ envio pronto (`examples/mcp/email-smtp/`) — texto | seu servidor SMTP (host/porta/usuário/senha; app password no Gmail/Outlook) | só envio; STARTTLS por padrão, recusa texto claro salvo opt-in local |
 | **Signal** | ✅ envio pronto (`examples/mcp/signal/`) — texto e grupos, via **signal-cli local** | signal-cli instalado + conta registrada/vinculada uma vez (`NOMOS_SIGNAL_NUMBER`) | o mais local-first: nada passa por nuvem de terceiros além do próprio Signal; número redigido/mascarado |
+| **E-mail (IMAP)** | ✅ **leitura** pronta (`examples/mcp/email-imap/`) — cabeçalhos das mensagens recentes/não-lidas | seu servidor IMAP (host/porta/usuário/senha; app password com 2FA) | **entrada por pull** (sem webhook público); SÓ LEITURA (`readonly`+`BODY.PEEK`): nunca marca lido/apaga/envia; senha redigida |
 | **Instagram** | 📋 mapeado, não construído | conta business/creator + app Meta aprovado (Graph API) com `instagram_content_publish` | API só publica em conta business; DMs/feed pessoal não existem na API oficial |
 | **TikTok** | 📋 mapeado, não construído | app aprovado no TikTok for Developers (Content Posting API) | aprovação de app é manual e restritiva; sem app aprovado não há API |
 

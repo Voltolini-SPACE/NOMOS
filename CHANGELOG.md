@@ -4,6 +4,18 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC51 / Roadmap Fase 3 — ENTRADA por pull: conector email-imap)
+- Novo conector **`email-imap`** — a primeira capacidade de **entrada** do NOMOS:
+  LÊ os cabeçalhos das mensagens recentes/não-lidas da sua caixa por IMAP
+  (`imaplib`, stdlib), **entrada por pull, sem webhook público**, 100%
+  local-first. Tools `email_imap_quem_sou` e `email_imap_recentes`, ambas A3.
+- **Só leitura de verdade**: seleciona a caixa em `readonly` e usa `BODY.PEEK` —
+  nunca marca como lido, não apaga, não move, não envia (provado por teste).
+  Senha só por `NOMOS_IMAP_PASSWORD` (nunca em arquivo, redigida em erros); conta
+  mascarada; SSL por padrão; fail-closed sem credencial. Vai no wheel (espelho +
+  anti-drift) e aparece em `nomos mcp exemplos`/`doutor`. 8 testes com `imaplib`
+  mockado (dialeto MCP real, só-leitura, não-vazamento da senha).
+
 ### Fixed (MC50 / Roadmap Fase 1.1 — conectores agora vão no wheel)
 - **Bug real:** quem instalava por `pip` via `nomos mcp exemplos`/`doutor`
   **vazio** — os conectores de exemplo não iam no wheel. Agora a cópia
