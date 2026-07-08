@@ -305,6 +305,97 @@ def entregar_briefing(ctx, canal: str, destino: str, manifesto_path,
     return True, f"briefing entregue ✓ {trecho}"
 
 
+# --------------------------------------------------------------------------
+# ENTRADA (Fase 3): LER o que chegou por um conector, com a mesma governança
+# do briefing (manifesto CONFIÁVEL + gate A3 + auditoria). Só leitura.
+# --------------------------------------------------------------------------
+_ENTRADA = {
+    "telegram": {
+        "tool": "telegram_atualizacoes",
+        "args": {"limite": 20},
+        "manifesto_env": "NOMOS_TELEGRAM_MANIFESTO",
+        "manifesto_pad": "examples/mcp/telegram/manifesto.json",
+        "dir": "telegram",
+        "rotulo": "Telegram",
+    },
+    "email": {
+        "tool": "email_imap_recentes",
+        "args": {"limite": 15, "nao_lidas": True},
+        "manifesto_env": "NOMOS_IMAP_MANIFESTO",
+        "manifesto_pad": "examples/mcp/email-imap/manifesto.json",
+        "dir": "email-imap",
+        "rotulo": "e-mail (IMAP)",
+    },
+}
+
+
+def _fmt_entrada(canal: str, dados: dict) -> str:
+    """Resumo humano do que chegou, a partir do resultado da tool de leitura."""
+    msgs = dados.get("mensagens") or []
+    if not msgs:
+        return "nada novo por aqui — a caixa está em dia."
+    linhas = [f"chegaram {len(msgs)} (mais recentes primeiro):"]
+    for m in msgs[:20]:
+        if canal == "telegram":
+            linhas.append(f"  • {m.get('de', '?')}: "
+                          f"{(m.get('texto') or '(sem texto)')[:80]}")
+        else:  # email
+            linhas.append(f"  • {m.get('de', '?')} — "
+                          f"{(m.get('assunto') or '(sem assunto)')[:80]}")
+    return "\n".join(linhas)
+
+
+def ler_entrada(ctx, canal: str, manifesto_path, approver,
+                say=print) -> tuple[bool, str]:
+    """Lê o que chegou por um conector MCP confiado (Fase 3). Mesma governança
+    do briefing: manifesto CONFIÁVEL (senão fail-closed), o nível da tool (A3)
+    passa pelo SEU gate — sem aprovação, nada é lido — e tudo é auditado (só
+    metadados/contagem). Devolve (ok, resumo)."""
+    from nomos.interface import mcp_catalogo as cat
+    from nomos.interface import mcp_client as mc
+    from nomos.kernel.policy import gate as gate_fn
+
+    cfg = _ENTRADA.get(canal)
+    if cfg is None:
+        return False, f"canal de entrada desconhecido: {canal!r}"
+    try:
+        manifesto = mc.carregar_manifesto(Path(manifesto_path))
+    except mc.ManifestoInvalido as exc:
+        return False, f"manifesto recusado (fail-closed): {exc}"
+    if cat.status(ctx["home"], manifesto) != "confiavel":
+        return False, (f"'{manifesto['nome']}' não é confiável — ler a entrada "
+                       "exige server CONFIÁVEL. Registre antes: "
+                       f"nomos mcp confiar {manifesto_path}")
+    tool = cfg["tool"]
+    nivel = mc.nivel_da_tool(manifesto, tool)
+    decisao = ctx["policy"].decide(
+        mc.NIVEIS[nivel], target=f"entrada:{manifesto['nome']}:{tool}")
+    if not gate_fn(decisao, approver):
+        if ctx.get("audit"):
+            ctx["audit"].append("entrada.negada", server=manifesto["nome"],
+                                nivel=nivel, canal=canal)
+        return False, (f"ler a entrada é nível {nivel} — sem a sua aprovação, "
+                       "nada foi lido")
+    try:
+        with mc.ClienteMCP(manifesto,
+                           base=Path(manifesto_path).parent) as cli:
+            resultado = cli.chamar(tool, dict(cfg["args"]))
+    except mc.McpErro as exc:
+        return False, f"o conector recusou: {exc}"
+    dados: dict = {}
+    for bloco in resultado.get("content", []):
+        if bloco.get("type") == "text":
+            try:
+                dados = json.loads(bloco.get("text") or "{}")
+            except Exception:
+                dados = {}
+    if ctx.get("audit"):
+        ctx["audit"].append("entrada.lida", server=manifesto["nome"],
+                            nivel=nivel, canal=canal,
+                            quantos=len(dados.get("mensagens") or []))
+    return True, _fmt_entrada(canal, dados)
+
+
 def enviar_briefing(ctx, chat_id: str, manifesto_path, approver,
                     say=print) -> tuple[bool, str]:
     """Compat (MC41): entrega no Telegram — hoje um atalho de

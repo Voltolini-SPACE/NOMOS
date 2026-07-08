@@ -4,6 +4,16 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC52 / Roadmap Fase 3 — `nomos entrada`: resumo do que chegou)
+- Novo comando **`nomos entrada telegram|email`**: lê o que chegou por um
+  conector confiado e devolve um resumo local (de/assunto/texto). Fecha o ciclo
+  **entrada + saída** do NOMOS, com a MESMA governança do briefing: manifesto
+  **CONFIÁVEL** (senão fail-closed), o nível A3 passa pelo SEU gate (sem
+  aprovação, **nada é lido — e o conector nem é aberto**), tudo auditado (só
+  contagem/metadados). Usa as tools de leitura que já existem
+  (`telegram_atualizacoes`, `email_imap_recentes`). 6 testes (resumo, caixa
+  vazia, fail-closed sem confiança, gate que nega, canal desconhecido).
+
 ### Added (MC51 / Roadmap Fase 3 — ENTRADA por pull: conector email-imap)
 - Novo conector **`email-imap`** — a primeira capacidade de **entrada** do NOMOS:
   LÊ os cabeçalhos das mensagens recentes/não-lidas da sua caixa por IMAP

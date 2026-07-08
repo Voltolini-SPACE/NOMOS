@@ -1465,6 +1465,24 @@ def cmd_missao(ctx, args) -> int:
     return EXIT_ERROR
 
 
+def cmd_entrada(ctx, args) -> int:
+    """Lê o que chegou por um conector confiado (Telegram/e-mail) — só leitura,
+    com a sua aprovação (A3). Fase 3 (entrada por pull)."""
+    from nomos.simple import rotinas as rot
+    canal = args.canal
+    cfg = rot._ENTRADA.get(canal)
+    if cfg is None:
+        print(f"canal desconhecido: {canal!r}. Use: telegram ou email",
+              file=sys.stderr)
+        return EXIT_ERROR
+    import os as _os
+    manifesto = _os.environ.get(cfg["manifesto_env"]) or rot._manifesto_pad(cfg)
+    ok, msg = rot.ler_entrada(ctx, canal, manifesto,
+                              _approver_for(ctx, args), say=print)
+    print(msg)
+    return EXIT_OK if ok else EXIT_DENIED
+
+
 def cmd_mcp(ctx, args) -> int:
     """MCP server local (MC31/C1): NOMOS como servidor de tools, read-only."""
     from nomos.interface import mcp_server
@@ -2001,6 +2019,13 @@ def build_parser() -> argparse.ArgumentParser:
     mch.add_argument("--args", dest="args_json")
     mch.set_defaults(fn=cmd_mcp)
     mcpp.set_defaults(fn=cmd_mcp, mcp_cmd=None)
+    entp = sub.add_parser(
+        "entrada", help="lê o que chegou por um conector confiado "
+        "(telegram|email) — só leitura, com sua aprovação (A3)")
+    entp.add_argument("canal", help="telegram ou email")
+    entp.add_argument("--panel", action="store_true",
+                      help="aprovar pela fila do painel em vez do terminal")
+    entp.set_defaults(fn=cmd_entrada)
     memp = sub.add_parser("memoria",
                           help="memória local: revisar candidatas (você decide)")
     memsub = memp.add_subparsers(dest="memoria_cmd")
