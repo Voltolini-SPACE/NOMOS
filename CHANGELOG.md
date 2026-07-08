@@ -4,6 +4,23 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (MC50 / Roadmap Fase 1.1 — conectores agora vão no wheel)
+- **Bug real:** quem instalava por `pip` via `nomos mcp exemplos`/`doutor`
+  **vazio** — os conectores de exemplo não iam no wheel. Agora a cópia
+  empacotada `src/nomos/conectores/mcp/` é enviada no wheel (package-data) e o
+  `_raiz_exemplos` a encontra tanto em `-e .` quanto instalado. Provado: o wheel
+  contém os 12 arquivos e um "usuário instalado" (de uma pasta sem `examples/`)
+  vê os 4 conectores.
+- O `comando` do manifesto virou **portátil** (`["python3", "servidor.py"]`), e
+  o `ClienteMCP` resolve o caminho em runtime rodando o subprocesso com
+  `cwd=base` (o diretório do manifesto) — o hash de confiança (SHA-256) fica
+  **estável em qualquer máquina**, em vez de depender do caminho do repo.
+- `examples/mcp/` continua como a cópia documentada (site/docs/painel intactos —
+  **sem re-deploy**); um teste anti-drift garante que as duas cópias fiquem
+  byte-a-byte idênticas. O teste de egress-zero passa a tratar os conectores
+  como bridges A3/opt-in (domínios oficiais que o usuário confia), mantendo o
+  guard de urlopen e o teste de telemetria valendo para eles.
+
 ### Added (MC49 — conector Signal via signal-cli local)
 - Novo conector de exemplo **`examples/mcp/signal/`** (servidor MCP stdio, stdlib
   pura): tools `signal_quem_sou` e `signal_enviar` (texto e grupos) através do

@@ -84,9 +84,15 @@ def nivel_da_tool(manifesto: dict, tool: str) -> str:
 class ClienteMCP:
     """Sessão one-shot com um server MCP local via stdio."""
 
-    def __init__(self, manifesto: dict, timeout: float = 30.0):
+    def __init__(self, manifesto: dict, timeout: float = 30.0, base=None):
         self.manifesto = manifesto
         self.timeout = timeout
+        # ``base`` = diretório do manifesto. O ``comando`` é PORTÁTIL (ex.:
+        # ["python3", "servidor.py"]) para o hash de confiança ser estável em
+        # qualquer máquina; a resolução do caminho relativo acontece AQUI, em
+        # runtime, rodando o subprocesso com cwd=base. Sem base (comando
+        # autocontido) roda no cwd atual, como antes.
+        self._base = str(base) if base else None
         self._proc: subprocess.Popen | None = None
         self._mid = 0
 
@@ -96,7 +102,7 @@ class ClienteMCP:
         self._proc = subprocess.Popen(
             self.manifesto["comando"], stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
-            encoding="utf-8")
+            encoding="utf-8", cwd=self._base)
         # leitor em thread: readline direto bloquearia PARA SEMPRE se o
         # comando do manifesto não falar MCP — o timeout precisa valer
         self._fila: _queue.Queue = _queue.Queue()

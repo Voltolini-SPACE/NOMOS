@@ -38,3 +38,4 @@ ignore = ["E731"]
 
 [tool.setuptools.package-data]
 "nomos.agents" = ["oficiais/*.json"]
+"nomos.conectores" = ["mcp/*/manifesto.json", "mcp/*/servidor.py", "mcp/*/README.md"]

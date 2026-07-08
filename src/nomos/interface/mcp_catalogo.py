@@ -107,11 +107,12 @@ def listar(home: Path) -> dict:
 
 
 def _raiz_exemplos(raiz: Path | None = None) -> Path | None:
-    """Onde vivem os conectores de exemplo (examples/mcp).
+    """Onde vivem os conectores de exemplo.
 
-    Procura a partir do diretório de trabalho (o repositório/sdist) — no
-    wheel instalado o pacote NÃO carrega ``examples/``, então aqui é
-    honesto retornar None em vez de apontar para dentro do site-packages.
+    Ordem: (1) ``examples/mcp`` do repositório/sdist (o caminho documentado no
+    site/docs); (2) a cópia EMPACOTADA em ``nomos/conectores/mcp`` — que vai no
+    wheel, então ``nomos mcp exemplos``/``doutor`` funcionam também para quem
+    instala por pip. As duas cópias são idênticas (garantido por teste).
     """
     if raiz is not None:
         # raiz explícita é soberana: sem fallback (o chamador sabe onde é)
@@ -121,6 +122,8 @@ def _raiz_exemplos(raiz: Path | None = None) -> Path | None:
         Path.cwd() / "examples" / "mcp",
         # raiz do projeto relativa a este arquivo (repo/sdist)
         Path(__file__).resolve().parents[3] / "examples" / "mcp",
+        # cópia empacotada, ao lado deste pacote (repo -e . e wheel instalado)
+        Path(__file__).resolve().parent.parent / "conectores" / "mcp",
     ]
     for c in candidatos:
         if c.is_dir():

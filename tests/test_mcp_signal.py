@@ -158,7 +158,7 @@ def test_manifesto_valido_e_todas_tools_a3():
 def test_cliente_mcp_conecta_e_lista():
     from nomos.interface.mcp_client import ClienteMCP, carregar_manifesto
     m = carregar_manifesto(MANIFESTO)
-    with ClienteMCP(m, timeout=15) as cli:
+    with ClienteMCP(m, timeout=15, base=MANIFESTO.parent) as cli:
         tools = cli.tools()
     nomes = [t["name"] for t in tools]
     assert nomes == ["signal_quem_sou", "signal_enviar"]

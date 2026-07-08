@@ -1613,7 +1613,7 @@ def cmd_mcp(ctx, args) -> int:
                 print("ok, não conectei.")
                 return EXIT_OK
         try:
-            with mc.ClienteMCP(manifesto) as cli_mcp:
+            with mc.ClienteMCP(manifesto, base=Path(args.manifesto).parent) as cli_mcp:
                 tools = cli_mcp.tools()
         except mc.McpErro as exc:
             print(f"não conectei: {exc}", file=sys.stderr)
@@ -1667,7 +1667,7 @@ def cmd_mcp(ctx, args) -> int:
             print(fmt("E010", "--args precisa ser JSON válido"), file=sys.stderr)
             return EXIT_ERROR
         try:
-            with mc.ClienteMCP(manifesto) as cli_mcp:
+            with mc.ClienteMCP(manifesto, base=Path(args.manifesto).parent) as cli_mcp:
                 resultado = cli_mcp.chamar(args.tool, argumentos)
         except mc.McpErro as exc:
             print(f"tool falhou no server: {exc}", file=sys.stderr)

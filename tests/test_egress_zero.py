@@ -15,6 +15,12 @@ def test_unico_destino_externo_e_a_nuvem_opcional():
     url_re = re.compile(r"https?://([A-Za-z0-9.\-]+)")
     externos = set()
     for f in _fontes():
+        # os conectores de exemplo (nomos/conectores/mcp) são bridges A3/opt-in
+        # para as APIs OFICIAIS que o próprio usuário escolhe, confia e aprova a
+        # cada chamada — não são o "core" do NOMOS. Continuam cobertos pelos
+        # testes de telemetria e de guard de urlopen abaixo.
+        if "conectores" in f.parts:
+            continue
         for host in url_re.findall(f.read_text()):
             if host in {"127.0.0.1", "localhost", "0.0.0.0"} or "." not in host:
                 continue                     # loopback ou placeholder de doc

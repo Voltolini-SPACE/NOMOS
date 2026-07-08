@@ -204,6 +204,7 @@ _CANAIS = {
                                         "texto": texto},
         "manifesto_env": "NOMOS_TELEGRAM_MANIFESTO",
         "manifesto_pad": "examples/mcp/telegram/manifesto.json",
+        "dir": "telegram",
         "rotulo": "Telegram",
     },
     "whatsapp": {
@@ -212,6 +213,7 @@ _CANAIS = {
                                         "texto": texto},
         "manifesto_env": "NOMOS_WHATSAPP_MANIFESTO",
         "manifesto_pad": "examples/mcp/whatsapp-cloud/manifesto.json",
+        "dir": "whatsapp-cloud",
         "rotulo": "WhatsApp",
     },
     "email": {
@@ -223,9 +225,23 @@ _CANAIS = {
             "texto": texto},
         "manifesto_env": "NOMOS_EMAIL_MANIFESTO",
         "manifesto_pad": "examples/mcp/email-smtp/manifesto.json",
+        "dir": "email-smtp",
         "rotulo": "e-mail",
     },
 }
+
+
+def _manifesto_pad(cfg) -> str:
+    """Caminho do manifesto padrão do canal. Prefere a cópia EMPACOTADA (achada
+    por ``_raiz_exemplos`` — funciona instalado por pip); cai no caminho do
+    repositório se aquela não existir."""
+    from nomos.interface.mcp_catalogo import _raiz_exemplos
+    raiz = _raiz_exemplos()
+    if raiz is not None:
+        cand = raiz / cfg["dir"] / "manifesto.json"
+        if cand.is_file():
+            return str(cand)
+    return cfg["manifesto_pad"]
 
 
 def entregar_briefing(ctx, canal: str, destino: str, manifesto_path,
@@ -273,7 +289,8 @@ def entregar_briefing(ctx, canal: str, destino: str, manifesto_path,
     texto = briefing(ctx)
     say(f"briefing gerado — enviando pelo {cfg['rotulo']} (aprovado)…")
     try:
-        with mc.ClienteMCP(manifesto) as cli:
+        with mc.ClienteMCP(manifesto,
+                           base=Path(manifesto_path).parent) as cli:
             resultado = cli.chamar(tool, cfg["args"](destino, texto))
     except mc.McpErro as exc:
         return False, f"o conector recusou: {exc}"
@@ -340,8 +357,7 @@ def executar_acao(ctx, acao: str, say=print, simular: bool = False,
         if acao.startswith(prefixo):
             import os as _os
             destino = acao.split(":", 1)[1]
-            manifesto = (_os.environ.get(cfg["manifesto_env"])
-                         or cfg["manifesto_pad"])
+            manifesto = _os.environ.get(cfg["manifesto_env"]) or _manifesto_pad(cfg)
             return entregar_briefing(ctx, canal, destino, manifesto,
                                      approver, say=say)
     if acao == "briefing":

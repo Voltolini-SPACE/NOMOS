@@ -169,7 +169,7 @@ def test_cliente_mcp_do_nomos_conecta_de_verdade():
     faz o handshake e lista as tools — nenhum byte sai para a rede."""
     from nomos.interface.mcp_client import ClienteMCP, carregar_manifesto
     m = carregar_manifesto(MANIFESTO)
-    with ClienteMCP(m, timeout=15) as cli:
+    with ClienteMCP(m, timeout=15, base=MANIFESTO.parent) as cli:
         tools = cli.tools()
     nomes = [t["name"] for t in tools]
     assert "telegram_enviar" in nomes and len(nomes) == 3
