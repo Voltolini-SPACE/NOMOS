@@ -68,7 +68,7 @@ def test_prova_honestidade_parcial_explicada():
 # --------------------------------------------------------------------------
 def test_site_mostra_motor_council():
     assert "Motor Council" in SITE
-    assert "nomos conselho simular" in SITE
+    assert "conselho simular" in SITE          # terminal e chat
     assert "fail-closed" in SITE
 
 

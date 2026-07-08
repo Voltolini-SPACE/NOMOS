@@ -114,17 +114,20 @@ nomos conselho status                  # estado + travas (informativo)
 nomos conselho modos                   # os 4 modos, em linguagem simples
 nomos conselho modos --avancado        #   + mapeamento interno CouncilMode
 nomos conselho simular "seu texto"     # simulação segura (dry-run)
-/conselho simular seu texto            # o mesmo, dentro do chat
+/conselho status                       # os mesmos, dentro do chat
+/conselho modos
+/conselho simular seu texto
 ```
 
 Garantias atuais (todas verificadas por teste, não por convenção):
 
 - **Execução de motor real:** desligada — trava literal
   `REAL_LOCAL_ENGINE_EXECUTION_ENABLED = False`, sem API para ativar.
-- **CLI:** `status` e `modos` são **informativos puros** (só imprimem fatos
-  estáticos — nada de motor, prompt, rede ou disco); `simular` roda em
+- **CLI e chat:** `status` e `modos` são **informativos puros** (só imprimem
+  fatos estáticos — nada de motor, prompt, rede ou disco); `simular` roda em
   **dry-run**; e `perguntar`, `revisar`, `explicar`, `diagnostico` — que
-  exigiriam execução real — seguem **desabilitados/fail-closed**.
+  exigiriam execução real — seguem **desabilitados/fail-closed** nas duas
+  superfícies.
 - **Policy/Audit/Vault reais:** não são chamados (o gate e o audit são só
   dry-run; A0–A6 simulado, `would_write_audit=false`).
 - **Nuvem / rede / subprocess:** não usados por nenhum módulo do Council.

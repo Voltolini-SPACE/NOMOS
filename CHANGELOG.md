@@ -4,6 +4,15 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC24-UX — Motor Council: `status` e `modos` também no chat)
+- `/conselho status` e `/conselho modos [--avancado]` finalizados no chat,
+  simétricos à CLI e reusando a **fonte única** de texto (`cli_info`) — info
+  pura, sem executar motor, ler prompt, tocar rede ou disco. `perguntar`/
+  `revisar`/`explicar` seguem **fail-closed** nas duas superfícies; a trava
+  `REAL_LOCAL_ENGINE_EXECUTION_ENABLED = False` continua intocada.
+- Testes de chat atualizados (informativo em vez de desabilitado) + lock de
+  recusa de flag proibida sem eco. UX spec, README e site alinhados.
+
 ### Added (MC23-UX — Motor Council: `status` e `modos` finalizados)
 - `nomos conselho status` e `nomos conselho modos [--avancado]` saíram do
   esqueleto desabilitado e agora funcionam como comandos **puramente

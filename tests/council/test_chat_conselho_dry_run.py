@@ -131,12 +131,33 @@ def test_chat_conselho_revisar_still_disabled():
     assert "[NOMOS-MC-CHAT-DISABLED]" in _h("/conselho revisar arquivo.md")
 
 
-def test_chat_conselho_status_still_disabled():
-    assert "[NOMOS-MC-CHAT-DISABLED]" in _h("/conselho status")
+def test_chat_conselho_status_now_informational():
+    # MC24-UX: `/conselho status` finalizado como informativo puro no chat.
+    out = _h("/conselho status")
+    assert "[NOMOS-MC-STATUS]" in out
+    assert "REAL_ENGINE_EXECUTION=false" in out
+    assert "[NOMOS-MC-CHAT-DISABLED]" not in out
 
 
-def test_chat_conselho_modos_still_disabled():
-    assert "[NOMOS-MC-CHAT-DISABLED]" in _h("/conselho modos")
+def test_chat_conselho_modos_now_informational():
+    out = _h("/conselho modos")
+    assert "[NOMOS-MC-MODOS]" in out
+    for modo in ("rapido", "balanceado", "critico", "paranoico"):
+        assert modo in out, modo
+    assert "[NOMOS-MC-CHAT-DISABLED]" not in out
+
+
+def test_chat_conselho_modos_avancado():
+    out = _h("/conselho modos --avancado")
+    assert "CouncilMode" in out and "balanceado=balanced" in out
+
+
+def test_chat_conselho_info_recusa_flag_proibida_sem_ecoar():
+    # defesa em profundidade: nenhuma flag "liga" nada nem é ecoada
+    for flag in ("--real", "--enable", "--cloud", "--engine-real", "--vault-real"):
+        out = _h(f"/conselho status {flag}")
+        assert chat_dry_run.DENIED_CODE in out, flag
+        assert flag not in out, flag
 
 
 def test_chat_conselho_unknown_still_disabled():

@@ -29,6 +29,7 @@ resultado bruto.
 from __future__ import annotations
 
 from nomos.council.chat_disabled import disabled_message, is_conselho_command
+from nomos.council.cli_info import modos_message, status_message
 from nomos.council.forbidden_flags import FORBIDDEN_FLAGS, is_forbidden_flag
 from nomos.council.safe_output import build_safe_output, render_json_output
 
@@ -214,5 +215,15 @@ def handle_chat_dry_run(message: object) -> str | None:
     toks = message.strip().split()
     if len(toks) >= 2 and toks[1] == "simular":
         return _simular(toks[2:])
-    # raiz e todos os demais subcomandos continuam desabilitados
+    # MC24-UX: subcomandos INFORMATIVOS puros (fatos estáticos; sem motor,
+    # prompt, rede ou disco) — mesmas mensagens da CLI (fonte única cli_info).
+    if len(toks) >= 2 and toks[1] in ("status", "modos"):
+        resto = toks[2:]
+        for tok in resto:
+            if is_forbidden_flag(tok):
+                return _deny("Este comando não aceita essa opção.")
+        if toks[1] == "status":
+            return status_message()
+        return modos_message("--avancado" in resto)
+    # raiz e demais subcomandos (perguntar/revisar/explicar) continuam desabilitados
     return disabled_message()
