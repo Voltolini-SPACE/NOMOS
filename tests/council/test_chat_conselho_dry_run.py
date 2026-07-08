@@ -160,6 +160,18 @@ def test_chat_conselho_info_recusa_flag_proibida_sem_ecoar():
         assert flag not in out, flag
 
 
+def test_chat_conselho_status_json():
+    d = json.loads(_h("/conselho status --json"))
+    assert d["schema"] == "nomos.council.status.v1"
+    assert d["real_engine_execution"] is False
+
+
+def test_chat_conselho_modos_json():
+    d = json.loads(_h("/conselho modos --json"))
+    assert d["schema"] == "nomos.council.modos.v1"
+    assert len(d["modes"]) == 4
+
+
 def test_chat_conselho_unknown_still_disabled():
     out = _h(f"/conselho frobnicate {_SENSIVEL}")
     assert "[NOMOS-MC-CHAT-DISABLED]" in out

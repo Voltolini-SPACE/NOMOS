@@ -21,6 +21,8 @@ não usa relógio nem aleatoriedade — provado por AST em
 """
 from __future__ import annotations
 
+import json
+
 from nomos.council.forbidden_flags import is_forbidden_flag
 
 # Códigos legíveis e estáveis (para logs/testes do usuário).
@@ -91,6 +93,47 @@ def modos_message(avancado: bool = False) -> str:
     return _MODOS_MESSAGE + (_MODOS_AVANCADO_EXTRA if avancado else "")
 
 
+# --------------------------------------------------------------------------
+# Saída JSON estável (MC25-UX): fatos ESTÁTICOS, versionados por schema. Não há
+# interpolação de entrada do usuário — os dicionários são literais fixos.
+# --------------------------------------------------------------------------
+_MODOS_DATA = (
+    ("rapido", "fast", "resposta rápida; o conselho pode nem rodar por completo"),
+    ("balanceado", "balanced", "modo padrão; compara candidatos, sem detalhe técnico"),
+    ("critico", "critical", "exige aprovação obrigatória e registro mais detalhado"),
+    ("paranoico", "paranoid", "só local, privado e sem memória — avisa antes de rodar"),
+)
+
+
+def status_json() -> str:
+    """`status --json`: estado do Council como objeto estável (schema v1)."""
+    return json.dumps({
+        "schema": "nomos.council.status.v1",
+        "phase": "dry-run",
+        "default_mode": "balanceado",
+        "commands_available": ["status", "modos", "simular"],
+        "real_engine_execution": False,
+        "real_policy": False,
+        "real_audit": False,
+        "real_vault": False,
+        "persistence": False,
+        "cloud": False,
+        "network": False,
+    }, ensure_ascii=False, sort_keys=True)
+
+
+def modos_json() -> str:
+    """`modos --json`: os 4 modos + mapeamento interno (schema v1)."""
+    return json.dumps({
+        "schema": "nomos.council.modos.v1",
+        "default": "balanceado",
+        "modes": [
+            {"nome": n, "council_mode": cm, "resumo": r}
+            for n, cm, r in _MODOS_DATA
+        ],
+    }, ensure_ascii=False, sort_keys=True)
+
+
 def _deny(motivo: str) -> int:
     """Recusa fail-closed. `motivo` é texto FIXO; nunca ecoa o token digitado."""
     print(f"{INFO_DENIED_CODE} {motivo}")
@@ -98,24 +141,32 @@ def _deny(motivo: str) -> int:
 
 
 def run_status(tokens: list | None = None) -> int:
-    """`nomos conselho status`. Ignora argumentos posicionais; recusa flags
+    """`nomos conselho status [--json]`. Ignora posicionais; recusa flags
     proibidas/desconhecidas fail-closed (sem ecoar)."""
+    as_json = False
     for tok in list(tokens or []):
         if is_forbidden_flag(tok):
             return _deny("Este comando não aceita essa opção.")
+        if tok == "--json":
+            as_json = True
+            continue
         if isinstance(tok, str) and tok.startswith("--"):
             return _deny("Essa opção não existe para este comando.")
-    print(_STATUS_MESSAGE)
+    print(status_json() if as_json else _STATUS_MESSAGE)
     return INFO_EXIT_CODE
 
 
 def run_modos(tokens: list | None = None) -> int:
-    """`nomos conselho modos [--avancado]`. Só a flag `--avancado`/`--iniciante`
-    é reconhecida; qualquer outra é recusada fail-closed (sem ecoar)."""
+    """`nomos conselho modos [--avancado] [--json]`. Só `--avancado`/`--iniciante`/
+    `--json` são reconhecidas; qualquer outra é recusada fail-closed (sem ecoar)."""
     avancado = False
+    as_json = False
     for tok in list(tokens or []):
         if is_forbidden_flag(tok):
             return _deny("Este comando não aceita essa opção.")
+        if tok == "--json":
+            as_json = True
+            continue
         if tok == "--avancado":
             avancado = True
             continue
@@ -125,5 +176,5 @@ def run_modos(tokens: list | None = None) -> int:
         if isinstance(tok, str) and tok.startswith("--"):
             return _deny("Essa opção não existe para este comando.")
         # posicionais são ignorados (o comando não recebe prompt)
-    print(modos_message(avancado))
+    print(modos_json() if as_json else modos_message(avancado))
     return INFO_EXIT_CODE

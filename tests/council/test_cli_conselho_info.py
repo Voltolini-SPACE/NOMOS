@@ -81,6 +81,37 @@ def test_modos_avancado_revela_mapeamento(capsys):
 
 
 # --------------------------------------------------------------------------
+# MC25-UX — saída --json estável (para scripts)
+# --------------------------------------------------------------------------
+
+def test_status_json_estavel(capsys):
+    import json
+    rc, out = _run(capsys, "conselho", "status", "--json")
+    d = json.loads(out)
+    assert d["schema"] == "nomos.council.status.v1"
+    assert d["real_engine_execution"] is False
+    assert d["persistence"] is False and d["cloud"] is False
+    assert "simular" in d["commands_available"]
+    assert rc == cli_info.INFO_EXIT_CODE
+
+
+def test_modos_json_estavel(capsys):
+    import json
+    rc, out = _run(capsys, "conselho", "modos", "--json")
+    d = json.loads(out)
+    assert d["schema"] == "nomos.council.modos.v1"
+    nomes = [m["nome"] for m in d["modes"]]
+    assert nomes == ["rapido", "balanceado", "critico", "paranoico"]
+    assert d["modes"][3]["council_mode"] == "paranoid"
+
+
+def test_json_nao_vaza_nada_do_usuario(capsys):
+    # posicional após --json é ignorado, nunca ecoado
+    rc, out = _run(capsys, "conselho", "status", "--json", _SENSIVEL)
+    assert _SENSIVEL not in out
+
+
+# --------------------------------------------------------------------------
 # Segurança — flags proibidas, sem eco, sem execução real, sem persistência
 # --------------------------------------------------------------------------
 

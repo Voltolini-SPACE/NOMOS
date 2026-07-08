@@ -29,7 +29,12 @@ resultado bruto.
 from __future__ import annotations
 
 from nomos.council.chat_disabled import disabled_message, is_conselho_command
-from nomos.council.cli_info import modos_message, status_message
+from nomos.council.cli_info import (
+    modos_json,
+    modos_message,
+    status_json,
+    status_message,
+)
 from nomos.council.forbidden_flags import FORBIDDEN_FLAGS, is_forbidden_flag
 from nomos.council.safe_output import build_safe_output, render_json_output
 
@@ -222,8 +227,11 @@ def handle_chat_dry_run(message: object) -> str | None:
         for tok in resto:
             if is_forbidden_flag(tok):
                 return _deny("Este comando não aceita essa opção.")
+        as_json = "--json" in resto
         if toks[1] == "status":
-            return status_message()
+            return status_json() if as_json else status_message()
+        if as_json:
+            return modos_json()
         return modos_message("--avancado" in resto)
     # raiz e demais subcomandos (perguntar/revisar/explicar) continuam desabilitados
     return disabled_message()
