@@ -72,6 +72,14 @@ def test_site_mostra_motor_council():
     assert "fail-closed" in SITE
 
 
+def test_prova_tem_terminal_do_conselho_status():
+    prova = _secao_prova()
+    assert "nomos conselho status" in prova
+    assert "[NOMOS-MC-STATUS]" in prova
+    assert "REAL_ENGINE_EXECUTION=false" in prova   # travas reais impressas
+    assert "/conselho status" in prova              # também no chat
+
+
 # --------------------------------------------------------------------------
 # 5. marketing NÃO pode superar a realidade: o nº de testes anunciado no hero
 #    tem de ser <= nº real de funções `def test_` no repositório.

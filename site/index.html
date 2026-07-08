@@ -338,6 +338,31 @@ conectores que acompanham o NOMOS (3):
 <span class="dim">(ligar é decisão sua, num terminal; toda chamada dessas tools passa pelo gate de aprovação)</span></pre>
             </div>
             <p class="nota">Todo conector nasce <strong>desligado</strong> e marcado <span class="k">A3</span>: você liga no terminal e cada chamada ainda passa pela fila de aprovação. Veja o fluxo ponta a ponta em <a href="#conexoes">conexões →</a></p>
+
+            <h3 class="grupo-recursos"><span aria-hidden="true">⚖️</span> nomos conselho status — Motor Council, honesto por construção (saída real)</h3>
+            <div class="term">
+                <div class="term-bar"><span class="td red"></span><span class="td yellow"></span><span class="td green"></span><span class="term-title">bash — ~ — nomos conselho status</span></div>
+<pre class="term-body"><span class="cmd">$ nomos conselho status</span>
+[NOMOS-MC-STATUS] Motor Council — estado atual
+
+Fase: <span class="warn">dry-run / pré-release</span>.
+Comando disponível: <span class="cmd">nomos conselho simular</span>  (simulação segura — nunca executa motor real).
+Modo padrão: balanceado.
+
+Travas de segurança (todas ligadas nesta fase):
+  <span class="ok">REAL_ENGINE_EXECUTION=false</span>
+  <span class="ok">REAL_POLICY=false</span>
+  <span class="ok">REAL_AUDIT=false</span>
+  <span class="ok">REAL_VAULT=false</span>
+  <span class="ok">PERSISTENCE=false</span>
+  <span class="ok">CLOUD=false</span>
+  <span class="ok">NETWORK=false</span>
+
+<span class="dim">perguntar/revisar ainda estão desabilitados (fail-closed): nada é
+executado, nenhum prompt é processado e nada é gravado.
+Detalhes: docs/architecture/MOTOR_COUNCIL_INDEX_v1.md</span></pre>
+            </div>
+            <p class="nota">Cada trava impressa como <span class="k">=false</span> é uma promessa <em>verificável</em> — a execução real vive atrás de <span class="k">REAL_LOCAL_ENGINE_EXECUTION_ENABLED = False</span>, sem API para ligar. Também no chat: <span class="k">/conselho status</span> · <span class="k">/conselho modos</span> · <span class="k">--json</span> para scripts.</p>
         </div>
     </section>
 
