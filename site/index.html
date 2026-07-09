@@ -323,17 +323,23 @@ Próximo passo recomendado: rode: <span class="cmd">nomos start</span></pre>
             <div class="term">
                 <div class="term-bar"><span class="td red"></span><span class="td yellow"></span><span class="td green"></span><span class="term-title">bash — ~ — nomos mcp exemplos</span></div>
 <pre class="term-body"><span class="cmd">$ nomos mcp exemplos</span>
-conectores que acompanham o NOMOS (3):
+conectores que acompanham o NOMOS (5):
 
+  ○ disponível  email-imap <span class="a3">[A3]</span>
+<span class="dim">      LER a sua caixa de entrada por IMAP (biblioteca padrão, sem dependências) — entrada por PULL.</span>
+      ligar: <span class="cmd">nomos mcp confiar email-imap</span>
   ○ disponível  email-smtp <span class="a3">[A3]</span>
 <span class="dim">      Envio de e-mail pelo SEU servidor SMTP (biblioteca padrão, sem dependências).</span>
-      ligar: <span class="cmd">nomos mcp confiar examples/mcp/email-smtp/manifesto.json</span>
+      ligar: <span class="cmd">nomos mcp confiar email-smtp</span>
+  ○ disponível  signal-cli <span class="a3">[A3]</span>
+<span class="dim">      Ponte com o Signal via signal-cli LOCAL (o cliente oficial de linha de comando).</span>
+      ligar: <span class="cmd">nomos mcp confiar signal</span>
   ○ disponível  telegram-bot <span class="a3">[A3]</span>
 <span class="dim">      Ponte oficial com a Bot API do Telegram: enviar e ler mensagens pelo SEU bot.</span>
-      ligar: <span class="cmd">nomos mcp confiar examples/mcp/telegram/manifesto.json</span>
+      ligar: <span class="cmd">nomos mcp confiar telegram</span>
   ○ disponível  whatsapp-cloud <span class="a3">[A3]</span>
 <span class="dim">      Envio pela WhatsApp Business Cloud API OFICIAL da Meta (texto e templates).</span>
-      ligar: <span class="cmd">nomos mcp confiar examples/mcp/whatsapp-cloud/manifesto.json</span>
+      ligar: <span class="cmd">nomos mcp confiar whatsapp-cloud</span>
 
 <span class="dim">(ligar é decisão sua, num terminal; toda chamada dessas tools passa pelo gate de aprovação)</span></pre>
             </div>
@@ -558,17 +564,20 @@ Detalhes: docs/architecture/MOTOR_COUNCIL_INDEX_v1.md</span></pre>
     <section id="conexoes" aria-labelledby="cx-t">
         <div class="wrap">
             <div class="tag">// conexões</div>
-            <h2 id="cx-t">Seu briefing onde você já está</h2>
-            <p class="lead">O NOMOS gera o resumo do seu dia — tarefas, rotinas, próximo passo — <strong>100% na sua máquina</strong>, e entrega no canal que você escolher: <strong>Telegram</strong>, <strong>WhatsApp</strong> ou <strong>e-mail</strong>. Cada canal é um conector MCP oficial (nada de bibliotecas que fingem ser o app), com credencial só no seu ambiente e <strong>sua aprovação a cada envio</strong> (nível A3). Sem aprovação, nada sai.</p>
+            <h2 id="cx-t">Seu briefing onde você já está — e o que chegou</h2>
+            <p class="lead">O NOMOS gera o resumo do seu dia — tarefas, rotinas, próximo passo — <strong>100% na sua máquina</strong>, e entrega no canal que você escolher: <strong>Telegram</strong>, <strong>WhatsApp</strong>, <strong>e-mail</strong> ou <strong>Signal</strong>. E agora ele também <strong>lê o que chegou</strong> (por IMAP ou pelo seu bot) e junta tudo num <strong>briefing 2.0</strong>. Cada conector é oficial (nada de bibliotecas que fingem ser o app), com credencial só no seu ambiente e <strong>sua aprovação a cada acesso</strong> (nível A3). Sem aprovação, nada sai — nem entra.</p>
             <div class="grid">
                 <div class="card"><div class="ico" aria-hidden="true">✈️</div><h3>Telegram</h3><p>Crie um bot no @BotFather (2 min, grátis) e receba o briefing no seu chat. Bot API oficial — enviar, ler, validar.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">💬</div><h3>WhatsApp</h3><p>Pela WhatsApp Business Cloud API oficial da Meta (texto e templates). Só o caminho oficial — sem risco de derrubar seu número.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">✉️</div><h3>E-mail (SMTP)</h3><p>Pelo seu próprio servidor SMTP, com a biblioteca padrão do Python. STARTTLS por padrão; recusa texto claro.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">📨</div><h3>Signal</h3><p>Pelo <strong>signal-cli local</strong>: nada passa por nuvem de terceiros além do próprio Signal — o mais local-first. Texto e grupos; o número é redigido/mascarado.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">📥</div><h3>E-mail (IMAP) — <em>entrada</em></h3><p>O NOMOS <strong>lê</strong> a sua caixa: puxa os não-lidos (só cabeçalhos), sem webhook público. <strong>Só leitura de verdade</strong> — nunca marca como lido, apaga ou envia.</p></div>
             </div>
             <div class="term" role="group" aria-label="Ligar um canal e agendar o briefing">
                 <div class="termbar">~/nomos — bash</div>
                 <div><span class="p">$</span> <span class="c">nomos mcp exemplos</span> <span class="o"># descobre os conectores que acompanham o NOMOS</span></div>
-                <div><span class="p">$</span> <span class="c">nomos mcp confiar examples/mcp/telegram/manifesto.json</span></div>
+                <div><span class="p">$</span> <span class="c">nomos mcp confiar telegram</span> <span class="o"># por nome (ou pelo caminho do manifesto)</span></div>
+                <div><span class="p">$</span> <span class="c">nomos entrada telegram --dia</span> <span class="o"># briefing 2.0: o que chegou + o seu dia</span></div>
                 <div><span class="p">$</span> <span class="c">nomos rotinas criar "Briefing" 08:00 briefing-telegram:SEU_CHAT_ID</span></div>
                 <div><span class="p">$</span> <span class="c">nomos rotinas agendar</span> <span class="o"># cole a linha no cron — a entrega pede seu OK na hora (TTL 5 min)</span></div>
             </div>
