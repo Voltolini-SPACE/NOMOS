@@ -4,6 +4,20 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Changed (MC56 / Roadmap Fase 1.2 — taxonomia honesta: conector é `A3_CONNECTOR_USE`)
+- As tools de conector MCP agora são rotuladas **`A3_CONNECTOR_USE`** ("usar
+  conector" / "usar uma conta conectada sua") em vez de `A3_CRED_USE` ("usar
+  credencial") — a categoria já existia na política, mas o caminho MCP rotulava
+  tudo como credencial (menos fiel). Mudança de **uma linha** em
+  `mcp_client.NIVEIS["A3"]`, consumida pelos três pontos de chamada de conector
+  (`mcp chamar`, briefing, `entrada`).
+- **Nada afrouxa**: o efeito continua `REQUIRE_APPROVAL` — o gate segue
+  obrigatório e fail-closed sem aprovador. Os usos **diretos** de credencial
+  (cofre, âncora HMAC, chave da nuvem) **não** passam por `NIVEIS` e seguem
+  `A3_CRED_USE`. A **impressão de confiança** é sobre o manifesto canônico
+  (strings `"A3"`), não sobre o mapa de runtime — **nenhum hash muda**. 4 testes
+  novos travam a taxonomia; suíte 1517 verde.
+
 ### Added (MC54 / Roadmap Fase 5 — trust-UX: confiar por NOME do conector)
 - `nomos mcp confiar|conectar|chamar` agora aceitam o **NOME** do conector
   (`telegram`, `signal`, `email-imap`, …) além do caminho — o usuário instalado

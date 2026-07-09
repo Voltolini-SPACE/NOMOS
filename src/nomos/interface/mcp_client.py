@@ -33,7 +33,10 @@ NIVEIS = {
     "A0": Category.READ_LOCAL,
     "A1": Category.WRITE_LOCAL,
     "A2": Category.NET_EGRESS,
-    "A3": Category.CRED_USE,
+    # A3 de conector = usar UMA CONTA CONECTADA sua (rótulo mais fiel que
+    # "usar credencial"; mesmo efeito REQUIRE_APPROVAL — nada afrouxa). Os usos
+    # diretos de credencial (cofre, âncora HMAC) seguem chamando CRED_USE à mão.
+    "A3": Category.CONNECTOR_USE,
     "A4": Category.DEVICE_SCREEN,
     "A5": Category.CODE_EXEC,
     "A6": Category.DESTRUCTIVE,

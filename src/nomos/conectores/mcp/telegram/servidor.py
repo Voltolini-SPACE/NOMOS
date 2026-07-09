@@ -12,7 +12,7 @@ Como as leis da casa valem aqui:
 - sem token, o servidor conecta e lista tools normalmente, mas toda
   chamada falha FECHADO com instrução do que fazer — nunca finge;
 - toda tool deste conector toca rede + credencial ⇒ o manifesto declara
-  nível **A3** (CRED_USE): o NOMOS pede a SUA aprovação a cada chamada;
+  nível **A3** (CONNECTOR_USE): o NOMOS pede a SUA aprovação a cada chamada;
 - este processo não lê nem escreve nada no disco.
 
 Uso (resumo; detalhes no README.md ao lado):

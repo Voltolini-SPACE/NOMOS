@@ -41,8 +41,9 @@ aprovação single-use; hub de conexões no painel (leitura pura).
    já anotado em `_raiz_exemplos`). Quem instala não descobre nem os 3 que existem.
 4. **Sem descoberta/registry** — confiar é sempre manual, arquivo por arquivo, e
    só por TTY (digitar "CONFIO"); o painel só mostra o comando para copiar.
-5. **`A3_CONNECTOR_USE` inutilizado** — a categoria "conector" existe na política,
-   mas o caminho MCP rotula tudo como `A3_CRED_USE` (rótulo menos fiel).
+5. ~~**`A3_CONNECTOR_USE` inutilizado**~~ — **RESOLVIDO (MC56 / Fase 1.2)**: o
+   caminho MCP agora rotula tools de conector como `A3_CONNECTOR_USE` (rótulo
+   fiel), mantendo `REQUIRE_APPROVAL`. Usos diretos de credencial seguem `A3_CRED_USE`.
 
 ---
 
@@ -51,7 +52,7 @@ aprovação single-use; hub de conexões no painel (leitura pura).
 | # | Melhoria | Seam (onde mexer) |
 |---|---|---|
 | 1.1 | **Empacotar os conectores no wheel** — hoje `nomos mcp exemplos` volta vazio pra quem instala por pip. Enviar `examples/mcp/**` como dados do pacote e fazer `_raiz_exemplos` achar a cópia instalada. | `pyproject.toml` (data files) + `mcp_catalogo._raiz_exemplos` + teste que valida descoberta fora do repo |
-| 1.2 | **Taxonomia honesta** — rotear tools de conector por `A3_CONNECTOR_USE` (categoria que já existe) em vez de `A3_CRED_USE`. | `mcp_client.NIVEIS` + `kernel/policy.py` |
+| 1.2 ✅ | **Taxonomia honesta** — rotear tools de conector por `A3_CONNECTOR_USE` (categoria que já existe) em vez de `A3_CRED_USE`. **Feito (MC56)**: `NIVEIS["A3"]=CONNECTOR_USE`, mesmo `REQUIRE_APPROVAL`, hash intacto, 4 testes. | `mcp_client.NIVEIS` + `kernel/policy.py` |
 | 1.3 | **`nomos mcp doutor`** — check-up por conector: alcançável? credencial presente no env? (sem **jamais** imprimir o valor). Read-only, no espírito do `nomos doutor`. | `cli.cmd_mcp` + novo helper em `mcp_catalogo` |
 
 **Recomendado começar por 1.1** — é o de maior impacto imediato (destrava os 3
