@@ -1,0 +1,12 @@
+{
+  "nome": "calendario-ics",
+  "descricao": "LER a sua agenda de um arquivo .ics LOCAL (exportado do seu app de calendário) — sem rede, sem nuvem, sem dependências (biblioteca padrão). Entrada 100% local-first para o seu briefing. O caminho vem só do ambiente (NOMOS_ICS_PATH). Leitura de arquivo local = A0, mas o conector ainda precisa ser CONFIADO antes de qualquer chamada. SÓ LEITURA: nunca escreve, altera ou apaga o .ics.",
+  "comando": ["python3", "servidor.py"],
+  "nivel_padrao": "A5",
+  "env": ["NOMOS_ICS_PATH"],
+  "tools": {
+    "calendario_quem_sou": "A0",
+    "calendario_hoje": "A0",
+    "calendario_proximos": "A0"
+  }
+}

@@ -1519,7 +1519,7 @@ def cmd_mcp(ctx, args) -> int:
         print(f"conectores que acompanham o NOMOS ({len(conns)}):\n")
         for c in conns:
             print(f"  {marca.get(c['status'], c['status'])}  {c['nome']} "
-                  f"[{c['nivel_padrao']}]")
+                  f"[{c.get('nivel', c['nivel_padrao'])}]")
             if c["descricao"]:
                 print(f"      {c['descricao'][:96]}")
             if c["status"] != "confiavel":
@@ -1545,7 +1545,7 @@ def cmd_mcp(ctx, args) -> int:
         print(f"check-up dos conectores ({len(conns)}):\n")
         for c in conns:
             sinal = "✅" if c["status"] == "confiavel" else "○"
-            print(f"  {sinal} {c['nome']} [{c['nivel_padrao']}] — {c['status']}")
+            print(f"  {sinal} {c['nome']} [{c.get('nivel', c['nivel_padrao'])}] — {c['status']}")
             if not c["interpretador_ok"]:
                 print(f"      ⚠️ interpretador ausente: {c['interpretador']}")
             if c["env"]:

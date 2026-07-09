@@ -66,12 +66,15 @@ stdio, `nivel_padrao:"A3"`, credenciais por env, redação, teste com API mockad
 **sem rede**). Aparece sozinho em `nomos mcp exemplos` e no hub do painel via o
 glob de `conectores_exemplo()` — sem tocar em mais nada.
 
-- **Signal** (via `signal-cli` **local**) — o mais alinhado ao local-first: nada
-  passa por nuvem de terceiros.
+- ✅ **Signal** (via `signal-cli` **local**) — **feito (MC49)**. O mais alinhado
+  ao local-first: nada passa por nuvem de terceiros.
 - **Slack** — envio via webhook/API; leitura opcional.
 - **Discord** — envio via webhook.
-- **Calendário (CalDAV / `.ics` local)** — **ler** a agenda (entrada para o briefing).
-- **IMAP (`email-imap`)** — **ler** a caixa de entrada (pull, sem endpoint público).
+- ✅ **Calendário (`.ics` local)** — **feito (MC57)**. LÊ a agenda de um `.ics`
+  local (sem rede), entrada para o briefing; tools **A0** (leitura local honesta),
+  `nivel_padrao` A5 fail-closed. CalDAV (rede) fica como extensão futura.
+- ✅ **IMAP (`email-imap`)** — **feito (MC51)**. LÊ a caixa de entrada (pull, sem
+  endpoint público).
 
 ## Fase 3 — Entrada (a maior lacuna): receber sem quebrar o local-first
 

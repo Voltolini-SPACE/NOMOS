@@ -20,10 +20,19 @@ def test_lista_os_conectores_do_repo(nomos_home):
     conns = cat.conectores_exemplo(nomos_home, raiz=EXEMPLOS)
     nomes = {c["nome"] for c in conns}
     assert {"telegram-bot", "whatsapp-cloud"} <= nomes
+    por_nome = {c["nome"]: c for c in conns}
     for c in conns:
         assert c["status"] in ("confiavel", "experimental", "revogado")
-        assert c["nivel_padrao"] == "A3"        # credencial + rede
         assert c["manifesto"].endswith("manifesto.json")
+        # o badge exibido é o RISCO REAL (maior nível das tools), não o padrão
+        assert c["nivel"] in ("A0", "A1", "A2", "A3", "A4", "A5", "A6")
+    # os conectores de rede+credencial são A3…
+    assert por_nome["telegram-bot"]["nivel"] == "A3"
+    assert por_nome["whatsapp-cloud"]["nivel"] == "A3"
+    # …e o de leitura de arquivo local é A0 (honesto), apesar do padrão A5
+    if "calendario-ics" in por_nome:
+        assert por_nome["calendario-ics"]["nivel"] == "A0"
+        assert por_nome["calendario-ics"]["nivel_padrao"] == "A5"
 
 
 def test_manifesto_sempre_com_barra_normal(nomos_home):
@@ -101,3 +110,13 @@ def test_parser_tem_mcp_exemplos():
     from nomos.cli import build_parser
     a = build_parser().parse_args(["mcp", "exemplos", "--json"])
     assert a.mcp_cmd == "exemplos" and a.json is True
+
+
+def test_nivel_exibicao_e_o_maior_risco_das_tools():
+    # maior risco declarado vence (não o padrão)
+    assert cat.nivel_exibicao(
+        {"nivel_padrao": "A5", "tools": {"a": "A0", "b": "A0"}}) == "A0"
+    assert cat.nivel_exibicao(
+        {"nivel_padrao": "A0", "tools": {"a": "A0", "b": "A3"}}) == "A3"
+    # sem tools declaradas: cai no padrão (fail-closed)
+    assert cat.nivel_exibicao({"nivel_padrao": "A5", "tools": {}}) == "A5"

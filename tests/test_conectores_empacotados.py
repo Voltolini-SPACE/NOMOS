@@ -14,7 +14,7 @@ from nomos.interface.mcp_client import carregar_manifesto
 RAIZ = Path(__file__).resolve().parent.parent
 EXEMPLOS = RAIZ / "examples" / "mcp"
 PACOTE = RAIZ / "src" / "nomos" / "conectores" / "mcp"
-_DIRS = ("telegram", "whatsapp-cloud", "email-smtp", "signal")
+_DIRS = ("telegram", "whatsapp-cloud", "email-smtp", "signal", "calendario")
 
 
 def _fontes(base: Path) -> list[str]:
@@ -44,7 +44,8 @@ def test_descoberta_funciona_da_copia_empacotada(nomos_home):
     # simula o wheel: aponta a raiz para a cópia do pacote e descobre tudo
     conns = cat.conectores_exemplo(nomos_home, raiz=PACOTE)
     nomes = {c["nome"] for c in conns}
-    assert {"telegram-bot", "whatsapp-cloud", "email-smtp", "signal-cli"} <= nomes
+    assert {"telegram-bot", "whatsapp-cloud", "email-smtp", "signal-cli",
+            "calendario-ics"} <= nomes
 
 
 def test_pyproject_empacota_os_conectores():

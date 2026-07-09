@@ -131,13 +131,29 @@ def _raiz_exemplos(raiz: Path | None = None) -> Path | None:
     return None
 
 
+def nivel_exibicao(manifesto: dict) -> str:
+    """O nível que representa HONESTAMENTE o que o conector faz: o **maior risco**
+    entre as tools DECLARADAS (A0<A1<…<A6). Sem tools declaradas, cai no
+    ``nivel_padrao``. Isto evita mostrar o ``nivel_padrao`` (que é a trava
+    fail-closed para tools DESCONHECIDAS) como se fosse o risco real — p.ex. um
+    conector que só LÊ um arquivo local tem tools A0 e deve aparecer como A0,
+    mesmo que seu padrão para o desconhecido seja A5."""
+    tools = manifesto.get("tools") or {}
+    niveis = [str(n) for n in tools.values()
+              if str(n)[:1] == "A" and str(n)[1:].isdigit()]
+    if not niveis:
+        return str(manifesto.get("nivel_padrao", ""))
+    return max(niveis, key=lambda n: int(n[1:]))
+
+
 def conectores_exemplo(home: Path, raiz: Path | None = None) -> list[dict]:
     """Os conectores MCP que acompanham o NOMOS, com o estado de confiança.
 
-    Cada item: nome, status ('confiavel'|'experimental'|'revogado'),
-    descricao, e o caminho do manifesto para ligar. Manifesto inválido é
-    ignorado (fail-closed) — nunca derruba quem chama. Sem a pasta de
-    exemplos (ex.: wheel instalado), devolve lista vazia.
+    Cada item: nome, status ('confiavel'|'experimental'|'revogado'), o nível de
+    exibição (maior risco das tools declaradas), descricao, e o caminho do
+    manifesto para ligar. Manifesto inválido é ignorado (fail-closed) — nunca
+    derruba quem chama. Sem a pasta de exemplos (ex.: wheel instalado), devolve
+    lista vazia.
     """
     from nomos.interface import mcp_client as mc
     base = _raiz_exemplos(raiz)
@@ -164,6 +180,7 @@ def conectores_exemplo(home: Path, raiz: Path | None = None) -> list[dict]:
         itens.append({"nome": manifesto["nome"],
                       "status": status(home, manifesto),
                       "nivel_padrao": manifesto["nivel_padrao"],
+                      "nivel": nivel_exibicao(manifesto),   # risco real das tools
                       "descricao": descricao,
                       "dir": mf.parent.name,        # nome curto p/ `confiar <nome>`
                       "manifesto": rel.as_posix()})
@@ -219,6 +236,7 @@ def diagnostico_conectores(home: Path, raiz: Path | None = None) -> dict:
             itens.append({
                 "nome": manifesto["nome"],
                 "nivel_padrao": manifesto["nivel_padrao"],
+                "nivel": nivel_exibicao(manifesto),   # risco real das tools
                 "status": status(home, manifesto),
                 "env": envs,
                 "env_faltando": faltando,

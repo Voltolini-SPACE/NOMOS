@@ -4,6 +4,25 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC57 / Roadmap Fase 2 — conector Calendário (.ics local): a agenda entra no NOMOS)
+- Novo conector **`calendario-ics`** — LÊ os eventos de um arquivo `.ics` que
+  você exportou do seu app de calendário. **Sem rede, sem nuvem, sem
+  dependências** (parser stdlib com dobra de linha RFC 5545, dia inteiro,
+  horário local e UTC→local). Tools `calendario_quem_sou`, `calendario_hoje`,
+  `calendario_proximos`. O caminho vem só de `NOMOS_ICS_PATH`.
+- **Nível honesto**: ler um arquivo local é **A0** — não é conta conectada nem
+  credencial. Ainda assim o conector precisa ser **confiado** (`nomos mcp
+  confiar calendario`) antes de qualquer chamada; tool não declarada cai no
+  `nivel_padrao` **A5** (fail-closed). **SÓ LEITURA**: nunca escreve/altera o
+  `.ics` (provado por teste que compara os bytes antes/depois).
+- **Badge de risco honesto**: `nomos mcp exemplos`/`doutor` agora mostram o
+  **maior nível das tools DECLARADAS** (`nivel_exibicao`), não o `nivel_padrao`
+  — então o calendário aparece como `[A0]` (o que ele realmente faz), e não
+  `[A5]` (a trava para o desconhecido). Os conectores de rede seguem `[A3]`.
+- 10 testes do conector (dialeto MCP em processo real, parser, fail-closed sem
+  `NOMOS_ICS_PATH`/arquivo, só-leitura, A0/A5) + testes do badge. Espelhado no
+  wheel (anti-drift verde). Suíte 1529 verde.
+
 ### Changed (MC56 / Roadmap Fase 1.2 — taxonomia honesta: conector é `A3_CONNECTOR_USE`)
 - As tools de conector MCP agora são rotuladas **`A3_CONNECTOR_USE`** ("usar
   conector" / "usar uma conta conectada sua") em vez de `A3_CRED_USE` ("usar
