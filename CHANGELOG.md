@@ -4,6 +4,17 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC60 / Roadmap Fase 4 — a agenda entra no briefing: `nomos entrada calendario`)
+- **`nomos entrada calendario`** lista os **próximos eventos** da sua agenda
+  (via o conector `calendario-ics`), e **`nomos entrada calendario --dia`** junta
+  a agenda com o "seu dia" local no **briefing 2.0** (título adaptativo
+  "📅 Sua agenda"). Completa o propósito do conector: entrada para o briefing.
+- **Governança honesta**: como ler o `.ics` é **A0** (arquivo local), a leitura
+  não pede aprovação por chamada — **mas o conector precisa estar CONFIADO**
+  (senão fail-closed com instrução; provado por teste). Sem confiança, o `--dia`
+  ainda mostra o seu dia local — nunca finge. `_fmt_entrada` ganhou o formato de
+  eventos (quando — título @ local); auditoria conta eventos. 4 testes.
+
 ### Added (MC59 / Roadmap Fase 5 — descoberta curada: `nomos mcp buscar <termo>`)
 - Novo comando **`nomos mcp buscar <termo>`**: acha um conector EMBARCADO por
   **nome, pasta ou descrição**, sem acento e sem caso (`agenda` acha o

@@ -88,8 +88,11 @@ glob de `conectores_exemplo()` — sem tocar em mais nada.
 
 ## Fase 4 — Briefing/automação 2.0 (junta entrada + saída)
 
-- Briefing com **"o que chegou"** (não-lidos, top mensagens) além do "seu dia".
-- Novos canais no dict `_CANAIS` (Slack/Discord/Signal) — seam já genérico.
+- ✅ Briefing com **"o que chegou"** (não-lidos, top mensagens) além do "seu dia"
+  — **feito (MC53)**.
+- ✅ **Agenda no briefing** — **feito (MC60)**: `nomos entrada calendario [--dia]`
+  traz os próximos eventos do `.ics` local (A0, exige confiança) para o briefing.
+- Novos canais de **envio** no dict `_CANAIS` (Slack/Discord) — seam já genérico.
 - Fluxo de **duas vias**: digest do que chegou → você responde, cada envio no gate A3.
 
 ## Fase 5 — Descoberta, catálogo e trust UX

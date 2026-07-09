@@ -1472,8 +1472,8 @@ def cmd_entrada(ctx, args) -> int:
     canal = args.canal
     cfg = rot._ENTRADA.get(canal)
     if cfg is None:
-        print(f"canal desconhecido: {canal!r}. Use: telegram ou email",
-              file=sys.stderr)
+        print(f"canal desconhecido: {canal!r}. Use: "
+              f"{', '.join(sorted(rot._ENTRADA))}", file=sys.stderr)
         return EXIT_ERROR
     if getattr(args, "dia", False):
         # briefing 2.0: o que chegou + o seu dia (o dia é local e sempre sai)
@@ -2077,8 +2077,8 @@ def build_parser() -> argparse.ArgumentParser:
     mcpp.set_defaults(fn=cmd_mcp, mcp_cmd=None)
     entp = sub.add_parser(
         "entrada", help="lê o que chegou por um conector confiado "
-        "(telegram|email) — só leitura, com sua aprovação (A3)")
-    entp.add_argument("canal", help="telegram ou email")
+        "(telegram|email|calendario) — só leitura, governado (A3/A0)")
+    entp.add_argument("canal", help="telegram, email ou calendario")
     entp.add_argument("--dia", action="store_true",
                       help="briefing 2.0: junta 'o que chegou' + 'o seu dia'")
     entp.add_argument("--panel", action="store_true",

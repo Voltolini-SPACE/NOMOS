@@ -326,11 +326,30 @@ _ENTRADA = {
         "dir": "email-imap",
         "rotulo": "e-mail (IMAP)",
     },
+    "calendario": {
+        "tool": "calendario_proximos",
+        "args": {"limite": 10},
+        "manifesto_env": "NOMOS_CALENDARIO_MANIFESTO",
+        "manifesto_pad": "examples/mcp/calendario/manifesto.json",
+        "dir": "calendario",
+        "rotulo": "agenda",
+        "titulo": "📅 Sua agenda",     # leitura local (A0), mas exige confiança
+    },
 }
 
 
 def _fmt_entrada(canal: str, dados: dict) -> str:
     """Resumo humano do que chegou, a partir do resultado da tool de leitura."""
+    if canal == "calendario":
+        evs = dados.get("eventos") or []
+        if not evs:
+            return "nada na agenda para os próximos dias — está livre."
+        linhas = [f"próximos {len(evs)} na agenda:"]
+        for e in evs[:20]:
+            local = f" @ {e['local']}" if e.get("local") else ""
+            linhas.append(f"  • {e.get('quando', '?')} — "
+                          f"{e.get('titulo', '(sem título)')}{local}")
+        return "\n".join(linhas)
     msgs = dados.get("mensagens") or []
     if not msgs:
         return "nada novo por aqui — a caixa está em dia."
@@ -392,7 +411,8 @@ def ler_entrada(ctx, canal: str, manifesto_path, approver,
     if ctx.get("audit"):
         ctx["audit"].append("entrada.lida", server=manifesto["nome"],
                             nivel=nivel, canal=canal,
-                            quantos=len(dados.get("mensagens") or []))
+                            quantos=len(dados.get("mensagens")
+                                        or dados.get("eventos") or []))
     return True, _fmt_entrada(canal, dados)
 
 
@@ -406,7 +426,7 @@ def resumo_com_entrada(ctx, canal: str, approver, say=print) -> str:
     if cfg is not None:
         mani = _os.environ.get(cfg["manifesto_env"]) or _manifesto_pad(cfg)
         ok, resumo = ler_entrada(ctx, canal, mani, approver, say=say)
-        titulo = f"📥 O que chegou ({cfg['rotulo']})"
+        titulo = cfg.get("titulo") or f"📥 O que chegou ({cfg['rotulo']})"
         partes.append(f"{titulo}:\n{resumo}" if ok
                       else f"{titulo}: (não li — {resumo})")
     partes.append(f"📋 O seu dia:\n{briefing(ctx)}")
