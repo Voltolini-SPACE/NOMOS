@@ -1523,7 +1523,7 @@ def cmd_mcp(ctx, args) -> int:
             if c["descricao"]:
                 print(f"      {c['descricao'][:96]}")
             if c["status"] != "confiavel":
-                print(f"      ligar: nomos mcp confiar {c['manifesto']}")
+                print(f"      ligar: nomos mcp confiar {c['dir']}")
         print("\n(ligar é decisão sua, num terminal; toda chamada dessas "
               "tools passa pelo gate de aprovação)")
         return EXIT_OK
@@ -1573,8 +1573,16 @@ def cmd_mcp(ctx, args) -> int:
             for s in snap["confiaveis"]:
                 print(f"  ✓ {s['nome']}  [{s['impressao']}]  {s['comando']}")
             return EXIT_OK
+        alvo = cat.resolver_conector(args.manifesto)
+        if alvo is None:
+            from nomos.simple.erros import fmt
+            print(fmt("E010", f"não achei '{args.manifesto}' — use o caminho do "
+                      "manifesto.json ou o NOME do conector (ex.: telegram, "
+                      "signal, email-imap). Veja: nomos mcp exemplos"),
+                  file=sys.stderr)
+            return EXIT_ERROR
         try:
-            manifesto = mc.carregar_manifesto(Path(args.manifesto))
+            manifesto = mc.carregar_manifesto(alvo)
         except mc.ManifestoInvalido as exc:
             from nomos.simple.erros import fmt
             print(fmt("E010", f"manifesto recusado: {exc}"), file=sys.stderr)
@@ -1609,8 +1617,14 @@ def cmd_mcp(ctx, args) -> int:
     if sub == "conectar":
         from nomos.interface import mcp_catalogo as cat
         from nomos.interface import mcp_client as mc
+        alvo = cat.resolver_conector(args.manifesto)
+        if alvo is None:
+            print(f"não achei '{args.manifesto}' — use o caminho do manifesto.json "
+                  "ou o nome do conector (ex.: telegram). Veja: nomos mcp exemplos",
+                  file=sys.stderr)
+            return EXIT_ERROR
         try:
-            manifesto = mc.carregar_manifesto(Path(args.manifesto))
+            manifesto = mc.carregar_manifesto(alvo)
         except mc.ManifestoInvalido as exc:
             print(f"manifesto recusado (fail-closed): {exc}", file=sys.stderr)
             return EXIT_ERROR
@@ -1635,7 +1649,7 @@ def cmd_mcp(ctx, args) -> int:
                 print("ok, não conectei.")
                 return EXIT_OK
         try:
-            with mc.ClienteMCP(manifesto, base=Path(args.manifesto).parent) as cli_mcp:
+            with mc.ClienteMCP(manifesto, base=alvo.parent) as cli_mcp:
                 tools = cli_mcp.tools()
         except mc.McpErro as exc:
             print(f"não conectei: {exc}", file=sys.stderr)
@@ -1654,13 +1668,19 @@ def cmd_mcp(ctx, args) -> int:
                   f"{args.manifesto})")
         return EXIT_OK
     if sub == "chamar":
+        from nomos.interface import mcp_catalogo as cat
         from nomos.interface import mcp_client as mc
+        alvo = cat.resolver_conector(args.manifesto)
+        if alvo is None:
+            print(f"não achei '{args.manifesto}' — use o caminho do manifesto.json "
+                  "ou o nome do conector (ex.: telegram). Veja: nomos mcp exemplos",
+                  file=sys.stderr)
+            return EXIT_ERROR
         try:
-            manifesto = mc.carregar_manifesto(Path(args.manifesto))
+            manifesto = mc.carregar_manifesto(alvo)
         except mc.ManifestoInvalido as exc:
             print(f"manifesto recusado (fail-closed): {exc}", file=sys.stderr)
             return EXIT_ERROR
-        from nomos.interface import mcp_catalogo as cat
         confianca = cat.status(ctx["home"], manifesto)
         if confianca != "confiavel":
             from nomos.simple.erros import fmt
@@ -1689,7 +1709,7 @@ def cmd_mcp(ctx, args) -> int:
             print(fmt("E010", "--args precisa ser JSON válido"), file=sys.stderr)
             return EXIT_ERROR
         try:
-            with mc.ClienteMCP(manifesto, base=Path(args.manifesto).parent) as cli_mcp:
+            with mc.ClienteMCP(manifesto, base=alvo.parent) as cli_mcp:
                 resultado = cli_mcp.chamar(args.tool, argumentos)
         except mc.McpErro as exc:
             print(f"tool falhou no server: {exc}", file=sys.stderr)

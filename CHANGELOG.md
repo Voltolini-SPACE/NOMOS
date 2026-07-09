@@ -4,6 +4,15 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC54 / Roadmap Fase 5 — trust-UX: confiar por NOME do conector)
+- `nomos mcp confiar|conectar|chamar` agora aceitam o **NOME** do conector
+  (`telegram`, `signal`, `email-imap`, …) além do caminho — o usuário instalado
+  por pip não precisa mais digitar o caminho longo do site-packages. Resolvido
+  por `mcp_catalogo.resolver_conector` (caminho existente OU pasta do conector no
+  catálogo empacotado). Sem afrouxar a confiança: o **hash é o mesmo**, só o
+  caminho é resolvido. A dica de `nomos mcp exemplos`/`doutor` passou a mostrar
+  o nome curto. 5 testes.
+
 ### Added (MC53 / Roadmap Fase 4 — briefing 2.0: `nomos entrada --dia`)
 - **`nomos entrada <canal> --dia`**: junta numa visão só o **"o que chegou"**
   (via conector confiado, governado A3) com o **"o seu dia"** (briefing local).

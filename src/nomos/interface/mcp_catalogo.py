@@ -165,8 +165,26 @@ def conectores_exemplo(home: Path, raiz: Path | None = None) -> list[dict]:
                       "status": status(home, manifesto),
                       "nivel_padrao": manifesto["nivel_padrao"],
                       "descricao": descricao,
+                      "dir": mf.parent.name,        # nome curto p/ `confiar <nome>`
                       "manifesto": rel.as_posix()})
     return itens
+
+
+def resolver_conector(arg, raiz: Path | None = None) -> Path | None:
+    """Resolve um manifesto por CAMINHO (arquivo existente) OU por NOME do
+    conector (a pasta em ``examples/mcp`` ou na cópia empacotada). Assim o
+    usuário instalado por pip escreve ``nomos mcp confiar telegram`` em vez do
+    caminho longo do site-packages. Devolve o ``Path`` do manifesto, ou ``None``
+    (o chamador decide a mensagem)."""
+    p = Path(str(arg))
+    if p.is_file():
+        return p
+    base = _raiz_exemplos(raiz)
+    if base is not None:
+        cand = base / str(arg) / "manifesto.json"
+        if cand.is_file():
+            return cand
+    return None
 
 
 def diagnostico_conectores(home: Path, raiz: Path | None = None) -> dict:
