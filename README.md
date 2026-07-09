@@ -70,6 +70,7 @@ integridade, backup automático e rollback. Detalhes: [docs/INSTALL.md](docs/INS
 | `nomos mcp exemplos` | conectores que acompanham o NOMOS (Telegram, WhatsApp, e-mail) e como ligar |
 | `nomos mcp doutor` | check-up dos conectores: confiança, credenciais no ambiente (só presença) e interpretador — só-leitura |
 | `nomos entrada telegram` / `email` | lê o que chegou por um conector confiado (só leitura, com sua aprovação A3) |
+| `nomos entrada <canal> --dia` | briefing 2.0: junta "o que chegou" + "o seu dia" numa visão só |
 | `nomos conselho status` / `modos` / `simular` | Motor Council: estado e modos (informativo) + simulação segura em dry-run |
 | `nomos rotinas criar "Briefing" 08:00 briefing-telegram:<chat>` | briefing diário entregue no seu canal (com seu OK, A3) |
 | `nomos doutor --consertar` | aplica correções seguras com a sua confirmação |

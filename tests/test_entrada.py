@@ -106,3 +106,26 @@ def test_entrada_gate_nega_nada_lido(nomos_home, monkeypatch):
 def test_entrada_canal_desconhecido(nomos_home):
     ok, msg = rot.ler_entrada(_ctx(nomos_home), "fax", str(TELE), _SIM)
     assert not ok and "desconhecido" in msg
+
+
+# --------------------------------------------------------------------------
+# MC53 / Fase 4 — briefing 2.0: o que chegou + o seu dia
+# --------------------------------------------------------------------------
+
+def test_resumo_com_entrada_junta_o_dia(nomos_home, monkeypatch):
+    ctx = _ctx(nomos_home)
+    cat.confiar(nomos_home, carregar_manifesto(TELE))
+    _mock_cliente(monkeypatch, {"mensagens": [{"de": "Ana", "texto": "oi"}]})
+    texto = rot.resumo_com_entrada(ctx, "telegram", _SIM)
+    assert "O que chegou" in texto and "Ana" in texto      # entrada
+    assert "O seu dia" in texto and "Briefing local" in texto   # dia local
+
+
+def test_resumo_mostra_o_dia_mesmo_sem_entrada(nomos_home, monkeypatch):
+    ctx = _ctx(nomos_home)                    # NÃO confio → entrada falha
+    from nomos.interface import mcp_client as mc
+    monkeypatch.setattr(mc, "ClienteMCP", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("não devia conectar sem confiança")))
+    texto = rot.resumo_com_entrada(ctx, "telegram", _SIM)
+    assert "não li" in texto                  # honesto sobre a entrada
+    assert "O seu dia" in texto and "Briefing local" in texto   # dia sempre sai

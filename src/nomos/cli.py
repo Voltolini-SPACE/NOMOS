@@ -1475,6 +1475,10 @@ def cmd_entrada(ctx, args) -> int:
         print(f"canal desconhecido: {canal!r}. Use: telegram ou email",
               file=sys.stderr)
         return EXIT_ERROR
+    if getattr(args, "dia", False):
+        # briefing 2.0: o que chegou + o seu dia (o dia é local e sempre sai)
+        print(rot.resumo_com_entrada(ctx, canal, _approver_for(ctx, args)))
+        return EXIT_OK
     import os as _os
     manifesto = _os.environ.get(cfg["manifesto_env"]) or rot._manifesto_pad(cfg)
     ok, msg = rot.ler_entrada(ctx, canal, manifesto,
@@ -2023,6 +2027,8 @@ def build_parser() -> argparse.ArgumentParser:
         "entrada", help="lê o que chegou por um conector confiado "
         "(telegram|email) — só leitura, com sua aprovação (A3)")
     entp.add_argument("canal", help="telegram ou email")
+    entp.add_argument("--dia", action="store_true",
+                      help="briefing 2.0: junta 'o que chegou' + 'o seu dia'")
     entp.add_argument("--panel", action="store_true",
                       help="aprovar pela fila do painel em vez do terminal")
     entp.set_defaults(fn=cmd_entrada)

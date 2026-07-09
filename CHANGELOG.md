@@ -4,6 +4,13 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC53 / Roadmap Fase 4 — briefing 2.0: `nomos entrada --dia`)
+- **`nomos entrada <canal> --dia`**: junta numa visão só o **"o que chegou"**
+  (via conector confiado, governado A3) com o **"o seu dia"** (briefing local).
+  Se a entrada não puder ser lida (sem confiança/aprovação), ainda mostra o dia,
+  com uma nota honesta ("não li — …") — nunca finge. Função `resumo_com_entrada`
+  + 2 testes.
+
 ### Added (MC52 / Roadmap Fase 3 — `nomos entrada`: resumo do que chegou)
 - Novo comando **`nomos entrada telegram|email`**: lê o que chegou por um
   conector confiado e devolve um resumo local (de/assunto/texto). Fecha o ciclo

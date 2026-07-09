@@ -396,6 +396,23 @@ def ler_entrada(ctx, canal: str, manifesto_path, approver,
     return True, _fmt_entrada(canal, dados)
 
 
+def resumo_com_entrada(ctx, canal: str, approver, say=print) -> str:
+    """Briefing 2.0 (Fase 4): junta 'o que chegou' (via conector confiado,
+    governado A3) com 'o seu dia' (briefing local). Se a entrada não puder ser
+    lida (sem confiança/aprovação), ainda mostra o dia — honesto, nunca finge."""
+    import os as _os
+    partes = []
+    cfg = _ENTRADA.get(canal)
+    if cfg is not None:
+        mani = _os.environ.get(cfg["manifesto_env"]) or _manifesto_pad(cfg)
+        ok, resumo = ler_entrada(ctx, canal, mani, approver, say=say)
+        titulo = f"📥 O que chegou ({cfg['rotulo']})"
+        partes.append(f"{titulo}:\n{resumo}" if ok
+                      else f"{titulo}: (não li — {resumo})")
+    partes.append(f"📋 O seu dia:\n{briefing(ctx)}")
+    return "\n\n".join(partes)
+
+
 def enviar_briefing(ctx, chat_id: str, manifesto_path, approver,
                     say=print) -> tuple[bool, str]:
     """Compat (MC41): entrega no Telegram — hoje um atalho de
