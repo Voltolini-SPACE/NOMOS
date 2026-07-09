@@ -1,0 +1,11 @@
+{
+  "nome": "slack-webhook",
+  "descricao": "Envio de mensagens para um canal do Slack pelo Incoming Webhook OFICIAL do seu workspace (biblioteca padrão, sem dependências). Egress opt-in e sempre com seu OK (A3). A credencial é a URL do webhook (que é secreta) — só por ambiente (NOMOS_SLACK_WEBHOOK), redigida em erros. Só ENVIO: receber exigiria app/socket permanente (fora do local-first). Recuso apontar o envio para fora de hooks.slack.com.",
+  "comando": ["python3", "servidor.py"],
+  "nivel_padrao": "A3",
+  "env": ["NOMOS_SLACK_WEBHOOK"],
+  "tools": {
+    "slack_quem_sou": "A3",
+    "slack_enviar": "A3"
+  }
+}

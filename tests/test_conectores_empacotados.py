@@ -14,7 +14,8 @@ from nomos.interface.mcp_client import carregar_manifesto
 RAIZ = Path(__file__).resolve().parent.parent
 EXEMPLOS = RAIZ / "examples" / "mcp"
 PACOTE = RAIZ / "src" / "nomos" / "conectores" / "mcp"
-_DIRS = ("telegram", "whatsapp-cloud", "email-smtp", "signal", "calendario")
+_DIRS = ("telegram", "whatsapp-cloud", "email-smtp", "signal", "calendario",
+         "slack")
 
 
 def _fontes(base: Path) -> list[str]:

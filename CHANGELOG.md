@@ -4,6 +4,20 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC61 / Roadmap Fase 2 — conector Slack (envio via Incoming Webhook))
+- Novo conector **`slack-webhook`** — envia texto para um canal do Slack pelo
+  **Incoming Webhook oficial** (urllib, stdlib, sem dependências). Tools
+  `slack_quem_sou` (confirma o webhook mascarado, sem enviar) e `slack_enviar`.
+- **Leis da casa**: A3 em toda tool (aprovação sua a cada envio); a credencial é
+  a **URL do webhook** (secreta) — só por `NOMOS_SLACK_WEBHOOK`, **redigida** em
+  erros e **mascarada** em `quem_sou`; **recuso apontar o envio para fora de
+  `hooks.slack.com`** (não vira POST genérico); só envio (receber exigiria
+  app/socket permanente — dito, não escondido); sem a variável, falha fechado.
+- 10 testes (dialeto MCP em processo real, fail-closed, recusa de destino, envio
+  com urlopen mockado, confirmação no "ok", segredo que nunca vaza). Espelhado no
+  wheel (anti-drift verde). `nomos mcp exemplos` agora lista 7 conectores. Suíte
+  1552 verde.
+
 ### Added (MC60 / Roadmap Fase 4 — a agenda entra no briefing: `nomos entrada calendario`)
 - **`nomos entrada calendario`** lista os **próximos eventos** da sua agenda
   (via o conector `calendario-ics`), e **`nomos entrada calendario --dia`** junta

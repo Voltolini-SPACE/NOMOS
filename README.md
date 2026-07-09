@@ -67,7 +67,7 @@ integridade, backup automático e rollback. Detalhes: [docs/INSTALL.md](docs/INS
 | `nomos arquivo <caminho>` | lê e resume um arquivo seu, tudo local (PDF com extra opcional) |
 | `nomos backup criar <arquivo>` | seu NOMOS inteiro num arquivo cifrado (memórias, chaves, tudo) |
 | `nomos painel` | cockpit web local (status, aprovações, chat) + **NOMOS Dash** ao vivo |
-| `nomos mcp exemplos` | conectores que acompanham o NOMOS (Telegram, WhatsApp, e-mail, Signal, calendário) e como ligar |
+| `nomos mcp exemplos` | conectores que acompanham o NOMOS (Telegram, WhatsApp, e-mail, Signal, Slack, calendário) e como ligar |
 | `nomos mcp buscar <termo>` | acha um conector embarcado por nome ou descrição (ex.: `nomos mcp buscar agenda`) — sem acento/caso |
 | `nomos mcp doutor` | check-up dos conectores: confiança, credenciais no ambiente (só presença) e interpretador — só-leitura |
 | `nomos entrada telegram` / `email` / `calendario` | lê o que chegou (mensagens) ou a sua **agenda** por um conector confiado — só leitura, governado (A3; o calendário local é A0) |

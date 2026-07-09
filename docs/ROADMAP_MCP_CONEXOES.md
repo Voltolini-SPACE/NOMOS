@@ -68,8 +68,10 @@ glob de `conectores_exemplo()` — sem tocar em mais nada.
 
 - ✅ **Signal** (via `signal-cli` **local**) — **feito (MC49)**. O mais alinhado
   ao local-first: nada passa por nuvem de terceiros.
-- **Slack** — envio via webhook/API; leitura opcional.
-- **Discord** — envio via webhook.
+- ✅ **Slack** — **feito (MC61)**: envio via **Incoming Webhook oficial**
+  (`examples/mcp/slack/`), A3, credencial (URL) só por env, recusa destino fora
+  de `hooks.slack.com`. Leitura exigiria app/socket (fora do escopo por ora).
+- **Discord** — envio via webhook (mesmo padrão do Slack).
 - ✅ **Calendário (`.ics` local)** — **feito (MC57)**. LÊ a agenda de um `.ics`
   local (sem rede), entrada para o briefing; tools **A0** (leitura local honesta),
   `nivel_padrao` A5 fail-closed. CalDAV (rede) fica como extensão futura.

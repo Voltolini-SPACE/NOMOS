@@ -324,7 +324,7 @@ Próximo passo recomendado: rode: <span class="cmd">nomos start</span></pre>
             <div class="term">
                 <div class="term-bar"><span class="td red"></span><span class="td yellow"></span><span class="td green"></span><span class="term-title">bash — ~ — nomos mcp exemplos</span></div>
 <pre class="term-body"><span class="cmd">$ nomos mcp exemplos</span>
-conectores que acompanham o NOMOS (6):
+conectores que acompanham o NOMOS (7):
 
   ○ disponível  calendario-ics <span class="a0">[A0]</span>
 <span class="dim">      LER a sua agenda de um .ics LOCAL (sem rede, biblioteca padrão) — leitura local = A0.</span>
@@ -338,6 +338,9 @@ conectores que acompanham o NOMOS (6):
   ○ disponível  signal-cli <span class="a3">[A3]</span>
 <span class="dim">      Ponte com o Signal via signal-cli LOCAL (o cliente oficial de linha de comando).</span>
       ligar: <span class="cmd">nomos mcp confiar signal</span>
+  ○ disponível  slack-webhook <span class="a3">[A3]</span>
+<span class="dim">      Envio para um canal do Slack pelo Incoming Webhook OFICIAL (biblioteca padrão).</span>
+      ligar: <span class="cmd">nomos mcp confiar slack</span>
   ○ disponível  telegram-bot <span class="a3">[A3]</span>
 <span class="dim">      Ponte oficial com a Bot API do Telegram: enviar e ler mensagens pelo SEU bot.</span>
       ligar: <span class="cmd">nomos mcp confiar telegram</span>
@@ -575,6 +578,7 @@ Detalhes: docs/architecture/MOTOR_COUNCIL_INDEX_v1.md</span></pre>
                 <div class="card"><div class="ico" aria-hidden="true">💬</div><h3>WhatsApp</h3><p>Pela WhatsApp Business Cloud API oficial da Meta (texto e templates). Só o caminho oficial — sem risco de derrubar seu número.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">✉️</div><h3>E-mail (SMTP)</h3><p>Pelo seu próprio servidor SMTP, com a biblioteca padrão do Python. STARTTLS por padrão; recusa texto claro.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">📨</div><h3>Signal</h3><p>Pelo <strong>signal-cli local</strong>: nada passa por nuvem de terceiros além do próprio Signal — o mais local-first. Texto e grupos; o número é redigido/mascarado.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">💬</div><h3>Slack</h3><p>Envia para um canal pelo <strong>Incoming Webhook oficial</strong>. A URL do webhook é secreta — só no ambiente, redigida em erros. Recusa apontar o envio para fora do <span class="k">hooks.slack.com</span>.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">📥</div><h3>E-mail (IMAP) — <em>entrada</em></h3><p>O NOMOS <strong>lê</strong> a sua caixa: puxa os não-lidos (só cabeçalhos), sem webhook público. <strong>Só leitura de verdade</strong> — nunca marca como lido, apaga ou envia.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">📅</div><h3>Calendário (.ics) — <em>entrada</em></h3><p>O NOMOS <strong>lê a sua agenda</strong> de um arquivo <span class="k">.ics</span> local — eventos de hoje e os próximos, <strong>sem tocar a rede</strong>. Só ler um arquivo seu é <span class="k">A0</span>; ainda assim exige sua confiança. Nunca altera o arquivo.</p></div>
             </div>
