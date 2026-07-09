@@ -730,6 +730,7 @@ _ABAS_NAV: list[tuple[str, str, str]] = [
     ("chat", "❯", "chat"),
     ("cerebro", "⚙", "cérebro"),
     ("capacidades", "❖", "capacidades"),
+    ("mosaic", "▦", "mosaic"),
     ("operacao", "≡", "operação"),
     ("ajuda", "?", "ajuda"),
 ]
@@ -967,6 +968,68 @@ def _secao_aprovacoes(aprovacoes: list[dict] | None, n_meta: int) -> str:
 # ---------------------------------------------------------------------------
 # página principal
 # ---------------------------------------------------------------------------
+def _secao_mosaic() -> list[str]:
+    """Aba MOSAIC — as telas ao vivo VIVEM aqui dentro do painel (sem janelas
+    separadas). Leitura livre; vistoriar e agir passam pelo caminho governado.
+    Degrada em silêncio se o motor de mosaico não tiver telas."""
+    e = html.escape
+    try:
+        from nomos.mosaic.engine import MosaicEngine
+        tiles = MosaicEngine().build_tiles()
+    except Exception:
+        tiles = []
+    partes = [
+        '<h2 id="mosaic">Mosaic — suas telas ao vivo</h2>',
+        '<p class="sub">Uma tela com vários painéis que se auto-organiza. Cada '
+        'tela é um site (e-mail, rede social, marketplace) com <b>perfil '
+        'isolado</b> — login não interfere entre telas. O agente <b>vistoria</b> '
+        'cada página para já saber o conteúdo quando você pedir. Ações (marcar '
+        'lido, responder) passam pela <b>fila de aprovações</b> — fail-closed.</p>',
+    ]
+    if not tiles:
+        partes.append(
+            '<div class="card">Nenhuma tela ainda. Para uma <b>apresentação</b>, '
+            "carregue telas de exemplo simuladas:<br>"
+            "<code>python -m nomos.mosaic.cli --demo --apply</code>"
+            "<br>ou adicione as suas e vistorie:<br>"
+            "<code>python -m nomos.mosaic.cli --add mail.google.com --apply</code>"
+            "<br><code>python -m nomos.mosaic.cli --scan --apply</code>"
+            "<br><small>as telas aparecem aqui no painel — sem janelas "
+            "separadas.</small></div>")
+    else:
+        cards = []
+        for t in tiles:
+            sig = t.get("signals") or {}
+            if "unread" in sig:
+                badge = f'✉ {sig["unread"]} não lidos'
+            elif "messages" in sig:
+                badge = f'💬 {sig["messages"]} conversas'
+            elif "notifications" in sig:
+                badge = f'🔔 {sig["notifications"]} notificações'
+            elif "orders" in sig:
+                badge = f'📦 {sig["orders"]} pedidos'
+            elif "avisos" in sig:
+                badge = f'🏦 {sig["avisos"]} avisos'
+            else:
+                badge = "monitorando"
+            cards.append(
+                '<div class="card filtravel">'
+                f'<b>{e(t.get("label", ""))}</b> '
+                f'<small style="opacity:.65">{e(t.get("host", ""))}</small>'
+                f'<div style="color:var(--neon);margin:.35rem 0">{e(badge)}</div>'
+                f'<small>{e(t.get("summary", ""))}</small></div>')
+        partes.append(
+            f'<p><b>{len(tiles)}</b> tela(s) · perfis isolados · vistoria local</p>'
+            '<div style="display:grid;gap:.6rem;'
+            'grid-template-columns:repeat(auto-fill,minmax(210px,1fr))">'
+            + "".join(cards) + "</div>")
+        partes.append(
+            '<p><small>vistoriar de novo: <code>python -m nomos.mosaic.cli '
+            "--scan --apply</code> · agir numa tela exige aprovação "
+            "(<code>--act &lt;id&gt; --action reply --approve --apply</code>).</small></p>")
+    return partes
+
+
 def render_html(d: dict, refresh: int | None = None,
                 aprovacoes: list[dict] | None = None,
                 chat: dict | None = None) -> str:
@@ -1235,6 +1298,7 @@ def render_html(d: dict, refresh: int | None = None,
     corpo.append(_aba("chat", False, aba_chat))
     corpo.append(_aba("cerebro", False, aba_cerebro))
     corpo.append(_aba("capacidades", False, aba_capac))
+    corpo.append(_aba("mosaic", False, _secao_mosaic()))
     corpo.append(_aba("operacao", False, aba_op))
     corpo.append(_aba("ajuda", False, aba_ajuda))
 
