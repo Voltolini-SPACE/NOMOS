@@ -224,6 +224,7 @@
             <span class="brand">◤ NOMOS</span>
             <nav aria-label="Navegação principal">
                 <a href="#prova">prova</a>
+                <a href="#acao">em ação</a>
                 <a href="#recursos">recursos</a>
                 <a href="#motores">motores</a>
                 <a href="#seguranca">segurança</a>
@@ -251,6 +252,7 @@
             <p class="sub">Um agente pessoal de IA que roda 100% no seu computador. Motores locais, memória, cofre de chaves, skills e agentes — todos governados, com aprovação humana em cada passo. A nuvem é uma tomada opcional que você pluga de propósito, nunca por padrão.</p>
             <div class="cta-group">
                 <a href="#instalar" class="btn btn-primary">Instalar agora</a>
+                <a href="#acao" class="btn btn-ghost">Ver em ação ▸</a>
                 <a href="#painel" class="btn btn-ghost">Ver o painel por dentro</a>
                 <a href="https://github.com/Voltolini-SPACE/NOMOS" class="btn btn-ghost">Ver no GitHub</a>
             </div>
@@ -258,7 +260,7 @@
                 <div class="stat"><b>100%</b><span>local por padrão</span></div>
                 <div class="stat"><b>0</b><span>telemetria / rastreio</span></div>
                 <div class="stat"><b>A0–A6</b><span>níveis de risco governados</span></div>
-                <div class="stat"><b>1.300+</b><span>testes automatizados</span></div>
+                <div class="stat"><b>1.500+</b><span>testes automatizados</span></div>
                 <div class="stat"><b>12/12</b><span>CI verde: 3 SO × 4 Python</span></div>
             </div>
         </div>
@@ -287,7 +289,7 @@
 
             <div class="prova-grid">
                 <div class="pcard"><b>12/12</b><span>combinações de CI verdes — 3 sistemas (Linux · macOS · Windows) × 4 versões de Python (3.10 → 3.13), sem <em>fail-fast</em>.</span></div>
-                <div class="pcard"><b>1.300+</b><span>testes automatizados a cada push, com cobertura ≥ 80% e checagem de tipos (mypy) num job à parte.</span></div>
+                <div class="pcard"><b>1.500+</b><span>testes automatizados a cada push, com cobertura ≥ 80% e checagem de tipos (mypy) num job à parte.</span></div>
                 <div class="pcard"><b>0</b><span>telemetria, rastreio ou "casa" para ligar. O modo só-local é a política — não um botão que dá para esquecer desligado.</span></div>
                 <div class="pcard"><b>SEC-01…12</b><span>invariantes de segurança que <em>são</em> testes: se o código divergir da política, a suíte inteira falha.</span></div>
             </div>
@@ -380,10 +382,100 @@ Detalhes: docs/architecture/MOTOR_COUNCIL_INDEX_v1.md</span></pre>
     </section>
 
     <!-- Recursos -->
+    <!-- NOMOS em ação -->
+    <style>
+    #acao .term{background:#06100b;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:1.3rem 0}
+    #acao .term-bar{display:flex;align-items:center;gap:.45rem;padding:.5rem .8rem;background:#0a1610;border-bottom:1px solid var(--line)}
+    #acao .term-bar .d{width:11px;height:11px;border-radius:50%}
+    #acao .d.r{background:var(--vermelho)}#acao .d.y{background:var(--amarelo)}#acao .d.g{background:var(--neon)}
+    #acao .term-bar .t{margin-left:.4rem;color:var(--fraco);font-size:.74rem}
+    #acao .term-body{margin:0;padding:1rem 1.1rem;min-height:210px;font-size:.86rem;line-height:1.65;white-space:pre-wrap;color:var(--texto2)}
+    #acao .term-body .p{color:var(--neon);font-weight:700}#acao .term-body .c{color:var(--texto)}
+    #acao .term-body .o{color:var(--fraco)}
+    #acao .cur{display:inline-block;width:.55ch;height:1.05em;vertical-align:-2px;background:var(--neon);animation:acaoblink 1.05s steps(1) infinite}
+    @keyframes acaoblink{50%{opacity:0}}
+    #acao .demos{margin-top:.4rem}
+    #acao .demo{background:#0a130d;border:1px solid var(--line);border-radius:8px;padding:.85rem .95rem;overflow:hidden}
+    #acao .demo .cmd{color:var(--neon);margin:0 0 .45rem;font-size:.82rem}
+    #acao .demo pre{margin:0;color:var(--fraco);white-space:pre-wrap;line-height:1.5;font-size:.78rem}
+    #acao .slots-h{margin-top:2.2rem;font-size:1.05rem;color:var(--texto)}
+    #acao .slots-h .soon{color:var(--fraco);font-weight:400;font-size:.82rem}
+    #acao .slots .slot{background:#0a130d;border:1px dashed var(--line);border-radius:10px;padding:1.1rem;min-height:128px;display:flex;flex-direction:column;gap:.28rem;justify-content:center}
+    #acao .slot .play{width:34px;height:34px;border-radius:50%;border:1px solid var(--neon);color:var(--neon);display:grid;place-items:center;margin-bottom:.35rem;font-size:.9rem}
+    #acao .slot b{color:var(--texto)}#acao .slot small{color:var(--texto2)}#acao .slot em{color:var(--fraco);font-style:normal;font-size:.72rem}
+    @media(prefers-reduced-motion:reduce){#acao .cur{animation:none}}
+    </style>
+    <section id="acao" aria-labelledby="acao-t">
+        <div class="wrap">
+            <div class="tag">// em ação</div>
+            <h2 id="acao-t">Veja o NOMOS trabalhando — na sua máquina</h2>
+            <p class="sub">Não é maquete: é o agente executando de verdade, com a sua aprovação em cada passo. Cada bloco abaixo é um comando real do NOMOS e a resposta que ele devolve — do jeito que aparece no seu terminal e no seu painel.</p>
+
+            <div class="term" role="img" aria-label="Terminal do NOMOS executando comandos reais: missão, painel, mosaic e conselho.">
+                <div class="term-bar"><span class="d r"></span><span class="d y"></span><span class="d g"></span><span class="t">nomos — local por lei</span></div>
+<pre class="term-body"><code id="acao-term"><span class="p">$</span> <span class="c">nomos missao "organizar Downloads por tipo"</span>
+<span class="o">plano: 4 passos · risco A2 · pede 1 aprovação</span>
+<span class="o">▸ aguardando SEU ok… [aprovado]</span>
+<span class="o">✓ feito — evidência em ~/.nomos/evidencias (SHA-256)</span></code></pre>
+            </div>
+
+            <div class="grid demos">
+                <figure class="demo"><p class="cmd">$ nomos painel</p><pre>painel local em 127.0.0.1
+abas: visão · chat · cérebro · capacidades · mosaic
+ler é livre · agir passa pelo gate · só 127.0.0.1</pre></figure>
+                <figure class="demo"><p class="cmd">$ python -m nomos.mosaic.cli --scan --apply</p><pre>vistoria 6 telas isoladas no mosaic:
+Gmail(2) · Outlook(4) · Instagram(4) · Marketplace(1)
+o agente já sabe o conteúdo quando você pedir</pre></figure>
+                <figure class="demo"><p class="cmd">$ nomos conselho simular</p><pre>[NOMOS-MC-STATUS] simulação (dry-run) · fail-closed
+vários motores debatem → 1 árbitro converge
+execução real só numa fase aprovada — nunca finge</pre></figure>
+            </div>
+
+            <h3 class="slots-h">Clipes do sistema <span class="soon">— gravações reais entram aqui (solte seus arquivos em <code>site/assets/media/</code>)</span></h3>
+            <div class="grid slots">
+                <div class="slot"><span class="play" aria-hidden="true">▶</span><b>Missão que faz</b><small>plano → sua aprovação → evidência, com 1 comando para desfazer</small><em>clipe: assets/media/missao.webm</em></div>
+                <div class="slot"><span class="play" aria-hidden="true">▶</span><b>Painel local + Mosaic</b><small>suas telas ao vivo, isoladas, dentro do painel 127.0.0.1</small><em>clipe: assets/media/mosaic.webm</em></div>
+                <div class="slot"><span class="play" aria-hidden="true">▶</span><b>Aprovar sem sair do fluxo</b><small>fila de aprovações com token de uso único, tudo auditado</small><em>clipe: assets/media/aprovacoes.webm</em></div>
+                <div class="slot"><span class="play" aria-hidden="true">▶</span><b>Memória que atravessa sessões</b><small>dry-run, hash de integridade, recusa segredo e dado sensível</small><em>clipe: assets/media/memoria.webm</em></div>
+            </div>
+        </div>
+    </section>
+    <script>
+    (function(){
+      var el=document.getElementById('acao-term'); if(!el) return;
+      var mq=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)');
+      if(mq&&mq.matches) return;
+      var steps=[
+        {cmd:'nomos missao "organizar Downloads por tipo"',out:['plano: 4 passos · risco A2 · pede 1 aprovação','▸ aguardando SEU ok… [aprovado]','✓ feito — evidência em ~/.nomos/evidencias (SHA-256)']},
+        {cmd:'nomos painel',out:['painel local em 127.0.0.1 · abas: visão · chat · cérebro · capacidades · mosaic','ler é livre · agir passa pelo gate · só 127.0.0.1']},
+        {cmd:'python -m nomos.mosaic.cli --scan --apply',out:['vistoria 6 telas isoladas: Gmail(2) · Outlook(4) · Instagram(4)…','o agente já sabe o conteúdo quando você pedir']},
+        {cmd:'nomos conselho simular',out:['[NOMOS-MC-STATUS] simulação (dry-run) · fail-closed','vários motores debatem → 1 árbitro converge']}
+      ];
+      function esc(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+      var i=0;
+      function run(){
+        var s=steps[i%steps.length], cmd=s.cmd, k=0;
+        (function type(){
+          if(k<=cmd.length){el.innerHTML='<span class="p">$</span> <span class="c">'+esc(cmd.slice(0,k))+'</span><span class="cur"></span>';k++;setTimeout(type,36);}
+          else{var h='<span class="p">$</span> <span class="c">'+esc(cmd)+'</span>\n';s.out.forEach(function(o){h+='<span class="o">'+esc(o)+'</span>\n';});el.innerHTML=h+'<span class="cur"></span>';i++;setTimeout(run,2700);}
+        })();
+      }
+      setTimeout(run,600);
+    })();
+    </script>
+
     <section id="recursos" aria-labelledby="rec-t">
         <div class="wrap">
             <div class="tag">// recursos</div>
             <h2 id="rec-t">Tudo que você precisa, na sua máquina</h2>
+
+            <details class="grupo" open>
+            <summary class="grupo-recursos"><span aria-hidden="true">✨</span> Novo no NOMOS</summary>
+            <div class="grid">
+                <div class="card"><div class="ico" aria-hidden="true">🧠</div><h3>Memória que atravessa sessões</h3><p>Um motor de memória auditável que guarda o essencial entre sessões — <strong>dry-run por padrão</strong>, com hash de integridade por entrada e política <strong>fail-closed</strong> que recusa segredos, CPF/CNPJ e dados sensíveis <em>antes</em> de gravar. Você aprova o que fica; nada sai da máquina.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">▦</div><h3>Mosaic — suas telas ao vivo, no painel</h3><p>Uma aba do <span class="k">nomos painel</span> com vários sites em mosaico (e-mail, redes, marketplace), cada tela com <strong>login isolado</strong> — sem interferir uma na outra. O agente vistoria cada página para já saber o conteúdo quando você pedir, e só age com a sua aprovação.</p></div>
+            </div>
+            </details>
 
             <details class="grupo" open>
             <summary class="grupo-recursos"><span aria-hidden="true">🧠</span> Cérebro &amp; conversa</summary>
@@ -557,6 +649,14 @@ Detalhes: docs/architecture/MOTOR_COUNCIL_INDEX_v1.md</span></pre>
                 <div class="shot-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp; dash/ — mission control ao vivo · atualiza sozinho, só leitura</div>
                 <img src="assets/painel-dash.webp" alt="NOMOS Dash: quatro tiles grandes com status geral, aprovações à espera, memórias a revisar e cadeia de auditoria; gráfico de barras da atividade das últimas 24 horas; lista de motores prontos por modalidade e avisos pendentes" width="1440" height="820" loading="lazy" decoding="async">
                 <figcaption>O Dash não tem botão de agir — de propósito. Ele LÊ; decidir continua no gate de aprovações. Glanceability: a história inteira em segundos.</figcaption>
+            </figure>
+
+            <h3 style="margin-top:2.2rem; font-size:1.05rem; color:var(--neon);">Suas telas ao vivo: a aba Mosaic</h3>
+            <p class="lead">Dentro do painel, a aba <strong>Mosaic</strong> junta vários sites num mosaico que se auto-organiza — e-mail, banco, mensagens, redes, marketplace — cada tela com <strong>login isolado</strong>, sem interferir uma na outra. O agente <strong>vistoria</strong> cada página para já saber o conteúdo quando você pedir; marcar, arquivar ou responder passa pela fila de aprovações. Sem janelas separadas: tudo aqui, em <span class="k">127.0.0.1</span>.</p>
+            <figure class="shot">
+                <div class="shot-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp; painel · aba mosaic — telas isoladas, vistoriadas, só leitura</div>
+                <img src="assets/painel-mosaic.svg" alt="Aba Mosaic do painel local do NOMOS: mosaico de telas isoladas — Gmail, Banco do Brasil, WhatsApp Web, TikTok, Instagram, Mercado Livre, Outlook e LinkedIn — cada uma com badge de status e resumo da vistoria" width="1000" height="640" loading="lazy" decoding="async">
+                <figcaption>Cada tela tem perfil próprio: o login de uma nunca interfere na outra. Ler é livre; agir passa pelo gate de aprovações — fail-closed.</figcaption>
             </figure>
 
             <div class="term" role="group" aria-label="Abrir o painel">

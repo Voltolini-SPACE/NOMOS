@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" font-family="ui-monospace,Menlo,Consolas,monospace">
+<rect width="1000" height="640" fill="#06100b"/>
+<rect width="1000" height="38" fill="#0a1610"/>
+<circle cx="20" cy="19" r="5" fill="#FF5C57"/>
+<circle cx="36" cy="19" r="5" fill="#F2C14E"/>
+<circle cx="52" cy="19" r="5" fill="#5AF78E"/>
+<text x="72" y="24" fill="#7d9488" font-size="13">NOMOS — painel local · so 127.0.0.1</text>
+<rect x="0" y="38" width="152" height="602" fill="#081109"/>
+<text x="16" y="72" fill="#5AF78E" font-size="15" font-weight="700">&#9700; NOMOS</text>
+<text x="16" y="90" fill="#5c7365" font-size="10">seu agente &#183; sua maquina</text>
+<text x="16" y="126" fill="#8fae9c" font-size="12.5">visao geral</text>
+<text x="16" y="156" fill="#8fae9c" font-size="12.5">chat</text>
+<text x="16" y="186" fill="#8fae9c" font-size="12.5">cerebro</text>
+<text x="16" y="216" fill="#8fae9c" font-size="12.5">capacidades</text>
+<rect x="6" y="229" width="140" height="24" rx="4" fill="#0d1c12"/>
+<rect x="6" y="229" width="2" height="24" fill="#5AF78E"/>
+<text x="16" y="246" fill="#5AF78E" font-size="12.5">mosaic</text>
+<text x="16" y="276" fill="#8fae9c" font-size="12.5">operacao</text>
+<text x="16" y="306" fill="#8fae9c" font-size="12.5">ajuda</text>
+<text x="175" y="78" fill="#e8ffe8" font-size="20" font-weight="700">Mosaic — suas telas ao vivo</text>
+<text x="175" y="102" fill="#8fae9c" font-size="12">Cada tela tem perfil isolado — login nao interfere entre telas. O agente vistoria cada pagina.</text>
+<text x="175" y="128" fill="#7d9488" font-size="12">8 telas &#183; perfis isolados &#183; vistoria local</text>
+<rect x="175" y="150" width="193" height="122" rx="8" fill="#0a130d" stroke="#17301f"/>
+<text x="188" y="176" fill="#e8ffe8" font-size="13" font-weight="700">Gmail</text>
+<text x="188" y="194" fill="#5c7365" font-size="10">mail.google.com</text>
+<circle cx="192" cy="220" r="3" fill="#5AF78E"/>
+<text x="201" y="224" fill="#5AF78E" font-size="12">2 nao lidos</text>
+<text x="188" y="248" fill="#8fae9c" font-size="10">2 e-mails nao lidos, 2 importantes</text>
+<rect x="380" y="150" width="193" height="122" rx="8" fill="#0a130d" stroke="#17301f"/>
+<text x="393" y="176" fill="#e8ffe8" font-size="13" font-weight="700">Banco do Brasil</text>
+<text x="393" y="194" fill="#5c7365" font-size="10">bb.com.br</text>
+<circle cx="397" cy="220" r="3" fill="#5AF78E"/>
+<text x="406" y="224" fill="#5AF78E" font-size="12">2 avisos</text>
+<text x="393" y="248" fill="#8fae9c" font-size="10">extrato observado, nada salvo</text>
+<rect x="585" y="150" width="193" height="122" rx="8" fill="#0a130d" stroke="#17301f"/>
+<text x="598" y="176" fill="#e8ffe8" font-size="13" font-weight="700">WhatsApp Web</text>
+<text x="598" y="194" fill="#5c7365" font-size="10">web.whatsapp.com</text>
+<circle cx="602" cy="220" r="3" fill="#5AF78E"/>
+<text x="611" y="224" fill="#5AF78E" font-size="12">12 conversas</text>
+<text x="598" y="248" fill="#8fae9c" font-size="10">12 com msg nova, 2 nao lidas</text>
+<rect x="790" y="150" width="193" height="122" rx="8" fill="#0a130d" stroke="#17301f"/>
+<text x="803" y="176" fill="#e8ffe8" font-size="13" font-weight="700">TikTok</text>
+<text x="803" y="194" fill="#5c7365" font-size="10">tiktok.com</text>
+<circle cx="807" cy="220" r="3" fill="#5AF78E"/>
+<text x="816" y="224" fill="#5AF78E" font-size="12">24 notificacoes</text>
+<text x="803" y="248" fill="#8fae9c" font-size="10">24 notificacoes, 6 DMs</text>
+<rect x="175" y="286" width="193" height="122" rx="8" fill="#0a130d" stroke="#17301f"/>
+<text x="188" y="312" fill="#e8ffe8" font-size="13" font-weight="700">Instagram</text>
+<text x="188" y="330" fill="#5c7365" font-size="10">instagram.com</text>
+<circle cx="192" cy="356" r="3" fill="#5AF78E"/>
+<text x="201" y="360" fill="#5AF78E" font-size="12">4 notificacoes</text>
+<text x="188" y="384" fill="#8fae9c" font-size="10">4 notificacoes, 1 DM</text>
+<rect x="380" y="286" width="193" height="122" rx="8" fill="#0a130d" stroke="#17301f"/>
+<text x="393" y="312" fill="#e8ffe8" font-size="13" font-weight="700">Mercado Livre</text>
+<text x="393" y="330" fill="#5c7365" font-size="10">mercadolivre.com.br</text>
+<circle cx="397" cy="356" r="3" fill="#5AF78E"/>
+<text x="406" y="360" fill="#5AF78E" font-size="12">1 pedido</text>
+<text x="393" y="384" fill="#8fae9c" font-size="10">1 ativo, 1 a enviar</text>
+<rect x="585" y="286" width="193" height="122" rx="8" fill="#0a130d" stroke="#17301f"/>
+<text x="598" y="312" fill="#e8ffe8" font-size="13" font-weight="700">Outlook</text>
+<text x="598" y="330" fill="#5c7365" font-size="10">outlook.office.com</text>
+<circle cx="602" cy="356" r="3" fill="#5AF78E"/>
+<text x="611" y="360" fill="#5AF78E" font-size="12">4 nao lidos</text>
+<text x="598" y="384" fill="#8fae9c" font-size="10">4 nao lidos, 0 importantes</text>
+<rect x="790" y="286" width="193" height="122" rx="8" fill="#0a130d" stroke="#17301f"/>
+<text x="803" y="312" fill="#e8ffe8" font-size="13" font-weight="700">LinkedIn</text>
+<text x="803" y="330" fill="#5c7365" font-size="10">linkedin.com</text>
+<circle cx="807" cy="356" r="3" fill="#5AF78E"/>
+<text x="816" y="360" fill="#5AF78E" font-size="12">1 notificacao</text>
+<text x="803" y="384" fill="#8fae9c" font-size="10">1 notificacao, 4 DMs</text>
+<text x="175" y="628" fill="#5c7365" font-size="10.5">telas simuladas p/ apresentacao &#183; python -m nomos.mosaic.cli --demo --apply</text>
+</svg>

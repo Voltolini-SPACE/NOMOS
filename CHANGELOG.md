@@ -4,6 +4,71 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Changed (Mosaic vive no painel + site "em ação")
+- **Mosaic agora é uma aba do `nomos painel`** (`data-aba="mosaic"`), sem janelas
+  separadas: as telas isoladas aparecem como tiles dentro do painel local
+  (127.0.0.1), ler é livre e agir passa pelo caminho governado. `_secao_mosaic()`
+  renderiza ao vivo a partir do motor de mosaico e degrada em silêncio se não há
+  telas. Suíte do painel verde (89 testes) e total **1660 verde**.
+- **Site (`site/index.html`) no padrão brandbook** ganhou a seção **"em ação"**
+  (`#acao`): terminal animado mostrando comandos reais (missão · painel · mosaic ·
+  conselho), cards de demonstração e **slots** para clipes reais do sistema
+  (`site/assets/media/`), tudo com progressive enhancement e sem quebrar os
+  guardas de site (validador, `brand:site_atualizado`, nav-âncoras). Adicionados
+  cards de capacidade (memória que atravessa sessões · Mosaic no painel) e o
+  número de testes anunciado subiu para **1.500+** (honesto: há 1.544 `def test_`).
+
+### Added (Mosaic — telas de exemplo para apresentação)
+- **`python -m nomos.mosaic.cli --demo --apply`** carrega um conjunto SIMULADO de
+  8 telas (Gmail · Banco do Brasil · WhatsApp Web · TikTok · Instagram · Mercado
+  Livre · Outlook · LinkedIn) e vistoria tudo — para o painel nunca abrir vazio
+  numa demo. Dry-run por padrão; não duplica. O adaptador demo agora reconhece
+  **banco** (avisos) e **mensagens** (conversas), com badges próprios no painel.
+  4 testes novos; suíte total **1664 verde**. Nenhum dado financeiro é fabricado
+  ou armazenado.
+
+### Added (Mosaic V0 — painel de telas ao vivo, isoladas, vistoriadas pelo agente)
+- **`src/nomos/mosaic/`**: uma tela com **N painéis em mosaico** que se
+  **auto-organiza** (1→1×1, 4→2×2, 9→3×3, 16→4×4). Você adiciona telas de
+  **qualquer site** (e-mail, rede social, marketplace); cada painel tem
+  **perfil de navegador isolado** (login/cookies não interferem entre telas) e o
+  agente **vistoria** cada página (`--scan`) para já saber o conteúdo quando você
+  pedir (`--context`). Camadas: `layout` · `registry` · `knowledge` · `browser`
+  (adaptador `DemoAdapter` agora / `PlaywrightAdapter` no go-live) · `engine` ·
+  `panel` (HTML) · `cli`.
+- **Dry-run por padrão + aprovação**: `--add/--scan/--panel/--act` não gravam/agem
+  sem `--apply`; ações na conta (marcar lido, responder, arquivar) só executam com
+  `--approve`; ação desconhecida → `ACTION_REJECTED_FAIL_CLOSED`. **Subsistema
+  consentido e separado** do núcleo egress-zero: navega e mantém sessões logadas,
+  então vive fora das garantias egress-zero (rotulado), com perfis isolados e a
+  vistoria local 0600 — **nunca** alimentada no motor de memória fail-closed.
+  35 testes (`tests/test_mosaic_*.py`), ruff limpo. Doc: `docs/NOMOS_MOSAIC.md`.
+  Go-live real (Playwright + login por tela) fica como próximo passo.
+
+### Added (MC28 — NOMOS Memory Engine V1: memória local-first, auditável, fail-closed)
+- **Motor de memória próprio** em `src/nomos/memory/` (`store` · `policy` ·
+  `compactor` · `context_builder` · `report` · `engine` · `cli`), **stdlib-only e
+  isolado** — não importa o resto do NOMOS nem qualquer plugin externo, então o
+  rollback é apagar a pasta. Inspirado numa **auditoria estática** do repo externo
+  `claude-mem` (Apache-2.0), **sem instalar, executar ou copiar código** dele
+  (`EXTERNAL_PLUGIN_INSTALLED=NO`, `EXTERNAL_CODE_COPIED=NO`).
+- **Local-first e egress zero**: armazenamento em `~/.nomos/memory/`
+  (`memory.jsonl` bruto append-only, `memory.compacted.jsonl` derivado,
+  `memory.index.json`, `reports/`), arquivos 0600, **sem rede e sem subprocesso**
+  no runtime. Cada entrada tem **hash SHA-256** de integridade; `--validate`
+  detecta adulteração manual.
+- **Dry-run é o padrão absoluto**: `--add`/`--compact`/`--report` não gravam nada
+  sem `--apply`. **Política fail-closed** recusa (com `MEMORY_REJECTED_FAIL_CLOSED`,
+  sem gravar) segredos (`sk-…`, `AKIA…`, JWT, chave privada/SSH, cookie,
+  `password=`), **CPF/CNPJ**, cartão (Luhn), IBAN, seed phrase, env sensível e
+  comandos destrutivos. A compactação **preserva o histórico bruto** (só cria o
+  derivado). CLI: `python -m nomos.memory.cli --add|--list|--context|--compact|--validate|--report`.
+- Docs: `docs/NOMOS_MEMORY_ENGINE.md`, `docs/CLAUDE_MEMORY_USAGE.md`,
+  `docs/EXTERNAL_MEMORY_REPO_AUDIT_MC28.md` (matriz comparativa). 52 testes novos
+  (`tests/test_memory_{store,policy,compactor,context_builder,engine,cli}.py`);
+  suíte total **1625 verde**, ruff limpo. A `nomos.cognition.memory` (SQLite/FTS5)
+  **não foi alterada**.
+
 ### Added (MC64 / Roadmap Fase 5 — confiar um conector pela fila do painel)
 - **`nomos mcp confiar <conector> --panel`**: aprovar a confiança pela **fila do
   painel** (token single-use, TTL 5 min) em vez de digitar "CONFIO" no terminal.
