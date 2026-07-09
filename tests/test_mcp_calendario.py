@@ -50,7 +50,11 @@ def _fixture_ics(tmp_path) -> Path:
         "END:VCALENDAR\r\n"
     )
     p = tmp_path / "agenda.ics"
-    p.write_text(ics, encoding="utf-8")
+    # BYTES de propósito: no Windows, write_text traduz \n→\r\n e os \r\n do
+    # .ics virariam \r\r\n — o que a leitura universal-newline transforma em
+    # linha em branco no meio de uma linha dobrada, quebrando o desdobramento
+    # (RFC 5545). write_bytes grava os CRLF exatos em qualquer SO.
+    p.write_bytes(ics.encode("utf-8"))
     return p
 
 
