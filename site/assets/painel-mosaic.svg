@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" font-family="ui-monospace,Menlo,Consolas,monospace">
+<defs><linearGradient id="igm" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#FEDA75"/><stop offset=".35" stop-color="#FA7E1E"/><stop offset=".6" stop-color="#D62976"/><stop offset=".8" stop-color="#962FBF"/><stop offset="1" stop-color="#4F5BD5"/></linearGradient></defs>
 <rect width="1000" height="640" fill="#06100b"/>
 <rect width="1000" height="38" fill="#0a1610"/>
 <circle cx="20" cy="19" r="5" fill="#FF5C57"/>
@@ -12,59 +13,65 @@
 <text x="16" y="156" fill="#8fae9c" font-size="12.5">chat</text>
 <text x="16" y="186" fill="#8fae9c" font-size="12.5">cerebro</text>
 <text x="16" y="216" fill="#8fae9c" font-size="12.5">capacidades</text>
-<rect x="6" y="229" width="140" height="24" rx="4" fill="#0d1c12"/>
-<rect x="6" y="229" width="2" height="24" fill="#5AF78E"/>
-<text x="16" y="246" fill="#5AF78E" font-size="12.5">mosaic</text>
+<rect x="6" y="229" width="140" height="24" rx="4" fill="#0d1c12"/><rect x="6" y="229" width="2" height="24" fill="#5AF78E"/><text x="16" y="246" fill="#5AF78E" font-size="12.5">mosaic</text>
 <text x="16" y="276" fill="#8fae9c" font-size="12.5">operacao</text>
 <text x="16" y="306" fill="#8fae9c" font-size="12.5">ajuda</text>
 <text x="175" y="78" fill="#e8ffe8" font-size="20" font-weight="700">Mosaic — suas telas ao vivo</text>
 <text x="175" y="102" fill="#8fae9c" font-size="12">Cada tela tem perfil isolado — login nao interfere entre telas. O agente vistoria cada pagina.</text>
 <text x="175" y="128" fill="#7d9488" font-size="12">8 telas &#183; perfis isolados &#183; vistoria local</text>
 <rect x="175" y="150" width="193" height="122" rx="8" fill="#0a130d" stroke="#17301f"/>
-<text x="188" y="176" fill="#e8ffe8" font-size="13" font-weight="700">Gmail</text>
-<text x="188" y="194" fill="#5c7365" font-size="10">mail.google.com</text>
+<g transform="translate(187,163) scale(1.1666666666666667)"><rect width="24" height="24" rx="6" fill="#fff"/><path fill="#EA4335" d="M6 8v9h2.3v-5.9l3.7 2.8 3.7-2.8V17H18V8l-6 4.5L6 8Z"/></g>
+<text x="225" y="177" fill="#e8ffe8" font-size="13" font-weight="700">Gmail</text>
+<text x="225" y="192" fill="#5c7365" font-size="10">mail.google.com</text>
 <circle cx="192" cy="220" r="3" fill="#5AF78E"/>
 <text x="201" y="224" fill="#5AF78E" font-size="12">2 nao lidos</text>
 <text x="188" y="248" fill="#8fae9c" font-size="10">2 e-mails nao lidos, 2 importantes</text>
 <rect x="380" y="150" width="193" height="122" rx="8" fill="#0a130d" stroke="#17301f"/>
-<text x="393" y="176" fill="#e8ffe8" font-size="13" font-weight="700">Banco do Brasil</text>
-<text x="393" y="194" fill="#5c7365" font-size="10">bb.com.br</text>
+<g transform="translate(392,163) scale(1.1666666666666667)"><rect width="24" height="24" rx="6" fill="#0033A0"/><path d="M12 5.4l6.2 3.1v1H5.8v-1L12 5.4Z" fill="#FFEF38"/><rect x="7" y="10.6" width="1.7" height="4.8" fill="#FFEF38"/><rect x="11.2" y="10.6" width="1.7" height="4.8" fill="#FFEF38"/><rect x="15.4" y="10.6" width="1.7" height="4.8" fill="#FFEF38"/><rect x="6" y="16" width="12" height="1.9" rx=".4" fill="#FFEF38"/></g>
+<text x="430" y="177" fill="#e8ffe8" font-size="13" font-weight="700">Banco do Brasil</text>
+<text x="430" y="192" fill="#5c7365" font-size="10">bb.com.br</text>
 <circle cx="397" cy="220" r="3" fill="#5AF78E"/>
 <text x="406" y="224" fill="#5AF78E" font-size="12">2 avisos</text>
 <text x="393" y="248" fill="#8fae9c" font-size="10">extrato observado, nada salvo</text>
 <rect x="585" y="150" width="193" height="122" rx="8" fill="#0a130d" stroke="#17301f"/>
-<text x="598" y="176" fill="#e8ffe8" font-size="13" font-weight="700">WhatsApp Web</text>
-<text x="598" y="194" fill="#5c7365" font-size="10">web.whatsapp.com</text>
+<g transform="translate(597,163) scale(1.1666666666666667)"><rect width="24" height="24" rx="6" fill="#25D366"/><path fill="#fff" d="M12 4.5A7.5 7.5 0 005.6 15.8L4.5 19.5l3.8-1A7.5 7.5 0 1012 4.5Zm0 1.5a6 6 0 015 9.3l-.2.3.5 1.9-1.9-.5-.3.2A6 6 0 1112 6Z"/><path fill="#fff" d="M16.7 13.9c-.3-.1-1.6-.8-1.8-.9-.2-.1-.4-.1-.6.1-.2.3-.6.8-.8 1-.1.1-.3.2-.5.1-.3-.1-1.1-.4-2.1-1.3-.8-.7-1.3-1.5-1.5-1.8-.1-.3 0-.4.1-.5l.4-.5c.1-.2 0-.4 0-.5l-.8-1.9c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.2.3-.9.9-.9 2.2s.9 2.5 1.1 2.7c.1.2 1.8 2.7 4.3 3.8 1.5.6 2.1.7 2.8.6.4-.1 1.3-.5 1.5-1.1.2-.5.2-1 .1-1.1l-.4-.3Z"/></g>
+<text x="635" y="177" fill="#e8ffe8" font-size="13" font-weight="700">WhatsApp Web</text>
+<text x="635" y="192" fill="#5c7365" font-size="10">web.whatsapp.com</text>
 <circle cx="602" cy="220" r="3" fill="#5AF78E"/>
 <text x="611" y="224" fill="#5AF78E" font-size="12">12 conversas</text>
 <text x="598" y="248" fill="#8fae9c" font-size="10">12 com msg nova, 2 nao lidas</text>
 <rect x="790" y="150" width="193" height="122" rx="8" fill="#0a130d" stroke="#17301f"/>
-<text x="803" y="176" fill="#e8ffe8" font-size="13" font-weight="700">TikTok</text>
-<text x="803" y="194" fill="#5c7365" font-size="10">tiktok.com</text>
+<g transform="translate(802,163) scale(1.1666666666666667)"><rect width="24" height="24" rx="6" fill="#010101"/><path d="M13.1 5.5c.2 1.4 1 2.4 2.4 2.6v2.1c-.9 0-1.7-.3-2.4-.7v4c0 2.1-1.6 3.5-3.6 3.5-1.9 0-3.4-1.4-3.4-3.3 0-2 1.7-3.5 3.9-3.2v2.1c-.9-.2-1.8.4-1.8 1.2 0 .7.6 1.2 1.3 1.2.8 0 1.4-.6 1.4-1.5V5.5h2.2Z" fill="#25F4EE"/><path d="M13.7 5.5c.2 1.4 1 2.4 2.4 2.6v2.1c-.9 0-1.7-.3-2.4-.7v4c0 2.1-1.6 3.5-3.6 3.5-.5 0-1-.1-1.4-.3.6.5 1.5.8 2.4.8 2 0 3.6-1.4 3.6-3.5v-4c.7.4 1.5.7 2.4.7V8.1c-1.4-.2-2.2-1.2-2.4-2.6h-1Z" fill="#FE2C55"/><path d="M13.1 5.5H11v9.4c0 .9-.6 1.5-1.4 1.5-.4 0-.8-.2-1.1-.5.3.6.9 1 1.6 1 .8 0 1.4-.6 1.4-1.5V5.5h1.6Z" fill="#fff"/></g>
+<text x="840" y="177" fill="#e8ffe8" font-size="13" font-weight="700">TikTok</text>
+<text x="840" y="192" fill="#5c7365" font-size="10">tiktok.com</text>
 <circle cx="807" cy="220" r="3" fill="#5AF78E"/>
 <text x="816" y="224" fill="#5AF78E" font-size="12">24 notificacoes</text>
 <text x="803" y="248" fill="#8fae9c" font-size="10">24 notificacoes, 6 DMs</text>
 <rect x="175" y="286" width="193" height="122" rx="8" fill="#0a130d" stroke="#17301f"/>
-<text x="188" y="312" fill="#e8ffe8" font-size="13" font-weight="700">Instagram</text>
-<text x="188" y="330" fill="#5c7365" font-size="10">instagram.com</text>
+<g transform="translate(187,299) scale(1.1666666666666667)"><rect width="24" height="24" rx="6" fill="url(#igm)"/><rect x="6.4" y="6.4" width="11.2" height="11.2" rx="3.4" fill="none" stroke="#fff" stroke-width="1.6"/><circle cx="12" cy="12" r="2.7" fill="none" stroke="#fff" stroke-width="1.6"/><circle cx="15.5" cy="8.5" r="1" fill="#fff"/></g>
+<text x="225" y="313" fill="#e8ffe8" font-size="13" font-weight="700">Instagram</text>
+<text x="225" y="328" fill="#5c7365" font-size="10">instagram.com</text>
 <circle cx="192" cy="356" r="3" fill="#5AF78E"/>
 <text x="201" y="360" fill="#5AF78E" font-size="12">4 notificacoes</text>
 <text x="188" y="384" fill="#8fae9c" font-size="10">4 notificacoes, 1 DM</text>
 <rect x="380" y="286" width="193" height="122" rx="8" fill="#0a130d" stroke="#17301f"/>
-<text x="393" y="312" fill="#e8ffe8" font-size="13" font-weight="700">Mercado Livre</text>
-<text x="393" y="330" fill="#5c7365" font-size="10">mercadolivre.com.br</text>
+<g transform="translate(392,299) scale(1.1666666666666667)"><rect width="24" height="24" rx="6" fill="#FFE600"/><path d="M6.4 7h1.7l1.4 6.7h6.1l1.3-4.7H9.5" fill="none" stroke="#2D3277" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><circle cx="10.6" cy="16.4" r="1.2" fill="#2D3277"/><circle cx="15.2" cy="16.4" r="1.2" fill="#2D3277"/></g>
+<text x="430" y="313" fill="#e8ffe8" font-size="13" font-weight="700">Mercado Livre</text>
+<text x="430" y="328" fill="#5c7365" font-size="10">mercadolivre.com.br</text>
 <circle cx="397" cy="356" r="3" fill="#5AF78E"/>
 <text x="406" y="360" fill="#5AF78E" font-size="12">1 pedido</text>
 <text x="393" y="384" fill="#8fae9c" font-size="10">1 ativo, 1 a enviar</text>
 <rect x="585" y="286" width="193" height="122" rx="8" fill="#0a130d" stroke="#17301f"/>
-<text x="598" y="312" fill="#e8ffe8" font-size="13" font-weight="700">Outlook</text>
-<text x="598" y="330" fill="#5c7365" font-size="10">outlook.office.com</text>
+<g transform="translate(597,299) scale(1.1666666666666667)"><rect width="24" height="24" rx="6" fill="#0A66C2"/><rect x="5" y="7.4" width="14" height="9.2" rx="1.6" fill="#fff"/><path d="M5.6 8.4l6.4 4.6 6.4-4.6" fill="none" stroke="#0078D4" stroke-width="1.5"/></g>
+<text x="635" y="313" fill="#e8ffe8" font-size="13" font-weight="700">Outlook</text>
+<text x="635" y="328" fill="#5c7365" font-size="10">outlook.office.com</text>
 <circle cx="602" cy="356" r="3" fill="#5AF78E"/>
 <text x="611" y="360" fill="#5AF78E" font-size="12">4 nao lidos</text>
 <text x="598" y="384" fill="#8fae9c" font-size="10">4 nao lidos, 0 importantes</text>
 <rect x="790" y="286" width="193" height="122" rx="8" fill="#0a130d" stroke="#17301f"/>
-<text x="803" y="312" fill="#e8ffe8" font-size="13" font-weight="700">LinkedIn</text>
-<text x="803" y="330" fill="#5c7365" font-size="10">linkedin.com</text>
+<g transform="translate(802,299) scale(1.1666666666666667)"><rect width="24" height="24" rx="6" fill="#0A66C2"/><circle cx="7.5" cy="7.7" r="1.5" fill="#fff"/><rect x="6.2" y="10" width="2.6" height="7.8" fill="#fff"/><path d="M10.6 10H13v1.1c.4-.7 1.3-1.3 2.5-1.3 2 0 2.8 1.3 2.8 3.4v4.6h-2.6v-4.1c0-1-.4-1.6-1.2-1.6-.7 0-1.1.5-1.3 1v4.7h-2.6V10Z" fill="#fff"/></g>
+<text x="840" y="313" fill="#e8ffe8" font-size="13" font-weight="700">LinkedIn</text>
+<text x="840" y="328" fill="#5c7365" font-size="10">linkedin.com</text>
 <circle cx="807" cy="356" r="3" fill="#5AF78E"/>
 <text x="816" y="360" fill="#5AF78E" font-size="12">1 notificacao</text>
 <text x="803" y="384" fill="#8fae9c" font-size="10">1 notificacao, 4 DMs</text>
