@@ -136,6 +136,7 @@
         .term-body .ok { color: var(--neon); } .term-body .warn { color: var(--amarelo); }
         .term-body .dim { color: var(--fraco); } .term-body .cmd { color: var(--ciano); }
         .term-body .a3 { color: var(--rosa); font-weight: 700; }
+        .term-body .a0 { color: var(--ciano); font-weight: 700; }
         .nota { color: var(--fraco); font-size: 0.86rem; border-left: 2px solid var(--line); padding-left: 12px; margin-top: 0.4rem; }
 
         section { padding: 52px 0 8px; border-top: 1px solid var(--line2); }
@@ -323,8 +324,11 @@ Próximo passo recomendado: rode: <span class="cmd">nomos start</span></pre>
             <div class="term">
                 <div class="term-bar"><span class="td red"></span><span class="td yellow"></span><span class="td green"></span><span class="term-title">bash — ~ — nomos mcp exemplos</span></div>
 <pre class="term-body"><span class="cmd">$ nomos mcp exemplos</span>
-conectores que acompanham o NOMOS (5):
+conectores que acompanham o NOMOS (6):
 
+  ○ disponível  calendario-ics <span class="a0">[A0]</span>
+<span class="dim">      LER a sua agenda de um .ics LOCAL (sem rede, biblioteca padrão) — leitura local = A0.</span>
+      ligar: <span class="cmd">nomos mcp confiar calendario</span>
   ○ disponível  email-imap <span class="a3">[A3]</span>
 <span class="dim">      LER a sua caixa de entrada por IMAP (biblioteca padrão, sem dependências) — entrada por PULL.</span>
       ligar: <span class="cmd">nomos mcp confiar email-imap</span>
@@ -343,7 +347,7 @@ conectores que acompanham o NOMOS (5):
 
 <span class="dim">(ligar é decisão sua, num terminal; toda chamada dessas tools passa pelo gate de aprovação)</span></pre>
             </div>
-            <p class="nota">Todo conector nasce <strong>desligado</strong> e marcado <span class="k">A3</span>: você liga no terminal e cada chamada ainda passa pela fila de aprovação. Veja o fluxo ponta a ponta em <a href="#conexoes">conexões →</a></p>
+            <p class="nota">Todo conector nasce <strong>desligado</strong> e precisa da sua <strong>confiança</strong> no terminal. Os que tocam rede/credencial são <span class="k">A3</span> (aprovação a cada chamada); o de calendário, por só <strong>ler um arquivo local</strong>, é <span class="k">A0</span> — o badge é honesto sobre o risco real. Veja o fluxo ponta a ponta em <a href="#conexoes">conexões →</a></p>
 
             <h3 class="grupo-recursos"><span aria-hidden="true">⚖️</span> nomos conselho status — Motor Council, honesto por construção (saída real)</h3>
             <div class="term">
@@ -572,6 +576,7 @@ Detalhes: docs/architecture/MOTOR_COUNCIL_INDEX_v1.md</span></pre>
                 <div class="card"><div class="ico" aria-hidden="true">✉️</div><h3>E-mail (SMTP)</h3><p>Pelo seu próprio servidor SMTP, com a biblioteca padrão do Python. STARTTLS por padrão; recusa texto claro.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">📨</div><h3>Signal</h3><p>Pelo <strong>signal-cli local</strong>: nada passa por nuvem de terceiros além do próprio Signal — o mais local-first. Texto e grupos; o número é redigido/mascarado.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">📥</div><h3>E-mail (IMAP) — <em>entrada</em></h3><p>O NOMOS <strong>lê</strong> a sua caixa: puxa os não-lidos (só cabeçalhos), sem webhook público. <strong>Só leitura de verdade</strong> — nunca marca como lido, apaga ou envia.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">📅</div><h3>Calendário (.ics) — <em>entrada</em></h3><p>O NOMOS <strong>lê a sua agenda</strong> de um arquivo <span class="k">.ics</span> local — eventos de hoje e os próximos, <strong>sem tocar a rede</strong>. Só ler um arquivo seu é <span class="k">A0</span>; ainda assim exige sua confiança. Nunca altera o arquivo.</p></div>
             </div>
             <div class="term" role="group" aria-label="Ligar um canal e agendar o briefing">
                 <div class="termbar">~/nomos — bash</div>
