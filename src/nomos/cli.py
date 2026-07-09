@@ -1693,6 +1693,27 @@ def cmd_mcp(ctx, args) -> int:
                       "mesmo assim, remova o bloco 'signature' à mão."),
                   file=sys.stderr)
             return EXIT_DENIED
+        # confiar pela FILA DO PAINEL (single-use, TTL) em vez do TTY: a decisão
+        # segue 100% humana — só muda a porta pela qual você aprova.
+        if getattr(args, "panel", False):
+            decision = ctx["policy"].decide(
+                Category.SKILL_INSTALL, target=f"mcp:confiar:{manifesto['nome']}")
+            if not gate(decision, _approver_for(ctx, args)):
+                ctx["audit"].append("mcp.confiar.negado_fila",
+                                    server=manifesto["nome"])
+                print("confiança não aprovada na fila do painel — nada "
+                      "registrado.", file=sys.stderr)
+                return EXIT_DENIED
+            try:
+                fp = cat.confiar(ctx["home"], manifesto)
+            except cat.CatalogoErro as exc:
+                print(f"não confiei (fail-closed): {exc}", file=sys.stderr)
+                return EXIT_ERROR
+            ctx["audit"].append("mcp.confiado", server=manifesto["nome"],
+                                via="painel")
+            print(f"registrado ✓ (aprovado na fila do painel) impressão "
+                  f"{fp[:16]}…")
+            return EXIT_OK
         # confiar: decisão consciente, em TTY
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
             from nomos.simple.erros import fmt
@@ -2162,6 +2183,10 @@ def build_parser() -> argparse.ArgumentParser:
     for verbo in ("confiar", "revogar"):
         mv = mcpsub.add_parser(verbo)
         mv.add_argument("manifesto")
+        if verbo == "confiar":
+            mv.add_argument("--panel", action="store_true",
+                            help="aprovar a confiança pela fila do painel "
+                            "(single-use, TTL) em vez do terminal")
         mv.set_defaults(fn=cmd_mcp)
     mch = mcpsub.add_parser("chamar")
     mch.add_argument("manifesto")

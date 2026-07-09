@@ -104,8 +104,9 @@ glob de `conectores_exemplo()` — sem tocar em mais nada.
 - ✅ **Índice de conectores embarcado** (curado) — **feito (MC59)**: `nomos mcp
   buscar <termo>` acha conectores por nome/descrição (sem acento/caso), sem caçar
   arquivo. Só lista os oficiais empacotados; confiar segue manual.
-- **Confiar pela fila do painel** — aprovar a confiança de um conector via a fila
-  de aprovação (single-use, TTL), não só por TTY. Mantém o gate.
+- ✅ **Confiar pela fila do painel** — **feito (MC64)**: `nomos mcp confiar
+  <conector> --panel` aprova a confiança pela fila de aprovação (single-use,
+  TTL), não só por TTY. A decisão segue 100% humana.
 - ✅ **Assinatura opcional de autor** do manifesto — **feito (MC63)**:
   `nomos mcp assinatura`/`assinar` (ed25519, reutiliza `ext/signing` + o
   `trust.json` de publicadores). Camada *acima* do SHA-256 (prova QUEM assinou);

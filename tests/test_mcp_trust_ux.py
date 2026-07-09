@@ -64,3 +64,36 @@ def test_cli_exemplos_dica_por_nome(nomos_home, monkeypatch, capsys):
     # a dica de ligar usa o NOME curto, não o caminho longo
     assert "nomos mcp confiar telegram" in out
     assert "examples/mcp/telegram/manifesto.json" not in out
+
+
+# --- Fase 5 (MC64): confiar pela FILA DO PAINEL (--panel), sem TTY ----------
+def _status_telegram(home):
+    from nomos.interface.mcp_client import carregar_manifesto
+    return cat.status(home, carregar_manifesto(
+        EXEMPLOS / "telegram" / "manifesto.json"))
+
+
+def test_confiar_pela_fila_do_painel_aprova(nomos_home, monkeypatch, capsys):
+    monkeypatch.chdir(RAIZ)
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    # simula a fila do painel APROVANDO (a decisão segue 100% humana)
+    monkeypatch.setattr(cli, "_approver_for", lambda ctx, args: (lambda d: True))
+    rc = cli.main(["mcp", "confiar", "telegram", "--panel"])
+    assert rc == 0
+    assert "fila do painel" in capsys.readouterr().out
+    assert _status_telegram(nomos_home) == "confiavel"     # registrado
+
+
+def test_confiar_pela_fila_negada_nao_registra(nomos_home, monkeypatch, capsys):
+    monkeypatch.chdir(RAIZ)
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    monkeypatch.setattr(cli, "_approver_for", lambda ctx, args: (lambda d: False))
+    rc = cli.main(["mcp", "confiar", "telegram", "--panel"])
+    assert rc != 0
+    assert _status_telegram(nomos_home) == "experimental"  # nada registrado
+
+
+def test_parser_confiar_tem_panel():
+    from nomos.cli import build_parser
+    a = build_parser().parse_args(["mcp", "confiar", "telegram", "--panel"])
+    assert a.mcp_cmd == "confiar" and a.panel is True

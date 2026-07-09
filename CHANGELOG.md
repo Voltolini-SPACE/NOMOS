@@ -4,6 +4,16 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC64 / Roadmap Fase 5 — confiar um conector pela fila do painel)
+- **`nomos mcp confiar <conector> --panel`**: aprovar a confiança pela **fila do
+  painel** (token single-use, TTL 5 min) em vez de digitar "CONFIO" no terminal.
+  Útil para quem instalou por pip e prefere aprovar pela mesma fila das outras
+  ações A3. A decisão segue **100% humana** — reutiliza `_approver_for`/`gate`/a
+  fila; sem autoaprovação nem bypass. O enforcement de **assinatura de autor**
+  (MC63) vale nos dois caminhos (TTY e painel): assinatura inválida recusa antes
+  de qualquer aprovação. 3 testes (aprova → registra; nega → nada registrado;
+  parser). Suíte 1573 verde.
+
 ### Added (MC63 / Roadmap Fase 5 — assinatura OPCIONAL de autor nos manifestos MCP)
 - Camada de confiança **ACIMA do SHA-256**: o SHA-256 (confiança-por-registro)
   prova que o manifesto **não mudou**; a assinatura **ed25519** prova **QUEM
