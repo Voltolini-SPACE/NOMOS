@@ -42,7 +42,11 @@ class _Runner:
 
 
 # 1. sandbox sem motor: honesto, nada inventado, conversa continua
-def test_chat_arbitrar_sem_motor_e_honesto(nomos_home):
+def test_chat_arbitrar_sem_motor_e_honesto(nomos_home, monkeypatch):
+    # força "sem Ollama" — o teste prova a honestidade (sem motor ⇒ não
+    # inventa), sem depender de um Ollama aberto na máquina do dev.
+    from nomos.cognition import providers
+    monkeypatch.setattr(providers.OllamaProvider, "available", lambda self: False)
     rc, tela = _conversa(nomos_home, ["/arbitrar o que é local-first?", "/sair"])
     assert rc == 0
     assert "nenhum motor pronto" in tela and "nada foi" in tela

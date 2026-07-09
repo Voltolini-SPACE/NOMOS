@@ -8,9 +8,21 @@ falha ⇒ sem conteúdo; final_content vem sempre de um candidato real.
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import pytest
+
 from nomos.cognition import arbitragem as arb
 from nomos.council.models import CouncilConfidence, CouncilDisagreementLevel, CouncilFailureCode
 from _cli_env import cli_env
+
+
+def _ollama_ativo() -> bool:
+    """True se houver um Ollama respondendo na máquina (ex.: dev com Ollama
+    aberto). Os testes de 'sandbox sem motor' não podem depender disso."""
+    try:
+        from nomos.cognition import motores
+        return bool(motores._http_ok(motores.OLLAMA))
+    except Exception:
+        return False
 
 
 @dataclass
@@ -179,7 +191,12 @@ def test_deterministico():
 
 
 # 13. Runners de produção existem e reportam indisponível no sandbox (sem inventar)
-def test_runners_producao_indisponiveis_no_sandbox(tmp_path):
+def test_runners_producao_indisponiveis_no_sandbox(tmp_path, monkeypatch):
+    # força "sem Ollama" de forma determinística: o teste prova a HONESTIDADE
+    # (indisponível ⇒ no_engine), e não pode depender de um Ollama aberto na
+    # máquina do dev (na CI não há Ollama; localmente pode haver).
+    from nomos.cognition import providers
+    monkeypatch.setattr(providers.OllamaProvider, "available", lambda self: False)
     ol = arb.OllamaRunner()
     em = arb.EmbeddedRunner(home=tmp_path)
     # sem Ollama rodando e sem cérebro baixado, ambos indisponíveis — honesto
@@ -198,6 +215,8 @@ def test_montar_runners_producao(tmp_path):
 
 
 # 15. CLI: `nomos motores arbitrar` é honesto no sandbox (sem motor ⇒ exit 1, sem inventar)
+@pytest.mark.skipif(_ollama_ativo(), reason="Ollama local ativo — este teste "
+                    "prova o fail-closed SEM motor; sem sentido com um motor real")
 def test_cli_arbitrar_honesto_no_sandbox(tmp_path):
     import subprocess
     import sys
