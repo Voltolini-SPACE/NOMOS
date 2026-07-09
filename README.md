@@ -36,6 +36,37 @@ para iniciantes.
   local primeiro, sem você precisar entender de modelos.
 - 🎨 **Do seu jeito** — nome do agente, personalidade e cores personalizáveis.
 
+## Capacidades
+
+<!-- NOMOS:CAPS:START -->
+
+| Capacidade | O que faz | Como |
+|---|---|---|
+| Local por lei | Por padrão nada sai da máquina; a política bloqueia egress até você permitir. | — |
+| Pede licença (A0–A6) | Toda ação sensível é aprovada por você; em scripts/CI a resposta é sempre não. | — |
+| Nunca finge | Sem cérebro pronto, avisa; jamais inventa resposta ou dado. | — |
+| Cérebro leve embutido | Modelo pequeno (a partir de ~400 MB) que roda sem GPU nem Ollama. | `nomos cerebro` |
+| Roteador automático | Escolhe o melhor motor por tarefa — local primeiro. | `nomos motores` |
+| Memória local | SQLite na sua máquina com busca full-text; você revisa o que vira permanente. | `nomos memoria` |
+| Memória que atravessa sessões | Motor auditável: dry-run por padrão, hash de integridade, recusa segredos e PII. | `python -m nomos.memory.cli` |
+| Mosaic — telas ao vivo no painel | Várias telas isoladas em mosaico dentro do painel, vistoriadas pelo agente. | `python -m nomos.mosaic.cli` |
+| Conversas com retenção | Abra, busque, fixe, exporte e esqueça conversas — retenção sob seu controle. | `nomos conversas` |
+| Missões que fazem | Plano legível → uma aprovação → execução passo a passo → evidência; um comando desfaz. | `nomos missao` |
+| Fila de aprovações | Ação sensível passa por fila com token de uso único; no terminal ou no painel. | `nomos approvals` |
+| Motor Council | Vários motores respondem, revisam às cegas e um árbitro converge — fail-closed. | `nomos conselho` |
+| Cofre e backup | Chaves com senha-mestra; seu NOMOS inteiro num arquivo cifrado. | `nomos chaves` |
+| Skills governadas | Habilidades instaláveis e assinadas que só fazem o que declaram. | `nomos skills` |
+| Agentes com escopo | Agentes oficiais e próprios, com ferramentas, motores e risco máximo definidos. | `nomos agentes` |
+| Auditoria com âncora | Trilha com âncora HMAC — evidência que não muda em silêncio. | `nomos logs` |
+| Painel web local + chat | Status, motores, evidências, política viva e chat local — só 127.0.0.1. | `nomos painel` |
+| Conectores MCP oficiais | Telegram, WhatsApp, e-mail (SMTP/IMAP), Slack, Signal e calendário .ics — governados (A3/A0). | `nomos mcp` |
+| Rotinas e briefing 2.0 | Resumo do dia + o que chegou, entregue no seu canal, sempre com seu OK. | `nomos rotinas` |
+| Atualização com licença | Checa versão nova e propõe — nunca atualiza sozinho. | `nomos atualizar` |
+| Evidências verificáveis | Cada missão gera pacote com relatório, manifesto e SHA-256, auditável offline. | `nomos evidencia` |
+| Botão de pânico | Um comando corta tudo: revoga consentimentos e tranca. | `nomos panic` |
+| Doutor | Check-up honesto do que está pronto e o próximo passo. | `nomos doutor` |
+<!-- NOMOS:CAPS:END -->
+
 ## Instalação (estado atual)
 
 Requer **Python 3.10+**. Instalação a partir do código:

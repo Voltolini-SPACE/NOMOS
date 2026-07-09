@@ -565,6 +565,35 @@ execução real só numa fase aprovada — nunca finge</pre></figure>
                 <div class="card"><div class="ico" aria-hidden="true">🩺</div><h3>Doutor</h3><p><span class="k">nomos doutor</span>: um check-up honesto do que está pronto e qual é o próximo passo.</p></div>
             </div>
             </details>
+            <!-- NOMOS:CAPS:START -->
+            <details class="grupo"><summary class="grupo-recursos"><span aria-hidden="true">🗂️</span> Índice de capacidades (gerado automaticamente — 23 itens)</summary>
+            <ul class="caps-index">
+              <li><b>Local por lei</b> — Por padrão nada sai da máquina; a política bloqueia egress até você permitir.</li>
+              <li><b>Pede licença (A0–A6)</b> — Toda ação sensível é aprovada por você; em scripts/CI a resposta é sempre não.</li>
+              <li><b>Nunca finge</b> — Sem cérebro pronto, avisa; jamais inventa resposta ou dado.</li>
+              <li><b>Cérebro leve embutido</b> — Modelo pequeno (a partir de ~400 MB) que roda sem GPU nem Ollama. <span class="k">nomos cerebro</span></li>
+              <li><b>Roteador automático</b> — Escolhe o melhor motor por tarefa — local primeiro. <span class="k">nomos motores</span></li>
+              <li><b>Memória local</b> — SQLite na sua máquina com busca full-text; você revisa o que vira permanente. <span class="k">nomos memoria</span></li>
+              <li><b>Memória que atravessa sessões</b> — Motor auditável: dry-run por padrão, hash de integridade, recusa segredos e PII. <span class="k">python -m nomos.memory.cli</span></li>
+              <li><b>Mosaic — telas ao vivo no painel</b> — Várias telas isoladas em mosaico dentro do painel, vistoriadas pelo agente. <span class="k">python -m nomos.mosaic.cli</span></li>
+              <li><b>Conversas com retenção</b> — Abra, busque, fixe, exporte e esqueça conversas — retenção sob seu controle. <span class="k">nomos conversas</span></li>
+              <li><b>Missões que fazem</b> — Plano legível → uma aprovação → execução passo a passo → evidência; um comando desfaz. <span class="k">nomos missao</span></li>
+              <li><b>Fila de aprovações</b> — Ação sensível passa por fila com token de uso único; no terminal ou no painel. <span class="k">nomos approvals</span></li>
+              <li><b>Motor Council</b> — Vários motores respondem, revisam às cegas e um árbitro converge — fail-closed. <span class="k">nomos conselho</span></li>
+              <li><b>Cofre e backup</b> — Chaves com senha-mestra; seu NOMOS inteiro num arquivo cifrado. <span class="k">nomos chaves</span></li>
+              <li><b>Skills governadas</b> — Habilidades instaláveis e assinadas que só fazem o que declaram. <span class="k">nomos skills</span></li>
+              <li><b>Agentes com escopo</b> — Agentes oficiais e próprios, com ferramentas, motores e risco máximo definidos. <span class="k">nomos agentes</span></li>
+              <li><b>Auditoria com âncora</b> — Trilha com âncora HMAC — evidência que não muda em silêncio. <span class="k">nomos logs</span></li>
+              <li><b>Painel web local + chat</b> — Status, motores, evidências, política viva e chat local — só 127.0.0.1. <span class="k">nomos painel</span></li>
+              <li><b>Conectores MCP oficiais</b> — Telegram, WhatsApp, e-mail (SMTP/IMAP), Slack, Signal e calendário .ics — governados (A3/A0). <span class="k">nomos mcp</span></li>
+              <li><b>Rotinas e briefing 2.0</b> — Resumo do dia + o que chegou, entregue no seu canal, sempre com seu OK. <span class="k">nomos rotinas</span></li>
+              <li><b>Atualização com licença</b> — Checa versão nova e propõe — nunca atualiza sozinho. <span class="k">nomos atualizar</span></li>
+              <li><b>Evidências verificáveis</b> — Cada missão gera pacote com relatório, manifesto e SHA-256, auditável offline. <span class="k">nomos evidencia</span></li>
+              <li><b>Botão de pânico</b> — Um comando corta tudo: revoga consentimentos e tranca. <span class="k">nomos panic</span></li>
+              <li><b>Doutor</b> — Check-up honesto do que está pronto e o próximo passo. <span class="k">nomos doutor</span></li>
+            </ul>
+            </details>
+            <!-- NOMOS:CAPS:END -->
         </div>
     </section>
 

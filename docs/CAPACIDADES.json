@@ -1,0 +1,29 @@
+{
+  "_comment": "FONTE ÚNICA de capacidades do NOMOS. Adicione aqui e rode 'python tools/propagar.py --apply' para espelhar em README e site. O teste test_propagar garante que tudo fica sincronizado (CI quebra se esquecer). O painel reflete o código sozinho.",
+  "schema": 1,
+  "capacidades": [
+    {"id": "local-por-lei", "nome": "Local por lei", "resumo": "Por padrão nada sai da máquina; a política bloqueia egress até você permitir.", "area": "segurança"},
+    {"id": "pede-licenca", "nome": "Pede licença (A0–A6)", "resumo": "Toda ação sensível é aprovada por você; em scripts/CI a resposta é sempre não.", "area": "segurança"},
+    {"id": "nunca-finge", "nome": "Nunca finge", "resumo": "Sem cérebro pronto, avisa; jamais inventa resposta ou dado.", "area": "segurança"},
+    {"id": "cerebro-embutido", "nome": "Cérebro leve embutido", "resumo": "Modelo pequeno (a partir de ~400 MB) que roda sem GPU nem Ollama.", "area": "cérebro", "comando": "nomos cerebro"},
+    {"id": "roteador", "nome": "Roteador automático", "resumo": "Escolhe o melhor motor por tarefa — local primeiro.", "area": "cérebro", "comando": "nomos motores"},
+    {"id": "memoria-local", "nome": "Memória local", "resumo": "SQLite na sua máquina com busca full-text; você revisa o que vira permanente.", "area": "cérebro", "comando": "nomos memoria"},
+    {"id": "memoria-persistente", "nome": "Memória que atravessa sessões", "resumo": "Motor auditável: dry-run por padrão, hash de integridade, recusa segredos e PII.", "area": "cérebro", "comando": "python -m nomos.memory.cli", "site": "memória que atravessa sessões"},
+    {"id": "mosaic", "nome": "Mosaic — telas ao vivo no painel", "resumo": "Várias telas isoladas em mosaico dentro do painel, vistoriadas pelo agente.", "area": "painel", "comando": "python -m nomos.mosaic.cli", "site": "mosaic"},
+    {"id": "conversas", "nome": "Conversas com retenção", "resumo": "Abra, busque, fixe, exporte e esqueça conversas — retenção sob seu controle.", "area": "conversa", "comando": "nomos conversas"},
+    {"id": "missoes", "nome": "Missões que fazem", "resumo": "Plano legível → uma aprovação → execução passo a passo → evidência; um comando desfaz.", "area": "execução", "comando": "nomos missao"},
+    {"id": "aprovacoes", "nome": "Fila de aprovações", "resumo": "Ação sensível passa por fila com token de uso único; no terminal ou no painel.", "area": "governança", "comando": "nomos approvals"},
+    {"id": "council", "nome": "Motor Council", "resumo": "Vários motores respondem, revisam às cegas e um árbitro converge — fail-closed.", "area": "cérebro", "comando": "nomos conselho"},
+    {"id": "cofre", "nome": "Cofre e backup", "resumo": "Chaves com senha-mestra; seu NOMOS inteiro num arquivo cifrado.", "area": "segurança", "comando": "nomos chaves"},
+    {"id": "skills", "nome": "Skills governadas", "resumo": "Habilidades instaláveis e assinadas que só fazem o que declaram.", "area": "extensão", "comando": "nomos skills"},
+    {"id": "agentes", "nome": "Agentes com escopo", "resumo": "Agentes oficiais e próprios, com ferramentas, motores e risco máximo definidos.", "area": "extensão", "comando": "nomos agentes"},
+    {"id": "auditoria", "nome": "Auditoria com âncora", "resumo": "Trilha com âncora HMAC — evidência que não muda em silêncio.", "area": "governança", "comando": "nomos logs"},
+    {"id": "painel", "nome": "Painel web local + chat", "resumo": "Status, motores, evidências, política viva e chat local — só 127.0.0.1.", "area": "painel", "comando": "nomos painel"},
+    {"id": "conectores", "nome": "Conectores MCP oficiais", "resumo": "Telegram, WhatsApp, e-mail (SMTP/IMAP), Slack, Signal e calendário .ics — governados (A3/A0).", "area": "conexões", "comando": "nomos mcp"},
+    {"id": "briefing", "nome": "Rotinas e briefing 2.0", "resumo": "Resumo do dia + o que chegou, entregue no seu canal, sempre com seu OK.", "area": "conexões", "comando": "nomos rotinas"},
+    {"id": "atualizar", "nome": "Atualização com licença", "resumo": "Checa versão nova e propõe — nunca atualiza sozinho.", "area": "governança", "comando": "nomos atualizar"},
+    {"id": "evidencia", "nome": "Evidências verificáveis", "resumo": "Cada missão gera pacote com relatório, manifesto e SHA-256, auditável offline.", "area": "governança", "comando": "nomos evidencia"},
+    {"id": "panico", "nome": "Botão de pânico", "resumo": "Um comando corta tudo: revoga consentimentos e tranca.", "area": "segurança", "comando": "nomos panic"},
+    {"id": "doutor", "nome": "Doutor", "resumo": "Check-up honesto do que está pronto e o próximo passo.", "area": "governança", "comando": "nomos doutor"}
+  ]
+}
