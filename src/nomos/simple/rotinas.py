@@ -89,10 +89,14 @@ def validar_acao(acao: str, skills_dir: Path | None = None) -> str | None:
             return None
         return ("briefing-email precisa de um e-mail válido (ex.: "
                 "briefing-email:voce@dominio.com)")
+    if acao.startswith("briefing-slack:"):
+        # o Incoming Webhook JÁ aponta para um canal — o que vem depois de
+        # ":" é ignorado (pode ficar vazio ou ser um rótulo p/ você lembrar)
+        return None
     return (f"ação desconhecida: {acao!r} — permitidas: "
             f"{', '.join(ACOES_INTERNAS)}, skill:<nome>, "
-            "briefing-telegram:<chat_id>, briefing-whatsapp:<numero> ou "
-            "briefing-email:<endereço>")
+            "briefing-telegram:<chat_id>, briefing-whatsapp:<numero>, "
+            "briefing-email:<endereço> ou briefing-slack:")
 
 
 def criar(home: Path, nome: str, hora: str, acao: str, policy, approver,
@@ -227,6 +231,15 @@ _CANAIS = {
         "manifesto_pad": "examples/mcp/email-smtp/manifesto.json",
         "dir": "email-smtp",
         "rotulo": "e-mail",
+    },
+    "slack": {
+        # o webhook JÁ aponta para um canal — o destino é ignorado de propósito
+        "tool": "slack_enviar",
+        "args": lambda destino, texto: {"texto": texto},
+        "manifesto_env": "NOMOS_SLACK_MANIFESTO",
+        "manifesto_pad": "examples/mcp/slack/manifesto.json",
+        "dir": "slack",
+        "rotulo": "Slack",
     },
 }
 
@@ -468,6 +481,10 @@ def prever_acao(acao: str) -> str:
         return (f"geraria o briefing e o ENTREGARIA por e-mail (para "
                 f"{email}) — nível A3: só sai com aprovação sua (interativa "
                 "ou pela fila do painel)")
+    if acao.startswith("briefing-slack:"):
+        return ("geraria o briefing e o ENTREGARIA no Slack (no canal do seu "
+                "Incoming Webhook) — nível A3: só sai com aprovação sua "
+                "(interativa ou pela fila do painel)")
     return f"ação desconhecida: {acao}"
 
 

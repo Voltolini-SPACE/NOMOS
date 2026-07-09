@@ -73,7 +73,7 @@ integridade, backup automático e rollback. Detalhes: [docs/INSTALL.md](docs/INS
 | `nomos entrada telegram` / `email` / `calendario` | lê o que chegou (mensagens) ou a sua **agenda** por um conector confiado — só leitura, governado (A3; o calendário local é A0) |
 | `nomos entrada <canal> --dia` | briefing 2.0: junta "o que chegou"/"sua agenda" + "o seu dia" numa visão só |
 | `nomos conselho status` / `modos` / `simular` | Motor Council: estado e modos (informativo) + simulação segura em dry-run |
-| `nomos rotinas criar "Briefing" 08:00 briefing-telegram:<chat>` | briefing diário entregue no seu canal (com seu OK, A3) |
+| `nomos rotinas criar "Briefing" 08:00 briefing-telegram:<chat>` | briefing diário entregue no seu canal — `telegram`/`whatsapp`/`email`/`slack` (com seu OK, A3) |
 | `nomos doutor --consertar` | aplica correções seguras com a sua confirmação |
 | `nomos atualizar` | checa se há versão nova (com sua aprovação; **nunca** atualiza sozinho) |
 

@@ -4,6 +4,15 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC62 / Roadmap Fase 4 — briefing entregue no Slack)
+- O **briefing diário** agora pode ser entregue no **Slack**: rotina
+  `briefing-slack:` (o Incoming Webhook já é o canal, então o que vem depois de
+  ":" é ignorado). Mesma via governada dos outros canais — manifesto CONFIÁVEL,
+  gate A3 (sem aprovação nada sai), auditoria. `_CANAIS` ganhou `slack` (args só
+  com o texto, sem destino); `validar_acao`/`prever_acao` reconhecem
+  `briefing-slack:`. 6 testes (validação, preview, sem-confiança, gate negado,
+  entrega só-texto, anti-regressão dos canais com destino). Suíte 1558 verde.
+
 ### Added (MC61 / Roadmap Fase 2 — conector Slack (envio via Incoming Webhook))
 - Novo conector **`slack-webhook`** — envia texto para um canal do Slack pelo
   **Incoming Webhook oficial** (urllib, stdlib, sem dependências). Tools

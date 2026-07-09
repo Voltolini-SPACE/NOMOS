@@ -94,7 +94,9 @@ glob de `conectores_exemplo()` — sem tocar em mais nada.
   — **feito (MC53)**.
 - ✅ **Agenda no briefing** — **feito (MC60)**: `nomos entrada calendario [--dia]`
   traz os próximos eventos do `.ics` local (A0, exige confiança) para o briefing.
-- Novos canais de **envio** no dict `_CANAIS` (Slack/Discord) — seam já genérico.
+- ✅ Novos canais de **envio** no dict `_CANAIS` — **Slack feito (MC62)**:
+  `briefing-slack:` entrega o briefing no canal do webhook (mesma via governada,
+  gate A3). Discord segue o mesmo seam.
 - Fluxo de **duas vias**: digest do que chegou → você responde, cada envio no gate A3.
 
 ## Fase 5 — Descoberta, catálogo e trust UX
