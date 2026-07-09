@@ -40,6 +40,13 @@ def _canonical(manifest: dict) -> bytes:
                       ensure_ascii=False).encode("utf-8")
 
 
+def canonical(manifest: dict) -> bytes:
+    """Forma canônica assinada (manifesto sem o bloco ``signature``). Pública
+    para reúso por outros subsistemas (ex.: assinatura de manifestos MCP), de
+    modo que assinar e verificar usem SEMPRE os mesmos bytes."""
+    return _canonical(manifest)
+
+
 def fingerprint(pub_raw: bytes) -> str:
     return hashlib.sha256(pub_raw).hexdigest()[:16]
 

@@ -169,7 +169,7 @@ def conectores_exemplo(home: Path, raiz: Path | None = None) -> list[dict]:
             bruto = json.loads(mf.read_text(encoding="utf-8"))
             descricao = str(bruto.get("descricao", ""))
         except Exception:
-            descricao = ""
+            bruto, descricao = {}, ""
         # caminho relativo ao cwd quando possível (o que o usuário digita).
         # SEMPRE com barra normal — o mesmo comando funciona em Win/Mac/Linux
         # e bate com a doc; str(Path) no Windows sairia com "\".
@@ -181,6 +181,7 @@ def conectores_exemplo(home: Path, raiz: Path | None = None) -> list[dict]:
                       "status": status(home, manifesto),
                       "nivel_padrao": manifesto["nivel_padrao"],
                       "nivel": nivel_exibicao(manifesto),   # risco real das tools
+                      "assinatura": verificar_assinatura(bruto, home)[0],
                       "descricao": descricao,
                       "dir": mf.parent.name,        # nome curto p/ `confiar <nome>`
                       "manifesto": rel.as_posix()})
@@ -227,6 +228,67 @@ def resolver_conector(arg, raiz: Path | None = None) -> Path | None:
         if cand.is_file():
             return cand
     return None
+
+
+def assinar_manifesto(manifesto_bruto: dict, priv_path) -> dict:
+    """Assina um manifesto MCP (lado do AUTOR) reutilizando a MESMA infra das
+    skills (ed25519). Devolve o manifesto com o bloco ``signature`` — grave-o de
+    volta no ``manifesto.json``. A assinatura cobre o manifesto canônico (todos
+    os campos, menos ``signature``); a SHA-256 de confiança-por-registro segue
+    valendo por baixo, intacta."""
+    from nomos.ext import signing
+    return signing.sign_manifest(manifesto_bruto, priv_path)
+
+
+def verificar_assinatura(manifesto_bruto: dict, home: Path) -> tuple[str, str]:
+    """Verifica a assinatura OPCIONAL de autor de um manifesto MCP — a camada
+    ACIMA do SHA-256 (que prova "não mudou"); esta prova "QUEM assinou".
+
+    Reutiliza a infra de assinatura das skills (ed25519 + ``trust.json`` de
+    publicadores) — um autor confiável vale para skills E conectores. NUNCA
+    lança; devolve ``(estado, detalhe)``:
+
+    - ``sem_assinatura``        — não há bloco (OK: a assinatura é opcional);
+    - ``assinatura_invalida``   — bloco presente mas crypto falha/malformado, ou
+      autor revogado (fail-closed: sinal de adulteração);
+    - ``assinado_desconhecido`` — crypto OK, mas o autor NÃO está no trust store;
+    - ``assinado_confiavel``    — crypto OK e autor confiável (não revogado).
+    """
+    import base64
+
+    from nomos.ext import signing
+    bloco = manifesto_bruto.get("signature")
+    if bloco is None:
+        return ("sem_assinatura", "")            # campo ausente: opcional, OK
+    if not isinstance(bloco, dict):
+        # campo PRESENTE mas torto ⇒ fail-closed (não fingimos que não há)
+        return ("assinatura_invalida", "bloco de assinatura não é um objeto")
+    try:
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+            Ed25519PublicKey,
+        )
+        if bloco.get("algo") != signing.ALGO:
+            return ("assinatura_invalida", f"algoritmo {bloco.get('algo')!r}")
+        pub_raw = base64.b64decode(bloco["pubkey"])
+        sig = base64.b64decode(bloco["sig"])
+        if signing.fingerprint(pub_raw) != bloco.get("publisher"):
+            return ("assinatura_invalida", "fingerprint não corresponde à pubkey")
+        Ed25519PublicKey.from_public_bytes(pub_raw).verify(
+            sig, signing.canonical(manifesto_bruto))
+    except InvalidSignature:
+        return ("assinatura_invalida",
+                "assinatura não confere — manifesto adulterado ou chave errada")
+    except Exception as exc:
+        return ("assinatura_invalida", f"bloco malformado: {type(exc).__name__}")
+    fp = bloco["publisher"]
+    trust = signing.TrustStore(Path(home) / "trust.json")
+    if trust.is_revoked(fp):
+        return ("assinatura_invalida", f"autor REVOGADO: {fp}")
+    entrada = trust.entry(fp)
+    if entrada is None or entrada.get("pubkey") != bloco.get("pubkey"):
+        return ("assinado_desconhecido", fp)
+    return ("assinado_confiavel", entrada.get("label", fp))
 
 
 def diagnostico_conectores(home: Path, raiz: Path | None = None) -> dict:

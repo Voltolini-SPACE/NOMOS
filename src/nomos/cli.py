@@ -1487,6 +1487,15 @@ def cmd_entrada(ctx, args) -> int:
     return EXIT_OK if ok else EXIT_DENIED
 
 
+def _ler_bruto(caminho) -> dict:
+    """Lê o manifesto.json CRU (todos os campos, inclusive 'signature'). {} se
+    ilegível — o chamador decide o que fazer (fail-safe)."""
+    try:
+        return json.loads(Path(caminho).read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
 def cmd_mcp(ctx, args) -> int:
     """MCP server local (MC31/C1): NOMOS como servidor de tools, read-only."""
     from nomos.interface import mcp_server
@@ -1548,6 +1557,12 @@ def cmd_mcp(ctx, args) -> int:
                   f"[{c.get('nivel', c['nivel_padrao'])}]")
             if c["descricao"]:
                 print(f"      {c['descricao'][:96]}")
+            _ass = {"assinado_confiavel": "✍ assinado (autor confiável)",
+                    "assinado_desconhecido": "✍ assinado (autor não pinado)",
+                    "assinatura_invalida": "⚠ assinatura inválida"}.get(
+                        c.get("assinatura"))
+            if _ass:
+                print(f"      {_ass}")
             if c["status"] != "confiavel":
                 print(f"      ligar: nomos mcp confiar {c['dir']}")
         print("\n(ligar é decisão sua, num terminal; toda chamada dessas "
@@ -1585,6 +1600,52 @@ def cmd_mcp(ctx, args) -> int:
         print("(check-up é só leitura: nada é executado, nenhum segredo é "
               "exibido. Para ligar: nomos mcp exemplos)")
         return EXIT_OK
+    if sub == "assinatura":
+        # verifica a assinatura OPCIONAL de autor (camada acima do SHA-256)
+        from nomos.interface import mcp_catalogo as cat
+        alvo = cat.resolver_conector(args.manifesto)
+        if alvo is None:
+            print(f"não achei '{args.manifesto}' — use o caminho do "
+                  "manifesto.json ou o nome do conector.", file=sys.stderr)
+            return EXIT_ERROR
+        estado, det = cat.verificar_assinatura(_ler_bruto(alvo), ctx["home"])
+        if getattr(args, "json", False):
+            print(json.dumps({"estado": estado, "detalhe": det},
+                             ensure_ascii=False))
+            return EXIT_OK
+        msg = {
+            "sem_assinatura": "sem assinatura de autor — a confiança seria só "
+                              "por registro (SHA-256). Isso é normal e opcional.",
+            "assinado_confiavel": f"✍ assinatura VÁLIDA de autor confiável: {det}",
+            "assinado_desconhecido": (f"assinatura válida, mas o autor ({det}) "
+                                      "NÃO está pinado — 'nomos skill trust add "
+                                      "<pubkey> <rótulo>' se você o reconhece."),
+            "assinatura_invalida": f"⚠ assinatura INVÁLIDA: {det}",
+        }.get(estado, estado)
+        print(msg)
+        return EXIT_OK if estado != "assinatura_invalida" else EXIT_DENIED
+    if sub == "assinar":
+        # lado do AUTOR: assina o manifesto com sua chave ed25519 (PEM)
+        from nomos.interface import mcp_catalogo as cat
+        alvo = cat.resolver_conector(args.manifesto)
+        if alvo is None:
+            print(f"não achei '{args.manifesto}'.", file=sys.stderr)
+            return EXIT_ERROR
+        bruto = _ler_bruto(alvo)
+        if not bruto:
+            print("manifesto ilegível.", file=sys.stderr)
+            return EXIT_ERROR
+        try:
+            assinado = cat.assinar_manifesto(bruto, args.chave)
+        except Exception as exc:
+            print(f"não assinei: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        Path(alvo).write_text(
+            json.dumps(assinado, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8")
+        print(f"assinado ✓ por {assinado['signature']['publisher']} — "
+              f"gravado em {alvo}")
+        return EXIT_OK
     if sub in ("catalogo", "confiar", "revogar"):
         from nomos.interface import mcp_catalogo as cat
         from nomos.interface import mcp_client as mc
@@ -1619,6 +1680,19 @@ def cmd_mcp(ctx, args) -> int:
             print(f"revogado: '{manifesto['nome']}' não será mais confiável "
                   "(nem que reapareça idêntico).")
             return EXIT_OK
+        # assinatura de autor (camada ACIMA do SHA-256): PRESENTE e INVÁLIDA ⇒
+        # recusa fail-closed (sinal de adulteração); senão, mostra o autor.
+        estado_ass, det_ass = cat.verificar_assinatura(
+            _ler_bruto(alvo), ctx["home"])
+        if estado_ass == "assinatura_invalida":
+            from nomos.simple.erros import fmt
+            ctx["audit"].append("mcp.confiar.assinatura_invalida",
+                                server=manifesto["nome"], detalhe=det_ass)
+            print(fmt("E002", f"assinatura de autor INVÁLIDA ({det_ass}) — não "
+                      "registro um manifesto com assinatura quebrada. Se confia "
+                      "mesmo assim, remova o bloco 'signature' à mão."),
+                  file=sys.stderr)
+            return EXIT_DENIED
         # confiar: decisão consciente, em TTY
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
             from nomos.simple.erros import fmt
@@ -1628,6 +1702,15 @@ def cmd_mcp(ctx, args) -> int:
         print(f"manifesto '{manifesto['nome']}' — comando: {manifesto['comando']}")
         print(f"nível padrão: {manifesto['nivel_padrao']} · "
               f"tools declaradas: {manifesto['tools'] or '(nenhuma)'}")
+        _rotulo = {
+            "assinado_confiavel": f"✍ assinado por autor confiável: {det_ass}",
+            "assinado_desconhecido": (f"assinado por autor NÃO pinado "
+                                      f"({det_ass}) — pine com 'nomos skill "
+                                      "trust add' se o reconhece"),
+            "sem_assinatura": "sem assinatura de autor (confiança só por registro SHA-256)",
+        }.get(estado_ass)
+        if _rotulo:
+            print(_rotulo)
         if input('digite "CONFIO" para registrar> ').strip() != "CONFIO":
             print("ok, não registrei.")
             return EXIT_OK
@@ -2061,6 +2144,17 @@ def build_parser() -> argparse.ArgumentParser:
     mbu.add_argument("termo")
     mbu.add_argument("--json", action="store_true")
     mbu.set_defaults(fn=cmd_mcp)
+    mas = mcpsub.add_parser(
+        "assinatura", help="verifica a assinatura opcional de autor de um "
+        "manifesto (camada acima do SHA-256)")
+    mas.add_argument("manifesto")
+    mas.add_argument("--json", action="store_true")
+    mas.set_defaults(fn=cmd_mcp)
+    msg = mcpsub.add_parser(
+        "assinar", help="(autor) assina um manifesto com sua chave ed25519 PEM")
+    msg.add_argument("manifesto")
+    msg.add_argument("chave", help="caminho da chave privada ed25519 (PEM)")
+    msg.set_defaults(fn=cmd_mcp)
     mcc = mcpsub.add_parser("conectar")
     mcc.add_argument("manifesto")
     mcc.set_defaults(fn=cmd_mcp)

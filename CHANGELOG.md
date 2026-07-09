@@ -4,6 +4,23 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC63 / Roadmap Fase 5 — assinatura OPCIONAL de autor nos manifestos MCP)
+- Camada de confiança **ACIMA do SHA-256**: o SHA-256 (confiança-por-registro)
+  prova que o manifesto **não mudou**; a assinatura **ed25519** prova **QUEM
+  assinou**. Reutiliza a MESMA infra das skills (`ext/signing` + o `trust.json`
+  de publicadores) — **um autor confiável vale para skills E conectores**.
+- **`nomos mcp assinatura <conector>`** — verifica e reporta um de quatro
+  estados: `sem_assinatura` (opcional, OK) · `assinado_confiavel` (autor pinado)
+  · `assinado_desconhecido` (cripto OK, autor não pinado) · `assinatura_invalida`
+  (adulterado/revogado/malformado). **`nomos mcp assinar <conector> <chave.pem>`**
+  para o autor assinar (ed25519).
+- **Fail-closed no `confiar`**: um manifesto com assinatura **presente e inválida**
+  é **recusado** (sinal de adulteração), mesmo com "CONFIO"; assinatura válida
+  aparece com o autor durante a decisão. `nomos mcp exemplos` marca conectores
+  assinados. A assinatura é **ortogonal ao SHA-256** — assinar não muda a
+  impressão (provado por teste). 11 testes (4 estados, adulteração, revogação,
+  chave-de-atacante-não-pinada, bloco malformado nunca lança, CLI, fail-closed).
+
 ### Added (MC62 / Roadmap Fase 4 — briefing entregue no Slack)
 - O **briefing diário** agora pode ser entregue no **Slack**: rotina
   `briefing-slack:` (o Incoming Webhook já é o canal, então o que vem depois de

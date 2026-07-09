@@ -106,8 +106,11 @@ glob de `conectores_exemplo()` — sem tocar em mais nada.
   arquivo. Só lista os oficiais empacotados; confiar segue manual.
 - **Confiar pela fila do painel** — aprovar a confiança de um conector via a fila
   de aprovação (single-use, TTL), não só por TTY. Mantém o gate.
-- **Assinatura opcional de autor** do manifesto (verificação destacada) como
-  camada *acima* do SHA-256 — protege contra manifesto malicioso, não só troca.
+- ✅ **Assinatura opcional de autor** do manifesto — **feito (MC63)**:
+  `nomos mcp assinatura`/`assinar` (ed25519, reutiliza `ext/signing` + o
+  `trust.json` de publicadores). Camada *acima* do SHA-256 (prova QUEM assinou);
+  `confiar` recusa fail-closed se a assinatura estiver inválida. Protege contra
+  manifesto malicioso, não só troca.
 
 ## Fase 6 — Robustez / performance
 
