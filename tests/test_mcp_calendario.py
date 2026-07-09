@@ -123,7 +123,11 @@ def test_proximos_respeita_limite_e_converte_utc(tmp_path, monkeypatch):
     todos = mod._rodar_tool("calendario_proximos", {"limite": 50})
     deploy = [e for e in todos["eventos"] if "Deploy" in e["titulo"]]
     assert deploy and deploy[0]["titulo"] == "Deploy da janela"   # dobra remontada
-    assert deploy[0]["quando"].startswith(fut.strftime("%Y-%m-%d"))
+    # 09:00Z convertido p/ o fuso LOCAL pode cair em fut-1..fut+1 conforme o
+    # offset (o teste não pode assumir o fuso do runner — CI roda em UTC).
+    datas_ok = {(fut + timedelta(days=d)).strftime("%Y-%m-%d")
+                for d in (-1, 0, 1)}
+    assert deploy[0]["quando"][:10] in datas_ok
 
 
 def test_limite_e_saneado(tmp_path, monkeypatch):
