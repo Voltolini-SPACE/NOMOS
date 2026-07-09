@@ -1501,6 +1501,32 @@ def cmd_mcp(ctx, args) -> int:
         print("servidor MCP do NOMOS no stdio (somente leitura; Ctrl+C sai)…",
               file=sys.stderr)
         return mcp_server.servir(ctx)
+    if sub == "buscar":
+        # descoberta curada: acha um conector embarcado por nome/descrição
+        from nomos.interface import mcp_catalogo as cat
+        termo = getattr(args, "termo", "") or ""
+        achados = cat.buscar_conectores(ctx["home"], termo)
+        if getattr(args, "json", False):
+            print(json.dumps({"termo": termo, "conectores": achados},
+                             ensure_ascii=False, indent=2))
+            return EXIT_OK
+        if not achados:
+            print(f"nenhum conector embarcado casa com '{termo}'.")
+            print("  veja todos: nomos mcp exemplos")
+            return EXIT_OK
+        marca = {"confiavel": "● ligado", "experimental": "○ disponível",
+                 "revogado": "✗ revogado"}
+        print(f"conectores que casam com '{termo}' ({len(achados)}):\n")
+        for c in achados:
+            print(f"  {marca.get(c['status'], c['status'])}  {c['nome']} "
+                  f"[{c.get('nivel', c['nivel_padrao'])}]")
+            if c["descricao"]:
+                print(f"      {c['descricao'][:96]}")
+            if c["status"] != "confiavel":
+                print(f"      ligar: nomos mcp confiar {c['dir']}")
+        print("\n(ligar é decisão sua, num terminal; toda chamada dessas "
+              "tools passa pelo gate de aprovação)")
+        return EXIT_OK
     if sub == "exemplos":
         # descoberta: os conectores que acompanham o NOMOS + como ligar
         from nomos.interface import mcp_catalogo as cat
@@ -2029,6 +2055,12 @@ def build_parser() -> argparse.ArgumentParser:
         "ambiente (só presença) e interpretador — tudo só-leitura")
     mdr.add_argument("--json", action="store_true")
     mdr.set_defaults(fn=cmd_mcp)
+    mbu = mcpsub.add_parser(
+        "buscar", help="acha um conector embarcado por nome ou descrição "
+        "(ex.: nomos mcp buscar agenda)")
+    mbu.add_argument("termo")
+    mbu.add_argument("--json", action="store_true")
+    mbu.set_defaults(fn=cmd_mcp)
     mcc = mcpsub.add_parser("conectar")
     mcc.add_argument("manifesto")
     mcc.set_defaults(fn=cmd_mcp)

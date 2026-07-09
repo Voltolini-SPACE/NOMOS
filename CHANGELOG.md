@@ -4,6 +4,14 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (MC59 / Roadmap Fase 5 — descoberta curada: `nomos mcp buscar <termo>`)
+- Novo comando **`nomos mcp buscar <termo>`**: acha um conector EMBARCADO por
+  **nome, pasta ou descrição**, sem acento e sem caso (`agenda` acha o
+  calendário; `calendario` casa com `calendário`). Vários termos = E (todos
+  precisam bater). `--json` para script. Só lista os oficiais empacotados;
+  **confiar segue manual** — não afrouxa nada. Helper `buscar_conectores` +
+  9 testes.
+
 ### Added (MC57 / Roadmap Fase 2 — conector Calendário (.ics local): a agenda entra no NOMOS)
 - Novo conector **`calendario-ics`** — LÊ os eventos de um arquivo `.ics` que
   você exportou do seu app de calendário. **Sem rede, sem nuvem, sem

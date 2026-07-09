@@ -94,8 +94,9 @@ glob de `conectores_exemplo()` — sem tocar em mais nada.
 
 ## Fase 5 — Descoberta, catálogo e trust UX
 
-- **Índice de conectores embarcado** (curado) — `nomos mcp buscar <termo>` acha
-  conectores sem caçar arquivo. Só lista os oficiais empacotados; confiar segue manual.
+- ✅ **Índice de conectores embarcado** (curado) — **feito (MC59)**: `nomos mcp
+  buscar <termo>` acha conectores por nome/descrição (sem acento/caso), sem caçar
+  arquivo. Só lista os oficiais empacotados; confiar segue manual.
 - **Confiar pela fila do painel** — aprovar a confiança de um conector via a fila
   de aprovação (single-use, TTL), não só por TTY. Mantém o gate.
 - **Assinatura opcional de autor** do manifesto (verificação destacada) como

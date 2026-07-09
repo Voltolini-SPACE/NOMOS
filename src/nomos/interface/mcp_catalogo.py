@@ -187,6 +187,31 @@ def conectores_exemplo(home: Path, raiz: Path | None = None) -> list[dict]:
     return itens
 
 
+def _sem_acento(s: str) -> str:
+    """minúsculas + sem acento — para busca tolerante ('calendario'≈'calendário')."""
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFKD", str(s).lower())
+                   if not unicodedata.combining(c))
+
+
+def buscar_conectores(home: Path, termo: str,
+                      raiz: Path | None = None) -> list[dict]:
+    """Descoberta curada: filtra os conectores EMBARCADOS por ``termo`` (casa em
+    nome, pasta ou descrição, sem acento e sem caso). Vários termos = E (todos
+    precisam bater). Só lista os oficiais; confiar segue manual (não afrouxa
+    nada). Termo vazio devolve todos."""
+    termos = [t for t in _sem_acento(termo).split() if t]
+    itens = conectores_exemplo(home, raiz=raiz)
+    if not termos:
+        return itens
+    achados = []
+    for c in itens:
+        alvo = _sem_acento(f"{c['nome']} {c.get('dir', '')} {c.get('descricao', '')}")
+        if all(t in alvo for t in termos):
+            achados.append(c)
+    return achados
+
+
 def resolver_conector(arg, raiz: Path | None = None) -> Path | None:
     """Resolve um manifesto por CAMINHO (arquivo existente) OU por NOME do
     conector (a pasta em ``examples/mcp`` ou na cópia empacotada). Assim o
