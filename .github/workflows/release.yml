@@ -46,6 +46,14 @@ jobs:
           python -m pip install --upgrade pip build
           python -m build
 
+      - name: Smoke do wheel construído + gerar SBOM
+        run: |
+          python -m venv /tmp/venv-release
+          /tmp/venv-release/bin/pip install --quiet dist/*.whl
+          /tmp/venv-release/bin/nomos --version
+          NOMOS_HOME=/tmp/nomos-release-smoke /tmp/venv-release/bin/nomos doutor
+          /tmp/venv-release/bin/python tools/make_sbom.py dist/sbom.cdx.json
+
       - name: Anexar instaladores e gerar SHA256SUMS
         run: |
           cp installer/install.sh installer/uninstall.sh installer/rollback.sh dist/
@@ -53,13 +61,6 @@ jobs:
           cd dist
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
-
-      - name: Smoke do wheel construído
-        run: |
-          python -m venv /tmp/venv-release
-          /tmp/venv-release/bin/pip install --quiet dist/*.whl
-          /tmp/venv-release/bin/nomos --version
-          NOMOS_HOME=/tmp/nomos-release-smoke /tmp/venv-release/bin/nomos doutor
 
       - name: Resolve release flags
         id: release_flags
@@ -93,6 +94,9 @@ jobs:
 
             Verifique a integridade dos artefatos com `SHA256SUMS`
             (`sha256sum --check SHA256SUMS`).
+
+            Esta release inclui `sbom.cdx.json` (CycloneDX 1.5): inventário
+            de dependências para auditoria de supply chain.
 
             O NOMOS **nunca** se atualiza sozinho: para checar novidades,
             rode `nomos atualizar` (opt-in, com sua aprovação).
