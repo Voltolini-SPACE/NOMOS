@@ -20,8 +20,18 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
   (`sk-`, `AKIA`, `gh*_`, Bearer, JWT); formatos de chave/senha genéricos
   passavam ilegíveis para o log. Assinaturas "só cabeçalho" (chave privada
   PEM, SSH) ficam de fora de propósito — precisam de redação por CAMPO
-  inteiro, não por substring, e ficam para uma missão própria. 1 teste novo
+  inteiro, não por substring, e ficam para uma missão própria. 2 testes novos
   (`test_audit_consent.py`).
+  **Correção pós-revisão independente:** duas das três alternativas do padrão
+  `env_secret` (`process.env.X`, `os.environ['X']`) casavam só o RÓTULO, não
+  o valor — `.sub()` trocava o rótulo por `[REDIGIDO]` e deixava o segredo de
+  verdade intacto logo depois (pior: consumir só o rótulo atrapalhava o
+  `generic_secret` seguinte, que sozinho teria pego o resto). Corrigido para
+  as duas alternativas exigirem `=valor` no próprio match, igual à terceira
+  (`export`). Teste de regressão isolado (`test_redacao_env_secret_cobre_valor_no_process_env_e_os_environ`)
+  usa segredos sem prefixo reconhecível por outro padrão, para provar a
+  cobertura real do `env_secret` — o teste original não pegava esse buraco
+  porque os valores de exemplo também batiam em outro padrão independente.
 - **`nomos panic`**: escopo estreito demais — só revogava consentimento de
   dispositivo (mic/câmera/tela), apesar do texto "corta tudo"/"tranca tudo"
   no README e na ajuda da CLI. Agora também nega **toda aprovação pendente**

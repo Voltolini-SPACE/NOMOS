@@ -50,7 +50,9 @@ SECRET_PATTERNS = [
     re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),               # Slack token
     re.compile(
         r"(?i)(?:process\.env\.[A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PWD)"
-        r"|os\.environ\[['\"][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD)"
+        r"\s*[:=]\s*['\"]?\S+"
+        r"|os\.environ\[['\"][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD)['\"]\]"
+        r"\s*[:=]\s*['\"]?\S+"
         r"|export\s+[A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD)\s*=\s*\S+)"
     ),
     re.compile(
