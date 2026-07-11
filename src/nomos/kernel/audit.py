@@ -26,12 +26,37 @@ SENSITIVE_KEYS = {
 }
 
 # Padrões de valores que denunciam segredos mesmo em campos "inocentes".
+# Fase 0 (higiene pós-validação): a auditoria original só reconhecia 5 formas
+# fixas de segredo — qualquer coisa fora desse formato (senha genérica, token
+# de webhook, chave do Slack/Google) em um campo de nome inesperado passava
+# direto pela redação por nome (SENSITIVE_KEYS) e chegava ilegível ao log. Os
+# 4 padrões novos abaixo fecham esse buraco; cada um foi escolhido porque o
+# próprio MATCH cobre rótulo+valor (seguro para .sub() — substituição
+# parcial), diferente de assinaturas "só cabeçalho" (ex.: bloco
+# "-----BEGIN PRIVATE KEY-----", que só marca o início de um segredo
+# multi-linha): essas ficam de fora de propósito, porque uma substituição por
+# padrão não apagaria o corpo da chave que vem nas linhas seguintes — exigem
+# redação por CAMPO inteiro, não por substring, e ficam para uma missão
+# própria (ver docs/missions da Fase 0). Mesmas assinaturas usadas em
+# nomos.memory.policy, duplicadas aqui de propósito: kernel/ não importa
+# memory/ para preservar o isolamento stdlib-only do Memory Engine.
 SECRET_PATTERNS = [
     re.compile(r"sk-[A-Za-z0-9_-]{8,}"),
     re.compile(r"AKIA[0-9A-Z]{16}"),
     re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),
     re.compile(r"(?i)bearer\s+[A-Za-z0-9._-]{8,}"),
     re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}"),  # JWT
+    re.compile(r"AIza[0-9A-Za-z_-]{20,}"),                    # Google API key
+    re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),               # Slack token
+    re.compile(
+        r"(?i)(?:process\.env\.[A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PWD)"
+        r"|os\.environ\[['\"][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD)"
+        r"|export\s+[A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD)\s*=\s*\S+)"
+    ),
+    re.compile(
+        r"(?i)\b(?:api[_\- ]?key|secret|client[_\- ]?secret|access[_\- ]?token"
+        r"|auth[_\- ]?token|senha|password|passwd|pwd)\b\s*[:=]\s*['\"]?\S{6,}"
+    ),
 ]
 
 

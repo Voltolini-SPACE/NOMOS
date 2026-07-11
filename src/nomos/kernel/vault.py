@@ -190,7 +190,21 @@ class Vault:
     def _read(self) -> dict:
         if not self.exists():
             raise VaultError("cofre inexistente; execute 'nomos vault init'")
-        return json.loads(self.path.read_text())
+        try:
+            return json.loads(self.path.read_text())
+        except json.JSONDecodeError as exc:
+            # Fase 0 (higiene pós-validação): antes propagava JSONDecodeError
+            # cru, que caía no branch genérico de erro da CLI ("algo deu
+            # errado do meu lado") — enganoso, já que o problema é o arquivo
+            # do cofre, não o agente. VaultError é tratado explicitamente em
+            # cli.main() e mostra a causa real ao usuário. Continua
+            # fail-closed: nenhuma tentativa de reparo automático.
+            raise VaultError(
+                f"cofre corrompido em {self.path} (JSON inválido: {exc}); "
+                "restaure de um backup ('nomos backup restaurar') ou recrie "
+                "com 'nomos vault init' — sem backup, as chaves antigas não "
+                "podem ser recuperadas"
+            ) from exc
 
     def _write(self, data: dict) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

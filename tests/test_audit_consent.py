@@ -41,6 +41,21 @@ def test_redacao_por_chave_e_por_padrao(tmp_path):
     assert clean["aninhado"]["ok"] == "texto normal"
 
 
+def test_redacao_por_padrao_em_campo_de_nome_inesperado(tmp_path):
+    """Fase 0: campo com nome comum ('detalhe', 'nota') carregando um segredo
+    precisa ser redigido pelo PADRÃO do valor, não só pelo nome do campo —
+    SENSITIVE_KEYS sozinho não pega isso."""
+    clean = redact({
+        "detalhe": 'chamada com password="hunter2-super-forte" no corpo',
+        "nota": "export SLACK_TOKEN=xoxb-1234567890-abcdefghij",
+        "webhook_google": "chave AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ01234",
+    })
+    assert "hunter2-super-forte" not in clean["detalhe"]
+    assert REDACTED in clean["detalhe"]
+    assert "xoxb-1234567890-abcdefghij" not in clean["nota"]
+    assert "AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ01234" not in clean["webhook_google"]
+
+
 def test_log_nunca_contem_padrao_de_segredo(tmp_path):
     path = tmp_path / "audit.jsonl"
     log = AuditLog(path)
