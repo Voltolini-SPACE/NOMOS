@@ -4,6 +4,52 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (Fase 0 — higiene pós-validação: 7 achados de uma auditoria externa)
+- **`kernel/vault.py`**: cofre corrompido (JSON inválido) agora levanta
+  `VaultError` tratado, com mensagem acionável (backup ou `nomos vault init`)
+  — antes propagava `json.JSONDecodeError` cru, que caía no branch genérico de
+  erro da CLI ("algo deu errado do meu lado") em vez do branch específico de
+  `VaultError`/`VaultLocked`. Continua fail-closed, sem tentativa de reparo
+  automático. 1 teste novo (`test_vault.py`).
+- **`kernel/audit.py`**: `SECRET_PATTERNS` ganhou 4 assinaturas (Google API
+  key, Slack token, `env_secret`, `generic_secret` — a mesma família de
+  assinaturas de `nomos.memory.policy`, duplicadas aqui de propósito para não
+  criar dependência de kernel/ em memory/). Fecha o buraco em que um segredo
+  num campo de auditoria com nome "inocente" (não listado em
+  `SENSITIVE_KEYS`) só era pego se batesse um dos 5 padrões originais
+  (`sk-`, `AKIA`, `gh*_`, Bearer, JWT); formatos de chave/senha genéricos
+  passavam ilegíveis para o log. Assinaturas "só cabeçalho" (chave privada
+  PEM, SSH) ficam de fora de propósito — precisam de redação por CAMPO
+  inteiro, não por substring, e ficam para uma missão própria. 1 teste novo
+  (`test_audit_consent.py`).
+- **`nomos panic`**: escopo estreito demais — só revogava consentimento de
+  dispositivo (mic/câmera/tela), apesar do texto "corta tudo"/"tranca tudo"
+  no README e na ajuda da CLI. Agora também nega **toda aprovação pendente**
+  (`ApprovalQueue.deny_all()`, novo — não exige token, é ação do dono local)
+  e trava a **localidade** de volta a LIGADO (`localidade.definir(...,
+  True)`), mesmo que a nuvem tivesse sido destravada antes. Sem gate/aprovação
+  adicional: pânico continua instantâneo, sem fricção. 3 testes novos
+  (`test_approvals.py` ×2, `test_cli.py` ×1).
+- **Documentação desatualizada**: `docs/architecture/MOTOR_COUNCIL_SPEC_v1.md`
+  tinha `IMPLEMENTATION=false` no cabeçalho de status contradizendo o próprio
+  corpo do documento (que já lista MC1–MC8 entregues em dry-run) — corrigido
+  para `partial_dry_run` com nota explicando a evolução. `README.md` ainda
+  citava a tag `v1.3.0rc4-motor-council-dry-run` e "mais de 1.100 testes" na
+  seção Maturidade; atualizado para refletir `1.3.0rc17` e "mais de 1.600
+  testes" (gate `tools/nomos_update_agent.py --check` confirma consistência).
+
+### Added (Fase 0 — higiene pós-validação, continuação)
+- **`playwright` como extra opcional**: `pyproject.toml` ganhou
+  `[project.optional-dependencies] mosaic = ["playwright>=1.40"]`. O import já
+  era preguiçoso (`mosaic/browser.py`) e falhava controlado sem o pacote — a
+  mudança é só tornar a instalação explícita (`pip install 'nomos[mosaic]'`)
+  em vez de exigir `pip install playwright` avulso e não-documentado como
+  dependência formal do projeto. `docs/NOMOS_MOSAIC.md` atualizada.
+- **SBOM no pipeline de release**: `.github/workflows/release.yml` agora roda
+  `tools/make_sbom.py` (CycloneDX 1.5) contra o wheel recém-instalado na venv
+  limpa de smoke, e inclui `sbom.cdx.json` no `SHA256SUMS` e nos artefatos da
+  release — o gerador já existia mas não estava plugado em lugar nenhum do CI.
+
 ### Changed (Mosaic vive no painel + site "em ação")
 - **Mosaic agora é uma aba do `nomos painel`** (`data-aba="mosaic"`), sem janelas
   separadas: as telas isoladas aparecem como tiles dentro do painel local

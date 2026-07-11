@@ -60,9 +60,13 @@ ação → saída 2. `--adapter demo|playwright`, `--base-dir` isola o armazenam
 ## Go-live (navegador real)
 
 ```bash
-pip install playwright && playwright install chromium
+pip install 'nomos[mosaic]' && playwright install chromium
 python -m nomos.mosaic.cli --scan --apply --adapter playwright
 ```
+
+O Playwright é uma dependência **opcional declarada** (extra `mosaic` no
+`pyproject.toml`), não implícita — o `PlaywrightAdapter` só importa o pacote
+quando de fato instanciado, então o modo demo funciona sem ele instalado.
 
 O `PlaywrightAdapter` abre cada tela num **contexto persistente**
 (`user_data_dir = profile_dir` da tela) → login real, isolado, que **persiste**
