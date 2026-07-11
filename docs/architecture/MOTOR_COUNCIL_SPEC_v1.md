@@ -4,16 +4,23 @@
 
 ```text
 SPEC_ONLY=true
-IMPLEMENTATION=false
+IMPLEMENTATION=partial_dry_run
 ```
 
-Este documento é **apenas especificação**. Nenhum código funcional, comando de
-CLI/chat, motor, agente, skill ou rotina é criado ou alterado por ele. Ele
-descreve o desenho técnico do **NOMOS Motor Council** para orientar uma
-implementação incremental futura, e é escrito para respeitar, sem exceção, as
-garantias já existentes do NOMOS: local-first, fail-closed, zero telemetria,
-cloud opt-in por uso, Policy Gate A0–A6, modo privado, redaction, audit log com
-âncora HMAC no cofre, agent boundary e skill boundary.
+Este documento nasceu como **apenas especificação**; a numeração de fases MC1–MC8
+já foi implementada em **dry-run** (modelos, simulador, provider/adapter/harness
+locais, policy gate e audit envelope — ver nota logo abaixo e a tabela da seção
+18), o que tornou o antigo `IMPLEMENTATION=false` do cabeçalho contraditório com
+o próprio corpo do documento. O único subcomando de CLI já exposto é
+`nomos conselho simular` (`src/nomos/council/cli_dry_run.py`), estritamente
+dry-run (`REAL_ENGINE_EXECUTION=false`, sem policy/audit/vault reais, sem rede,
+sem subprocess, sem persistência); todos os demais subcomandos (`perguntar`,
+`revisar`, `status`, `modos`, `diagnostico`, `explicar`) continuam roteados para
+um handler desabilitado. Nada aqui habilita cloud real, execução não governada
+ou bypass do gate, e todas as garantias existentes — local-first, fail-closed,
+zero telemetria, cloud opt-in por uso, Policy Gate A0–A6, modo privado,
+redaction, audit log com âncora HMAC no cofre, agent boundary e skill boundary
+— seguem valendo sem exceção.
 
 Base do desenho: kernel na tag `v1.2.0rc3-audit-anchored` (commit 657ca21), com
 `kernel/policy.py` (gate A0–A6), `kernel/localidade.py` (cadeado só-local),
