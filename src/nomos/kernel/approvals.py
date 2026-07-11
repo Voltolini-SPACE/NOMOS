@@ -218,6 +218,34 @@ class ApprovalQueue:
                                   category=d["category"], target=d["target"])
             return d["status"]
 
+    def deny_all(self) -> int:
+        """Nega TODAS as solicitações pendentes imediatamente (Fase 0: usado
+        pelo botão de pânico). Diferente de decide(): não exige token — esta
+        é uma ação do DONO local (mesma confiança de quem já está rodando
+        `nomos panic` num terminal seu), não de um aprovador remoto pelo
+        painel. Best-effort sob concorrência: entrada em decisão noutro
+        processo (arquivo temporariamente ausente) é apenas pulada, igual a
+        pending(). Devolve quantas solicitações foram negadas."""
+        negadas = 0
+        with self._lock:
+            for p in sorted(self.dir.glob("*.json")):
+                try:
+                    d = json.loads(p.read_text())
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if d.get("status") != PENDENTE:
+                    continue
+                d["status"] = NEGADA
+                d["decided_at"] = self.clock()
+                d["token"] = ""  # nosec B105 - limpa o token (single-use), não é senha
+                self._save(d)
+                negadas += 1
+                if self.audit:
+                    self.audit.append("approval.negada", id=d["id"],
+                                      category=d["category"], target=d["target"],
+                                      motivo="panic")
+        return negadas
+
     def wait(self, rid: str, poll_s: float = 0.2, sleep=time.sleep) -> str:
         """Bloqueia até decisão ou expiração; devolve status final."""
         while True:

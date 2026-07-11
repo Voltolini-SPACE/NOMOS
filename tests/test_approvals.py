@@ -74,6 +74,29 @@ def test_arquivos_0600_e_token_fora_do_log(q, tmp_path):
     assert "approval.solicitada" in log and token not in log
 
 
+def test_deny_all_nega_pendentes_sem_token_e_ignora_decididas(q, tmp_path):
+    """Fase 0: deny_all() é o que o botão de pânico usa — precisa negar tudo
+    que está pendente sem exigir o token (o dono local já 'é' a aprovação),
+    e não pode mexer em solicitações que já foram decididas antes."""
+    r1, _ = q.request("A3_CLOUD_USE", "alvo1", "m1")
+    r2, tok2 = q.request("A1", "alvo2", "m2")
+    q.decide(r2, tok2, approve=True)          # já decidida ANTES do pânico
+    r3, _ = q.request("A2", "alvo3", "m3")
+
+    negadas = q.deny_all()
+
+    assert negadas == 2                        # só r1 e r3 estavam pendentes
+    assert q.get(r1).status == NEGADA
+    assert q.get(r2).status == APROVADA         # intocada
+    assert q.get(r3).status == NEGADA
+    log = (tmp_path / "a.jsonl").read_text()
+    assert log.count('"event":"approval.negada"') >= 2
+
+
+def test_deny_all_sem_pendentes_devolve_zero(q):
+    assert q.deny_all() == 0
+
+
 def test_panel_approver_espera_decisao_humana(q):
     import threading
     dec = type("D", (), {"category": "A5_CODE_EXEC", "target": "t", "reason": "r"})()

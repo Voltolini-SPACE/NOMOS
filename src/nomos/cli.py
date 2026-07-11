@@ -150,9 +150,25 @@ def cmd_consent(ctx, args) -> int:
 
 
 def cmd_panic(ctx, args) -> int:
+    # Fase 0 (higiene pós-validação): o botão de pânico só revogava
+    # consentimento de dispositivo — mais estreito do que "corta tudo"
+    # sugere. Agora também nega toda aprovação pendente (ninguém consegue
+    # aprovar depois do pânico algo que foi solicitado antes) e trava a
+    # localidade de volta a LIGADO (egress volta a ser bloqueado mesmo que
+    # você tivesse destravado antes). Continua sem gate/aprovação — pânico
+    # tem que ser instantâneo, sem fricção.
     ctx["consent"].panic()
-    ctx["audit"].append("panic.executado", efeito="todos os consentimentos revogados")
-    print("PÂNICO: microfone, câmera e tela revogados imediatamente.")
+    negadas = _queue(ctx).deny_all()
+    localidade.definir(ctx["home"], True)
+    ctx["audit"].append(
+        "panic.executado",
+        efeito="consentimentos revogados; aprovações pendentes negadas; localidade travada",
+        aprovacoes_negadas=negadas,
+    )
+    print(
+        "PÂNICO: microfone, câmera e tela revogados; "
+        f"{negadas} aprovação(ões) pendente(s) negada(s); modo só-local travado."
+    )
     return EXIT_OK
 
 

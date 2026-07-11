@@ -5,6 +5,8 @@ import pytest
 
 from nomos import cli
 from nomos.cognition import motores
+from nomos.kernel import localidade
+from nomos.kernel.approvals import ApprovalQueue
 
 
 @pytest.fixture(autouse=True)
@@ -60,6 +62,26 @@ def test_panic_e_logs_verify(capsys):
     # cadeia íntegra; sem âncora ainda => estado LEGACY (WARN), nunca FAIL
     out = capsys.readouterr().out
     assert "LOG_LEGACY_UNANCHORED" in out and "íntegra" in out
+
+
+def test_panic_nega_aprovacoes_pendentes_e_trava_localidade(capsys, nomos_home):
+    """Fase 0: pânico não pode só revogar consentimento de dispositivo —
+    precisa também derrubar aprovações pendentes e forçar a localidade de
+    volta a LIGADO (o texto 'corta tudo' do README/help precisa ser real)."""
+    run("init")
+    localidade.definir(nomos_home, False)   # simula usuário com nuvem destravada
+    assert localidade.esta_ligado(nomos_home) is False
+
+    fila = ApprovalQueue(nomos_home / "approvals")
+    rid, _tok = fila.request("A3_CLOUD_USE", "alvo-de-teste", "teste")
+    assert fila.get(rid).status == "pendente"
+
+    assert run("panic") == 0
+    saida = capsys.readouterr().out
+    assert "aprovação(ões) pendente(s) negada(s)" in saida
+
+    assert fila.get(rid).status == "negada"
+    assert localidade.esta_ligado(nomos_home) is True   # travado de volta
 
 
 def test_memory_ciclo_completo(capsys):
