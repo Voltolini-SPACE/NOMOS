@@ -229,10 +229,19 @@ def _dica_modal(modal: str) -> str:
 
 
 def status_geral(itens: list[dict]) -> str:
+    """PRONTO/BLOQUEADO conforme só os itens 'bloqueante' (o que de fato
+    impede o uso básico). Itens não-bloqueantes (recursos opcionais como
+    voz/imagem/skills, que por padrão NÃO vêm instalados) não derrubam o
+    status geral — eles continuam listados individualmente no relatório,
+    mas uma instalação nova e saudável reporta PRONTO, não PARCIAL.
+
+    Achado P1-3 da auditoria de 2026-07-17: antes desta correção, QUALQUER
+    item com ok=False contava para "PARCIAL", inclusive capacidades
+    opcionais nunca instaladas por padrão — na prática 'PRONTO' era quase
+    inalcançável, minando a confiança no check-up.
+    """
     if any(i.get("bloqueante") and not i["ok"] for i in itens):
         return "BLOQUEADO"
-    if any(not i["ok"] for i in itens):
-        return "PARCIAL"
     return "PRONTO"
 
 

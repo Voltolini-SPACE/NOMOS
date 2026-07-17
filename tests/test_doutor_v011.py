@@ -21,12 +21,19 @@ def _iso(nomos_home, monkeypatch):
     motores.limpar_cache()
 
 
-def test_status_geral_parcial_sem_cerebro(nomos_home):
+def test_status_geral_pronto_mesmo_sem_cerebro(nomos_home):
+    # achado P1-3 (auditoria 2026-07-17): antes desta correção, itens
+    # opcionais ausentes (cérebro/skills/voz/imagem — nenhum vem instalado
+    # por padrão) derrubavam o status para PARCIAL, tornando "PRONTO"
+    # praticamente inalcançável numa instalação nova e saudável. Agora só
+    # itens 'bloqueante' decidem BLOQUEADO/PRONTO; os opcionais continuam
+    # listados individualmente no relatório, sem fingir que estão prontos.
     config.ensure_home()
     itens = doutor.diagnostico_v011(nomos_home)
-    assert doutor.status_geral(itens) == "PARCIAL"
+    assert doutor.status_geral(itens) == "PRONTO"
     rel = doutor.texto_relatorio_v011(nomos_home)
-    assert "STATUS GERAL: PARCIAL" in rel
+    assert "STATUS GERAL: PRONTO" in rel
+    assert "Sem cérebro de IA ainda" in rel          # honesto: ainda listado
     assert "Próximo passo recomendado:" in rel
 
 
@@ -46,6 +53,22 @@ def test_tudo_ok_fica_pronto():
               "bloqueante": False}]
     assert doutor.status_geral(itens) == "PRONTO"
     assert "nada pendente" in doutor.proximo_passo(itens)
+
+
+def test_item_opcional_ausente_nao_derruba_status_geral():
+    """Unidade do achado P1-3: item não-bloqueante com ok=False (ex.
+    'nenhuma skill instalada', 'opcional') não pode, sozinho, impedir
+    PRONTO. Só bloqueante=True e ok=False derruba (testado em
+    test_proximo_passo_prioriza_bloqueante)."""
+    itens = [
+        {"ok": True, "titulo": "essencial", "detalhe": "", "proximo": "",
+         "bloqueante": True},
+        {"ok": False, "titulo": "cérebro", "detalhe": "opcional",
+         "proximo": "", "bloqueante": False},
+        {"ok": False, "titulo": "skills", "detalhe": "opcional",
+         "proximo": "", "bloqueante": False},
+    ]
+    assert doutor.status_geral(itens) == "PRONTO"
 
 
 def test_auditoria_violada_bloqueia(nomos_home):
