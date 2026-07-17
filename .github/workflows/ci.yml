@@ -55,8 +55,25 @@ jobs:
       - name: "Gate read-only: saúde do git (git agent)"
         run: python tools/nomos_git_agent.py --check --json
 
+  # Achado P2-4 da auditoria de 2026-07-17: este job se chamava
+  # "cobertura (informativa)", mas SEMPRE se comportou como bloqueante —
+  # `--cov-fail-under=80`/`=90` abaixo fazem `pytest` sair com código != 0,
+  # e (ao contrário dos jobs `tipos`/`dependencias`, que TÊM
+  # `continue-on-error: true` de propósito, com comentário explicando o
+  # rollout gradual) este job nunca teve essa flag — uma falha de
+  # cobertura sempre marcou o job (e o commit/PR) como falho de verdade.
+  # Não havia nenhum "// TODO: tornar bloqueante" documentando um rollout
+  # planejado (diferente do pip-audit, abaixo) — era rótulo desatualizado,
+  # não uma decisão registrada. Decisão explícita agora, sem ambiguidade:
+  # POLICY_A=COBERTURA_BLOQUEANTE. Nome e comportamento passam a bater;
+  # nenhum piso foi reduzido (medição atual: geral ~83%, kernel ~92%+,
+  # ambos folgados acima de 80%/90% — formalizar como bloqueante não
+  # quebra nada hoje). docs/ROADMAP_3.md (item A5) e CHANGELOG.md (MC30)
+  # já tratavam isso como "gate" em linguagem de bloqueio — esta mudança
+  # alinha o nome do job ao que a documentação estratégica e o
+  # comportamento real já eram.
   cobertura:
-    name: cobertura (informativa)
+    name: cobertura (bloqueante)
     runs-on: ubuntu-latest
     env:
       PYTHONUTF8: "1"
