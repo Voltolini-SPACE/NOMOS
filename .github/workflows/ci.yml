@@ -96,6 +96,29 @@ jobs:
       - name: "Checagem de tipos (kernel; nao bloqueante)"
         run: python -m mypy src/nomos/kernel --ignore-missing-imports || true
 
+  dependencias:
+    # Achado P1-10 da auditoria de 2026-07-17: o piso de `cryptography`
+    # ficou meses desatualizado (>=42.0, predatava 3 CVEs divulgadas)
+    # sem que nada no CI alertasse. O SBOM (CycloneDX) já gerado na Fase 0
+    # é exatamente o tipo de insumo que essa checagem consome — este é o
+    # primeiro consumidor real dele. Começa informativo (como o mypy
+    # acima) para não travar merges legítimos no primeiro rollout; uma
+    # rodada futura pode promovê-lo a bloqueante depois de confirmado
+    # estável e de baixo ruído.
+    name: pip-audit (informativo)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip pip-audit
+          python -m pip install -e ".[dev]"
+      - name: "Vulnerabilidades conhecidas nas dependências instaladas (nao bloqueante)"
+        run: python -m pip_audit || true
+
   smoke:
     name: smoke pós-instalação (wheel)
     runs-on: ${{ matrix.os }}
