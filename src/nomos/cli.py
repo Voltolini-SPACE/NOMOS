@@ -1333,8 +1333,10 @@ def cmd_memory(ctx, args) -> int:
 
 
 def cmd_status(ctx, args) -> int:
+    from nomos.kernel import audit_anchor
     agent = config.load_agent()
-    intact, bad = ctx["audit"].verify()
+    _bloqueante, auditoria_txt = audit_anchor.resumo_sem_passphrase(
+        ctx["audit"], vault=ctx.get("vault"))
     print(f"NOMOS {__version__} | home: {ctx['home']}")
     nome_agente = (agent or {}).get("agent_name")
     print(f"agente: {nome_agente or '— (crie com nomos agent create)'}")
@@ -1345,7 +1347,7 @@ def cmd_status(ctx, args) -> int:
         print(f"consentimento {dev}: {'CONCEDIDO' if ok else 'desligado'}")
     from nomos.ext import skills as skills_mod
     print(f"skills instaladas: {len(skills_mod.list_installed(ctx['skills']))}")
-    print(f"auditoria: {'ÍNTEGRA' if intact else f'VIOLADA na linha {bad}'}")
+    print(f"auditoria: {auditoria_txt}")
     return EXIT_OK
 
 

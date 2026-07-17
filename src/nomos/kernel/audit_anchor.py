@@ -185,3 +185,36 @@ def status_severidade(status: str) -> str:
     if status in WARN_STATES:
         return "WARN"
     return "FAIL"
+
+
+def resumo_sem_passphrase(audit, vault=None) -> tuple[bool, str]:
+    """Resumo honesto de integridade para comandos de baixa fricção
+    (`nomos status`, `nomos doutor`) que não pedem a passphrase do cofre.
+
+    Achado P1-1 da auditoria de 2026-07-17: esses comandos chamavam só
+    `audit.verify()` (cadeia de hash pura) e diziam "ÍNTEGRA" mesmo com
+    uma âncora presente nunca conferida, ou até com o arquivo de âncora
+    tendo sumido (ANCHOR_MISSING — detectável SEM passphrase, já que só
+    depende do nome da chave existir no cofre). A prova completa contra
+    truncamento de cauda (TAIL_TRUNCATED) exige o HMAC, que por design só
+    é verificável com a passphrase — por isso `nomos logs verify --cofre`
+    continua sendo o único jeito de provar isso de verdade. Aqui só
+    evitamos a falsa sensação de segurança do "ÍNTEGRA" genérico.
+
+    Devolve (bloqueante, texto). bloqueante=True só quando a própria
+    cadeia de hash está quebrada ou a âncora sumiu (ambos detectáveis sem
+    passphrase); os demais estados são informativos, não bloqueantes.
+    """
+    ok, bad = audit.verify()
+    if not ok:
+        return True, f"VIOLADA na linha {bad}"
+    status, _ = verificar(audit, vault=vault, passphrase=None)
+    if status == ANCHOR_MISSING:
+        return True, ("íntegra (cadeia de hash), mas a ÂNCORA HMAC SUMIU — "
+                       "possível remoção de prova. Rode: nomos logs verify --cofre")
+    if status == ANCHOR_UNVERIFIED:
+        return False, ("íntegra (cadeia de hash); há âncora HMAC, mas não "
+                        "verificada sem o cofre. Para conferir truncamento de "
+                        "cauda: nomos logs verify --cofre")
+    # LEGACY_UNANCHORED: sem âncora nenhuma ainda — comportamento histórico
+    return False, "íntegra (cadeia de hash conferida)"

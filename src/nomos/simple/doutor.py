@@ -156,18 +156,22 @@ def diagnostico_v011(home=None, ctx: dict | None = None) -> list[dict]:
                            "sem chave, a nuvem não funciona",
                            "guarde a chave: nomos chaves"))
 
-    # auditoria
+    # auditoria (achado P1-1, auditoria 2026-07-17: agora também olha a
+    # âncora HMAC quando existe, sem exigir passphrase — ver
+    # audit_anchor.resumo_sem_passphrase para o porquê e os limites disso)
     try:
+        from nomos.kernel import audit_anchor
         if ctx and "audit" in ctx:
-            intacta, linha_ruim = ctx["audit"].verify()
+            log = ctx["audit"]
         else:
             from nomos.kernel.audit import AuditLog
-            intacta, linha_ruim = AuditLog(home / "logs" / "audit.jsonl").verify()
-        itens.append(_item(intacta, "Auditoria " + ("íntegra" if intacta
-                                                    else f"VIOLADA na linha {linha_ruim}"),
-                           "cadeia de hash conferida",
-                           "" if intacta else "investigue o arquivo de auditoria",
-                           bloqueante=not intacta))
+            log = AuditLog(home / "logs" / "audit.jsonl")
+        vault_ctx = (ctx or {}).get("vault")
+        bloqueante, texto = audit_anchor.resumo_sem_passphrase(log, vault=vault_ctx)
+        itens.append(_item(not bloqueante, "Auditoria " + texto,
+                           "cadeia de hash conferida" if not bloqueante else "",
+                           "" if not bloqueante else "rode: nomos logs verify --cofre",
+                           bloqueante=bloqueante))
     except Exception:
         itens.append(_item(True, "Auditoria ainda vazia", "nada registrado até agora"))
 
