@@ -673,7 +673,15 @@ def cmd_backup(ctx, args) -> int:
     try:
         if args.backup_cmd == "criar":
             n, excluidas = bt.criar(ctx["home"], Path(args.arquivo), senha)
-            ctx["audit"].append("backup.total.criado", arquivos=n)
+            # Horizonte 3/item 2 (2026-07-17): correlaciona com
+            # "backup.total.restaurado" pelo nome do arquivo de backup — já
+            # é o identificador que o comando recebe como argumento
+            # (args.arquivo); campo novo e distinto de `arquivos` (a
+            # CONTAGEM de arquivos dentro do backup, não o backup em si),
+            # para não colidir. Mesma causa-raiz do P2-5, documentada como
+            # gap explícito no Horizonte 2 e agora fechada.
+            ctx["audit"].append("backup.total.criado", arquivos=n,
+                                arquivo_backup=Path(args.arquivo).name)
             print(f"{n} arquivo(s) do seu NOMOS guardados cifrados em {args.arquivo}")
             if excluidas:
                 print(f"(fora do backup, por serem re-baixáveis: {', '.join(excluidas)})")
@@ -701,7 +709,12 @@ def cmd_backup(ctx, args) -> int:
                     return EXIT_DENIED
             n, guardado = bt.restaurar(ctx["home"], Path(args.arquivo), senha,
                                        permitir_sobrescrever=permitir or not tem_conteudo)
-            ctx["audit"].append("backup.total.restaurado", arquivos=n)
+            # Horizonte 3/item 2: mesmo campo `arquivo_backup` de
+            # "backup.total.criado" — permite reconstruir onde um backup
+            # específico foi criado e onde/quando foi restaurado a partir
+            # do log de auditoria, filtrando por este nome.
+            ctx["audit"].append("backup.total.restaurado", arquivos=n,
+                                arquivo_backup=Path(args.arquivo).name)
             print(f"{n} arquivo(s) restaurados.")
             if guardado:
                 print(f"(seu NOMOS anterior está preservado em {guardado})")
@@ -2116,7 +2129,14 @@ def cmd_evidencia(ctx, args) -> int:
         return EXIT_OK
     if sub == "verificar":
         ok, problemas = ev.verificar_pacote(Path(args.pacote))
-        ctx["audit"].append("evidencia.verificada", ok=ok)
+        # Horizonte 3/item 2 (2026-07-17): correlaciona com "evidencia.criada"
+        # pelo nome do pacote — já é o identificador que o comando recebe
+        # como argumento (args.pacote); antes não era propagado para o
+        # audit log, então os dois eventos não tinham campo em comum (mesma
+        # causa-raiz do P2-5 em kernel/missao.py, documentada como gap
+        # explícito no Horizonte 2 e agora fechada).
+        ctx["audit"].append("evidencia.verificada", ok=ok,
+                            pacote=Path(args.pacote).name)
         if ok:
             print("pacote íntegro ✓ — todos os hashes conferem.")
             return EXIT_OK
