@@ -120,7 +120,13 @@ def gerar_pacote(
         "",
     ]
     if manifesto["notas"]:
-        linhas += [manifesto["notas"], ""]
+        # P2-11 da auditoria de 2026-07-17: `manifesto` tem valores
+        # heterogêneos (int/str/list/bool) — sem anotação explícita, mypy
+        # infere dict[str, object], então manifesto["notas"] é estaticamente
+        # `object` mesmo sendo sempre str (vem de redact_text(str)->str).
+        # str() aqui é uma no-op no caso real (já é str) e resolve o
+        # falso-positivo do mypy sem exigir type:ignore.
+        linhas += [str(manifesto["notas"]), ""]
     if cmds:
         linhas += ["## Comandos executados", "",
                    "| Comando | Retorno | Resultado |", "|---|---:|---|"]

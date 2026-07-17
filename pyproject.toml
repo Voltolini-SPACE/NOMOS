@@ -37,6 +37,21 @@ target-version = "py310"
 select = ["E4", "E7", "E9", "F", "B", "S110"]
 ignore = ["E731"]
 
+# P2-11 da auditoria de 2026-07-17: sem esta seção, `mypy src/nomos` (ou
+# qualquer escopo que inclua conectores/mcp/) ABORTA com "Duplicate module
+# named 'servidor'" antes de checar qualquer coisa — os 7 conectores MCP
+# (calendario/email-imap/email-smtp/signal/slack/telegram/whatsapp-cloud)
+# têm cada um seu próprio servidor.py sem __init__.py nos diretórios, e o
+# mypy tenta importá-los como módulos Python normais com o mesmo nome.
+# Não são módulos: cada servidor.py roda como script standalone via
+# subprocess (ver conectores/mcp/_comum.py) — nunca são importados pelo
+# pacote nomos. Excluir é a correção correta (reflete a arquitetura real);
+# adicionar __init__.py criaria um segundo caminho de import que nunca é
+# usado, quebrando o isolamento deliberado desses conectores.
+[tool.mypy]
+ignore_missing_imports = true
+exclude = ["src/nomos/conectores/mcp/.*/servidor\\.py"]
+
 [tool.setuptools.package-data]
 "nomos.agents" = ["oficiais/*.json"]
 "nomos.conectores" = ["mcp/_comum.py", "mcp/*/manifesto.json", "mcp/*/servidor.py", "mcp/*/README.md"]
