@@ -1407,8 +1407,14 @@ def cmd_memory(ctx, args) -> int:
         ctx["audit"].append("memoria.consolidada", notas=len(criadas))
         if not criadas:
             print("nada novo para consolidar — suas notas já estão em dia.")
-        for n in criadas:
-            print(f"  + {n}")
+        # Horizonte 3/missao de debitos, P2 (2026-07-17): "nota" em vez de
+        # "n" -- "n" já é usado mais acima nesta função (linha ~1379) para
+        # a quantidade (int) exportada em `--exportar`; mypy infere um
+        # único tipo estático por nome de variável na função inteira, e os
+        # dois ramos (exportar/consolidar) são mutuamente exclusivos em
+        # runtime mas não para mypy. Puramente mecânico.
+        for nota in criadas:
+            print(f"  + {nota}")
         return EXIT_OK
     if args.mem_cmd == "recent":
         for it in mem.recent(args.k):
@@ -1671,10 +1677,20 @@ def cmd_mcp(ctx, args) -> int:
                   f"[{c.get('nivel', c['nivel_padrao'])}]")
             if c["descricao"]:
                 print(f"      {c['descricao'][:96]}")
+            # Horizonte 3/missao de debitos, P2 (2026-07-17): `c["assinatura"]`
+            # em vez de `c.get("assinatura")` -- mcp_catalogo.conectores_exemplo()
+            # SEMPRE grava essa chave (é a origem de todo item de `conns`; até
+            # os de `buscar_conectores()` vêm de lá por baixo), com o valor de
+            # verificar_assinatura(...)[0], que por sua vez é sempre `str`
+            # (tuple[str, str], nunca None). `.get()` sem default devolve
+            # `Any | None` (o "| None" é real mesmo com Any no meio), e o dict
+            # literal abaixo exige chave `str` -- indexação direta reflete a
+            # garantia de fato (chave sempre presente) em vez de inventar um
+            # default que nunca dispara.
             _ass = {"assinado_confiavel": "✍ assinado (autor confiável)",
                     "assinado_desconhecido": "✍ assinado (autor não pinado)",
                     "assinatura_invalida": "⚠ assinatura inválida"}.get(
-                        c.get("assinatura"))
+                        c["assinatura"])
             if _ass:
                 print(f"      {_ass}")
             if c["status"] != "confiavel":
@@ -1901,12 +1917,23 @@ def cmd_mcp(ctx, args) -> int:
         ctx["audit"].append("mcp.client.conectado", server=manifesto["nome"],
                             tools=len(tools), confianca=confianca)
         srv_nome = cli_mcp.server_info.get("name", "?")
-        marca = "✓ confiável" if confianca == "confiavel" else "⚠ experimental"
-        print(f"conectado a '{manifesto['nome']}' [{marca}] (server: {srv_nome}) — "
+        # Horizonte 3/missao de debitos, P2 (2026-07-17): "selo"/"tool" em vez
+        # de "marca"/"t" -- ambos já são usados mais acima nesta MESMA função
+        # (cmd_mcp) nos ramos "buscar"/"exemplos", com tipos DIFERENTES:
+        # `marca` lá é um dict[str,str] de rótulos; `t` lá itera
+        # mcp_server.TOOLS (lista de dicts heterogêneos name/description/
+        # inputSchema — o mesmo "Pattern F" já visto em simple/rotinas.py,
+        # cujo tipo inferido nem sequer é indexável). Os ramos são mutuamente
+        # exclusivos em runtime (cada `if sub == ...` só roda um), mas mypy
+        # infere um único tipo estático por nome de variável na função
+        # inteira. Puramente mecânico, sem tocar mcp_server.py (fora do
+        # escopo desta correção) nem mudar nenhum comportamento.
+        selo = "✓ confiável" if confianca == "confiavel" else "⚠ experimental"
+        print(f"conectado a '{manifesto['nome']}' [{selo}] (server: {srv_nome}) — "
               f"{len(tools)} tool(s):\n")
-        for t in tools:
-            print(f"  [{t['nivel']}] {t['name']} — "
-                  f"{t.get('description', '')[:70]}")
+        for tool in tools:
+            print(f"  [{tool['nivel']}] {tool['name']} — "
+                  f"{tool.get('description', '')[:70]}")
         if confianca != "confiavel":
             print("\n(confie neste manifesto: nomos mcp confiar "
                   f"{args.manifesto})")
@@ -2526,12 +2553,19 @@ def build_parser() -> argparse.ArgumentParser:
     # SÓ `conselho simular` (dry-run) e mantém os demais subcomandos
     # DESABILITADOS/fail-closed. Aparece no --help para descoberta. O REMAINDER
     # + fn são só defesa em profundidade caso o curto-circuito seja removido.
-    co = sub.add_parser(
+    # Horizonte 3/missao de debitos, P2 (2026-07-17): "cns" em vez de "co" --
+    # "co" já foi usado mais acima (linha ~2476) para o resultado de
+    # `sub.add_parser("consent", ...).add_subparsers(...)`, que é um
+    # `_SubParsersAction`, um tipo DIFERENTE do `ArgumentParser` simples
+    # devolvido por `sub.add_parser("conselho", ...)` aqui (sem
+    # `.add_subparsers()` encadeado). mypy infere um único tipo estático por
+    # nome de variável na função inteira. Puramente mecânico.
+    cns = sub.add_parser(
         "conselho",
         help=("Motor Council — pré-release; só `simular` (dry-run), demais "
               "subcomandos DESABILITADOS"))
-    co.add_argument("resto", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
-    co.set_defaults(fn=cmd_conselho)
+    cns.add_argument("resto", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
+    cns.set_defaults(fn=cmd_conselho)
 
     sub.add_parser("status", help="resumo do estado: motores, cofre, cadeado, auditoria").set_defaults(fn=cmd_status)
     lg = sub.add_parser("logs", help="auditoria: ver e verificar a cadeia de hash").add_subparsers(dest="logs_cmd", required=True)
