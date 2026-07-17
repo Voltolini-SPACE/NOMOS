@@ -58,13 +58,16 @@ jobs:
   # Achado P2-4 da auditoria de 2026-07-17: este job se chamava
   # "cobertura (informativa)", mas SEMPRE se comportou como bloqueante —
   # `--cov-fail-under=80`/`=90` abaixo fazem `pytest` sair com código != 0,
-  # e (ao contrário dos jobs `tipos`/`dependencias`, que TÊM
+  # e (à época, ao contrário dos jobs `tipos`/`dependencias`, que TINHAM
   # `continue-on-error: true` de propósito, com comentário explicando o
-  # rollout gradual) este job nunca teve essa flag — uma falha de
-  # cobertura sempre marcou o job (e o commit/PR) como falho de verdade.
-  # Não havia nenhum "// TODO: tornar bloqueante" documentando um rollout
-  # planejado (diferente do pip-audit, abaixo) — era rótulo desatualizado,
-  # não uma decisão registrada. Decisão explícita agora, sem ambiguidade:
+  # rollout gradual — nota do Horizonte 3/item 5: os dois já foram
+  # promovidos a bloqueantes também, ver comentários nos jobs abaixo; a
+  # frase acima descreve o estado em que o P2-4 encontrou o CI, não o
+  # atual) este job nunca teve essa flag — uma falha de cobertura sempre
+  # marcou o job (e o commit/PR) como falho de verdade. Não havia nenhum
+  # "// TODO: tornar bloqueante" documentando um rollout planejado
+  # (diferente do pip-audit, abaixo) — era rótulo desatualizado, não uma
+  # decisão registrada. Decisão explícita agora, sem ambiguidade:
   # POLICY_A=COBERTURA_BLOQUEANTE. Nome e comportamento passam a bater;
   # nenhum piso foi reduzido (medição atual: geral ~83%, kernel ~92%+,
   # ambos folgados acima de 80%/90% — formalizar como bloqueante não
@@ -98,10 +101,19 @@ jobs:
           tests/test_evidencia_pacote.py tests/test_mc29_skills_catalogo.py
           tests/test_mc29_painel.py tests/test_mc30_onda_a.py
 
+  # Horizonte 3/item 5 da auditoria de 2026-07-17: promovido de informativo
+  # para bloqueante. Desde o P2-11 (Horizonte 2) o comando abaixo já
+  # retornava 0 de verdade (não mascarado) — `tests/test_p2_11_mypy_
+  # estrutura.py::test_mypy_kernel_limpo_codigo_de_saida_real` prova isso
+  # por subprocess real. O job só continuava informativo por não ter sido
+  # promovido ainda; confirmado agora (mesmo comando, mesmo escopo) que
+  # promover não quebra nada hoje. Escopo continua só `src/nomos/kernel`
+  # de propósito — expandir para `src/nomos` inteiro reabriria os 77 erros
+  # que o item 3 (Horizonte 3) já cortou e documentou como débito
+  # separado, fora do corte mínimo deste item.
   tipos:
-    name: mypy (informativo)
+    name: mypy kernel (bloqueante)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -110,31 +122,43 @@ jobs:
       - run: |
           python -m pip install --upgrade pip mypy
           python -m pip install -e .
-      - name: "Checagem de tipos (kernel; nao bloqueante)"
-        run: python -m mypy src/nomos/kernel --ignore-missing-imports || true
+      - name: "Checagem de tipos (kernel; bloqueante)"
+        run: python -m mypy src/nomos/kernel --ignore-missing-imports
 
   dependencias:
     # Achado P1-10 da auditoria de 2026-07-17: o piso de `cryptography`
     # ficou meses desatualizado (>=42.0, predatava 3 CVEs divulgadas)
     # sem que nada no CI alertasse. O SBOM (CycloneDX) já gerado na Fase 0
     # é exatamente o tipo de insumo que essa checagem consome — este é o
-    # primeiro consumidor real dele. Começa informativo (como o mypy
-    # acima) para não travar merges legítimos no primeiro rollout; uma
-    # rodada futura pode promovê-lo a bloqueante depois de confirmado
-    # estável e de baixo ruído.
-    name: pip-audit (informativo)
+    # primeiro consumidor real dele. Começou informativo (como o mypy
+    # acima) para não travar merges legítimos no primeiro rollout.
+    #
+    # Horizonte 3/item 5 da auditoria de 2026-07-17: promovido a
+    # bloqueante, depois de confirmado estável e de baixo ruído (critério
+    # que este próprio comentário já previa). Achado real ao reproduzir o
+    # comando exato deste job num venv limpo: a ÚNICA vulnerabilidade
+    # encontrada era em `setuptools` — não uma dependência declarada do
+    # NOMOS (`pyproject.toml` não fixa `setuptools`; é só requisito de
+    # `[build-system]`, satisfeito por isolamento PEP 517 durante o build,
+    # não pelo ambiente de instalação), e sim a versão antiga que
+    # `python -m venv`/`actions/setup-python` semeiam por padrão no
+    # ambiente de instalação. Corrigido incluindo `setuptools` na mesma
+    # linha de upgrade que já trazia `pip`/`pip-audit`, abaixo — reproduzido
+    # localmente: 0 vulnerabilidades depois do fix (nomos em si é sempre
+    # listado como "Skip Reason", por não estar publicado no PyPI —
+    # esperado, não é uma falha).
+    name: pip-audit (bloqueante)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: |
-          python -m pip install --upgrade pip pip-audit
+          python -m pip install --upgrade pip setuptools pip-audit
           python -m pip install -e ".[dev]"
-      - name: "Vulnerabilidades conhecidas nas dependências instaladas (nao bloqueante)"
-        run: python -m pip_audit || true
+      - name: "Vulnerabilidades conhecidas nas dependências instaladas (bloqueante)"
+        run: python -m pip_audit
 
   smoke:
     name: smoke pós-instalação (wheel)

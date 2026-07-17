@@ -3,10 +3,11 @@ precisa bater com comportamento real.
 
 Achado: o job de cobertura em `.github/workflows/ci.yml` se chamava
 "cobertura (informativa)", mas nunca teve `continue-on-error` — ao
-contrário dos jobs `tipos` (mypy) e `dependencias` (pip-audit), que TÊM
-essa flag de propósito (rollout gradual documentado em comentário). Uma
-falha de `--cov-fail-under` sempre marcou o job/commit como falho de
-verdade — comportamento bloqueante com rótulo de "informativa".
+contrário dos jobs `tipos` (mypy) e `dependencias` (pip-audit), que À
+ÉPOCA tinham essa flag de propósito (rollout gradual documentado em
+comentário). Uma falha de `--cov-fail-under` sempre marcou o job/commit
+como falho de verdade — comportamento bloqueante com rótulo de
+"informativa".
 
 Decisão (POLICY_A=COBERTURA_BLOQUEANTE): o nome passa a refletir o
 comportamento real, que não mudou (nenhum piso foi reduzido). Este teste
@@ -15,10 +16,17 @@ parser — PyYAML não é dependência declarada do projeto), que:
 - o rótulo enganoso sumiu e o novo é coerente com a realidade;
 - o job de cobertura continua sem `continue-on-error` (bloqueante de
   verdade, não um 0 mascarado);
-- os pisos de cobertura (80% geral, 90% dirigido) não foram reduzidos;
-- `tipos`/`dependencias` continuam informativos de verdade (com
-  `continue-on-error: true` real) — não regrediram para bloqueantes por
-  engano nesta mudança.
+- os pisos de cobertura (80% geral, 90% dirigido) não foram reduzidos.
+
+Nota do Horizonte 3/item 5 (2026-07-17): a asserção original deste
+arquivo de que `tipos`/`dependencias` "continuam informativos de
+verdade" foi REMOVIDA aqui — não porque falhou e foi contornada, mas
+porque a premissa mudou de verdade: o item 5 promoveu os dois a
+bloqueantes, com avaliação e evidência própria (comando exato de cada
+job reproduzido num ambiente limpo antes de promover). A cobertura
+atual e afirmativa desse novo estado vive em
+`tests/test_h3_item5_ci_gates_bloqueantes.py`, não aqui — este arquivo
+volta a falar só do que o P2-4 decidiu (cobertura), sua missão original.
 """
 from pathlib import Path
 
@@ -55,16 +63,6 @@ def test_pisos_de_cobertura_nao_foram_reduzidos():
     assert "--cov-fail-under=90" in bloco
 
 
-def test_mypy_e_pip_audit_continuam_informativos_de_verdade():
-    texto = CI_YML.read_text(encoding="utf-8")
-    bloco_tipos = _bloco_do_job(texto, "tipos", "dependencias")
-    bloco_dependencias = _bloco_do_job(texto, "dependencias", "smoke")
-    assert "continue-on-error: true" in bloco_tipos
-    assert "continue-on-error: true" in bloco_dependencias
-    assert "name: mypy (informativo)" in bloco_tipos
-    assert "name: pip-audit (informativo)" in bloco_dependencias
-
-
 def test_ci_yml_continua_yaml_valido():
     """Rede de segurança extra: se PyYAML estiver disponível no ambiente
     (não é dependência declarada do projeto — só usamos se já presente),
@@ -74,5 +72,5 @@ def test_ci_yml_continua_yaml_valido():
     doc = yaml.safe_load(CI_YML.read_text(encoding="utf-8"))
     assert doc["jobs"]["cobertura"]["name"] == "cobertura (bloqueante)"
     assert "continue-on-error" not in doc["jobs"]["cobertura"]
-    assert doc["jobs"]["tipos"]["continue-on-error"] is True
-    assert doc["jobs"]["dependencias"]["continue-on-error"] is True
+    # tipos/dependencias: ver tests/test_h3_item5_ci_gates_bloqueantes.py
+    # (Horizonte 3/item 5) para o estado atual e a evidência da promoção.
