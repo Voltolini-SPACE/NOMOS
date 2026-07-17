@@ -33,6 +33,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import TypedDict
 from urllib.parse import parse_qs
 
 from nomos.interface._html import esc
@@ -504,6 +505,17 @@ def _contexto_chat(store, conversa_id: int, texto_usuario: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # coleta de dados — SÓ leitura; nada aqui muda estado
 # ---------------------------------------------------------------------------
+# Horizonte 3/missao de debitos, P2 (2026-07-17): TypedDict para as séries
+# de atividade abaixo -- o literal `{"buckets": [0] * 24, "total": 0}`
+# mistura list[int] e int sob chaves diferentes do MESMO dict, o que faz
+# mypy inferir um tipo de valor largo demais (mesma causa raiz já vista em
+# simple/rotinas.py: dict heterogêneo). Aqui usado por dois dicts
+# (24h/7d) com o MESMO formato. Zero mudança de comportamento.
+class _AtividadeSerie(TypedDict):
+    buckets: list[int]
+    total: int
+
+
 def dados_dashboard(ctx) -> dict:
     """Coleta tudo que o painel mostra. Só leitura; nada muda de estado."""
     from nomos import __version__
@@ -560,8 +572,8 @@ def dados_dashboard(ctx) -> dict:
 
     # Atividade (MC39/MC39.1 — Dash): eventos da trilha, SÓ timestamps —
     # numa passada única, duas séries REAIS: por hora (24h) e por dia (7d).
-    atividade_24h = {"buckets": [0] * 24, "total": 0}
-    atividade_7d = {"buckets": [0] * 7, "total": 0}
+    atividade_24h: _AtividadeSerie = {"buckets": [0] * 24, "total": 0}
+    atividade_7d: _AtividadeSerie = {"buckets": [0] * 7, "total": 0}
     try:
         if trilha.exists():
             agora_ts = time.time()
@@ -719,11 +731,40 @@ def dados_dashboard(ctx) -> dict:
             for c in _cat.conectores_exemplo(home)]
 
     # Sistema (Painel 4.0): metadados locais da instalação — nada sensível
+    #
+    # BUG REAL corrigido aqui (Horizonte 3/missao de debitos, P2,
+    # 2026-07-17), achado pelo mypy e confirmado por leitura do codigo,
+    # não um mero ajuste de tipagem:
+    # 1) `nomos.simple.onboarding.carregar_perfil` NUNCA existiu —
+    #    onboarding.py só exporta listar_modelos/escolher_modelo/
+    #    salvar_perfil/run_onboarding (confirmado por grep em todo o
+    #    src/). O `import` sempre levantava ImportError, sempre
+    #    engolido pelo `except Exception` abaixo, então este bloco
+    #    SEMPRE caía no fallback "NOMOS" — silenciosamente, sem log,
+    #    desde que este código existe.
+    # 2) Mesmo corrigindo só o import, o resultado ainda seria sempre
+    #    "NOMOS": as chaves checadas ("nome_agente", "agente") nunca
+    #    existiram no perfil salvo — `kernel/config.py::save_agent()`
+    #    grava exclusivamente a chave "agent_name" (mesma chave lida em
+    #    todos os outros pontos do código, ex.: cli.py:1437
+    #    `(agent or {}).get("agent_name")`).
+    # Corrigido lendo o perfil DIRETO do `home` já em escopo (mesmo
+    # arquivo AGENT_FILE que config.load_agent() lê, mas parametrizado
+    # pelo `home` explícito desta função — não pelo NOMOS_HOME global —
+    # porque TODO o resto de dados_dashboard() já é parametrizado por
+    # `home` explícito, propositalmente, para isolamento em testes;
+    # usar config.load_agent() sem argumento ignoraria esse `home` e
+    # leria o perfil errado sempre que ctx["home"] != NOMOS_HOME).
+    # Efeito visível da correção: o painel agora mostra o nome REAL do
+    # agente configurado (quando existir `agent.json`), em vez de
+    # sempre "NOMOS". Regressão dedicada:
+    # tests/test_h3_missao_debitos_p2_painel_nome_agente.py.
     try:
-        from nomos.simple.onboarding import carregar_perfil
-        _perfil = carregar_perfil(home) or {}
-        nome_agente = str(_perfil.get("nome_agente") or
-                          _perfil.get("agente") or "NOMOS")
+        from nomos.kernel import config as _config
+        _perfil_path = home / _config.AGENT_FILE
+        _perfil = (json.loads(_perfil_path.read_text())
+                   if _perfil_path.exists() else {})
+        nome_agente = str(_perfil.get("agent_name") or "NOMOS")
     except Exception:
         nome_agente = "NOMOS"
     sistema = {
@@ -876,6 +917,14 @@ def _secao_chat(d: dict, chat: dict | None) -> str:
                          "aparece quando você abre o chat local</small></p>")
         return "\n".join(corpo)
 
+    # Horizonte 3/missao de debitos, P2 (2026-07-17): `ligado` (acima) é
+    # `bool(chat and chat.get(...) and chat.get(...))` -- se `ligado` é
+    # True, `chat` necessariamente era truthy (não-None) no momento dessa
+    # avaliação, e `chat` não é reatribuído entre os dois pontos. mypy não
+    # propaga esse estreitamento através da variável booleana intermediária
+    # `ligado`, então só vê `chat: dict | None` ainda aqui. O assert
+    # documenta a invariante real e dá o estreitamento explícito.
+    assert chat is not None, "ligado=True implica chat is not None (checado acima)"
     base, token = chat["base"], chat["token"]
     aberta = chat.get("aberta")
     corpo.append('<div class="chat-wrap">')
@@ -1966,7 +2015,15 @@ class DashboardServer:
                     return self._responder(
                         500, f"api indisponível: {type(exc).__name__}",
                         "text/plain")
-                secao = (parse_qs(query).get("secao") or [None])[0]
+                # Horizonte 3/missao de debitos, P2 (2026-07-17): reescrito
+                # sem o idioma `(x.get(k) or [None])[0]` -- mypy infere o tipo
+                # do literal `[None]` a partir do lado esquerdo do `or`
+                # (list[str], vindo de parse_qs), e None não cabe em
+                # list[str]. if/else é equivalente em tudo (chave ausente OU
+                # lista vazia -> None; senão -> primeiro item) e não deixa
+                # ambiguidade de tipo.
+                _secao_vals = parse_qs(query).get("secao")
+                secao = _secao_vals[0] if _secao_vals else None
                 if secao is not None:
                     if secao not in dados:
                         corpo = json.dumps(
