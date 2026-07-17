@@ -61,6 +61,75 @@ def test_nao_usar_como_memoria(nomos_home):
     assert conv.usar_como_memoria is False
 
 
+# ---------------- P1-8 (auditoria de 2026-07-17): sem N+1, com índice ----------------
+
+def test_listar_nao_e_mais_n_mais_1(nomos_home):
+    """Antes, cada linha de `listar()` disparava um SELECT COUNT(*) próprio
+    (listar(50) chegava a 51 statements SQL). Agora é 1 statement, com a
+    contagem agregada num único GROUP BY — independente de quantas
+    conversas existam."""
+    st = ConversationStore(nomos_home / "c.db")
+    for i in range(12):
+        cid = st.nova_conversa()
+        st.add_turno(cid, "user", f"conversa numero {i}")
+    log: list[str] = []
+    st.conn.set_trace_callback(log.append)
+    r = st.listar(50)
+    st.conn.set_trace_callback(None)
+    assert len(r) == 12
+    assert all(c.n_turnos == 1 for c in r)
+    assert len(log) == 1, f"listar() disparou {len(log)} statements (esperado 1): {log}"
+
+
+def test_abrir_deriva_contagem_sem_query_extra(nomos_home):
+    """`abrir()` já busca todos os turnos da conversa — n_turnos vem de
+    `len(turnos)`, sem mais nenhum SELECT COUNT(*) redundante."""
+    st = ConversationStore(nomos_home / "c.db")
+    cid = st.nova_conversa()
+    for i in range(5):
+        st.add_turno(cid, "user", f"turno {i}")
+    log: list[str] = []
+    st.conn.set_trace_callback(log.append)
+    conv, turnos = st.abrir(cid)
+    st.conn.set_trace_callback(None)
+    assert conv.n_turnos == 5 == len(turnos)
+    assert len(log) == 2, f"abrir() disparou {len(log)} statements (esperado 2): {log}"
+
+
+def test_indice_em_turnos_conversa_id_existe_e_e_usado(nomos_home):
+    st = ConversationStore(nomos_home / "c.db")
+    nomes_indice = {r[0] for r in st.conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='index'")}
+    assert "idx_turnos_conversa_id" in nomes_indice
+    plano = st.conn.execute(
+        "EXPLAIN QUERY PLAN SELECT * FROM turnos WHERE conversa_id=1").fetchall()
+    assert any("idx_turnos_conversa_id" in str(linha) for linha in plano), plano
+
+
+def test_buscar_nao_chama_abrir_por_achado(nomos_home):
+    """Antes, `buscar(k)` chamava `abrir(cid)` (2 queries) para cada um dos
+    até k achados — um segundo N+1. Agora é 1 SELECT batched no final,
+    então o total de statements NOSSOS não cresce linearmente com k.
+
+    Statements que começam com ``--`` são gerados internamente pelo módulo
+    FTS5 do próprio SQLite (leitura de segmentos/docsize para o bm25()) —
+    não são nada que este código dispare, então ficam de fora da contagem;
+    seria ruído medir implementação interna do SQLite, não o N+1 do NOMOS."""
+    st = ConversationStore(nomos_home / "c.db")
+    for i in range(15):
+        cid = st.nova_conversa()
+        st.add_turno(cid, "user", f"contrato numero {i} sobre imposto")
+    log: list[str] = []
+    st.conn.set_trace_callback(log.append)
+    r = st.buscar("contrato", k=10)
+    st.conn.set_trace_callback(None)
+    assert r
+    nossos = [sql for sql in log if not sql.strip().startswith("--")]
+    # antes: 1 (FTS) + k*2 (abrir por achado) = até 21 statements NOSSOS só
+    # nessa cauda; agora é 1 (FTS) [+ eventual fallback semântico] + 1 (batch).
+    assert len(nossos) <= 3, f"buscar() disparou {len(nossos)} statements: {nossos}"
+
+
 # ---------------- modo privado NÃO toca o disco ----------------
 
 def test_modo_privado_nao_grava_em_disco(nomos_home, tmp_path):
