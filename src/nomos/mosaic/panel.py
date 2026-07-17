@@ -12,7 +12,7 @@ import html
 from nomos.mosaic import layout
 
 
-def _esc(s: str) -> str:
+def _esc(s: object) -> str:
     # P2-7 da auditoria de 2026-07-17: `str(s or "")` apagava valores
     # "falsy" LEGÍTIMOS (0, False) como se fossem vazios — ex.: um contador
     # zerado virava "" em vez de "0". Só None deve virar string vazia; tudo
@@ -22,6 +22,19 @@ def _esc(s: str) -> str:
     # instalar o pacote todo) — mesmo princípio de isolamento já usado em
     # kernel/audit.py (SECRET_PATTERNS duplicado em vez de importar
     # nomos.memory.policy). Contrato alinhado ao de nomos.interface._html.esc.
+    #
+    # Assinatura `s: object` (Horizonte 3/missao de debitos, P2, 2026-07-17):
+    # os chamadores em render() (abaixo) passam valores de dict.get() sem
+    # default (ex.: t.get("label")), cujo tipo é `Any | None` — mypy sinaliza
+    # a parte `None` mesmo com Any no meio, porque None de fato não é um
+    # `str`. `s: str` estava OBJETIVAMENTE incorreta: a função sempre aceitou
+    # None (e int/bool, via str(s)) em tempo de execucao -- só a anotação
+    # nunca refletiu isso. `object` e o tipo mais amplo correto (mesmo desta
+    # função ja fazia na pratica) e é EXATAMENTE o mesmo usado pelo par
+    # irmão nomos.interface._html.esc. Comportamento em tempo de execução
+    # inalterado (só a anotação mudou) -- coberto por
+    # tests/test_p2_7_html_escape_unico.py (mosaic_esc(None)/mosaic_esc(0)/
+    # mosaic_esc(False), já verde antes e depois desta mudança).
     return html.escape("" if s is None else str(s), quote=True)
 
 
