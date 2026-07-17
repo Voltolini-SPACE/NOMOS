@@ -32,6 +32,12 @@ import sys
 from email.message import EmailMessage
 from email.utils import parseaddr
 
+# redação de segredo compartilhada entre os conectores (achado P1-5 da
+# auditoria de 2026-07-17) — vive em mcp/_comum.py, um nível acima desta
+# pasta; ver a docstring de _comum.py para o porquê do sys.path.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from _comum import redigir as _redigir_comum  # noqa: E402
+
 PROTOCOLO = "2024-11-05"
 TIMEOUT_S = 20
 LIMITE_TEXTO = 100_000          # e-mail comporta bem mais que um SMS
@@ -76,8 +82,8 @@ def _cfg() -> dict:
 
 
 def _redigir(texto: str) -> str:
-    senha = os.environ.get("NOMOS_SMTP_PASSWORD", "")
-    return texto.replace(senha, "***") if senha else texto
+    """Qualquer eco acidental da senha vira *** — inclusive em erros."""
+    return _redigir_comum(texto, os.environ.get("NOMOS_SMTP_PASSWORD", ""))
 
 
 def _conectar(cfg: dict):
