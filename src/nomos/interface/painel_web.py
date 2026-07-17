@@ -28,6 +28,7 @@ import json
 import platform as _plataforma
 import re
 import secrets
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -574,11 +575,17 @@ def dados_dashboard(ctx) -> dict:
         from nomos.agents.registry import AgentRegistry
         reg = AgentRegistry(home)   # UMA instância: reusa o parse dos manifests
         for a in reg.listar():
-            agentes.append({"nome": a.nome, "risco_max": a.risco_max,
+            agentes.append({"nome": a.name, "risco_max": a.risco_max,
                             "ferramentas": list(a.ferramentas),
-                            "ativo": reg.ativo(a.nome)})
-    except Exception:
+                            "ativo": reg.ativo(a.name)})
+    except Exception as exc:
+        # bug real encontrado na auditoria de 2026-07-17 (achado P1-2):
+        # esta seção ficava SEMPRE vazia e em silêncio por causa de um erro
+        # de atributo (a.nome vs a.name). Agora, se algo continuar dando
+        # errado aqui, ao menos fica um rastro no stderr em vez de sumir.
         agentes = []
+        print(f"[nomos painel] aviso: falha ao listar agentes: "
+              f"{type(exc).__name__}: {exc}", file=sys.stderr)
 
     # MCP (MC33): o NOMOS como servidor (tools read-only) + servers confiáveis
     try:
