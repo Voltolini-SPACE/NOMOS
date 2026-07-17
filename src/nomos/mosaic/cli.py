@@ -52,22 +52,30 @@ def main(argv=None) -> int:
     eng = MosaicEngine(base_dir=args.base_dir, adapter=browser.get_adapter(args.adapter))
     apply = bool(args.apply)
 
+    # Horizonte 3/missao de debitos, P2 (2026-07-17): cada bloco abaixo usa
+    # um nome PRÓPRIO para o resultado (r_add/r_demo/r_remove/sr/r_act) em
+    # vez de reaproveitar "r"/"res" entre blocos mutuamente exclusivos. Os
+    # métodos de MosaicEngine devolvem tipos DIFERENTES (dict simples aqui;
+    # dataclasses ScanResult/ActionResult mais abaixo) — mypy infere um
+    # único tipo estático por nome de variável na função inteira, então
+    # reusar o nome fazia o segundo uso "colidir" com o tipo do primeiro.
+    # Renomear é puramente mecânico, nenhum comportamento muda.
     if args.add is not None:
-        r = eng.add_screen(args.add, args.label, apply=apply)
-        print(json.dumps(r, ensure_ascii=False, indent=2) if args.json else
-              (f"OK tela: {r['screen']['id']} → {r['screen']['url']}" if r["applied"]
-               else f"DRY-RUN: adicionaria {r['url']} (use --apply)"))
+        r_add = eng.add_screen(args.add, args.label, apply=apply)
+        print(json.dumps(r_add, ensure_ascii=False, indent=2) if args.json else
+              (f"OK tela: {r_add['screen']['id']} → {r_add['screen']['url']}" if r_add["applied"]
+               else f"DRY-RUN: adicionaria {r_add['url']} (use --apply)"))
         return EXIT_OK
 
     if args.demo:
-        r = eng.seed_demo(apply=apply)
+        r_demo = eng.seed_demo(apply=apply)
         if args.json:
-            print(json.dumps(r, ensure_ascii=False, indent=2))
-        elif r.get("applied"):
-            print(f"telas de exemplo carregadas: {', '.join(r['added']) or '(já existiam)'} "
-                  f"· total {r['total']}")
+            print(json.dumps(r_demo, ensure_ascii=False, indent=2))
+        elif r_demo.get("applied"):
+            print(f"telas de exemplo carregadas: {', '.join(r_demo['added']) or '(já existiam)'} "
+                  f"· total {r_demo['total']}")
         else:
-            print(f"DRY-RUN: carregaria {', '.join(r['would_add'])} (use --apply)")
+            print(f"DRY-RUN: carregaria {', '.join(r_demo['would_add'])} (use --apply)")
         return EXIT_OK
 
     if args.list:
@@ -82,22 +90,22 @@ def main(argv=None) -> int:
         return EXIT_OK
 
     if args.remove is not None:
-        r = eng.remove_screen(args.remove, apply=apply)
-        print(json.dumps(r, ensure_ascii=False) if args.json else
-              (f"removida: {r.get('removed')}" if apply else "DRY-RUN (use --apply)"))
+        r_remove = eng.remove_screen(args.remove, apply=apply)
+        print(json.dumps(r_remove, ensure_ascii=False) if args.json else
+              (f"removida: {r_remove.get('removed')}" if apply else "DRY-RUN (use --apply)"))
         return EXIT_OK
 
     if args.scan:
         res = eng.scan(screen_id=args.screen, apply=apply)
         if args.json:
-            print(json.dumps([{"screen": r.screen_id, "ok": r.ok, "saved": r.saved,
-                               "signals": r.snapshot.signals} for r in res],
+            print(json.dumps([{"screen": sr.screen_id, "ok": sr.ok, "saved": sr.saved,
+                               "signals": sr.snapshot.signals} for sr in res],
                              ensure_ascii=False, indent=2))
         else:
             estado = "APLICADO" if apply else "DRY-RUN (não salvou)"
             print(f"Vistoria [{estado}]: {len(res)} tela(s)")
-            for r in res:
-                print(f"  {r.screen_id}: {r.snapshot.title} · {r.snapshot.signals}")
+            for sr in res:
+                print(f"  {sr.screen_id}: {sr.snapshot.title} · {sr.snapshot.signals}")
         return EXIT_OK
 
     if args.panel:
@@ -114,13 +122,13 @@ def main(argv=None) -> int:
         if not args.action:
             print("faltou --action")
             return EXIT_USAGE
-        r = eng.act(args.act, args.action, approve=args.approve, apply=apply)
+        r_act = eng.act(args.act, args.action, approve=args.approve, apply=apply)
         if args.json:
-            print(json.dumps(r.__dict__, ensure_ascii=False, indent=2))
+            print(json.dumps(r_act.__dict__, ensure_ascii=False, indent=2))
         else:
-            print(f"ação '{r.action}' em {r.screen_id}: {r.reason} "
-                  f"(applied={r.applied}, approved={r.approved})")
-        return EXIT_REJECTED if r.reason.endswith("FAIL_CLOSED") else EXIT_OK
+            print(f"ação '{r_act.action}' em {r_act.screen_id}: {r_act.reason} "
+                  f"(applied={r_act.applied}, approved={r_act.approved})")
+        return EXIT_REJECTED if r_act.reason.endswith("FAIL_CLOSED") else EXIT_OK
 
     if args.context:
         print(eng.context())
