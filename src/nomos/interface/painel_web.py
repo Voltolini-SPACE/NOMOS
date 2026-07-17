@@ -119,6 +119,22 @@ _CSS = """
  .chip.ok{background:rgba(90,247,142,.15);color:var(--neon)}
  .chip.warn{background:rgba(242,193,78,.15);color:var(--amarelo)}
  .chip.err{background:rgba(255,92,87,.15);color:var(--vermelho)}
+ /* P2-10 (auditoria de 2026-07-17): o `background` de .chip.ok/.warn/.err
+    é um rgba(...) LITERAL fixo (os valores RGB do tema ESCURO — não usa
+    var(), então não muda com o tema); só `color` usa var(--neon/
+    --amarelo/--vermelho), que troca no tema claro. Medido com a fórmula
+    WCAG oficial sobre a cor REAL renderizada (alpha blend do literal
+    sobre --surface2, não a variável isolada): no tema claro, chip.ok
+    ficava em 4.51:1 (passa, mas raspando o piso — frágil a arredondamento
+    de renderização) e chip.warn em 4.13:1 (FALHA o AA de 4.5:1); chip.err
+    já passava com folga (4.85:1), não precisa de override. Overrides
+    abaixo, só no tema claro, escurecem o TEXTO (mesma família de cor,
+    fundo inalterado) para dar folga real acima do piso. Tema ESCURO não
+    muda: --neon #5AF78E já é claro o bastante sobre fundo escuro. */
+ :root[data-tema="claro"] .chip.ok{color:#0b783a}
+ :root[data-tema="claro"] .chip.warn{color:#7f6111}
+ @media (prefers-color-scheme:light){:root:not([data-tema]) .chip.ok{color:#0b783a}
+   :root:not([data-tema]) .chip.warn{color:#7f6111}}
  .sysbox .linha{margin:.22rem 0}
 
  /* ---- topo do conteúdo ---- */
