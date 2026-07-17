@@ -179,8 +179,13 @@ def executar(plano: Plano, *, aprovado: bool, evidencias_dir: Path,
     with (pacote / "SHA256SUMS").open("a", encoding="utf-8") as f:
         f.write(f"{h}  {DESFAZER_ARQ}\n")
     if audit is not None:
+        # P2-5 da auditoria de 2026-07-17: correlaciona com "missao.desfeita"
+        # pelo nome do pacote de evidência — já é o identificador único que
+        # atravessa executar()→desfazer() (retornado aqui, exigido como
+        # parâmetro de desfazer()); sem isso, os dois eventos não tinham
+        # NENHUM campo em comum no log de auditoria.
         audit.append("missao.executada", missao=plano.missao,
-                     passos=len(feitos), status=status)
+                     passos=len(feitos), status=status, pacote=pacote.name)
     if erro is not None:
         raise MissaoErro(f"missão interrompida (evidência em {pacote.name}): {erro}")
     return pacote
@@ -206,5 +211,9 @@ def desfazer(pacote: Path, dir_alvo: Path, *, aprovado: bool,
             shutil.move(str(origem), str(destino))
             revertidos += 1
     if audit is not None:
-        audit.append("missao.desfeita", revertidos=revertidos)
+        # P2-5: mesmo campo `pacote` de "missao.executada" — permite
+        # reconstruir a operação completa (executar→desfazer) a partir do
+        # log de auditoria, filtrando por este nome.
+        audit.append("missao.desfeita", revertidos=revertidos,
+                     pacote=Path(pacote).name)
     return revertidos

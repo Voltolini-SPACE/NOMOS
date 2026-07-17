@@ -91,6 +91,32 @@ def test_desfazer_reverte_tudo(tmp_path):
     assert not (d / "documentos" / "contrato.pdf").exists()
 
 
+# 5b. P2-5 (auditoria de 2026-07-17): executar/desfazer da MESMA operação
+# compartilham o campo `pacote` no log de auditoria — antes, os dois
+# eventos não tinham NENHUM campo em comum, impossibilitando reconstruir
+# "o que aconteceu com esta missão do início ao fim" a partir do audit.jsonl.
+def test_executar_e_desfazer_correlacionam_pelo_pacote_no_audit(tmp_path):
+    import json
+
+    from nomos.kernel.audit import AuditLog
+
+    d = _pasta_baguncada(tmp_path)
+    plano = ms.planejar_organizacao(d)
+    audit = AuditLog(tmp_path / "logs" / "audit.jsonl")
+    pacote = ms.executar(plano, aprovado=True, evidencias_dir=tmp_path / "e",
+                         audit=audit)
+    ms.desfazer(pacote, d, aprovado=True, audit=audit)
+    eventos = [json.loads(li) for li in
+              (tmp_path / "logs" / "audit.jsonl").read_text(
+                  encoding="utf-8").splitlines()]
+    ev_exec = next(e for e in eventos if e["event"] == "missao.executada")
+    ev_desf = next(e for e in eventos if e["event"] == "missao.desfeita")
+    assert ev_exec["pacote"] == ev_desf["pacote"] == pacote.name
+    # a cadeia de hash segue íntegra com o campo novo (retrocompatível)
+    ok, viol = audit.verify()
+    assert ok, f"cadeia quebrou na linha {viol}"
+
+
 # 6. CLI: planejar é dry-run; executar sem TTY nega com E002 e nada se move
 def test_cli_planejar_dry_run(tmp_path):
     d = _pasta_baguncada(tmp_path)
