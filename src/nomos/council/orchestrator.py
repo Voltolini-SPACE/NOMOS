@@ -393,6 +393,22 @@ class CouncilOrchestratorDryRun:
             # entrada inválida (ex.: atributo mutado após a construção) — pára
             # aqui, fail-closed: nenhuma etapa downstream pode confiar num
             # session_id/prompt/max_candidates que já se provaram inválidos.
+            #
+            # Horizonte 3/missao de debitos, P2 (2026-07-17): `falha_entrada`
+            # é `CouncilOrchestrationFailure | None` no tipo estático, mas a
+            # linha ~379 constrói `falha_entrada = None if entrada_ok else
+            # CouncilOrchestrationFailure(...)` -- uma correlação EXATA e
+            # incondicional com `entrada_ok`. `not entrada_ok` aqui implica
+            # `falha_entrada is not None`, sempre, por construção. mypy não
+            # propaga esse estreitamento através da variável booleana
+            # intermediária `entrada_ok` (só narrows quando o próprio
+            # `falha_entrada` aparece na condição). O assert documenta a
+            # invariante real e falha ALTO -- não silenciosamente -- se essa
+            # correlação for quebrada por uma mudança futura. Nenhuma lógica
+            # de política/gate/auditoria é alterada: só o estreitamento de
+            # tipo para um valor que já era garantidamente não-None aqui.
+            assert falha_entrada is not None, (
+                "invariante violada: not entrada_ok sem falha_entrada")
             steps.append(CouncilOrchestrationStep(
                 name=CouncilOrchestrationStepName.ORCHESTRATION_BLOCKED, ok=False,
                 failure_code=falha_entrada.code,
@@ -536,12 +552,27 @@ class CouncilOrchestratorDryRun:
                 OrchestrationFailureCode.ORCH_INTERNAL_INVARIANT_FAILED,
                 f"exceção do gate: {type(erro_gate).__name__}")
             gate_decisao = CouncilGateDecision(allowed=False, failure_code=None)
-        elif not gate_decisao.allowed:
-            falha_gate = CouncilOrchestrationFailure(
-                OrchestrationFailureCode.ORCH_POLICY_GATE_DENIED,
-                f"gate negou: {gate_decisao.failure_code}")
         else:
-            falha_gate = None
+            # Horizonte 3/missao de debitos, P2 (2026-07-17): invariante real
+            # (não suposição) -- `erro_gate is None` só é possível quando o
+            # `try` acima teve sucesso (`except Exception as exc:` sempre
+            # vincula um objeto real, nunca deixa `erro_gate` None), e
+            # `CouncilPolicyGateDryRun.evaluate()` é anotado para devolver
+            # `CouncilGateDecision` (nunca None) -- então `gate_decisao` aqui
+            # é sempre o resultado real de `evaluate()`, nunca None. O
+            # assert só torna essa garantia visível ao mypy; restruturado de
+            # if/elif/else para if/else{assert;if/else} para o mesmo efeito
+            # -- mesmas 3 condições, mesmos 3 resultados de falha_gate,
+            # mesma ordem de avaliação. Nenhuma lógica de gate é alterada.
+            assert gate_decisao is not None, (
+                "invariante violada: erro_gate is None sem gate_decisao "
+                "(evaluate() é anotado para nunca devolver None)")
+            if not gate_decisao.allowed:
+                falha_gate = CouncilOrchestrationFailure(
+                    OrchestrationFailureCode.ORCH_POLICY_GATE_DENIED,
+                    f"gate negou: {gate_decisao.failure_code}")
+            else:
+                falha_gate = None
         _marcar_raiz(falha_gate)
         steps.append(CouncilOrchestrationStep(
             name=CouncilOrchestrationStepName.POLICY_GATE_EVALUATED,
@@ -575,12 +606,23 @@ class CouncilOrchestratorDryRun:
                 OrchestrationFailureCode.ORCH_INTERNAL_INVARIANT_FAILED,
                 f"exceção do audit envelope: {type(erro_audit).__name__}")
             audit_result = CouncilAuditDryRunResult(allowed=False, envelopes=[])
-        elif not audit_result.allowed:
-            falha_audit = CouncilOrchestrationFailure(
-                OrchestrationFailureCode.ORCH_AUDIT_ENVELOPE_DENIED,
-                f"audit envelope negou: {audit_result.failure_code}")
         else:
-            falha_audit = None
+            # Horizonte 3/missao de debitos, P2: mesmo raciocínio do gate
+            # acima -- `erro_audit is None` só é possível quando o `try`
+            # teve sucesso, e `build_for_result()` é anotado para devolver
+            # `CouncilAuditDryRunResult` (nunca None). Reestruturado de
+            # if/elif/else para if/else{assert;if/else}: mesmas 3 condições,
+            # mesmos 3 resultados de falha_audit, mesma ordem de avaliação.
+            # Nenhuma lógica de auditoria é alterada.
+            assert audit_result is not None, (
+                "invariante violada: erro_audit is None sem audit_result "
+                "(build_for_result() é anotado para nunca devolver None)")
+            if not audit_result.allowed:
+                falha_audit = CouncilOrchestrationFailure(
+                    OrchestrationFailureCode.ORCH_AUDIT_ENVELOPE_DENIED,
+                    f"audit envelope negou: {audit_result.failure_code}")
+            else:
+                falha_audit = None
         _marcar_raiz(falha_audit)
         steps.append(CouncilOrchestrationStep(
             name=CouncilOrchestrationStepName.AUDIT_ENVELOPE_CREATED,
@@ -606,9 +648,36 @@ class CouncilOrchestratorDryRun:
                                        else None)}))
 
         trace = CouncilOrchestrationTrace(steps=steps, private_mode=entrada.private_mode)
+        # Horizonte 3/missao de debitos, P2 (2026-07-17): `raiz` (tipo real
+        # `CouncilOrchestrationFailure | None`, PODE genuinamente ser None --
+        # é o caso de sucesso) é diferente dos casos gate_decisao/audit_result
+        # acima. A invariante aqui é: `not permitido` implica `raiz is not
+        # None`, rastreada linha a linha por TODO o método: `permitido` é a
+        # conjunção de (provider_ok, gate_decisao.allowed, audit_result.allowed,
+        # falha_privada is None); e cada uma dessas 4 condições, quando falsa,
+        # já chamou `_marcar_raiz(falha_*)` com uma falha NÃO-None antes deste
+        # ponto (`not provider_ok` -> `_marcar_raiz(falha_provider)`;
+        # `not gate_decisao.allowed` -> `_marcar_raiz(falha_gate)`;
+        # `not audit_result.allowed` -> `_marcar_raiz(falha_audit)`;
+        # `falha_privada is not None` -> `_marcar_raiz(falha_privada)`).
+        # `_marcar_raiz` só grava a PRIMEIRA falha (`raiz is None` check
+        # interno), então "não permitido" sempre corresponde a "raiz já foi
+        # marcada" nesse ponto. O assert documenta essa garantia (já real,
+        # só invisível ao mypy via a variável booleana intermediária
+        # `permitido`) e falha ALTO -- não silenciosamente -- se essa
+        # correlação for quebrada por uma mudança futura. Comportamento
+        # idêntico ao original em todos os casos reais: só muda o tipo de
+        # exceção no caso (já hoje inatingível) de a invariante falhar --
+        # AssertionError explícito em vez de AttributeError.
+        if not permitido:
+            assert raiz is not None, (
+                "invariante violada: not permitido sem raiz marcada")
+            codigo_final = raiz.code
+        else:
+            codigo_final = None
         resultado = CouncilOrchestrationResult(
             session_id=entrada.session_id, allowed=permitido,
-            failure_code=(raiz.code if not permitido else None),
+            failure_code=codigo_final,
             final_envelope=final_envelope.to_dict(), audit_result=audit_result.to_dict(),
             trace=trace.to_dict())
 

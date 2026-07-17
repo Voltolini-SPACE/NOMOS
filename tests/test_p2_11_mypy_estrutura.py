@@ -73,7 +73,26 @@ def test_mypy_src_nomos_inteiro_nao_aborta_mais(tmp_path):
     assert "Duplicate module" not in saida
     assert "errors prevented further checking" not in saida
     assert "checked 1 source file" not in saida    # sinal de abort prematuro
-    assert "checked " in saida                       # processou o pacote de verdade
+    # Horizonte 3/missao de eliminacao de debitos, P2 (2026-07-17): quando
+    # este teste foi escrito (auditoria P2-11, Horizonte 2), mypy SEMPRE
+    # reportava erros reais pré-existentes em src/nomos (77 deles,
+    # catalogados no relatório do Horizonte 2) — então a saída terminava
+    # sempre em "Found N errors in M files (checked P source files)", e
+    # "checked " bastava como evidência de "processou o pacote inteiro, não
+    # abortou". A Prioridade 2 desta missão zerou os 77 erros (MYPY_ERRORS=0
+    # confirmado em todo o src/nomos, 112 arquivos) — e a saída de SUCESSO
+    # do mypy usa um formato diferente, "Success: no issues found in N
+    # source files", que não contém a substring "checked " mas prova
+    # exatamente a mesma coisa (inclusive com a contagem exata de arquivos
+    # processados). Nenhum comportamento do mypy nem do código sob teste
+    # mudou aqui — só o RESULTADO (de "erros encontrados" para "sucesso"),
+    # e a asserção original só cobria o primeiro formato de saída. Aceita
+    # os dois formatos reais de "processou tudo" e continua rejeitando
+    # qualquer sinal de abort prematuro (as 3 asserções negativas acima
+    # permanecem exatamente como estavam, sem nenhum enfraquecimento).
+    assert ("checked " in saida
+            or "Success: no issues found in" in saida), (
+        f"saída do mypy não indica que o pacote inteiro foi processado:\n{saida}")
 
 
 def test_pyproject_declara_exclude_do_servidor_mcp():
