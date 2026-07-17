@@ -222,6 +222,28 @@ def diagnostico_v011(home=None, ctx: dict | None = None) -> list[dict]:
         itens.append(_item(True, "Skills: não foi possível checar agora",
                            "sem impacto no uso básico"))
 
+    # agentes especializados (achado P2-6, auditoria de 2026-07-17):
+    # AgentToolBoundary (o gate de ferramentas por agente) é real, testado
+    # e nunca enfraquece a política — mas hoje NENHUM fluxo de produção o
+    # instancia; o roteamento por intenção (AgentRegistry.sugerir) escolhe
+    # personalidade/prompt, não ferramentas. Item informativo, não
+    # bloqueante: não há uso indevido a prevenir enquanto a chamada de
+    # ferramenta por agente não existir — mas o estado real fica visível
+    # em vez de sugerir uma garantia que ainda não está em vigor.
+    try:
+        from nomos.agents.registry import AgentRegistry
+        ag = AgentRegistry(home).listar()
+        itens.append(_item(
+            True,
+            f"{len(ag)} agente(s) especializado(s) catalogado(s)" if ag
+            else "Nenhum agente especializado catalogado",
+            (("· " + ", ".join(a.name for a in ag) + " ") if ag else "")
+            + "— ferramentas por agente (AgentToolBoundary) ainda não são "
+              "chamadas por nenhum fluxo real de produção"))
+    except Exception:
+        itens.append(_item(True, "Agentes: não foi possível checar agora",
+                           "sem impacto no uso básico"))
+
     return itens
 
 

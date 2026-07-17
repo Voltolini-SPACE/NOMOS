@@ -6,6 +6,16 @@ Este módulo é a garantia de que "agente não é bypass":
 - `usar_ferramenta` decide pela categoria de política da ferramenta e passa
   pelo MESMO `policy.gate` do kernel. Sem aprovação/TTY => negado (fail-closed).
 Nenhum caminho novo de autorização é criado aqui.
+
+Status de integração (achado P2-6, auditoria de 2026-07-17): esta classe é
+totalmente implementada e testada em isolamento, mas HOJE nenhum fluxo real
+de produção a instancia — o roteamento de agente (`AgentRegistry.sugerir`,
+usado por `cli.py`/`painel_web.py`) escolhe personalidade/prompt, não chama
+ferramentas. Não é um bug: enquanto não existir chamada de ferramenta por
+agente, não há nada para este gate proteger em produção ainda. `nomos
+doutor` reporta esse estado (não-bloqueante). Wiring real de produção é
+trabalho de escopo maior, fora deste achado — ver Horizonte 3/P3 do plano
+de melhorias.
 """
 from __future__ import annotations
 

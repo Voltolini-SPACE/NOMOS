@@ -93,6 +93,27 @@ def test_skill_quebrada_aparece_no_checkup(nomos_home):
     assert "Skill quebrada: zumbi" in rel
 
 
+# ---------------- P2-6 (auditoria de 2026-07-17) ----------------
+# AgentToolBoundary é real e testado, mas nenhum fluxo de produção o
+# instancia — `nomos doutor` agora reporta esse estado (informativo, não
+# bloqueante), em vez de ficar em silêncio sobre a lacuna.
+def test_diagnostico_relata_estado_real_dos_agentes(nomos_home):
+    config.ensure_home()
+    itens = doutor.diagnostico_v011(nomos_home)
+    ag = [i for i in itens if "agente(s) especializado" in i["titulo"]
+          or "agente especializado" in i["titulo"]]
+    assert len(ag) == 1, itens
+    item = ag[0]
+    assert item["ok"] is True
+    assert item["bloqueante"] is False        # não pode derrubar PRONTO
+    assert "AgentToolBoundary" in item["detalhe"]
+    assert "nenhum fluxo real de produção" in item["detalhe"]
+    # os agentes oficiais empacotados aparecem pelo nome (catálogo real)
+    assert "pesquisador-local" in item["detalhe"] or "programador" in item["detalhe"]
+    # o item novo não pode, sozinho, tirar o status de PRONTO
+    assert doutor.status_geral(itens) == "PRONTO"
+
+
 def test_cli_doutor_usa_v011(capsys):
     assert cli.main(["init"]) == 0
     assert cli.main(["doutor"]) == 0
