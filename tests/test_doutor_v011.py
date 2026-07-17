@@ -98,6 +98,15 @@ def test_skill_quebrada_aparece_no_checkup(nomos_home):
 # instancia — `nomos doutor` agora reporta esse estado (informativo, não
 # bloqueante), em vez de ficar em silêncio sobre a lacuna.
 def test_diagnostico_relata_estado_real_dos_agentes(nomos_home):
+    """Achado P2-6 (Horizonte 2): item de diagnóstico existe e é honesto.
+
+    Atualizado no Horizonte 3/item 1 — o wiring real de `nomos agentes usar`
+    tornou a alegação antiga ("nenhum fluxo real de produção") falsa; o
+    teste passou a checar a alegação NOVA (caller real existe, 5/8
+    ferramentas ligadas), não o texto literal antigo. Ver
+    tests/test_h3_item1_agente_boundary_wiring.py para a cobertura do
+    wiring em si.
+    """
     config.ensure_home()
     itens = doutor.diagnostico_v011(nomos_home)
     ag = [i for i in itens if "agente(s) especializado" in i["titulo"]
@@ -107,7 +116,8 @@ def test_diagnostico_relata_estado_real_dos_agentes(nomos_home):
     assert item["ok"] is True
     assert item["bloqueante"] is False        # não pode derrubar PRONTO
     assert "AgentToolBoundary" in item["detalhe"]
-    assert "nenhum fluxo real de produção" in item["detalhe"]
+    assert "nomos agentes usar" in item["detalhe"]
+    assert "5/8" in item["detalhe"]
     # os agentes oficiais empacotados aparecem pelo nome (catálogo real)
     assert "pesquisador-local" in item["detalhe"] or "programador" in item["detalhe"]
     # o item novo não pode, sozinho, tirar o status de PRONTO

@@ -7,15 +7,18 @@ Este módulo é a garantia de que "agente não é bypass":
   pelo MESMO `policy.gate` do kernel. Sem aprovação/TTY => negado (fail-closed).
 Nenhum caminho novo de autorização é criado aqui.
 
-Status de integração (achado P2-6, auditoria de 2026-07-17): esta classe é
-totalmente implementada e testada em isolamento, mas HOJE nenhum fluxo real
-de produção a instancia — o roteamento de agente (`AgentRegistry.sugerir`,
-usado por `cli.py`/`painel_web.py`) escolhe personalidade/prompt, não chama
-ferramentas. Não é um bug: enquanto não existir chamada de ferramenta por
-agente, não há nada para este gate proteger em produção ainda. `nomos
-doutor` reporta esse estado (não-bloqueante). Wiring real de produção é
-trabalho de escopo maior, fora deste achado — ver Horizonte 3/P3 do plano
-de melhorias.
+Status de integração (achado P2-6, Horizonte 2 -> wiring real no Horizonte 3/
+item 1, auditoria de 2026-07-17): esta classe é totalmente implementada e
+testada em isolamento, e agora TEM um caller real de produção —
+`cli.py::cmd_agente_usar` (`nomos agentes usar <agente> <ferramenta>`), para
+5 das 8 ferramentas da allowlist (`memoria_buscar`, `arquivo_ler`,
+`arquivo_resumir`, `doutor`, `logs_verificar`). `AgentRegistry.sugerir`
+continua sem caller — é sobre ROTEAMENTO de personalidade/prompt no chat,
+não sobre EXECUÇÃO de ferramenta (item distinto). `arquivo_escrever`,
+`codigo_gerar` e `skill_rodar` seguem sem execução ligada nesta versão —
+cada uma exige desenho de segurança próprio; pedir uma delas recusa com
+erro claro (fail-closed), documentado como gap explícito, não escondido.
+`nomos doutor` reporta o estado ao vivo (não-bloqueante).
 """
 from __future__ import annotations
 

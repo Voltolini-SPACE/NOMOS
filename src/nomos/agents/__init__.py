@@ -13,13 +13,16 @@ Todo agente:
 - não herda permissões de outro agente;
 - tem trilha de auditoria e escopo de memória próprios.
 
-Status atual (achado P2-6, auditoria de 2026-07-17): o CATÁLOGO de agentes
-(manifesto, registro, sugestão por keyword) está em produção — é o que
-alimenta a aba "Agentes" do painel e `nomos agentes`. A EXECUÇÃO de
-ferramentas por agente via `AgentToolBoundary` está pronta e testada, mas
-ainda não é chamada por nenhum fluxo real (o chat hoje roteia para
-personalidade/prompt, não para chamada de ferramenta) — ver
-`agents/boundary.py` para o detalhe, e `nomos doutor` para o estado ao vivo.
+Status atual (achado P2-6, Horizonte 2 -> wiring real no Horizonte 3/item 1,
+auditoria de 2026-07-17): o CATÁLOGO de agentes (manifesto, registro,
+sugestão por keyword) está em produção — é o que alimenta a aba "Agentes"
+do painel e `nomos agentes`. A EXECUÇÃO de ferramentas por agente via
+`AgentToolBoundary` agora TEM um caller real: `nomos agentes usar <agente>
+<ferramenta>`. O chat em linguagem natural (cli.py/amigavel.py) continua
+roteando só para personalidade/prompt, não para chamada de ferramenta —
+decisão deliberada (invocação de ferramenta continua explícita, via
+comando, não automática a partir de texto livre). Ver `agents/boundary.py`
+para o detalhe, e `nomos doutor` para o estado ao vivo.
 """
 from nomos.agents.manifest import AgentManifest
 from nomos.agents.registry import AgentRegistry

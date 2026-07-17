@@ -222,14 +222,17 @@ def diagnostico_v011(home=None, ctx: dict | None = None) -> list[dict]:
         itens.append(_item(True, "Skills: não foi possível checar agora",
                            "sem impacto no uso básico"))
 
-    # agentes especializados (achado P2-6, auditoria de 2026-07-17):
-    # AgentToolBoundary (o gate de ferramentas por agente) é real, testado
-    # e nunca enfraquece a política — mas hoje NENHUM fluxo de produção o
-    # instancia; o roteamento por intenção (AgentRegistry.sugerir) escolhe
-    # personalidade/prompt, não ferramentas. Item informativo, não
-    # bloqueante: não há uso indevido a prevenir enquanto a chamada de
-    # ferramenta por agente não existir — mas o estado real fica visível
-    # em vez de sugerir uma garantia que ainda não está em vigor.
+    # agentes especializados (achado P2-6, Horizonte 2 -> wiring real no
+    # Horizonte 3/item 1, auditoria de 2026-07-17): AgentToolBoundary agora
+    # TEM um caller de produção real — `nomos agentes usar <agente>
+    # <ferramenta>` passa pelo mesmo `policy.gate` do kernel, fail-closed,
+    # com aprovação e auditoria reais (nenhum caminho de autorização novo).
+    # 5 das 8 ferramentas da allowlist têm execução ligada (memoria_buscar,
+    # arquivo_ler, arquivo_resumir, doutor, logs_verificar); arquivo_escrever,
+    # codigo_gerar e skill_rodar seguem sem execução ligada nesta versão —
+    # cada uma exige desenho de segurança próprio, documentado para rodada
+    # futura (pedir uma delas recusa com erro claro, nunca finge sucesso).
+    # Item informativo, não bloqueante.
     try:
         from nomos.agents.registry import AgentRegistry
         ag = AgentRegistry(home).listar()
@@ -238,8 +241,10 @@ def diagnostico_v011(home=None, ctx: dict | None = None) -> list[dict]:
             f"{len(ag)} agente(s) especializado(s) catalogado(s)" if ag
             else "Nenhum agente especializado catalogado",
             (("· " + ", ".join(a.name for a in ag) + " ") if ag else "")
-            + "— ferramentas por agente (AgentToolBoundary) ainda não são "
-              "chamadas por nenhum fluxo real de produção"))
+            + "— ferramentas por agente (AgentToolBoundary) usam "
+              "'nomos agentes usar <agente> <ferramenta>'; 5/8 ferramentas "
+              "da allowlist têm execução ligada, 3 seguem documentadas "
+              "como pendentes"))
     except Exception:
         itens.append(_item(True, "Agentes: não foi possível checar agora",
                            "sem impacto no uso básico"))

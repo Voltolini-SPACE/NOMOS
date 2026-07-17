@@ -448,6 +448,136 @@ def cmd_agentes(ctx, args) -> int:
     return EXIT_ERROR
 
 
+# ---------------------------------------------------------------------------
+# Horizonte 3 / item 1 (auditoria de 2026-07-17): wiring real e fail-closed
+# do AgentToolBoundary — fecha o achado P2-6 (Horizonte 2), que era mitigado/
+# diferido porque nenhum fluxo de produção instanciava a boundary.
+#
+# `nomos agentes usar <nome> <ferramenta>` é o primeiro caller real: passa
+# pelo MESMO AgentToolBoundary já testado no Horizonte 1/2 (agents/boundary.py,
+# lógica intocada) — fora do manifesto => negado; dentro => mesmo
+# `policy.gate` do kernel, fail-closed sem TTY/aprovação, auditado.
+#
+# Das 8 ferramentas da allowlist (agents/manifest.FERRAMENTAS), 5 têm
+# execução real ligada nesta rodada, reaproveitando primitivas JÁ testadas
+# em produção (nenhuma lógica de negócio nova foi inventada):
+#   memoria_buscar   -> Memory.recall_hibrido (+ redact_text, mesma redação
+#                        já aplicada em interface/mcp_server.py)
+#   arquivo_ler      -> cognition.arquivos.extrair_texto/extrair_pontos
+#   arquivo_resumir  -> cognition.arquivos.processar (mesmo EnginePipeline
+#                        que cmd_arquivo já usa em produção)
+#   doutor           -> simple.doutor.texto_relatorio_v011
+#   logs_verificar   -> kernel.audit.AuditLog.verify
+#
+# `arquivo_escrever`, `codigo_gerar` e `skill_rodar` ficam EXPLICITAMENTE
+# sem execução ligada — cada uma exigiria desenho de segurança próprio
+# (escrita em caminho arbitrário; integração com motor de geração; sandbox
+# de execução de skill) fora do corte mínimo deste item. Pedir uma delas
+# devolve erro claro (fail-closed), nunca finge sucesso — gap documentado
+# no relatório deste item, não escondido.
+# ---------------------------------------------------------------------------
+
+def _exec_memoria_buscar(ctx, alvo: str) -> str:
+    if not alvo:
+        return "informe --alvo com o que buscar na memória."
+    from nomos.cognition.memory import Memory
+    from nomos.kernel.audit import redact_text
+    mem = Memory(ctx["home"] / "memory.db")
+    itens = mem.recall_hibrido(alvo, k=5)
+    if not itens:
+        return "nenhuma memória encontrada."
+    return "\n".join(f"[{it.id}] ({it.role}) {redact_text(it.text)}" for it in itens)
+
+
+def _exec_arquivo_ler(ctx, alvo: str) -> str:
+    if not alvo:
+        return "informe --alvo com o caminho do arquivo."
+    from nomos.cognition import arquivos as arq
+    texto, formato = arq.extrair_texto(Path(alvo))
+    pontos = arq.extrair_pontos(texto)
+    linhas = [f"(formato: {formato} · {len(texto)} caractere(s) lidos)"]
+    if pontos:
+        linhas.append("pontos:")
+        linhas += [f"  - {p}" for p in pontos]
+    return "\n".join(linhas)
+
+
+def _exec_arquivo_resumir(ctx, alvo: str, args) -> str:
+    if not alvo:
+        return "informe --alvo com o caminho do arquivo."
+    from nomos.cognition import arquivos as arq
+    router = None if getattr(args, "sem_motor", False) else _router(ctx)
+    resultado, estado = arq.processar(alvo, ctx, _approver_for(ctx, args),
+                                      router=router, salvar=False)
+    if not resultado.ok:
+        return f"não consegui: {resultado.motivo}"
+    return arq.render_resultado(Path(alvo), estado)
+
+
+def _exec_doutor(ctx) -> str:
+    from nomos.simple import doutor as dt
+    return dt.texto_relatorio_v011(ctx["home"], ctx)
+
+
+def _exec_logs_verificar(ctx) -> str:
+    ok, idx = ctx["audit"].verify()
+    if ok:
+        return "log de auditoria íntegro (cadeia de hash verificada)."
+    return f"log de auditoria comprometido a partir do registro {idx}."
+
+
+def _ferramentas_agente_wired(ctx, args) -> dict:
+    """Dispatch das ferramentas com execução real ligada nesta rodada.
+    Ver nota acima: as demais ficam de fora de propósito (fail-closed)."""
+    alvo = args.alvo or ""
+    return {
+        "memoria_buscar": lambda: _exec_memoria_buscar(ctx, alvo),
+        "arquivo_ler": lambda: _exec_arquivo_ler(ctx, alvo),
+        "arquivo_resumir": lambda: _exec_arquivo_resumir(ctx, alvo, args),
+        "doutor": lambda: _exec_doutor(ctx),
+        "logs_verificar": lambda: _exec_logs_verificar(ctx),
+    }
+
+
+def cmd_agente_usar(ctx, args) -> int:
+    from nomos.simple.erros import fmt
+    from nomos.agents.boundary import AgentToolBoundary
+    from nomos.agents.manifest import FERRAMENTAS
+    reg = _agent_registry(ctx)
+    mf = reg.obter(args.nome)
+    if not mf:
+        print(fmt("E003", f"agente '{args.nome}' não existe"), file=sys.stderr)
+        return EXIT_ERROR
+    if not reg.ativo(mf.name):
+        print(fmt("E003", f"agente '{args.nome}' está inativo — ative com: "
+                          f"nomos agentes ativar {args.nome}"), file=sys.stderr)
+        return EXIT_DENIED
+    wired = _ferramentas_agente_wired(ctx, args)
+    if args.ferramenta not in wired:
+        if args.ferramenta in FERRAMENTAS:
+            print(fmt("E003", f"'{args.ferramenta}' ainda não tem execução "
+                              "ligada nesta versão (gap documentado — "
+                              "Horizonte 3, item 1); ferramentas disponíveis "
+                              f"agora: {', '.join(sorted(wired))}"),
+                 file=sys.stderr)
+        else:
+            print(fmt("E003", f"'{args.ferramenta}' não é uma ferramenta "
+                              "conhecida"), file=sys.stderr)
+        return EXIT_ERROR
+    # o MESMO AgentToolBoundary testado no Horizonte 1/2 — nenhum caminho de
+    # autorização novo; fora do manifesto ou sem aprovação => negado.
+    boundary = AgentToolBoundary(mf, ctx["policy"], _approver_for(ctx, args),
+                                 audit=ctx["audit"])
+    ok, resultado = boundary.usar_ferramenta(args.ferramenta,
+                                             wired[args.ferramenta],
+                                             alvo=args.alvo or "")
+    if not ok:
+        print(resultado, file=sys.stderr)
+        return EXIT_DENIED
+    print(resultado)
+    return EXIT_OK
+
+
 def cmd_conversas(ctx, args) -> int:
     from nomos.simple.erros import fmt
     sub = getattr(args, "conversas_cmd", None)
@@ -2043,6 +2173,18 @@ def build_parser() -> argparse.ArgumentParser:
         ap2.add_argument("nome")
         ap2.set_defaults(fn=cmd_agentes)
     ag2sub.add_parser("diagnostico").set_defaults(fn=cmd_agentes)
+    us = ag2sub.add_parser("usar", help="usa uma ferramenta declarada do agente "
+                           "— mesmo gate de política do kernel, fail-closed "
+                           "(Horizonte 3, item 1)")
+    us.add_argument("nome")
+    us.add_argument("ferramenta")
+    us.add_argument("--alvo", default="",
+                    help="consulta ou caminho, conforme a ferramenta")
+    us.add_argument("--panel", action="store_true",
+                    help="aprova via painel local em vez de terminal")
+    us.add_argument("--sem-motor", action="store_true", dest="sem_motor",
+                    help="arquivo_resumir: só heurística local, sem motor de IA")
+    us.set_defaults(fn=cmd_agente_usar)
     ag2.set_defaults(fn=cmd_agentes, agentes_cmd=None)
 
     cv = sub.add_parser("conversas", help="histórico de conversas (local, cifrável)")
