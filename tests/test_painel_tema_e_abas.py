@@ -13,7 +13,7 @@ import re
 import pytest
 
 from nomos.cognition import motores
-from nomos.interface.painel_web import dados_dashboard, render_html
+from nomos.interface.painel_web import dados_dashboard, render_dash, render_html
 from nomos.kernel.audit import AuditLog
 from nomos.kernel.policy import PolicyEngine
 
@@ -95,3 +95,29 @@ def test_botao_de_tema_e_boot_sem_flash(nomos_home):
 def test_sem_fila_continua_read_only(nomos_home):
     corpo = _html(nomos_home)
     assert "<form" not in corpo and 'method="post"' not in corpo.lower()
+
+
+# --------------------------------------- P2-8 (auditoria de 2026-07-17) --
+# Antes: _CSS_DASH (o NOMOS Dash, /dash/) não tinha NENHUMA regra de tema
+# claro — ficava preso no escuro mesmo com o SO/navegador em modo claro,
+# ao contrário do painel principal (_CSS), que já respeitava isso desde
+# MC37. Corrigido só no CSS (menor risco): adicionado o bloco
+# @media (prefers-color-scheme:light) — resolve sozinho o "preso no
+# escuro" para quem usa a preferência do sistema, sem tocar em _JS_DASH.
+def test_dash_agora_tem_tema_claro_via_preferencia_do_so(nomos_home):
+    corpo = render_dash("1.0.0")
+    # escuro continua o padrão (:root{...} sem seletor extra, igual a _CSS)
+    assert "--neon:#5AF78E" in corpo
+    # o Dash ganhou as mesmas regras de tema claro do painel principal
+    assert ':root[data-tema="claro"]' in corpo
+    assert "prefers-color-scheme:light" in corpo
+    assert "#f4f7f4" in corpo
+    assert "#0b7a3b" in corpo    # --neon do tema claro (reaproveitado de _CSS)
+
+
+def test_dash_tema_claro_nao_declara_variavel_rosa_no_escopo_dash(nomos_home):
+    """_CSS_DASH nunca usa --rosa em nenhuma regra (diferente de _CSS) —
+    a variável foi deliberadamente omitida do bloco novo, não esquecida."""
+    from nomos.interface.painel_web import _CSS_DASH
+    assert "--rosa:" not in _CSS_DASH   # declaração de variável, não a prosa do comentário
+    assert "class=\"lock\"" not in _CSS_DASH  # smoke: é CSS puro, não HTML

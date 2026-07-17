@@ -1381,6 +1381,23 @@ _CSS_DASH = """
    --neon:#5AF78E;--dim:#2BD968;--txt:#E8FFE8;--fraco:#7c9a84;
    --ciano:#56E1E9;--amarelo:#F2C14E;--vermelho:#FF5C57;
    --glow:0 0 8px rgba(90,247,142,.45)}
+ /* P2-8 da auditoria de 2026-07-17: o Dash não tinha tema claro — ficava
+    preso no escuro mesmo com o SO em modo claro ou com o usuário já tendo
+    escolhido "claro" no painel principal (_CSS, mesmas variáveis abaixo,
+    sem --rosa porque o Dash nunca usa essa variável). Contraste AA
+    reconferido para este documento (não só copiado): todas as combinações
+    texto/fundo novas (.w .valor(.warn/.err), button.pausa, #estado,
+    .lista .mot/.mod, a, h1) ficam entre 4.69:1 e 14.81:1. */
+ :root[data-tema="claro"]{
+   --bg:#f4f7f4;--surface:#ffffff;--surface2:#eaf0ea;--line:#b9c8bc;
+   --neon:#0b7a3b;--dim:#0b7a3b;--txt:#10261a;--fraco:#3f6b50;
+   --ciano:#0a6d74;--amarelo:#8a6a12;--vermelho:#b3261e;
+   --glow:none}
+ @media (prefers-color-scheme:light){:root:not([data-tema]){
+   --bg:#f4f7f4;--surface:#ffffff;--surface2:#eaf0ea;--line:#b9c8bc;
+   --neon:#0b7a3b;--dim:#0b7a3b;--txt:#10261a;--fraco:#3f6b50;
+   --ciano:#0a6d74;--amarelo:#8a6a12;--vermelho:#b3261e;
+   --glow:none}}
  *{box-sizing:border-box}
  body{font-family:'JetBrains Mono','IBM Plex Mono','SF Mono',Menlo,Consolas,
    monospace;background:var(--bg);color:var(--txt);margin:0;font-size:14px;
