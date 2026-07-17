@@ -3,8 +3,21 @@
 **Metodologia:** `implementation-loop-100` (SPEC → IMPLEMENTAR → TESTAR → VALIDAR → APRIMORAR → RE-TESTAR → EVIDENCIAR → ENTREGAR)
 **Branch:** `loop/fase3-agent-boundary-wiring`
 **Ponto de partida da missão:** commit `c1a7f77^` (imediatamente antes de P1a)
-**HEAD atual:** `2b544d3`
+**HEAD no fechamento original deste relatório:** `2b544d3`
+**HEAD atual (após adendo):** `c48766f`
 **Data:** 2026-07-17
+
+> **Nota de atualização:** depois deste relatório ter sido fechado e
+> commitado (`1872c22`), uma auditoria adicional apontou que
+> `council/orchestrator.py` — o arquivo mais crítico do lote de P2 (22
+> erros de mypy zerados) — tinha 99% de cobertura de LINHA mas sem prova
+> DIRETA, por cenário, de 11 comportamentos de governança exigidos. Essa
+> lacuna foi fechada, e no processo um KNOWN_GAP já prometido no commit
+> `75c6132` (P2 6/8) mas nunca de fato documentado foi honrado, mais um
+> segundo achado novo. Tudo isso está registrado em
+> `docs/missions/H3_MISSAO_DEBITOS_ADENDO_COBERTURA_ORCHESTRATOR_E_KNOWN_GAP.md`
+> (commits `09c81e0` e `c48766f`) e resumido nas seções §4b, §10 e §11
+> abaixo, sem reescrever as seções originais que continuam corretas.
 
 ---
 
@@ -94,6 +107,15 @@ Eliminar quatro débitos técnicos residuais identificados após o Horizonte 3 (
 | `2b544d3` | 2026-07-17 | docs(missao): H3-missao-debitos P4 — gates de CI reproduzidos; Python 3.12 real fica BLOCKED_WITH_EVIDENCE |
 
 Regra "um commit por item, nunca misturar domínios" respeitada em 11 dos 12 commits. A única exceção documentada é `352fb12` (P2 8/8), que inclui também a correção de `test_p2_11_mypy_estrutura.py` — decisão deliberada e justificada no próprio commit: os dois são causalmente inseparáveis (a correção do teste só existe porque zerar os erros do orchestrator.py foi o que fez a saída do mypy mudar de formato pela primeira vez), e separá-los artificialmente faria a validação do primeiro commit (suíte completa) aparentar falha sem o segundo.
+
+### 4b. Commits do adendo pós-fechamento (2, ver nota de atualização acima)
+
+| Hash | Data | Mensagem |
+|---|---|---|
+| `09c81e0` | 2026-07-17 | test(council): H3-missao-debitos, adendo — cobertura direta de CouncilOrchestratorDryRun.run() |
+| `c48766f` | 2026-07-17 | docs(missao): H3-missao-debitos — honra o KNOWN_GAP de agent.json/doutor.py prometido no commit 75c6132 |
+
+O primeiro adiciona `tests/council/test_orchestrator_dry_run_direct_coverage.py` (42 testes novos, sem tocar `council/orchestrator.py`). O segundo é só documentação + 1 script de reprodução (`docs/missions/repro_known_gap_agent_json_crashes_doutor.py`), sem tocar código-fonte algum. Evidência completa de ambos em `docs/missions/H3_MISSAO_DEBITOS_ADENDO_COBERTURA_ORCHESTRATOR_E_KNOWN_GAP.md`.
 
 ---
 
@@ -223,6 +245,29 @@ KNOWN_GAPS:
    docs/architecture/NOMOS_MOSAIC_NAMING_RODADA2_2026-07-17.md
    Mencionados aqui só por transparência total do estado do working tree, não como um
    débito desta missão.
+
+5. (adendo pós-fechamento, commit c48766f) config.load_agent() (kernel/config.py) chama
+   json.loads() sem try/except; doutor.diagnostico_v011() chama config.load_agent() logo
+   no início, também sem proteção — um agent.json corrompido derruba a função de
+   diagnóstico INTEIRA (json.JSONDecodeError não tratada), em vez de virar um item "❌"
+   isolado, e por consequência também derruba dados_dashboard() do painel web. agent.json
+   não está entre os 4 arquivos que diagnosticar_consertos()/consertar() sabem reparar.
+   Este achado já tinha sido ENCONTRADO no commit 75c6132 (P2 6/8), que prometia
+   documentá-lo no relatório final — promessa não cumprida na versão original deste
+   documento, corrigida agora. Reprodução real:
+   docs/missions/repro_known_gap_agent_json_crashes_doutor.py. Não corrigido (fora do
+   escopo desta missão — exigiria mudança de comportamento em kernel/config.py e
+   simple/doutor.py).
+
+6. (adendo pós-fechamento, commit 09c81e0/c48766f) policy.json sintaticamente válido mas
+   de tipo errado (ex.: [] em vez de um objeto) faz PolicyEngine.decide() lançar
+   AttributeError não tratado em vez de negar de forma controlada; nomos doutor não
+   detecta esse policy.json como corrompido porque só testa se o JSON faz parse, não se
+   tem o formato esperado. Verificado que os outros 3 arquivos monitorados por doutor.py
+   (localidade.json, skills_estado.json, rotinas.json) já são resilientes a essa mesma
+   classe de problema — não é um padrão geral, é específico do PolicyEngine. Reprodução
+   real: docs/missions/repro_known_gap_policy_json_shape.py. Não corrigido (mesma razão
+   do item 5).
 ```
 
 ---
@@ -239,14 +284,30 @@ KNOWN_GAPS:
 | Gates de CI sob Python 3.12 real | BLOCKED_WITH_EVIDENCE | commit `2b544d3` + doc dedicado; bloqueio de proxy preciso e documentado |
 | Suíte completa passando | PASS | 1866 passed, consistente em todas as 12 verificações pós-commit |
 | Zero regressões | PASS | contagem de testes idêntica antes/depois de cada commit |
-| Site/docs + git validados após cada commit | PASS (checagem) / BLOCKED (push) | `consistent=true` 12/12; push falha 12/12 por credencial ausente |
+| Site/docs + git validados após cada commit | PASS (checagem) / BLOCKED (push) | `consistent=true` 14/14 (12 originais + 2 do adendo); push falha 14/14 por credencial ausente |
+| (adendo) Cobertura DIRETA de `CouncilOrchestratorDryRun.run()`, 11 cenários | PASS | commit `09c81e0`, 42 testes novos, `tests/council/test_orchestrator_dry_run_direct_coverage.py` |
+| (adendo) KNOWN_GAPS de `doutor.py`/JSON registrados e reproduzíveis | PASS (registro) | commit `c48766f`, 2 achados com script de reprodução cada, nenhum corrigido (fora de escopo) |
 
 ---
 
 ## 12. Veredito
 
-Das quatro prioridades declaradas na missão, três (P1, P2, P3) foram concluídas de ponta a ponta com evidência real de execução, sem regressões, com testes dedicados e causas-raiz documentadas — incluindo um bug real encontrado e corrigido como efeito colateral honesto do trabalho de tipagem (P2) that não estava no escopo original mas foi corrigido porque apareceu no caminho.
+Das quatro prioridades declaradas na missão, três (P1, P2, P3) foram concluídas de ponta a ponta com evidência real de execução, sem regressões, com testes dedicados e causas-raiz documentadas — incluindo um bug real encontrado e corrigido como efeito colateral honesto do trabalho de tipagem (P2), que não estava no escopo original mas foi corrigido porque apareceu no caminho.
 
 A quarta prioridade (P4) tem um resultado misto e integralmente transparente: o requisito literal — rodar sob um interpretador Python 3.12 genuíno — está bloqueado por uma restrição de rede externa a este sandbox, precisamente identificada (não uma alegação vaga de "sem internet"). Em compensação, o objetivo prático por trás do requisito — ter confiança de que os gates de CI passariam sob 3.12 — foi perseguido com o máximo de rigor possível dentro da restrição: todo comando exato de todo job de CI foi executado e passou sob a versão disponível, complementado por uma varredura estática de compatibilidade sem nenhum achado.
 
 `STATUS_FINAL=WARN_PARTIAL_DELIVERY_WITH_EXPLICIT_GAPS` reflete esse resultado sem inflar (não é um "PASS" disfarçado) nem subestimar (não é um "FAIL" que descartaria o trabalho real feito em P1–P3 e a evidência substancial reunida em P4).
+
+**Fechamento do adendo:** a auditoria pós-fechamento em `council/orchestrator.py`
+(§4b) elevou a cobertura de comportamento (não só de linha) do arquivo mais
+crítico do lote de P2 de "99% de linha, sem prova direta por cenário" para
+"42 testes rotulados 1:1 com os 11 comportamentos de governança exigidos",
+sem alterar o arquivo em si. No processo, dois débitos reais e
+independentes sobre `doutor.py`/JSON corrompido foram documentados como
+`KNOWN_GAPS` reproduzíveis por script (§10, itens 5 e 6) — um deles
+honrando um compromisso feito e não cumprido em um commit anterior desta
+mesma missão (`75c6132`). `STATUS_FINAL` permanece
+`WARN_PARTIAL_DELIVERY_WITH_EXPLICIT_GAPS`: o adendo fecha uma lacuna de
+evidência sem mudar o veredito das quatro prioridades originais, e soma
+dois `KNOWN_GAPS` novos ao inventário — nenhum deles bloqueante, ambos
+deliberadamente não corrigidos por estarem fora do escopo declarado.
