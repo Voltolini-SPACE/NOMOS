@@ -35,6 +35,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 
+from nomos.interface._html import esc
+
 # ---------------------------------------------------------------------------
 # identidade visual — paleta da marca CONGELADA (brandbook v1.0)
 # ---------------------------------------------------------------------------
@@ -758,7 +760,7 @@ _ABAS_NAV: list[tuple[str, str, str]] = [
 
 
 def _sidebar(d: dict, n_aprov: int) -> str:
-    e = html.escape
+    e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
     memo = d.get("memoria", {})
     badges = {
         "visao": (f'<span class="badge alerta">{n_aprov}</span>'
@@ -825,7 +827,7 @@ def _secao_chat(d: dict, chat: dict | None) -> str:
     a 2ª porta de escrita governada: enviar roda motor LOCAL (fail-closed),
     conteúdo redigido na exibição, cada turno auditado.
     """
-    e = html.escape
+    e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
     corpo = ['<h2 id="chat">Chat local</h2>']
     hist = d.get("conversas", [])
     ligado = bool(chat and chat.get("habilitado") and chat.get("token"))
@@ -903,7 +905,7 @@ def _bloco_ao_vivo(d: dict) -> str:
     cérebro instalado) é recolhida num <details> — só os prontos ficam à
     vista, mantendo a honestidade ("sem motor pronto") sem inundar a tela.
     """
-    e = html.escape
+    e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
     rv = d.get("roteador_vivo") or []
     prontos = [r for r in rv if r.get("motor")]
     vazios = [r for r in rv if not r.get("motor")]
@@ -945,7 +947,7 @@ def _secao_aprovacoes(aprovacoes: list[dict] | None, n_meta: int,
     logo após uma decisão — antes, a única evidência de sucesso era a
     lista de pendentes encolher, sem nenhuma confirmação direta.
     """
-    e = html.escape
+    e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
     corpo = ['<h2 id="aprovacoes">Aprovações — você decide</h2>']
     if decidido and decidido.get("acao") in ("aprovar", "negar"):
         veredito = "APROVADA ✅" if decidido["acao"] == "aprovar" else "NEGADA ⛔"
@@ -1006,7 +1008,7 @@ def _secao_mosaic() -> list[str]:
     """Aba MOSAIC — as telas ao vivo VIVEM aqui dentro do painel (sem janelas
     separadas). Leitura livre; vistoriar e agir passam pelo caminho governado.
     Degrada em silêncio se o motor de mosaico não tiver telas."""
-    e = html.escape
+    e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
     try:
         from nomos.mosaic.engine import MosaicEngine
         tiles = MosaicEngine().build_tiles()
@@ -1075,7 +1077,7 @@ def render_html(d: dict, refresh: int | None = None,
     ``decidido={"acao": "aprovar"|"negar", "id": str}`` ⇒ banner de
     confirmação da última decisão (achado P1-7, auditoria 2026-07-17).
     """
-    e = html.escape
+    e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
     classe = {"PRONTO": "ok", "PARCIAL": "warn",
               "BLOQUEADO": "err"}[d["status_geral"]]
     n_aprov = (len(aprovacoes) if aprovacoes is not None
@@ -1595,7 +1597,7 @@ def render_dash(versao: str) -> str:
     """Shell ESTÁTICO do NOMOS Dash — nenhum dado interpolado no HTML;
     tudo chega por polling same-origin e entra via textContent (XSS-safe).
     """
-    e = html.escape
+    e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
     corpo = (
         "<header><h1>NOMOS DASH <small>— mission control local 🔒</small></h1>"
         '<div class="hspace">'
@@ -1948,7 +1950,7 @@ class DashboardServer:
 
             def _pagina_audit(self, query: str = ""):
                 """Auditoria completa: cadeia verificada + busca server-side."""
-                e = html.escape
+                e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
                 base = f"/d/{painel.secret}"
                 try:
                     ok, _viol = painel.ctx["audit"].verify()
@@ -2000,7 +2002,7 @@ class DashboardServer:
 
             def _pagina_roteador(self):
                 """Decisões do roteador, explicadas, por modalidade — só leitura."""
-                e = html.escape
+                e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
                 base = f"/d/{painel.secret}"
                 try:
                     from nomos.cognition import engine_catalog as cat_mod

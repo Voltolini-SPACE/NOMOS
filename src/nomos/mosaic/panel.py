@@ -13,7 +13,16 @@ from nomos.mosaic import layout
 
 
 def _esc(s: str) -> str:
-    return html.escape(str(s or ""), quote=True)
+    # P2-7 da auditoria de 2026-07-17: `str(s or "")` apagava valores
+    # "falsy" LEGÍTIMOS (0, False) como se fossem vazios — ex.: um contador
+    # zerado virava "" em vez de "0". Só None deve virar string vazia; tudo
+    # o mais passa por str() antes de escapar. Cópia deliberadamente LOCAL
+    # (não importada de outro pacote nomos.*): mosaic/ não tem nenhuma
+    # dependência de nomos.* de propósito (roda como HTML autocontido, sem
+    # instalar o pacote todo) — mesmo princípio de isolamento já usado em
+    # kernel/audit.py (SECRET_PATTERNS duplicado em vez de importar
+    # nomos.memory.policy). Contrato alinhado ao de nomos.interface._html.esc.
+    return html.escape("" if s is None else str(s), quote=True)
 
 
 def _hue(s: str) -> int:
