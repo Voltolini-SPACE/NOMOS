@@ -1,4 +1,4 @@
-# Adendo — Cobertura direta de `CouncilOrchestratorDryRun.run()` + KNOWN_GAP (policy.json)
+# Adendo — Cobertura direta de `CouncilOrchestratorDryRun.run()` + KNOWN_GAPS (doutor.py / JSON corrompido)
 
 **Complementa:** `docs/missions/H3_MISSAO_DEBITOS_RELATORIO_FINAL.md`
 **Motivo do adendo:** o relatório final declarou `MYPY_ERRORS=0` como critério
@@ -167,13 +167,98 @@ SITE_CONSISTENCY=TRUE
 LOCAL_GIT_STATUS=CLEAN (após o commit deste adendo)
 REMOTE_PUSH=BLOCKED_BY_CREDENTIALS (ver §5 — reconfirmado, não tratado
   como concluído)
+KNOWN_GAPS=2 (registrados em §4, nenhum corrigido neste corte, ambos
+  reproduzíveis por script dedicado — não descartados silenciosamente)
 ```
 
 ---
 
-## 4. KNOWN_GAP registrado — não corrigido neste corte
+## 4. KNOWN_GAPS registrados — não corrigidos neste corte
 
-### Achado: `policy.json` sintaticamente válido mas de tipo errado derruba `PolicyEngine.decide()`, e `nomos doutor` não detecta
+Dois achados distintos e independentes, ambos sobre a mesma classe de
+problema ("`doutor.py` e JSON corrompido"), documentados separadamente
+porque têm causas raiz e arquivos afetados diferentes.
+
+### 4.1 Achado (já sinalizado, nunca documentado até agora): `agent.json` corrompido derruba `doutor.diagnostico_v011()` inteiro, não só o item do agente
+
+**Onde:** `src/nomos/kernel/config.py` (`load_agent()`) +
+`src/nomos/simple/doutor.py` (`diagnostico_v011()`, linha ~133).
+
+**Origem:** este achado já tinha sido ENCONTRADO durante a correção de
+tipos de `interface/painel_web.py` (commit `75c6132`, P2 6/8) — a própria
+mensagem daquele commit diz, textualmente: *"descobri que
+dados_dashboard() já crasha antes de chegar neste bloco corrigido, porque
+chama doutor_mod.diagnostico_v011(home, ctx) mais cedo na mesma função
+(fora de qualquer try/except), que por sua vez chama config.load_agent()
+SEM proteção contra JSON inválido [...] sinalizada para o relatório final
+da missão como um KNOWN_GAP a considerar depois do P2."* Esse compromisso
+não foi honrado no relatório final original
+(`H3_MISSAO_DEBITOS_RELATORIO_FINAL.md`) — o achado ficou só na mensagem
+do commit, nunca chegou ao documento de fechamento. Este adendo corrige
+essa omissão.
+
+**O problema, em uma frase:** `config.load_agent()` chama `json.loads()`
+sem NENHUM `try/except` ao redor; `doutor.diagnostico_v011()` chama
+`config.load_agent()` logo nas primeiras linhas da função, também sem
+proteção — então um `agent.json` corrompido não vira um item "❌
+bloqueante" no relatório do doutor (que é o comportamento esperado de
+TODO o resto da função, cheia de `try/except` por item); em vez disso, a
+função INTEIRA aborta com `json.JSONDecodeError` não tratada, e nenhum dos
+outros ~15 itens de diagnóstico (Python, home, localidade, cofre,
+auditoria, agentes especializados etc.) chega a ser reportado.
+
+**Por que importa mais que uma corrupção comum:** `agent.json` não está
+entre os 4 arquivos que `diagnosticar_consertos()` sabe diagnosticar e
+oferecer para reparar (`localidade.json`, `policy.json`,
+`skills_estado.json`, `rotinas.json`) — ou seja, a ferramenta cujo
+propósito inteiro é "diagnostique e conserte corrupção com segurança" nem
+appropriadamente detecta nem oferece reparo para este arquivo específico;
+ela simplesmente quebra. O mesmo caminho (`diagnostico_v011()`) também é
+chamado por `dados_dashboard()` no painel web, então o painel também cai.
+
+**Reprodução (comando real, executado, saída real):**
+
+```text
+COMANDO_EXECUTADO=python3 docs/missions/repro_known_gap_agent_json_crashes_doutor.py
+RETORNO=1 (sentinela: 1 enquanto a falha existir; 0 se um dia for corrigida)
+EVIDÊNCIA=1) config.load_agent() CRASHA sem try/except: JSONDecodeError:
+             Expecting property name enclosed in double quotes: line 1
+             column 2 (char 1)
+          2) doutor.diagnostico_v011() CRASHA (não é um item 'bloqueante'
+             reportado — a função inteira aborta): JSONDecodeError:
+             Expecting property name enclosed in double quotes: line 1
+             column 2 (char 1)
+          3) 'nomos doutor consertar' sabe reparar agent.json corrompido?
+             False
+
+          RESULTADO: falha reproduzida como documentado no commit 75c6132
+          e neste KNOWN_GAP.
+RESULTADO=CONFIRMADO — script em
+          docs/missions/repro_known_gap_agent_json_crashes_doutor.py
+```
+
+**Por que não foi corrigido neste corte:** mesma razão do achado 4.2 —
+exigiria decidir uma política de tratamento real para `config.py`/
+`doutor.py` (kernel de identidade do agente + ferramenta de diagnóstico),
+fora do escopo declarado deste adendo (cobertura de teste de
+`council/orchestrator.py`). Corrigi-lo aqui violaria a regra de não
+agrupar correções de domínios diferentes no mesmo commit.
+
+**Ação recomendada para uma rodada futura dedicada:** (a) envolver a
+leitura de `config.load_agent()` dentro de `diagnostico_v011()` em seu
+próprio `try/except`, reportando "agente: configuração corrompida" como
+um item normal (não bloqueante ao ponto de abortar os outros ~15 itens);
+(b) considerar adicionar `agent.json` à lista de arquivos que
+`diagnosticar_consertos()`/`consertar()` sabem reparar (renomear para
+`.corrompido`, recriar limpo — mesmo padrão já usado para os outros 4
+arquivos); (c) o próprio `config.load_agent()` poderia opcionalmente
+ganhar seu próprio fail-closed (devolver `None` em vez de propagar,
+paralelo ao padrão já usado em `localidade.esta_ligado()`), mas isso
+precisa de análise cuidadosa de quem mais chama `load_agent()` e depende
+hoje de exceções propagando (mudança de contrato, não só um detalhe
+interno).
+
+### 4.2 Achado (novo, encontrado nesta investigação): `policy.json` sintaticamente válido mas de tipo errado derruba `PolicyEngine.decide()`, e `nomos doutor` não detecta
 
 **Onde:** `src/nomos/kernel/policy.py` (`PolicyEngine.rules()` e
 `PolicyEngine.decide()`) + `src/nomos/simple/doutor.py`
