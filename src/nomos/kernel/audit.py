@@ -117,6 +117,12 @@ class AuditLog:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = _lock_de(self.path.resolve())
+        # cache de (tip, valid_end, size) — achado P1-9 da auditoria de
+        # 2026-07-17: append() chamava _tail_scan() (relê o arquivo
+        # inteiro) a cada gravação — O(n) por chamada, O(n²) agregado para
+        # N gravações sequenciais (medido: 0.21ms/chamada com 100 linhas
+        # -> 15.46ms/chamada com 10.000). Ver _tail_scan_cached().
+        self._cache: tuple[str, int, int] | None = None
 
     @contextlib.contextmanager
     def _flock(self):
@@ -173,9 +179,32 @@ class AuditLog:
         tip, _, _ = self._tail_scan()
         return tip
 
+    def _tail_scan_cached(self) -> tuple[str, int, int]:
+        """Como `_tail_scan()`, mas evita reler o arquivo inteiro quando o
+        cache em memória desta instância ainda bate com o tamanho REAL do
+        arquivo no disco (checagem O(1) via `stat()`).
+
+        Continua seguro sob qualquer cenário que mudaria o arquivo por fora
+        do cache: outro processo/instância escreveu (painel + CLI ao mesmo
+        tempo — cada `AuditLog` tem seu próprio `_cache`, mas todos que
+        apontam para o mesmo caminho competem pelo mesmo lock, e o `stat()`
+        aqui sempre reflete a escrita mais recente de QUALQUER um deles);
+        crash/disco cheio deixou cauda parcial; alguém truncou/corrompeu o
+        arquivo manualmente. Em qualquer divergência de tamanho, cai para o
+        scan completo — a otimização nunca troca correção por velocidade."""
+        try:
+            tamanho_real = self.path.stat().st_size
+        except FileNotFoundError:
+            tamanho_real = 0
+        if self._cache is not None and self._cache[2] == tamanho_real:
+            return self._cache
+        estado = self._tail_scan()
+        self._cache = estado
+        return estado
+
     def append(self, event: str, **fields) -> dict:
         with self._lock, self._flock():
-            tip, valid_end, size = self._tail_scan()
+            tip, valid_end, size = self._tail_scan_cached()
             if valid_end < size:
                 # cauda ilegível: repara ANTES de anexar, para o lixo nunca
                 # ficar no meio da cadeia (recuperação alinhada com verify)
@@ -193,6 +222,12 @@ class AuditLog:
             ).hexdigest()
             with self.path.open("a", encoding="utf-8") as fh:
                 fh.write(_canonical(record) + "\n")
+            # atualiza o cache com o tamanho REAL pós-escrita (stat() é
+            # O(1) e evita qualquer suposição sobre bytes/newlines — no
+            # Windows, texto em modo "a" pode traduzir "\n" para "\r\n"; sem
+            # o stat(), o tamanho calculado na mão divergiria do disco).
+            tamanho_novo = self.path.stat().st_size
+            self._cache = (record["hash"], tamanho_novo, tamanho_novo)
         return record
 
     def estado(self) -> tuple[int, str]:
