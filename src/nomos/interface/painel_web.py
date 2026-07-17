@@ -418,6 +418,21 @@ _HEADERS_SEGURANCA = {
 }
 
 
+# boot do tema ANTES do <style>, em QUALQUER documento do painel: aplica a
+# escolha salva já na 1ª pintura (sem flash). Sem escolha, o CSS respeita
+# prefers-color-scheme sozinho. Horizonte 3/item 4 (2026-07-17): extraído
+# do corpo de `_doc()` (onde vivia sozinho, só para o painel principal) para
+# uma constante compartilhada — `render_dash()` também passa a usá-la, para
+# que o Dash ganhe a mesma aplicação antecipada de tema (antes só o painel
+# principal tinha isso; o Dash não lia `localStorage` em lugar nenhum, então
+# o bloco CSS de tema claro do P2-8 ficava "inerte"). Extração pura: a saída
+# de `_doc()` não muda em nada, é literalmente a mesma string de antes.
+_BOOT_TEMA = ("<script>try{var t=localStorage.getItem('nomos-tema');"
+              "if(t==='claro'||t==='escuro')"
+              "document.documentElement.setAttribute('data-tema',t);}"
+              "catch(e){}</script>")
+
+
 def _doc(titulo: str, corpo: str, refresh: int | None = None) -> str:
     """Documento HTML completo, autossuficiente (CSS/JS inline, nada externo).
 
@@ -426,15 +441,9 @@ def _doc(titulo: str, corpo: str, refresh: int | None = None) -> str:
     recarregaria no meio de uma decisão e apagaria o filtro digitado."""
     meta = (f'\n<meta name="nomos-refresh" content="{int(refresh)}">'
             if refresh else "")
-    # boot do tema ANTES do <style>: aplica a escolha salva já na 1ª pintura
-    # (sem flash). Sem escolha, o CSS respeita prefers-color-scheme sozinho.
-    boot = ("<script>try{var t=localStorage.getItem('nomos-tema');"
-            "if(t==='claro'||t==='escuro')"
-            "document.documentElement.setAttribute('data-tema',t);}"
-            "catch(e){}</script>")
     return ("<!doctype html><html lang=\"pt-br\"><meta charset=\"utf-8\">\n"
             "<meta name=\"viewport\" content=\"width=device-width, "
-            "initial-scale=1\">" + meta + "\n" + boot + "\n<title>" +
+            "initial-scale=1\">" + meta + "\n" + _BOOT_TEMA + "\n<title>" +
             html.escape(titulo) + "</title>\n<style>" + _CSS + "</style>\n" +
             corpo + "\n<script>" + _JS + "</script>\n</html>")
 
@@ -1432,6 +1441,16 @@ _CSS_DASH = """
    padding:.25rem .7rem;cursor:pointer}
  button.pausa[aria-pressed="true"]{border-color:var(--amarelo);
    color:var(--amarelo)}
+ /* Horizonte 3/item 4 (2026-07-17): botão de tema do Dash — MESMOS pares
+    de cor já verificados em button.pausa acima (var(--surface)/var(--txt)/
+    var(--line)), numa classe própria (não reaproveita .pausa) para não
+    herdar o realce âmbar de [aria-pressed="true"], que aqui significa
+    "pausado" — no botão de tema, aria-pressed="true" significa só "tema
+    claro está ativo", sem relação com aviso/pausa. */
+ button.tema{font:inherit;font-size:.74rem;background:var(--surface);
+   color:var(--txt);border:1px solid var(--line);border-radius:6px;
+   padding:.25rem .7rem;cursor:pointer}
+ button.tema:hover{border-color:var(--dim);color:var(--neon)}
  main{flex:1;padding:1.1rem 1.2rem;display:grid;gap:.8rem;
    grid-template-columns:repeat(12,1fr);align-content:start}
  .w{background:var(--surface);border:1px solid var(--line);border-radius:10px;
@@ -1482,6 +1501,38 @@ _JS_DASH = """
  'use strict';
  var pausado=false, ultAt=0, antes={};
  var $=function(id){return document.getElementById(id);};
+ // ---- tema claro/escuro (Horizonte 3/item 4, 2026-07-17): mesma lógica
+ // do painel principal (_JS), agora também no Dash — antes só _CSS_DASH
+ // tinha as variáveis do tema claro (P2-8) mas nada aqui setava
+ // data-tema, então o bloco ficava "inerte" e só o prefers-color-scheme
+ // do SO valia. A chave de localStorage ('nomos-tema') é a MESMA do
+ // painel principal — a escolha explícita feita num lado vale no outro.
+ var root=document.documentElement;
+ function temaAtual(){
+   var t=root.getAttribute('data-tema');
+   if(t)return t;
+   return (window.matchMedia&&window.matchMedia('(prefers-color-scheme:light)').matches)
+     ?'claro':'escuro';
+ }
+ try{var salvo=localStorage.getItem('nomos-tema');
+   if(salvo==='claro'||salvo==='escuro')root.setAttribute('data-tema',salvo);
+ }catch(e){}
+ var tbtn=$('tema-btn');
+ function pintaBtnTema(){
+   if(!tbtn)return;
+   var claro=temaAtual()==='claro';
+   tbtn.textContent=claro?'◐ escuro':'◐ claro';
+   tbtn.setAttribute('aria-label',
+     claro?'mudar para tema escuro':'mudar para tema claro');
+   tbtn.setAttribute('aria-pressed',claro?'true':'false');
+ }
+ pintaBtnTema();
+ if(tbtn){tbtn.addEventListener('click',function(){
+   var novo=temaAtual()==='claro'?'escuro':'claro';
+   root.setAttribute('data-tema',novo);
+   try{localStorage.setItem('nomos-tema',novo);}catch(e){}
+   pintaBtnTema();
+ });}
  function marca(el){ if(!el) return;
    el.classList.remove('mudou'); void el.offsetWidth; el.classList.add('mudou'); }
  function poe(id, v, cls){ var el=$(id); if(!el) return;
@@ -1636,6 +1687,9 @@ def render_dash(versao: str) -> str:
         '<div class="hspace">'
         '<span aria-live="polite"><span id="estado">carregando…</span> · '
         'atualizado há <span id="faz">—</span></span>'
+        '<button class="tema" id="tema-btn" type="button" '
+        'aria-pressed="false" title="alternar tema claro/escuro">◐ tema'
+        "</button> "
         '<button class="pausa" id="pausa" aria-pressed="false">pausar</button>'
         '<a href="../">← painel</a></div></header>'
         "<main>"
@@ -1709,7 +1763,8 @@ def render_dash(versao: str) -> str:
         "</footer>")
     return ("<!doctype html><html lang=\"pt-br\"><meta charset=\"utf-8\">\n"
             "<meta name=\"viewport\" content=\"width=device-width, "
-            "initial-scale=1\">\n<title>NOMOS Dash</title>\n<style>"
+            "initial-scale=1\">\n" + _BOOT_TEMA +
+            "\n<title>NOMOS Dash</title>\n<style>"
             + _CSS_DASH + "</style>\n" + corpo
             + "\n<script>" + _JS_DASH + "</script>\n</html>")
 

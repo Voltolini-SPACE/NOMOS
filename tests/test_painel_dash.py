@@ -70,7 +70,11 @@ def test_dash_serve_shell_com_widgets(nomos_home):
         assert "NOMOS DASH" in corpo
         for wid in ("id=\"status\"", "id=\"aprov\"", "id=\"memrev\"",
                     "id=\"cadeia\"", "id=\"spark\"", "id=\"motores\"",
-                    "id=\"avisos\"", "id=\"estado\"", "id=\"pausa\""):
+                    "id=\"avisos\"", "id=\"estado\"", "id=\"pausa\"",
+                    # Horizonte 3/item 4 (2026-07-17): botão de tema,
+                    # servido de ponta a ponta via HTTP real (não só na
+                    # saída crua de render_dash())
+                    "id=\"tema-btn\""):
             assert wid in corpo, f"widget ausente: {wid}"
         # honestidade e lei da casa declaradas na própria tela
         assert "só LÊ" in corpo and "gate" in corpo

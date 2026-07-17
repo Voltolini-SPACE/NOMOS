@@ -123,6 +123,64 @@ def test_dash_tema_claro_nao_declara_variavel_rosa_no_escopo_dash(nomos_home):
     assert "class=\"lock\"" not in _CSS_DASH  # smoke: é CSS puro, não HTML
 
 
+# --------------------------------------- Horizonte 3/item 4 (2026-07-17) -
+# P2-8 deixou o CSS de tema claro do Dash pronto, mas o próprio commit
+# documentou a lacuna: _JS_DASH nunca setava `data-tema` (sem botão de
+# alternância nem leitura de localStorage) — o bloco
+# `:root[data-tema="claro"]` ficava "inerte", só o
+# `@media (prefers-color-scheme:light)` valia (o usuário não conseguia
+# ESCOLHER o tema no Dash, só herdar o do SO). Este item porta o mesmo
+# mecanismo já existente no painel principal (_JS/_doc) para o Dash:
+# botão de alternância, boot-script anti-flash e persistência via
+# localStorage — reaproveitando a MESMA chave ('nomos-tema') dos dois
+# lados, para que a escolha feita num lado valha no outro.
+def test_dash_ganha_botao_de_tema_e_boot_sem_flash(nomos_home):
+    corpo = render_dash("1.0.0")
+    assert 'id="tema-btn"' in corpo                 # alternância acessível
+    assert 'aria-pressed' in corpo
+    # boot lê a preferência salva ANTES do <style> (evita flash de tema) —
+    # mesmo contrato já valia só para o painel principal (ver
+    # test_botao_de_tema_e_boot_sem_flash, acima)
+    idx_boot = corpo.find("localStorage.getItem('nomos-tema')")
+    idx_style = corpo.find("<style>")
+    assert 0 < idx_boot < idx_style, "boot do tema deve vir antes do <style>"
+
+
+def test_dash_js_realmente_seta_data_tema_e_persiste():
+    """Prova por conteúdo real (não só a existência do botão) que o CSS
+    'inerte' do P2-8 passou a ser alcançável: _JS_DASH agora contém a
+    lógica que ESCREVE `data-tema` no <html> e PERSISTE a escolha em
+    localStorage — exatamente a lacuna que o commit do P2-8 documentou
+    como "fora do corte mínimo" daquela correção."""
+    from nomos.interface.painel_web import _JS_DASH
+    assert "root.setAttribute('data-tema'" in _JS_DASH
+    assert "localStorage.setItem('nomos-tema'" in _JS_DASH
+    assert "localStorage.getItem('nomos-tema')" in _JS_DASH
+    assert "tema-btn" in _JS_DASH
+    assert "addEventListener('click'" in _JS_DASH
+
+
+def test_dash_e_painel_principal_compartilham_a_mesma_chave_de_localstorage():
+    """A escolha de tema feita num lado (painel ou Dash) precisa valer no
+    outro — os dois têm que ler/escrever a MESMA chave de localStorage,
+    não chaves paralelas que divergiriam silenciosamente."""
+    from nomos.interface.painel_web import _JS, _JS_DASH
+    assert "localStorage.getItem('nomos-tema')" in _JS
+    assert "localStorage.getItem('nomos-tema')" in _JS_DASH
+
+
+def test_doc_do_painel_principal_nao_muda_apos_extracao_do_boot(nomos_home):
+    """O boot-script de tema foi extraído de dentro de `_doc()` para uma
+    constante de módulo (`_BOOT_TEMA`), agora reaproveitada pelo Dash —
+    prova de que a extração foi PURA: o painel principal continua com o
+    mesmo contrato de sempre (boot antes do <style>, botão presente)."""
+    corpo = _html(nomos_home)
+    assert 'id="tema-btn"' in corpo
+    idx_boot = corpo.find("localStorage.getItem('nomos-tema')")
+    idx_style = corpo.find("<style>")
+    assert 0 < idx_boot < idx_style
+
+
 # --------------------------------------- P2-10 (auditoria de 2026-07-17) -
 # Contraste WCAG AA real dos selos de status (.chip.ok/.warn/.err) no tema
 # claro. Achado real: o `background` de cada .chip é um rgba(...) LITERAL
