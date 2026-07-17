@@ -223,16 +223,15 @@ def diagnostico_v011(home=None, ctx: dict | None = None) -> list[dict]:
                            "sem impacto no uso básico"))
 
     # agentes especializados (achado P2-6, Horizonte 2 -> wiring real no
-    # Horizonte 3/item 1, auditoria de 2026-07-17): AgentToolBoundary agora
-    # TEM um caller de produção real — `nomos agentes usar <agente>
-    # <ferramenta>` passa pelo mesmo `policy.gate` do kernel, fail-closed,
-    # com aprovação e auditoria reais (nenhum caminho de autorização novo).
-    # 5 das 8 ferramentas da allowlist têm execução ligada (memoria_buscar,
-    # arquivo_ler, arquivo_resumir, doutor, logs_verificar); arquivo_escrever,
-    # codigo_gerar e skill_rodar seguem sem execução ligada nesta versão —
-    # cada uma exige desenho de segurança próprio, documentado para rodada
-    # futura (pedir uma delas recusa com erro claro, nunca finge sucesso).
-    # Item informativo, não bloqueante.
+    # Horizonte 3/item 1 -> 8/8 ferramentas na missão de eliminação de
+    # débitos residuais, auditoria de 2026-07-17): AgentToolBoundary TEM
+    # caller de produção real — `nomos agentes usar <agente> <ferramenta>`
+    # passa pelo mesmo `policy.gate` do kernel, fail-closed, com aprovação e
+    # auditoria reais (nenhum caminho de autorização novo). As 8 ferramentas
+    # da allowlist têm execução real ligada (memoria_buscar, arquivo_ler,
+    # arquivo_resumir, arquivo_escrever, codigo_gerar, doutor,
+    # logs_verificar, skill_rodar — ver agents/execucao.py). Item
+    # informativo, não bloqueante.
     try:
         from nomos.agents.registry import AgentRegistry
         ag = AgentRegistry(home).listar()
@@ -242,9 +241,8 @@ def diagnostico_v011(home=None, ctx: dict | None = None) -> list[dict]:
             else "Nenhum agente especializado catalogado",
             (("· " + ", ".join(a.name for a in ag) + " ") if ag else "")
             + "— ferramentas por agente (AgentToolBoundary) usam "
-              "'nomos agentes usar <agente> <ferramenta>'; 5/8 ferramentas "
-              "da allowlist têm execução ligada, 3 seguem documentadas "
-              "como pendentes"))
+              "'nomos agentes usar <agente> <ferramenta>'; 8/8 ferramentas "
+              "da allowlist têm execução ligada"))
     except Exception:
         itens.append(_item(True, "Agentes: não foi possível checar agora",
                            "sem impacto no uso básico"))

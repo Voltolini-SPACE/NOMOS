@@ -4,24 +4,32 @@ do AgentToolBoundary — fecha o achado P2-6 (Horizonte 2).
 `nomos agentes usar <nome> <ferramenta>` é o primeiro caller de produção do
 AgentToolBoundary (agents/boundary.py, lógica intocada — só o docstring foi
 atualizado). Este arquivo cobre exclusivamente o NOVO caminho (cli.py::
-cmd_agente_usar e os `_exec_*` que ele usa); o contrato do boundary em si
-(fora do manifesto nega, A1+ exige aprovação, auditoria de uso/negação,
-nenhuma herança entre agentes) já está coberto por tests/test_v14_agentes.py
-e não é duplicado aqui — todos os 14 testes daquele arquivo continuam
-passando sem nenhuma alteração, prova de que a lógica de autorização não
-mudou.
+cmd_agente_usar e as `exec_*`/`ferramentas_wired` que ele usa); o contrato
+do boundary em si (fora do manifesto nega, A1+ exige aprovação, auditoria
+de uso/negação, nenhuma herança entre agentes) já está coberto por
+tests/test_v14_agentes.py e não é duplicado aqui — todos os 14 testes
+daquele arquivo continuam passando sem nenhuma alteração, prova de que a
+lógica de autorização não mudou.
 
-Ferramentas com execução real ligada nesta rodada (todas Category.READ_LOCAL,
-== A0, sempre permitidas pela política sem necessidade de aprovação):
-memoria_buscar, arquivo_ler, arquivo_resumir, doutor, logs_verificar.
-arquivo_escrever, codigo_gerar e skill_rodar ficam EXPLICITAMENTE sem
-execução ligada (gap documentado, não escondido) — cobertos aqui pelos
-testes que provam a recusa clara, fail-closed, sem fingir sucesso.
+Nota da missão de eliminação de débitos residuais (Prioridade 1, mesma
+auditoria, 2026-07-17): quando este arquivo foi escrito, só 5 das 8
+ferramentas da allowlist tinham execução real ligada — `arquivo_escrever`,
+`codigo_gerar` e `skill_rodar` recusavam de propósito (gap documentado). O
+teste que provava essa recusa proposital
+(`test_ferramentas_deliberadamente_nao_wired_recusam_sem_fingir_sucesso`)
+foi REMOVIDO aqui — não por ter falhado e sido contornado, mas porque a
+premissa mudou de verdade: as 3 ferramentas passaram a ter execução real
+(`agents/execucao.py`), fechando o gap. A cobertura afirmativa desse novo
+estado (sucesso real, path traversal, escrita fora do workspace, motor
+ausente, permissão de skill negada) vive em
+`tests/test_h3_missao_debitos_p1_ferramentas_reais.py`, não aqui. As
+ferramentas com execução real ligada nesta rodada, todas continuam
+cobertas abaixo: memoria_buscar, arquivo_ler, arquivo_resumir, doutor,
+logs_verificar (A0) permanecem testadas aqui; arquivo_escrever (A1),
+codigo_gerar (A0) e skill_rodar (A5) ganharam sua própria suíte dedicada.
 """
 import json
 from pathlib import Path
-
-import pytest
 
 from nomos import cli
 
@@ -59,40 +67,6 @@ def test_usar_ferramenta_desconhecida_da_erro_claro(nomos_home, capsys):
     rc = cli.main(["agentes", "usar", "seguranca", "teleporte"])
     assert rc == cli.EXIT_ERROR
     assert "não é uma ferramenta conhecida" in capsys.readouterr().err
-
-
-@pytest.mark.parametrize("ferramenta", ["arquivo_escrever", "codigo_gerar", "skill_rodar"])
-def test_ferramentas_deliberadamente_nao_wired_recusam_sem_fingir_sucesso(
-        nomos_home, capsys, ferramenta):
-    """arquivo_escrever/codigo_gerar/skill_rodar: gap documentado, não escondido.
-
-    'programador' declara arquivo_escrever e codigo_gerar no manifesto oficial;
-    para skill_rodar usamos um agente customizado só para o teste (nenhum
-    oficial declara). Em nenhum caso o comando finge sucesso.
-    """
-    _ativar("programador")
-    if ferramenta == "skill_rodar":
-        # instala um agente custom com skill_rodar só para exercitar este
-        # ramo — precisa de pode_executar_skill=True para o manifesto validar
-        from nomos.agents.manifest import AgentManifest
-        from nomos.agents.registry import AgentRegistry
-        reg = AgentRegistry(nomos_home)
-        reg.instalar(AgentManifest(name="operador", objetivo="t",
-                                   ferramentas=("skill_rodar",), risco_max="A5",
-                                   pode_executar_skill=True))
-        assert cli.main(["agentes", "ativar", "operador"]) == 0
-        agente = "operador"
-    else:
-        agente = "programador"
-    rc = cli.main(["agentes", "usar", agente, ferramenta])
-    assert rc == cli.EXIT_ERROR
-    err = capsys.readouterr().err
-    assert "ainda não tem execução ligada" in err
-    assert "Horizonte 3" in err
-    # nada foi silenciosamente aprovado/negado no boundary — o pedido nunca
-    # chegou a construir a boundary, então não há entrada de auditoria dele
-    log = (nomos_home / "logs" / "audit.jsonl").read_text()
-    assert f'"ferramenta": "{ferramenta}"' not in log
 
 
 def test_ferramenta_wired_mas_fora_do_manifesto_do_agente_e_negada(nomos_home, capsys):
@@ -202,7 +176,7 @@ def test_doutor_cli_menciona_comando_real_de_uso(nomos_home, capsys):
     assert cli.main(["doutor"]) == 0
     out = capsys.readouterr().out
     assert "nomos agentes usar" in out
-    assert "5/8" in out
+    assert "8/8" in out
 
 
 RAIZ = Path(__file__).resolve().parent.parent

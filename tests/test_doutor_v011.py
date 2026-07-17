@@ -103,9 +103,15 @@ def test_diagnostico_relata_estado_real_dos_agentes(nomos_home):
     Atualizado no Horizonte 3/item 1 — o wiring real de `nomos agentes usar`
     tornou a alegação antiga ("nenhum fluxo real de produção") falsa; o
     teste passou a checar a alegação NOVA (caller real existe, 5/8
-    ferramentas ligadas), não o texto literal antigo. Ver
-    tests/test_h3_item1_agente_boundary_wiring.py para a cobertura do
-    wiring em si.
+    ferramentas ligadas), não o texto literal antigo.
+
+    Atualizado de novo na missão de eliminação de débitos residuais do
+    Horizonte 3 (Prioridade 1, auditoria de 2026-07-17): as 3 ferramentas
+    que faltavam (`arquivo_escrever`, `codigo_gerar`, `skill_rodar`)
+    ganharam execução real (`agents/execucao.py`) — a alegação passou de
+    5/8 para 8/8. Ver tests/test_h3_item1_agente_boundary_wiring.py e
+    tests/test_h3_missao_debitos_p1_ferramentas_reais.py para a cobertura
+    do wiring em si.
     """
     config.ensure_home()
     itens = doutor.diagnostico_v011(nomos_home)
@@ -117,7 +123,7 @@ def test_diagnostico_relata_estado_real_dos_agentes(nomos_home):
     assert item["bloqueante"] is False        # não pode derrubar PRONTO
     assert "AgentToolBoundary" in item["detalhe"]
     assert "nomos agentes usar" in item["detalhe"]
-    assert "5/8" in item["detalhe"]
+    assert "8/8" in item["detalhe"]
     # os agentes oficiais empacotados aparecem pelo nome (catálogo real)
     assert "pesquisador-local" in item["detalhe"] or "programador" in item["detalhe"]
     # o item novo não pode, sozinho, tirar o status de PRONTO
