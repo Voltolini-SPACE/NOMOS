@@ -34,6 +34,30 @@ def _fts5_available(conn: sqlite3.Connection) -> bool:
         return False
 
 
+# Heurística LOCAL e transparente (sem IA) para reconhecer fatos/preferências/
+# tarefas duráveis numa fala do usuário. Compartilhada por dois consumidores
+# com filosofias diferentes (P2-1, auditoria de 2026-07-17):
+#   - Memory.consolidar(): varre o HISTÓRICO já salvo e grava direto (sem
+#     revisão) — feature madura, contrato próprio, comportamento inalterado.
+#   - Memory.propor_candidatas_do_texto(): aplica a MESMA heurística a uma
+#     fala isolada, EM TEMPO REAL, mas propõe como candidata sujeita a
+#     revisão humana em vez de gravar direto — é o produtor real que faltava
+#     para a fila de candidatas (ISSUE-020), que antes só era alimentada
+#     manualmente em teste.
+# Cada padrão carrega (regex, prefixo-cosmético-para-nota, tipo-válido-para-
+# remember_typed/propor_candidata — precisa bater com `tipos_ok` abaixo).
+_PADROES_FATOS: tuple[tuple[re.Pattern, str, str], ...] = (
+    (re.compile(r"\bprefiro\b(.{4,80})", re.I), "preferência:", "preferencia"),
+    (re.compile(r"\bmeu aniversário\b(.{2,40})", re.I), "data:", "fato"),
+    (re.compile(r"\bmeu (nome|email|telefone|endereço) (?:é|eh)(.{2,60})", re.I),
+     "fato:", "fato"),
+    (re.compile(r"\bminha (cor|comida|música|musica) favorita (?:é|eh)(.{2,60})",
+                re.I), "preferência:", "preferencia"),
+    (re.compile(r"\b(?:preciso|tenho que|não posso esquecer de)(.{4,90})",
+                re.I), "tarefa:", "tarefa"),
+)
+
+
 class Memory:
     def __init__(self, path: Path):
         self.path = Path(path)
@@ -121,6 +145,43 @@ class Memory:
             (time.time(), tipo, text, fonte))
         self.conn.commit()
         return int(cur.lastrowid)
+
+    def propor_candidatas_do_texto(self, text: str, fonte: str = "chat") -> list[int]:
+        """P2-1 (auditoria de 2026-07-17): produtor real para a fila de
+        `propor_candidata()`. Antes desta função, NADA no NOMOS chamava
+        `propor_candidata()` fora de teste — a fila de revisão (`nomos
+        memoria candidatas`/`revisar`, badge do painel) existia e funcionava,
+        mas ficava sempre vazia em uso real.
+
+        Aplica a MESMA heurística local de `consolidar()` (mesmos padrões,
+        `_PADROES_FATOS`) a uma única fala do usuário — pensada para ser
+        chamada ao vivo, a cada turno de chat — mas em vez de gravar direto
+        (como `consolidar()` faz em lote), propõe como candidata sujeita a
+        revisão humana: preserva a intenção original do ISSUE-020 ("você
+        quer que eu lembre disso?") em vez de decidir sozinha.
+
+        Dedup: nunca repete uma candidata já pendente nem um fato já
+        aprovado com o mesmo texto formatado — falar a mesma coisa em vários
+        turnos não enche a fila de revisão de repetição. Devolve os ids das
+        candidatas novas (lista vazia se nada bateu ou tudo já era conhecido).
+        """
+        ja_visto = {c["text"] for c in self.candidatas()}
+        ja_visto |= {i.text for i in self.recent(10_000) if i.role == "note"}
+        novas: list[int] = []
+        for pat, prefixo, tipo in _PADROES_FATOS:
+            m = pat.search(text)
+            if not m:
+                continue
+            if (m.lastindex or 1) >= 2:
+                trecho = f"{m.group(1).strip()}: {m.group(2).strip(' .,;')}"
+            else:
+                trecho = m.group(1).strip(" .,;")
+            nota = f"{prefixo} {trecho}"[:160]
+            if nota in ja_visto or len(trecho) <= 3:
+                continue
+            novas.append(self.propor_candidata(nota, tipo=tipo, fonte=fonte))
+            ja_visto.add(nota)
+        return novas
 
     def candidatas(self) -> list[dict]:
         return [{"id": r[0], "tipo": r[1], "text": r[2], "fonte": r[3]}
@@ -220,22 +281,18 @@ class Memory:
         Heurística LOCAL e transparente (sem IA): padrões explícitos do
         usuário viram notas prefixadas, deduplicadas. Devolve as notas criadas.
         """
-        padroes = [
-            (re.compile(r"\bprefiro\b(.{4,80})", re.I), "preferência:"),
-            (re.compile(r"\bmeu aniversário\b(.{2,40})", re.I), "data:"),
-            (re.compile(r"\bmeu (nome|email|telefone|endereço) (?:é|eh)(.{2,60})", re.I),
-             "fato:"),
-            (re.compile(r"\bminha (cor|comida|música|musica) favorita (?:é|eh)(.{2,60})",
-                        re.I), "preferência:"),
-            (re.compile(r"\b(?:preciso|tenho que|não posso esquecer de)(.{4,90})",
-                        re.I), "tarefa:"),
-        ]
         ja_notado = {i.text for i in self.recent(10_000) if i.role == "note"}
+        # P2-1: também não duplica o que já está PENDENTE de revisão humana
+        # (mem_candidatas) — sem isso, uma fala capturada em tempo real por
+        # propor_candidatas_do_texto() e ainda não revisada seria gravada de
+        # novo aqui direto, sem passar pela revisão, na primeira rodada de
+        # `nomos memoria consolidar`/rotina agendada.
+        ja_notado |= {c["text"] for c in self.candidatas()}
         criadas: list[str] = []
         for item in self.recent(limite):
             if item.role != "user":
                 continue
-            for pat, prefixo in padroes:
+            for pat, prefixo, _tipo in _PADROES_FATOS:
                 m = pat.search(item.text)
                 if not m:
                     continue

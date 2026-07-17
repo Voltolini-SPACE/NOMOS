@@ -1234,6 +1234,14 @@ def cmd_chat(ctx, args) -> int:
         if out.ok:
             mem.remember("user", user_text)
             mem.remember("assistant", out.text)
+            # P2-1 (auditoria de 2026-07-17): produtor real da fila de
+            # revisão de memória (ISSUE-020) — antes, propor_candidata()
+            # nunca era chamado por nenhum fluxo real, só em teste.
+            novas_candidatas = mem.propor_candidatas_do_texto(user_text)
+            if novas_candidatas:
+                print(f"(percebi {len(novas_candidatas)} coisa(s) que parecem "
+                      "fato/preferência/tarefa — revise com: nomos memoria revisar)",
+                      file=sys.stderr)
             print(f"[rota={out.route} model={out.model}]", file=sys.stderr)
             return EXIT_OK
         return EXIT_DENIED if "negad" in out.reason else EXIT_ERROR

@@ -560,6 +560,15 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
             if n_lembrancas:
                 say(c("fraco", f"(usei {n_lembrancas} lembrança(s) suas para "
                                "contextualizar)"))
+            # P2-1 (auditoria de 2026-07-17): mesmo produtor real de
+            # cli.py::one_turn() — o "modo simples" (nomos start) é o outro
+            # fluxo de chat de produção e tinha a mesma lacuna (fila de
+            # revisão de memória sempre vazia, ISSUE-020 nunca disparava).
+            novas_candidatas = mem.propor_candidatas_do_texto(linha)
+            if novas_candidatas:
+                say(c("fraco", f"({nome} percebeu {len(novas_candidatas)} "
+                               "coisa(s) que parecem fato/preferência/tarefa "
+                               "— reveja com: nomos memoria revisar)"))
         else:
             say(resposta_demo(linha, nome))
             say(c("fraco", f"(detalhe técnico: {out.reason})"))
