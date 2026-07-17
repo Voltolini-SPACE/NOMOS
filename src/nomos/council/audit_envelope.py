@@ -299,7 +299,12 @@ class CouncilAuditEnvelopeBuilder:
         n_cand = len(getattr(result, "candidates", []) or [])
         n_rev = len(getattr(result, "reviews", []) or [])
         fc = getattr(result, "failure_code", None)
-        fc_val = fc.value if hasattr(fc, "value") else fc
+        # Horizonte 3/item 3: `fc is not None` primeiro dá ao mypy uma
+        # guarda de tipo que ele reconhece (hasattr() sozinho não estreita
+        # "Any | None"); comportamento em runtime idêntico — se fc for
+        # None, hasattr(None, "value") já era False, então a ordem do
+        # 'and' não muda nenhum resultado, só a análise estática.
+        fc_val = fc.value if fc is not None and hasattr(fc, "value") else fc
 
         # metadata SEMPRE metadata-only: só contagens e código de falha
         base_md = {"candidate_count": n_cand, "review_count": n_rev,

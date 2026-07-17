@@ -15,9 +15,13 @@ ele nasce **desabilitado por construção** — mesma filosofia do CLI na MC14.
 Não chama o orquestrador, não constrói Vault/Policy/Audit, não persiste, não lê
 variáveis de ambiente, não abre arquivos, não usa relógio nem aleatoriedade —
 provado por AST em `tests/council/test_chat_conselho_disabled.py`. O módulo é
-puro: importa só `from __future__ import annotations`.
+puro: além de `from __future__ import annotations`, só importa `typing.TypeGuard`
+(Horizonte 3/item 3, 2026-07-17) — puramente estático, sem I/O/rede/tempo, não
+está em nenhuma lista proibida dos testes de pureza acima.
 """
 from __future__ import annotations
+
+from typing import TypeGuard
 
 # ---------------------------------------------------------------------------
 # Trava literal. Não vem de env, config ou argumento; não existe função pública
@@ -64,11 +68,17 @@ _DISABLED_MESSAGE = (
 )
 
 
-def is_conselho_command(message: object) -> bool:
+def is_conselho_command(message: object) -> TypeGuard[str]:
     """True se `message` é o chat command `/conselho` (com ou sem argumentos).
 
     Aceita exatamente `/conselho` ou `/conselho <algo>`; não casa prefixos
     coladinhos como `/conselhoxyz`.
+
+    TypeGuard[str] (Horizonte 3/item 3): comportamento em runtime idêntico
+    ao `-> bool` de antes — só descreve para o mypy a garantia que a função
+    já dava na prática (isinstance(message, str) é o primeiro check real
+    abaixo), permitindo aos chamadores usar `message.strip()` etc. logo
+    depois de `if is_conselho_command(message):` sem erro de tipo.
     """
     if not isinstance(message, str):
         return False

@@ -328,7 +328,8 @@ class DryRunAdapterCandidateProvider:
             return LocalCandidateResult(
                 candidates=[], failure_code=CouncilFailureCode.NO_ELIGIBLE_LOCAL_ENGINE,
                 warnings=["nenhum motor local"])
-        candidates, warnings = [], []
+        candidates: list[AnswerCandidate] = []
+        warnings: list[str] = []
         ultima_falha: LocalAdapterFailure | None = None
         for eng in self._engines:
             r = self.adapter.dry_run(eng, request)

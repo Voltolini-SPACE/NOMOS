@@ -285,7 +285,11 @@ def arbitrar(prompt: str, runners: list[EngineRunner], *,
               for i, c in enumerate(vivos)}
 
     agregados = {cid: _agregado(s) for cid, s in scores.items()}
-    melhor_id = max(agregados, key=agregados.get)
+    # Horizonte 3/item 3: __getitem__ em vez de .get — max() itera as
+    # CHAVES de agregados, então a chave sempre existe no próprio dict
+    # (comportamento idêntico); .get() tem retorno V|None por assinatura
+    # (mesmo sem default), o que o mypy não aceita como key de max().
+    melhor_id = max(agregados, key=agregados.__getitem__)
     melhor_cand = next(c for c in vivos if c.candidate_id == melhor_id)
     melhor_score = scores[melhor_id]
 

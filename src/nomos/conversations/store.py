@@ -24,6 +24,11 @@ _STOP = {"o", "a", "os", "as", "de", "da", "do", "e", "que", "para", "com",
 class ConversationStore:
     def __init__(self, path: Path | str, privado: bool = False):
         self.privado = privado
+        # Horizonte 3/item 3: tipo declarado explicitamente — os dois ramos
+        # abaixo atribuem tipos diferentes de propósito (":memory:" é só um
+        # marcador inerte no modo privado; nenhuma operação de Path é feita
+        # nele, só no ramo `else`, onde já é sempre um Path real).
+        self.path: str | Path
         if privado:
             self.path = ":memory:"
             self.conn = sqlite3.connect(":memory:")
@@ -87,6 +92,13 @@ class ConversationStore:
             "INSERT INTO conversas(criada_em, motor, agente, ultima_ts) "
             "VALUES (?, ?, ?, ?)", (time.time(), motor, agente, time.time()))
         self.conn.commit()
+        # Horizonte 3/item 3: lastrowid é `int | None` na assinatura do
+        # sqlite3 (só seria None sem INSERT bem-sucedido, o que não é o
+        # caso aqui — acabamos de inserir); o assert documenta essa
+        # garantia real para o mypy. int(None) já levantaria TypeError de
+        # qualquer forma antes desta mudança, então nenhum caminho feliz
+        # muda de comportamento.
+        assert cur.lastrowid is not None
         return int(cur.lastrowid)
 
     def add_turno(self, conversa_id: int, role: str, text: str) -> int:
@@ -106,6 +118,7 @@ class ConversationStore:
             ).fetchone()
             if atual and not atual[0]:
                 self._auto_titulo_tags(conversa_id, text)
+        assert cur.lastrowid is not None    # mesma garantia de nova_conversa()
         return int(cur.lastrowid)
 
     def _auto_titulo_tags(self, conversa_id: int, primeiro_texto: str) -> None:

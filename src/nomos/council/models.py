@@ -97,7 +97,15 @@ class _Model:
     SCHEMA: str = ""
 
     def to_dict(self) -> dict:
-        from dataclasses import asdict
+        from dataclasses import asdict, is_dataclass
+        # Horizonte 3/item 3 (2026-07-17): asdict() só aceita uma instância
+        # real de dataclass — todo subtipo real de _Model neste módulo é
+        # decorado com @dataclass (a própria _Model não é, de propósito:
+        # é um mixin). is_dataclass() aqui funciona como guarda de tipo
+        # para o mypy E como checagem de invariante real, sem custo no
+        # caminho feliz (sempre verdadeiro para instâncias reais).
+        assert is_dataclass(self) and not isinstance(self, type), (
+            f"{type(self).__name__} precisa ser um dataclass para usar to_dict()")
         d = {"schema": self.SCHEMA}
         d.update({k: _ser(v) for k, v in asdict(self).items()})
         return d
@@ -114,6 +122,17 @@ class _Model:
             raise CouncilModelError(
                 f"schema inválido: esperado {cls.SCHEMA!r}, veio {sc!r}")
         return {k: v for k, v in data.items() if k != "schema"}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "_Model":
+        """Cada subtipo real (toda classe abaixo neste módulo) sobrescreve
+        este método — confirmado por leitura de código, uma por uma. Esta
+        base só existe para dar um erro claro caso _Model seja usada
+        diretamente por engano, e para satisfazer o mypy (Horizonte 3/
+        item 3): antes, `cls.from_dict` não existia em _Model, então
+        `from_json` (que chama por baixo) era 'attr-defined' para o mypy
+        apesar de sempre resolver corretamente em runtime via override."""
+        raise NotImplementedError(f"{cls.__name__} precisa implementar from_dict")
 
     @classmethod
     def from_json(cls, texto: str):

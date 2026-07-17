@@ -115,6 +115,12 @@ class Memory:
             (time.time(), role, text),
         )
         self.conn.commit()
+        # Horizonte 3/item 3: lastrowid é `int | None` na assinatura do
+        # sqlite3 (só None sem INSERT bem-sucedido — não é o caso logo
+        # após um INSERT real); assert documenta a garantia para o mypy,
+        # sem mudar o caminho feliz (int(None) já levantaria TypeError
+        # antes desta mudança).
+        assert cur.lastrowid is not None
         return int(cur.lastrowid)
 
     def remember_typed(self, text: str, tipo: str = "fato", fonte: str = "usuario",
@@ -130,6 +136,7 @@ class Memory:
             "VALUES (?, 'note', ?, ?, ?, ?)",
             (time.time(), text, tipo, fonte, float(confianca)))
         self.conn.commit()
+        assert cur.lastrowid is not None    # mesma garantia de remember(), acima
         return int(cur.lastrowid)
 
     def contradicoes(self, text: str, k: int = 3) -> list:
@@ -144,6 +151,7 @@ class Memory:
             "INSERT INTO mem_candidatas(ts, tipo, text, fonte) VALUES (?, ?, ?, ?)",
             (time.time(), tipo, text, fonte))
         self.conn.commit()
+        assert cur.lastrowid is not None    # mesma garantia de remember(), acima
         return int(cur.lastrowid)
 
     def propor_candidatas_do_texto(self, text: str, fonte: str = "chat") -> list[int]:

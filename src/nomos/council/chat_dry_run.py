@@ -38,6 +38,7 @@ from nomos.council.cli_info import (
     status_message,
 )
 from nomos.council.forbidden_flags import FORBIDDEN_FLAGS, is_forbidden_flag
+from nomos.council.models import CouncilMode
 from nomos.council.safe_output import build_safe_output, render_json_output
 
 # --------------------------------------------------------------------------
@@ -51,12 +52,15 @@ DENIED_CODE = "[NOMOS-MC-CHAT-DENIED]"
 # session_id fixo: não vem do prompt; sem relógio/aleatoriedade.
 _SESSION_ID = "chat-conselho-simular"
 
-# Português (UX) -> valor interno do CouncilMode.
-_MODE_MAP = {
-    "rapido": "fast",
-    "balanceado": "balanced",
-    "critico": "critical",
-    "paranoico": "paranoid",
+# Português (UX) -> valor interno do CouncilMode. Tipado com o enum
+# diretamente (Horizonte 3/item 3, mesmo ajuste de cli_dry_run.py) em vez
+# de string solta: o valor já era coercionado para CouncilMode em runtime
+# via _coerce_enum() dentro de CouncilOrchestrationInput.
+_MODE_MAP: dict[str, CouncilMode] = {
+    "rapido": CouncilMode.FAST,
+    "balanceado": CouncilMode.BALANCED,
+    "critico": CouncilMode.CRITICAL,
+    "paranoico": CouncilMode.PARANOID,
 }
 _MODE_DEFAULT = "balanceado"
 

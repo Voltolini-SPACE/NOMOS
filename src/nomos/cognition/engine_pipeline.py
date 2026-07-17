@@ -41,7 +41,16 @@ class PipelineAudit:
         if self.audit_log is None:
             return
         try:
-            self.audit_log.append(f"pipeline.{evento}", **meta)
+            # Horizonte 3/item 3: `audit_log: object` é proposital (duck
+            # typing deliberado — este módulo não quer acoplamento com o
+            # tipo concreto AuditLog). O try/except abaixo já existe
+            # exatamente para tolerar um objeto que não tenha .append (ou
+            # que falhe por qualquer outro motivo); um Protocol tornaria a
+            # garantia mais forte do que o código realmente promete, e um
+            # assert quebraria o próprio propósito do except. A supressão
+            # abaixo documenta a lacuna real para o mypy, sem fingir uma
+            # garantia que não existe — comportamento em runtime inalterado.
+            self.audit_log.append(f"pipeline.{evento}", **meta)  # type: ignore[attr-defined]
         except Exception:
             # auditoria externa indisponível não derruba o pipeline; o coletor
             # local (self.eventos) preserva o rastro da decisão
