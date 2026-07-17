@@ -1779,9 +1779,17 @@ class DashboardServer:
                                             chat=self._chat(base, query),
                                             decidido=decidido)
                     except Exception as exc:   # painel nunca derruba nada
+                        # P2-9 da auditoria de 2026-07-17: era texto puro sem
+                        # o visual do resto do site — agora reusa _subpagina()
+                        # como as demais subpáginas (audit/roteador).
+                        corpo_erro = (
+                            "<h2>⚠️ painel indisponível</h2>"
+                            f"<p>Erro interno: <code>{html.escape(type(exc).__name__)}"
+                            "</code></p><p><small>detalhes não exibidos por "
+                            "segurança — verifique <code>~/.nomos/logs/</code>."
+                            "</small></p>")
                         return self._responder(
-                            500, f"painel indisponível: {type(exc).__name__}",
-                            "text/plain")
+                            500, _subpagina("painel indisponível", corpo_erro, base))
                     return self._responder(200, corpo)
                 if caminho == base + "/api":
                     return self._api(query)
@@ -2014,9 +2022,15 @@ class DashboardServer:
                     linhas.append("<p><small>dados, não ação: executar continua "
                                   "passando pelo gate de aprovação</small></p>")
                 except Exception as exc:
+                    # P2-9 da auditoria de 2026-07-17: idem — página estilizada
+                    # em vez de texto puro, consistente com o resto do painel.
+                    corpo_erro = (
+                        "<h2>⚠️ roteador indisponível</h2>"
+                        f"<p>Erro interno: <code>{e(type(exc).__name__)}</code></p>"
+                        "<p><small>detalhes não exibidos por segurança — "
+                        "verifique <code>~/.nomos/logs/</code>.</small></p>")
                     return self._responder(
-                        500, f"roteador indisponível: {type(exc).__name__}",
-                        "text/plain")
+                        500, _subpagina("roteador indisponível", corpo_erro, base))
                 self._responder(200, _subpagina("roteador", "\n".join(linhas),
                                                 base))
 

@@ -100,6 +100,61 @@ def test_painel_nunca_derruba_com_erro_interno(nomos_home, monkeypatch):
         srv.stop()
 
 
+# ---------------- P2-9 (auditoria de 2026-07-17): 500 estilizado ----------------
+# Antes, o erro 500 da página raiz e do /roteador devolvia texto puro
+# ("painel indisponível: RuntimeError"), destoando visualmente do resto do
+# site (que sempre usa _subpagina()/_doc() — mesmo <html>, mesmo CSS, mesmo
+# cabeçalho "NOMOS — ..."). /api e /health continuam de propósito como
+# texto/JSON puro: são endpoints de máquina, não páginas navegadas por
+# humano — não fazem parte deste achado.
+def test_painel_erro_500_pagina_raiz_e_estilizado(nomos_home, monkeypatch):
+    ctx = _ctx(nomos_home)
+    srv = DashboardServer(ctx)
+    url = srv.start()
+    try:
+        import nomos.interface.painel_web as pw
+        monkeypatch.setattr(pw, "dados_dashboard",
+                            lambda c: (_ for _ in ()).throw(RuntimeError("boom")))
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(url, timeout=5)  # nosec B310
+        assert e.value.code == 500
+        assert e.value.headers.get("Content-Type", "").startswith("text/html")
+        corpo = e.value.read().decode()
+        assert "RuntimeError" in corpo
+        assert "boom" not in corpo                  # sem detalhes internos
+        # mesmo documento/visual do resto do painel (via _subpagina/_doc)
+        assert "<!doctype html>" in corpo.lower()
+        assert 'class="app"' in corpo
+        assert "← voltar ao painel" in corpo
+    finally:
+        srv.stop()
+
+
+def test_painel_erro_500_roteador_e_estilizado(nomos_home, monkeypatch):
+    ctx = _ctx(nomos_home)
+    srv = DashboardServer(ctx)
+    url = srv.start()
+    try:
+        from nomos.cognition import engine_router as er
+
+        def _quebra(*a, **k):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(er, "relatorio_decisao", _quebra)
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(f"{url}roteador/", timeout=5)  # nosec B310
+        assert e.value.code == 500
+        assert e.value.headers.get("Content-Type", "").startswith("text/html")
+        corpo = e.value.read().decode()
+        assert "RuntimeError" in corpo
+        assert "boom" not in corpo
+        assert "<!doctype html>" in corpo.lower()
+        assert 'class="app"' in corpo
+        assert "← voltar ao painel" in corpo
+    finally:
+        srv.stop()
+
+
 def test_painel_escapa_html_de_skill_e_rotina(nomos_home):
     """F1/ISSUE-005: nome com <script> sai escapado, nunca cru."""
     from nomos.interface.painel_web import dados_dashboard, render_html
