@@ -230,6 +230,7 @@ _CSS = """
    padding:.4rem 1.1rem;cursor:pointer;border:1px solid var(--dim);
    background:var(--surface2);color:var(--neon);align-self:flex-end}
  .composer button:hover{background:rgba(90,247,142,.12)}
+ .composer button:disabled{opacity:.6;cursor:progress}
  .chat-nota{color:var(--fraco);font-size:.72rem;margin:.4rem 0 0}
 
  /* recolhíveis: detalhe dá acesso sem poluir (fecha por padrão) */
@@ -367,6 +368,19 @@ _JS = """
  if(rel){rel.textContent=new Date().toLocaleTimeString();
    setInterval(function(){
      rel.textContent=new Date().toLocaleTimeString();},1000);}
+ // achado P1-6 (auditoria 2026-07-17): enviar uma mensagem no chat não
+ // dava NENHUM indicador de carregamento — como a geração roda síncrona
+ // na mesma thread HTTP, a aba parecia travada enquanto o motor pensava.
+ // O submit continua um POST normal (sem fetch/JS extra na resposta);
+ // isto só trava o botão e avisa, durante a espera pela próxima página.
+ document.querySelectorAll('form.composer').forEach(function(cf){
+   cf.addEventListener('submit',function(){
+     var b=cf.querySelector('button[type="submit"]');
+     var ta=cf.querySelector('textarea[name="mensagem"]');
+     if(ta&&!ta.value.trim())return;   // required cuida da validação nativa
+     if(b){b.disabled=true;b.textContent='enviando…';b.setAttribute('aria-busy','true');}
+   });
+ });
 })();
 """
 
@@ -919,15 +933,28 @@ def _bloco_ao_vivo(d: dict) -> str:
     return "".join(partes)
 
 
-def _secao_aprovacoes(aprovacoes: list[dict] | None, n_meta: int) -> str:
+def _secao_aprovacoes(aprovacoes: list[dict] | None, n_meta: int,
+                      decidido: dict | None = None) -> str:
     """A ÚNICA porta de ação do painel — e ela é o gate, não um atalho.
 
     Sem fila anexada (``aprovacoes=None``): seção informativa, sem <form>.
     Com fila: cada card carrega o token single-use da própria solicitação;
     decidir consome o token (reuso/expirada = recusa na fila, não aqui).
+
+    ``decidido`` (achado P1-7, auditoria 2026-07-17): banner explícito
+    logo após uma decisão — antes, a única evidência de sucesso era a
+    lista de pendentes encolher, sem nenhuma confirmação direta.
     """
     e = html.escape
     corpo = ['<h2 id="aprovacoes">Aprovações — você decide</h2>']
+    if decidido and decidido.get("acao") in ("aprovar", "negar"):
+        veredito = "APROVADA ✅" if decidido["acao"] == "aprovar" else "NEGADA ⛔"
+        rid = decidido.get("id", "")
+        corpo.append(
+            f'<div class="card ok" role="status" aria-live="polite">'
+            f'Decisão registrada: solicitação {veredito}'
+            + (f' <small>(id {e(rid)})</small>' if rid else "")
+            + "</div>")
     if aprovacoes is None:
         rodape = (f"{n_meta} pendente(s) na fila — decida no terminal "
                   "(<code>nomos approvals list</code>)" if n_meta else
@@ -1039,11 +1066,14 @@ def _secao_mosaic() -> list[str]:
 
 def render_html(d: dict, refresh: int | None = None,
                 aprovacoes: list[dict] | None = None,
-                chat: dict | None = None) -> str:
+                chat: dict | None = None,
+                decidido: dict | None = None) -> str:
     """Página única (abas) com todas as seções — âncoras estáveis (MC33).
 
     ``aprovacoes=None`` ⇒ nenhum <form> de aprovação (read-only). ``chat=None``
     ou desligado ⇒ nenhum <form> de chat (a aba chat vira histórico read-only).
+    ``decidido={"acao": "aprovar"|"negar", "id": str}`` ⇒ banner de
+    confirmação da última decisão (achado P1-7, auditoria 2026-07-17).
     """
     e = html.escape
     classe = {"PRONTO": "ok", "PARCIAL": "warn",
@@ -1103,7 +1133,7 @@ def render_html(d: dict, refresh: int | None = None,
         f'{"modo só-local LIGADO 🔒" if d["so_local"] else "motores externos plugados 🔌"}'
         f"<br>próximo passo: <code>{e(d['proximo_passo'])}</code></div>")
     aba_visao.append(_bloco_ao_vivo(d))
-    aba_visao.append(_secao_aprovacoes(aprovacoes, n_aprov))
+    aba_visao.append(_secao_aprovacoes(aprovacoes, n_aprov, decidido))
     aba_visao.append('<h2 id="checkup">Check-up</h2>')
     for it in d["checkup"]:
         marca = "✅" if it["ok"] else ("❌" if it.get("bloqueante") else "⚠️")
@@ -1734,11 +1764,20 @@ class DashboardServer:
                     m = re.search(r"(?:^|&)refresh=(\d{1,4})(?:&|$)", query)
                     if m and 5 <= int(m.group(1)) <= 3600:
                         refresh = int(m.group(1))   # fora da faixa: ignorado
+                    # achado P1-7: banner de confirmação pós-decisão de
+                    # aprovação, lido da URL de redirect (PRG) do POST.
+                    decidido = None
+                    qs = parse_qs(query)
+                    acao_dec = (qs.get("decidido") or [""])[0]
+                    if acao_dec in ("aprovar", "negar"):
+                        decidido = {"acao": acao_dec,
+                                   "id": (qs.get("id") or [""])[0]}
                     try:
                         corpo = render_html(_dados(),
                                             refresh=refresh,
                                             aprovacoes=self._aprovacoes(base),
-                                            chat=self._chat(base, query))
+                                            chat=self._chat(base, query),
+                                            decidido=decidido)
                     except Exception as exc:   # painel nunca derruba nada
                         return self._responder(
                             500, f"painel indisponível: {type(exc).__name__}",
@@ -2132,9 +2171,16 @@ class DashboardServer:
                     painel.fila.decide(rid, token, approve=(acao == "aprovar"))
                 except ApprovalError as exc:
                     return _erro(409, "decisão recusada", f"recusado: {exc}")
-                # PRG: decidir → recarregar o painel (evita repost no F5)
+                # PRG: decidir → recarregar o painel (evita repost no F5).
+                # Achado P1-7 (auditoria 2026-07-17): decidir uma aprovação
+                # não dava NENHUMA confirmação visual clara — só a lista
+                # encolhia. Agora a URL de destino carrega o resultado da
+                # decisão para o painel mostrar um banner explícito.
+                from urllib.parse import quote
+                destino = (base + f"/?decidido={quote(acao)}&id={quote(rid)}"
+                           "#aprovacoes")
                 self.send_response(303)
-                self.send_header("Location", base + "/#aprovacoes")
+                self.send_header("Location", destino)
                 for k, v in _HEADERS_SEGURANCA.items():
                     self.send_header(k, v)
                 self.end_headers()
