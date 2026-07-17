@@ -152,13 +152,27 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
     tobj = tema_mod.carregar(perfil)
     demo = perfil.get("modo_cerebro") == "demo"
     ultima_rota = {"motor": None}   # para /bem e /mal (feedback local)
-    ultima_troca = {"mensagens": None}   # para /contexto (transparência total)
+    # Horizonte 3/missao de debitos, P2 (2026-07-17): anotacao explicita --
+    # o literal `{"mensagens": None}` sozinho faz mypy inferir
+    # `dict[str, None]` (o unico valor presente e None), mas a linha 601
+    # (mais abaixo) grava ali o `contexto` real enviado ao motor
+    # (list[dict[str, str]]) sempre que uma mensagem e processada. O tipo
+    # correto e a uniao dos dois usos reais: nunca gravado (None, estado
+    # inicial) ou a lista de mensagens da ultima troca. Mudanca so de
+    # anotacao -- o valor inicial em tempo de execucao continua None.
+    ultima_troca: dict[str, list[dict[str, str]] | None] = {"mensagens": None}
     # F2: histórico. Modo privado (perfil) => store em memória, não toca o disco.
     from nomos.conversations.store import ConversationStore
     privado0 = bool(perfil.get("conversa_privada"))
     conv_store = ConversationStore(ctx["home"] / "conversas.db", privado=privado0)
     conversa_id = conv_store.nova_conversa()
-    estado_privado = {"on": privado0}
+    # Horizonte 3/missao de debitos, P2: mesma causa raiz de ultima_troca
+    # acima -- o literal `{"on": privado0}` faz mypy inferir
+    # `dict[str, bool]` (privado0 e bool), mas a linha ~427 (mais abaixo)
+    # tambem usa este dict como "bag" de estado da sessao para guardar o
+    # contexto retomado de /continuar (list[dict[str, str]]). Anotacao
+    # ampliada para refletir o uso real; comportamento inalterado.
+    estado_privado: dict[str, bool | list[dict[str, str]]] = {"on": privado0}
     say(c("fraco", f"({nome} pronto — /ajuda mostra os comandos)"))
     while True:
         try:
@@ -310,6 +324,23 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                     f"Dica: {motores.DICAS['codigo']}")
                 continue
             modelo = m.get("detalhe")
+            if not modelo:
+                # Horizonte 3/missao de debitos, P2 (2026-07-17): defensivo.
+                # motores.ativo() so devolve motores com disponivel=True, e
+                # no mapa de "codigo" (cognition/motores.py) disponivel e
+                # detalhe SEMPRE derivam da MESMA variavel de origem
+                # (cod_local/texto_local) -- ou seja, disponivel=True hoje
+                # implica detalhe ser uma string nao-vazia, e este ramo nao
+                # deveria disparar com o codigo atual. Mesmo assim, sem essa
+                # checagem, mypy so ve `m.get("detalhe")` como `Any | None`
+                # (Optional) e um None real aqui viraria TypeError dentro de
+                # OllamaProvider(model=None). A guarda deixa explicito o
+                # contrato esperado, da a mypy o estreitamento necessario, e
+                # falha com mensagem amigavel (nao um traceback) se essa
+                # correlacao mudar no futuro.
+                say(f"{nome}: ainda estou sem motor de código. "
+                    f"Dica: {motores.DICAS['codigo']}")
+                continue
             sistema = (f"Você é {nome}, programador(a) sênior. Responda em português "
                        "com código claro e comentado. Nunca invente APIs.")
             try:
@@ -386,8 +417,15 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
         if linha == "/privado":
             estado_privado["on"] = not estado_privado["on"]
             conv_store.close()
+            # bool(...) (Horizonte 3/missao de debitos, P2): estado_privado
+            # agora e dict[str, bool | list[...]] (mesmo dict serve de bag
+            # para "on" e "retomado"), entao estado_privado["on"] e
+            # estaticamente bool | list[...] mesmo sendo SEMPRE bool em tempo
+            # de execucao (unica chave que recebe esse valor). bool() e
+            # no-op para um bool real e da a mypy o tipo exato que
+            # ConversationStore(privado: bool) exige.
             conv_store = ConversationStore(ctx["home"] / "conversas.db",
-                                           privado=estado_privado["on"])
+                                           privado=bool(estado_privado["on"]))
             conversa_id = conv_store.nova_conversa()
             if estado_privado["on"]:
                 say(f"{nome}: modo privado LIGADO 🕶️ — esta conversa NÃO será "
@@ -590,9 +628,19 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
         if bloco_rag:
             contexto.append({"role": "system", "content": bloco_rag})
         # /continuar: injeta o contexto retomado uma única vez (antes do recente)
-        retomado = estado_privado.pop("retomado", None)
-        if retomado:
-            contexto += retomado
+        # Horizonte 3/missao de debitos, P2: nome proprio ("retomado_injetado",
+        # nao "retomado") -- o comando /continuar (mais acima) ja usa
+        # "retomado" para o list[dict] devolvido por
+        # conv_store.turnos_para_contexto(); mypy infere um unico tipo
+        # estatico por nome de variavel na funcao inteira, e os dois ramos
+        # sao mutuamente exclusivos em runtime mas nao para mypy. isinstance()
+        # estreita o tipo de dict[str, bool | list[...]].pop(...) (que
+        # devolve bool | list[dict[str, str]] | None) para list antes do uso,
+        # em vez de um truthy-check generico que mypy nao aproveita para
+        # estreitamento de Union. Comportamento identico ao anterior.
+        retomado_injetado = estado_privado.pop("retomado", None)
+        if isinstance(retomado_injetado, list):
+            contexto += retomado_injetado
         contexto += [
             {"role": ("assistant" if m.role == "assistant" else "user"), "content": m.text}
             for m in reversed(mem.recent(6)) if m.role in {"user", "assistant"}
