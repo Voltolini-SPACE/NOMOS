@@ -99,6 +99,49 @@ def _rodar_skill_conversa(ctx, nome_skill: str, argumentos, aprovador,
     return False, f"a skill '{nome_skill}' falhou (rc={rc})"
 
 
+# ---------------------------------------------------------------------------
+# Missão de eliminação de débitos residuais do Horizonte 3 (auditoria de
+# 2026-07-17), Prioridade 1, parte b: roteamento de intenção para AGENTES
+# especializados na conversa — mesmo padrão da oferta de skill acima
+# (determinístico, keyword, no máximo uma sugestão por turno, só o texto
+# DIGITADO decide, humano confirma sim/não). Primeiro caller de produção de
+# `AgentRegistry.sugerir()` (até aqui só testado em isolamento). Só é
+# checado quando NENHUMA skill casou, para não ofertar duas coisas no
+# mesmo turno — skills são o mecanismo mais antigo e continuam tendo
+# prioridade.
+# ---------------------------------------------------------------------------
+
+def _sugerir_agente_conversa(ctx, texto: str):
+    """(manifesto, ferramenta) do agente sugerido, ou None.
+
+    Ferramenta escolhida de forma determinística: a primeira declarada no
+    manifesto do agente — reflete a ordem de prioridade que o autor do
+    agente já expressou (ex.: 'programador' declara codigo_gerar primeiro,
+    seu propósito central). As 8 ferramentas da allowlist têm execução real
+    desde a parte a) desta mesma missão (agents/execucao.py)."""
+    from nomos.agents.registry import AgentRegistry
+    reg = AgentRegistry(ctx["home"])
+    mf = reg.sugerir(texto)
+    if not mf or not mf.ferramentas:
+        return None
+    return mf, mf.ferramentas[0]
+
+
+def _usar_agente_conversa(ctx, mf, ferramenta: str, alvo: str, aprovador,
+                          router) -> tuple[bool, str]:
+    """Executa ferramenta de agente a partir da conversa: o MESMO
+    AgentToolBoundary + agents.execucao usados por `nomos agentes usar`
+    (nenhum caminho de autorização novo)."""
+    from nomos.agents.boundary import AgentToolBoundary
+    from nomos.agents.execucao import ferramentas_wired
+    boundary = AgentToolBoundary(mf, ctx["policy"], aprovador, audit=ctx.get("audit"))
+    wired = ferramentas_wired(ctx, alvo=alvo, aprovador=aprovador, router=router)
+    if ferramenta not in wired:
+        return False, f"'{ferramenta}' não está disponível nesta versão."
+    ok, resultado = boundary.usar_ferramenta(ferramenta, wired[ferramenta], alvo=alvo)
+    return ok, str(resultado)
+
+
 def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool = True,
                  aprovador=None, say_token=None) -> int:
     c = lambda n, t: cor(n, t, colorido)
@@ -494,9 +537,11 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
             continue
         from nomos.cognition.prompt_guard import texto_confiavel
         from nomos.ext import skill_intencao as intencao
-        # F1/ISSUE-001: a oferta de skill considera SÓ o texto digitado pelo
-        # usuário — nunca conteúdo recuperado de arquivo/memória.
-        sugestao = intencao.sugerir_skill(texto_confiavel(linha), ctx["home"],
+        # F1/ISSUE-001: a oferta de skill (e, agora, a de agente) considera
+        # SÓ o texto digitado pelo usuário — nunca conteúdo recuperado de
+        # arquivo/memória.
+        texto_digitado = texto_confiavel(linha)
+        sugestao = intencao.sugerir_skill(texto_digitado, ctx["home"],
                                           ctx.get("skills") or (ctx["home"] / "skills"))
         if sugestao:
             say(f"{nome}: posso usar a skill '{sugestao['name']}' para isso"
@@ -514,6 +559,31 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                 mem.remember("note", f"skill {sugestao['name']} usada na conversa")
                 continue
             say(c("fraco", "(ok, sigo eu mesmo)"))
+        else:
+            # H3/missão de débitos residuais, P1b: agente especializado por
+            # intenção — só ofertado quando nenhuma skill casou (evita duas
+            # ofertas no mesmo turno; skills têm prioridade por serem o
+            # mecanismo mais antigo).
+            sugestao_agente = _sugerir_agente_conversa(ctx, texto_digitado)
+            if sugestao_agente:
+                mf_ag, ferramenta_ag = sugestao_agente
+                say(f"{nome}: posso acionar o agente '{mf_ag.name}' "
+                    f"(ferramenta '{ferramenta_ag}') para isso — {mf_ag.objetivo}. "
+                    "Quer? (sim/não)")
+                try:
+                    resp = ask("> ").strip().casefold()
+                except (EOFError, KeyboardInterrupt):
+                    say("")
+                    resp = "não"
+                if resp == "sim":
+                    motor = router if ferramenta_ag in ("codigo_gerar", "arquivo_resumir") else None
+                    ok, msg = _usar_agente_conversa(ctx, mf_ag, ferramenta_ag,
+                                                    texto_digitado, aprovador, motor)
+                    say(f"{nome}: {msg}")
+                    mem.remember("note",
+                                f"agente {mf_ag.name} ({ferramenta_ag}) usado na conversa")
+                    continue
+                say(c("fraco", "(ok, sigo eu mesmo)"))
         from nomos.cognition import rag
         bloco_rag, n_lembrancas = rag.contexto_relevante(mem, linha)
         contexto = [{"role": "system", "content": system_prompt(perfil)}]
