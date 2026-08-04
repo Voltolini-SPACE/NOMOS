@@ -35,6 +35,14 @@ jobs:
     name: Construir e publicar release
     needs: validar
     runs-on: ubuntu-latest
+    # Escopo mínimo por-job: attestations exige id-token para assinar via
+    # Sigstore/Fulcio; attestations:write persiste a atestação SLSA anexada
+    # ao repositório. contents:write continua necessário para a criação da
+    # release em si (softprops/action-gh-release).
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -45,6 +53,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip build
           python -m build
+
+      - name: "Attestation SLSA de proveniência (wheel + sdist)"
+        # Emite uma atestação SLSA-provenance assinada por Sigstore/Fulcio
+        # para cada artefato distribuível (wheel e sdist), antes de o dist/
+        # receber instaladores/SBOM/SHA256SUMS. A verificação pelo
+        # consumidor final é `gh attestation verify <artefato> -R
+        # Voltolini-SPACE/NOMOS` — deve retornar sucesso e o predicate
+        # https://slsa.dev/provenance/v1.
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            dist/*.whl
+            dist/*.tar.gz
 
       - name: Smoke do wheel construído + gerar SBOM
         run: |
