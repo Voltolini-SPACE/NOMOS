@@ -50,7 +50,19 @@ jobs:
           python-version: "3.12"
 
       - name: Construir wheel + sdist
+        # Reproducibilidade: SOURCE_DATE_EPOCH (padrão reproducible-builds.org)
+        # fixa mtimes internos ao instante do commit da tag, para que dois
+        # builds do mesmo SHA produzam artefatos com metadados normalizados.
+        # PYTHONHASHSEED=0 elimina o outro grande vetor de não-determinismo
+        # (ordenação de dicts durante o build). Bitwise-identity de wheel
+        # continua fora do escopo (pip/build ainda embutem detalhes do
+        # ambiente), mas a variação entre runs cai drasticamente.
+        env:
+          PYTHONHASHSEED: "0"
         run: |
+          SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
+          export SOURCE_DATE_EPOCH
+          echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH ($(date -u -d @$SOURCE_DATE_EPOCH -Iseconds))"
           python -m pip install --upgrade pip build
           python -m build
 
@@ -68,12 +80,22 @@ jobs:
             dist/*.tar.gz
 
       - name: Smoke do wheel construído + gerar SBOM
+        # SOURCE_DATE_EPOCH também para o SBOM: timestamp e serialNumber
+        # deterministicos, e cada artefato distribuível (wheel/sdist) é
+        # referenciado por sha256 dentro do SBOM — o SBOM deixa de "flutuar"
+        # sobre o dist/, passa a apontar para os arquivos exatos que ele
+        # descreve.
+        env:
+          PYTHONHASHSEED: "0"
         run: |
+          SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
+          export SOURCE_DATE_EPOCH
           python -m venv /tmp/venv-release
           /tmp/venv-release/bin/pip install --quiet dist/*.whl
           /tmp/venv-release/bin/nomos --version
           NOMOS_HOME=/tmp/nomos-release-smoke /tmp/venv-release/bin/nomos doutor
-          /tmp/venv-release/bin/python tools/make_sbom.py dist/sbom.cdx.json
+          /tmp/venv-release/bin/python tools/make_sbom.py \
+            dist/sbom.cdx.json dist/*.whl dist/*.tar.gz
 
       - name: Anexar instaladores e gerar SHA256SUMS
         run: |
