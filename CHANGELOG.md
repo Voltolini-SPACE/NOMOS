@@ -4,6 +4,53 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+## [1.3.0rc19] — 2026-08-04 (H4.8: supply-chain hardening — Node 24, build attestations SLSA, builds reproducible-friendly, SBOM amarrado por sha256 aos artefatos)
+
+### Changed (CI/CD)
+- **GitHub Actions migradas para Node 24**. Runner passou a deprecar Node 20
+  em 2025-09-19; sem migração, o warning "Node.js 20 is deprecated" aparecia
+  em todo run do release rc18. Versões estáveis mais recentes escolhidas:
+  `actions/checkout` v4→v7, `actions/setup-python` v5→v7,
+  `softprops/action-gh-release` v2→v3, `actions/configure-pages` v5→v6,
+  `actions/upload-pages-artifact` v3→v5, `actions/deploy-pages` v4→v5.
+  Nenhuma mudança em runtime, permissions, matrix ou cache.
+
+### Added (supply chain)
+- **Attestation SLSA-provenance nos artefatos de release** via
+  `actions/attest-build-provenance@v4` (Sigstore/Fulcio). Emitida para o
+  wheel e o sdist logo após o build, antes de o `dist/` receber
+  instaladores/SBOM/SHA256SUMS. Permissões `id-token: write` +
+  `attestations: write` movidas para escopo por-job (só o job `publicar`,
+  não `validar`). Consumidor verifica com
+  `gh attestation verify <artefato> -R Voltolini-SPACE/NOMOS` — sucesso
+  significa que o artefato saiu deste workflow no commit da tag, e não
+  de outra máquina/ramo/cadeia interceptada.
+- **SBOM referencia wheel/sdist por sha256**. `tools/make_sbom.py` (v0.1.0
+  → v0.2.0) aceita caminhos de artefato como argumentos posicionais extras
+  e os embute em `metadata.component.externalReferences[type=distribution]`
+  com hash SHA-256. O SBOM deixa de "flutuar" sobre `dist/` e passa a
+  apontar para os arquivos exatos que descreve.
+
+### Added (docs)
+- **`docs/INSTALL.md` ganhou seção "Cadeia de suprimentos"**: descreve as
+  três camadas independentes (SHA256SUMS + SBOM CycloneDX + attestation
+  SLSA), com os comandos exatos de verificação.
+
+### Fixed (build reproducibility)
+- **`SOURCE_DATE_EPOCH` derivado do commit da tag** aplicado ao passo de
+  build (`python -m build`) e ao passo de geração de SBOM. Fixa mtimes
+  internos ao instante do commit em vez do wall-clock do runner.
+  Complementado por `PYTHONHASHSEED=0` para eliminar não-determinismo por
+  ordenação de dicts. Bitwise-identity de wheel continua fora do escopo
+  (pip/build embutem detalhes do ambiente na METADATA), mas a variação
+  cai de "hash sempre diferente" para "hash diferente só quando o ambiente
+  do runner muda".
+- **SBOM determinístico**: quando `SOURCE_DATE_EPOCH` está no ambiente,
+  `timestamp` deriva dele (mesma UTC, mesmo instante) e `serialNumber`
+  passa a ser `uuid5` sobre namespace fixo + purl@epoch (em vez de `uuid4`
+  aleatório). `json.dump(sort_keys=True)`. Verificado localmente: dois
+  runs com o mesmo `SOURCE_DATE_EPOCH` produzem SBOM bit-a-bit idêntico.
+
 ## [1.3.0rc18] — 2026-08-04 (Fase 0 higiene + Horizontes 1–3 + H3-missão-débitos + H4 + H4.5: mypy 0 erros em todo o src/nomos, CI reproduzido em Python 3.12 real, `doutor`/`PolicyEngine` resilientes a config corrompida com quarentena forense do arquivo original, gate AST contra bypass do `AgentToolBoundary`, contratos residuais do Council fortalecidos)
 
 ### Fixed (Fase 0 — higiene pós-validação: 7 achados de uma auditoria externa)
