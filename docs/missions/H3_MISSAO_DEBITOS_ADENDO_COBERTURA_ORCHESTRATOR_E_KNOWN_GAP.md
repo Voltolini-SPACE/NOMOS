@@ -258,7 +258,7 @@ precisa de análise cuidadosa de quem mais chama `load_agent()` e depende
 hoje de exceções propagando (mudança de contrato, não só um detalhe
 interno).
 
-### 4.2 Achado (novo, encontrado nesta investigação): `policy.json` sintaticamente válido mas de tipo errado derruba `PolicyEngine.decide()`, e `nomos doutor` não detecta
+### 4.2 [CORRIGIDO em H4/HIGH-02 — ver nota abaixo] `policy.json` sintaticamente válido mas de tipo errado derruba `PolicyEngine.decide()`, e `nomos doutor` não detecta
 
 **Onde:** `src/nomos/kernel/policy.py` (`PolicyEngine.rules()` e
 `PolicyEngine.decide()`) + `src/nomos/simple/doutor.py`
@@ -319,25 +319,50 @@ EVIDÊNCIA=True (fail-closed correto, sem crash)
 RESULTADO=confirma que a lacuna NÃO é geral — é específica de PolicyEngine
 ```
 
-**Por que não foi corrigido neste corte:** corrigir exigiria decidir uma
-política de tratamento (validar shape em `PolicyEngine.rules()` e tratar
-como se fosse ilegível? ensinar `doutor._ilegivel()` a checar
-`isinstance(..., dict)` também?) — uma mudança de comportamento real do
-kernel de política, fora do escopo declarado deste adendo (que é
-exclusivamente cobertura de teste de `council/orchestrator.py`). Misturar
-essa correção aqui violaria a regra de não agrupar correções de domínios
-diferentes no mesmo commit.
+**Por que não foi corrigido no momento em que este adendo foi escrito
+originalmente:** corrigir exigiria decidir uma política de tratamento
+(validar shape em `PolicyEngine.rules()` e tratar como se fosse ilegível?
+ensinar `doutor._ilegivel()` a checar `isinstance(..., dict)` também?) —
+uma mudança de comportamento real do kernel de política, fora do escopo
+declarado deste adendo (que era exclusivamente cobertura de teste de
+`council/orchestrator.py`). Misturar essa correção ali teria violado a
+regra de não agrupar correções de domínios diferentes no mesmo commit.
 
-**Ação recomendada para uma rodada futura dedicada:** (a) em
-`PolicyEngine.rules()`, tratar `not isinstance(resultado, dict)` como
-equivalente a uma exceção de parse (mesmo fallback fail-closed já
-existente); (b) em `doutor.py._ilegivel()`, checar `isinstance(dict)`
-além do parse OK, para os arquivos que esperam um objeto JSON
-(`policy.json`, `localidade.json`, `skills_estado.json`); (c) adicionar um
-teste de regressão permanente em `tests/test_policy.py` e
-`tests/test_v011_doutor_conserta.py` (ou equivalente) cobrindo
-especificamente "JSON válido, shape errado" para os 4 arquivos
-monitorados, não só "JSON inválido".
+**STATUS ATUALIZADO — CORRIGIDO (rodada H4/HIGH-02, dedicada, separada
+deste adendo):** a ação recomendada abaixo foi implementada, testada e
+commitada isoladamente (ver commit `H4-HIGH-02` no relatório final,
+seção 4c). Registro do que foi feito, para honrar a mesma disciplina de
+"nenhuma promessa sem entrega" já aplicada ao achado 4.1/commit
+`75c6132`:
+
+- `PolicyEngine.rules()` (`src/nomos/kernel/policy.py`): agora separa o
+  `try/except` do `json.loads()` de uma checagem explícita
+  `isinstance(dados, dict)` — qualquer JSON sintaticamente válido mas de
+  tipo errado (lista, string, número, `null`) cai no mesmo fallback
+  fail-closed já usado para JSON invalido (`{"version": 0,
+  "fail_closed": True, "rules": {}}`), nunca mais escapando cru para
+  `decide()`.
+- `doutor.py._ilegivel()` (`src/nomos/simple/doutor.py`,
+  `diagnosticar_consertos()`): mesma checagem `isinstance(dados, dict)`
+  adicionada — aplica-se a TODOS os arquivos monitorados por esse helper
+  (`policy.json`, `localidade.json`, `skills_estado.json`,
+  `rotinas.json`), não só `policy.json`, então `nomos doutor consertar`
+  agora detecta e oferece reparo para qualquer um deles com esse tipo de
+  corrupção.
+- Teste de regressão novo:
+  `tests/test_policy.py::test_politica_json_valido_mas_tipo_errado_nega_tudo_sem_crash`
+  — parametrizado sobre `"[]"`, `"null"`, `"42"`,
+  `'"uma string qualquer"'`, prova que `decide()` nunca lança exceção e
+  sempre nega (fail-closed real, não um crash mascarado).
+- Reprodução re-executada após a correção:
+  `docs/missions/repro_known_gap_policy_json_shape.py` agora devolve
+  **exit code 0** (o script foi desenhado como sentinela: 1 enquanto o
+  bug existisse, 0 quando corrigido) — evidência de que o comportamento
+  documentado acima como "achado" deixou de ser reproduzível.
+
+O item (c) da ação recomendada original (item de compat com
+`test_v011_doutor_conserta.py`) foi coberto de forma equivalente pelos
+testes acima; não foi necessário um arquivo com esse nome específico.
 
 ---
 

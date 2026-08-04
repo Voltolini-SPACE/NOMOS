@@ -308,10 +308,16 @@ def diagnosticar_consertos(home) -> list[dict]:
         if not p.exists():
             return False
         try:
-            _json.loads(p.read_text(encoding="utf-8"))
-            return False
+            dados = _json.loads(p.read_text(encoding="utf-8"))
         except Exception:
             return True
+        # achado H4/HIGH-02: todos os arquivos monitorados aqui esperam um
+        # objeto JSON (dict) na raiz — um JSON sintaticamente válido mas de
+        # tipo errado (ex.: "[]", "null", "42") passava despercebido por
+        # esta checagem (só testava se o parse tinha sucesso), mesmo
+        # derrubando o consumidor real (ex.: PolicyEngine.decide()) com uma
+        # exceção não tratada. Agora tratado como corrompido também.
+        return not isinstance(dados, dict)
 
     if _ilegivel("localidade.json"):
         achados.append({"id": "arquivo:localidade.json",
