@@ -4,8 +4,9 @@
 **Branch:** `loop/fase3-agent-boundary-wiring`
 **Ponto de partida da missão:** commit `c1a7f77^` (imediatamente antes de P1a)
 **HEAD no fechamento original deste relatório:** `2b544d3`
-**HEAD atual (após adendo):** `c48766f`
-**Data:** 2026-07-17
+**HEAD após o adendo de cobertura/KNOWN_GAPS:** `c48766f`
+**HEAD atual (após rodada H4 — correção dos 2 KNOWN_GAPS):** `34c4848`
+**Data:** 2026-07-17 (fechamento original e adendo) / 2026-08-04 (rodada H4)
 
 > **Nota de atualização:** depois deste relatório ter sido fechado e
 > commitado (`1872c22`), uma auditoria adicional apontou que
@@ -18,6 +19,17 @@
 > `docs/missions/H3_MISSAO_DEBITOS_ADENDO_COBERTURA_ORCHESTRATOR_E_KNOWN_GAP.md`
 > (commits `09c81e0` e `c48766f`) e resumido nas seções §4b, §10 e §11
 > abaixo, sem reescrever as seções originais que continuam corretas.
+>
+> **Segunda nota de atualização (rodada H4, 2026-08-04):** os 2
+> KNOWN_GAPS acima — que a nota anterior registrava como reproduzíveis
+> mas deliberadamente NÃO corrigidos, por estarem fora do escopo daquele
+> adendo — foram corrigidos numa rodada dedicada e separada, um por
+> commit isolado (`6ba500a` para policy.json/HIGH-02, `34c4848` para
+> agent.json/HIGH-01), cada um com teste de regressão, reprodução
+> re-executada (ambos os scripts sentinela agora devolvem exit 0) e
+> bateria completa de validação. Ver §4c abaixo para os detalhes; §10 e
+> §11 recebem apenas uma nota de status, sem reescrever o registro
+> original do achado.
 
 ---
 
@@ -116,6 +128,17 @@ Regra "um commit por item, nunca misturar domínios" respeitada em 11 dos 12 com
 | `c48766f` | 2026-07-17 | docs(missao): H3-missao-debitos — honra o KNOWN_GAP de agent.json/doutor.py prometido no commit 75c6132 |
 
 O primeiro adiciona `tests/council/test_orchestrator_dry_run_direct_coverage.py` (42 testes novos, sem tocar `council/orchestrator.py`). O segundo é só documentação + 1 script de reprodução (`docs/missions/repro_known_gap_agent_json_crashes_doutor.py`), sem tocar código-fonte algum. Evidência completa de ambos em `docs/missions/H3_MISSAO_DEBITOS_ADENDO_COBERTURA_ORCHESTRATOR_E_KNOWN_GAP.md`.
+
+### 4c. Commits da rodada H4 — correção dos 2 KNOWN_GAPS (2 commits, um por achado)
+
+| Hash | Data | Mensagem |
+|---|---|---|
+| `6ba500a` | 2026-08-04 | fix(policy,doutor): H4/HIGH-02 — JSON válido mas de tipo errado não escapa mais do fail-closed |
+| `34c4848` | 2026-08-04 | fix(doutor): H4/HIGH-01 — agent.json corrompido não derruba mais diagnostico_v011() inteiro |
+
+Os 2 `KNOWN_GAPS` documentados na seção 4b/§10 (itens 5 e 6) — que tinham sido deliberadamente **não corrigidos** no adendo original, por estarem fora do escopo declarado daquele corte — foram corrigidos nesta rodada dedicada, separada e posterior, cada um em seu próprio commit isolado, com teste de regressão, reprodução re-executada (ambos os scripts sentinela agora devolvem exit 0) e bateria completa de validação (mypy/ruff/suite/cobertura/wheel/`nomos_update_agent.py`). Evidência completa em `docs/missions/H3_MISSAO_DEBITOS_ADENDO_COBERTURA_ORCHESTRATOR_E_KNOWN_GAP.md`, seções 4.1 e 4.2 (ambas atualizadas com nota de status "CORRIGIDO", preservando o texto original do achado sem reescrever histórico). Nenhum dos dois commits tocou `council/orchestrator.py` nem qualquer arquivo fora de `src/nomos/kernel/policy.py`, `src/nomos/simple/doutor.py`, `tests/test_policy.py`, `tests/test_doutor_v011.py` e a própria documentação da missão.
+
+Escopo deliberadamente **não** perseguido nesta rodada (fora de proporção com "correção pontual dos 2 achados já diagnosticados"): o pacote `nomos/config/` com validação de schema proposto como Onda 4.1 de uma missão maior, o gate arquitetural de AST para `AgentToolBoundary` (Onda 4.5), qualquer trabalho de tag/CI/publish de release (Ondas 4.6–4.9), e o roadmap de novas funcionalidades P0–P5. MEDIUM-01 (branch não publicada) permanece bloqueado pela mesma credencial Git externa de sempre (§9); MEDIUM-02 (arquivos untracked não classificados) foi endereçado por hash/mtime/varredura de padrões de segredo, sem achados.
 
 ---
 
@@ -246,28 +269,31 @@ KNOWN_GAPS:
    Mencionados aqui só por transparência total do estado do working tree, não como um
    débito desta missão.
 
-5. (adendo pós-fechamento, commit c48766f) config.load_agent() (kernel/config.py) chama
-   json.loads() sem try/except; doutor.diagnostico_v011() chama config.load_agent() logo
-   no início, também sem proteção — um agent.json corrompido derruba a função de
-   diagnóstico INTEIRA (json.JSONDecodeError não tratada), em vez de virar um item "❌"
-   isolado, e por consequência também derruba dados_dashboard() do painel web. agent.json
-   não está entre os 4 arquivos que diagnosticar_consertos()/consertar() sabem reparar.
-   Este achado já tinha sido ENCONTRADO no commit 75c6132 (P2 6/8), que prometia
-   documentá-lo no relatório final — promessa não cumprida na versão original deste
-   documento, corrigida agora. Reprodução real:
-   docs/missions/repro_known_gap_agent_json_crashes_doutor.py. Não corrigido (fora do
-   escopo desta missão — exigiria mudança de comportamento em kernel/config.py e
-   simple/doutor.py).
+5. [CORRIGIDO em H4/HIGH-01, commit 34c4848 — ver §4c] (adendo pós-fechamento, commit
+   c48766f) config.load_agent() (kernel/config.py) chama json.loads() sem try/except;
+   doutor.diagnostico_v011() chama config.load_agent() logo no início, também sem
+   proteção — um agent.json corrompido derruba a função de diagnóstico INTEIRA
+   (json.JSONDecodeError não tratada), em vez de virar um item "❌" isolado, e por
+   consequência também derruba dados_dashboard() do painel web. agent.json não está
+   entre os 4 arquivos que diagnosticar_consertos()/consertar() sabem reparar. Este
+   achado já tinha sido ENCONTRADO no commit 75c6132 (P2 6/8), que prometia documentá-lo
+   no relatório final — promessa não cumprida na versão original deste documento,
+   corrigida no adendo, e o próprio bug corrigido em código na rodada H4 (commit
+   `34c4848`): diagnostico_v011() isola a leitura em try/except próprio;
+   diagnosticar_consertos() passou a reconhecer agent.json. Reprodução re-executada após
+   a correção devolve exit 0: docs/missions/repro_known_gap_agent_json_crashes_doutor.py.
 
-6. (adendo pós-fechamento, commit 09c81e0/c48766f) policy.json sintaticamente válido mas
-   de tipo errado (ex.: [] em vez de um objeto) faz PolicyEngine.decide() lançar
-   AttributeError não tratado em vez de negar de forma controlada; nomos doutor não
-   detecta esse policy.json como corrompido porque só testa se o JSON faz parse, não se
-   tem o formato esperado. Verificado que os outros 3 arquivos monitorados por doutor.py
-   (localidade.json, skills_estado.json, rotinas.json) já são resilientes a essa mesma
-   classe de problema — não é um padrão geral, é específico do PolicyEngine. Reprodução
-   real: docs/missions/repro_known_gap_policy_json_shape.py. Não corrigido (mesma razão
-   do item 5).
+6. [CORRIGIDO em H4/HIGH-02, commit 6ba500a — ver §4c] (adendo pós-fechamento, commit
+   09c81e0/c48766f) policy.json sintaticamente válido mas de tipo errado (ex.: [] em vez
+   de um objeto) faz PolicyEngine.decide() lançar AttributeError não tratado em vez de
+   negar de forma controlada; nomos doutor não detecta esse policy.json como corrompido
+   porque só testa se o JSON faz parse, não se tem o formato esperado. Verificado que os
+   outros 3 arquivos monitorados por doutor.py (localidade.json, skills_estado.json,
+   rotinas.json) já são resilientes a essa mesma classe de problema — não era um padrão
+   geral, era específico do PolicyEngine. Corrigido em código na rodada H4 (commit
+   `6ba500a`): PolicyEngine.rules() e doutor._ilegivel() passaram a checar
+   isinstance(dict) explicitamente. Reprodução re-executada após a correção devolve
+   exit 0: docs/missions/repro_known_gap_policy_json_shape.py.
 ```
 
 ---
