@@ -140,6 +140,63 @@ def test_cli_doutor_usa_v011(capsys):
     assert "cérebro" in out.lower()
 
 
+def test_diagnostico_v011_agent_json_corrompido_nao_derruba_funcao(nomos_home):
+    """H4/HIGH-01: agent.json corrompido não pode mais derrubar
+    diagnostico_v011() inteiro.
+
+    Antes desta correção, config.load_agent() chamava json.loads() sem
+    try/except; um agent.json com JSON inválido lançava JSONDecodeError não
+    tratada e diagnostico_v011() abortava por completo — nenhum dos outros
+    ~15 itens (Python, home, localidade, cofre, auditoria etc.) chegava a
+    ser reportado. Ver docs/missions/repro_known_gap_agent_json_crashes_doutor.py
+    para a reprodução isolada do bug original.
+    """
+    config.ensure_home()
+    (nomos_home / "agent.json").write_text("{corrompido: sem aspas, json invalido",
+                                            encoding="utf-8")
+
+    itens = doutor.diagnostico_v011(nomos_home)   # não pode lançar exceção
+
+    corrompidos = [i for i in itens if "configuração corrompida" in i["titulo"]]
+    assert len(corrompidos) == 1, itens
+    item = corrompidos[0]
+    assert item["ok"] is False
+    assert item["bloqueante"] is False        # não pode derrubar PRONTO sozinho
+    assert "nomos start" in item["proximo"]
+
+    # o restante do diagnóstico continua rodando normalmente (a função não
+    # abortou no meio) — outros itens conhecidos ainda aparecem
+    titulos = [i["titulo"] for i in itens]
+    assert any("Python" in t for t in titulos)
+    assert any("Pasta do NOMOS" in t for t in titulos)
+    assert any("Modo só-local" in t for t in titulos)
+
+    # o item novo, sozinho, não derruba o status geral para BLOQUEADO
+    assert doutor.status_geral(itens) == "PRONTO"
+
+
+def test_diagnosticar_consertos_repara_agent_json_corrompido(nomos_home):
+    """H4/HIGH-01 (parte 2): agent.json corrompido agora também é reconhecido
+    por diagnosticar_consertos()/consertar() — antes, mesmo derrubando
+    diagnostico_v011() inteiro, ele não estava entre os arquivos que o
+    reparador sabia consertar."""
+    config.ensure_home()
+    (nomos_home / "agent.json").write_text("{corrompido: sem aspas, json invalido",
+                                            encoding="utf-8")
+
+    achados = doutor.diagnosticar_consertos(nomos_home)
+    ids = [a["id"] for a in achados]
+    assert "arquivo:agent.json" in ids, achados
+
+    exit_code, feitos = doutor.consertar(nomos_home, confirmar=lambda: True, say=lambda *a: None)
+    assert exit_code == 0
+    assert any("agent.json" in f for f in feitos), feitos
+    assert (nomos_home / "agent.json.corrompido").exists()
+    assert (nomos_home / "agent.json").read_text(encoding="utf-8") == "{}"
+    # config.load_agent() volta a funcionar normalmente após o conserto
+    assert config.load_agent() == {}
+
+
 def test_diagnostico_v010_continua_estavel(nomos_home):
     """A função antiga não muda de formato (compat)."""
     config.ensure_home()

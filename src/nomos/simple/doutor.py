@@ -129,9 +129,25 @@ def diagnostico_v011(home=None, ctx: dict | None = None) -> list[dict]:
                        "criada" if home.exists() else "ainda não existe",
                        "" if home.exists() else "rode: nomos init"))
 
-    # agente / onboarding
-    agente = config.load_agent()
-    if agente and agente.get("onboarding_completo"):
+    # agente / onboarding (achado H4/HIGH-01, auditoria de 2026-07-17):
+    # config.load_agent() não tem try/except próprio (json.loads() cru) —
+    # um agent.json corrompido derrubava diagnostico_v011() INTEIRO com
+    # JSONDecodeError não tratada, e nenhum dos outros ~15 itens (Python,
+    # home, localidade, cofre, auditoria etc.) chegava a ser reportado.
+    # Corrigido isolando a leitura: um agente ilegível vira um item comum,
+    # não-bloqueante (mesmo padrão de todo o resto desta função), e o
+    # restante do diagnóstico continua rodando normalmente.
+    try:
+        agente = config.load_agent()
+        agente_ilegivel = False
+    except Exception:
+        agente = None
+        agente_ilegivel = True
+    if agente_ilegivel:
+        itens.append(_item(False, "Agente: configuração corrompida (agent.json ilegível)",
+                           "não impede o uso básico; refaça o onboarding quando quiser",
+                           "rode: nomos start"))
+    elif agente and agente.get("onboarding_completo"):
         itens.append(_item(True, f"Agente '{agente.get('agent_name')}' configurado"))
     else:
         itens.append(_item(False, "Ainda sem agente",
@@ -319,6 +335,18 @@ def diagnosticar_consertos(home) -> list[dict]:
         # exceção não tratada. Agora tratado como corrompido também.
         return not isinstance(dados, dict)
 
+    if _ilegivel("agent.json"):
+        # achado H4/HIGH-01: agent.json não estava entre os arquivos que
+        # este diagnosticador sabe reparar, mesmo já derrubando
+        # diagnostico_v011() inteiro quando corrompido (corrigido acima).
+        # Recriar como "{}" é seguro: config.load_agent() devolve {} (dict
+        # vazio, falsy), e todo chamador já trata isso como "sem agente
+        # configurado ainda" — o mesmo estado de quem nunca rodou onboarding.
+        achados.append({"id": "arquivo:agent.json",
+                        "problema": "agent.json corrompido (configuração do "
+                                    "agente não carrega)",
+                        "acao": "preservar como .corrompido e recriar vazio "
+                                "(equivalente a nunca ter feito onboarding)"})
     if _ilegivel("localidade.json"):
         achados.append({"id": "arquivo:localidade.json",
                         "problema": "localidade.json corrompido (hoje ele já "

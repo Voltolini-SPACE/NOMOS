@@ -179,7 +179,7 @@ Dois achados distintos e independentes, ambos sobre a mesma classe de
 problema ("`doutor.py` e JSON corrompido"), documentados separadamente
 porque têm causas raiz e arquivos afetados diferentes.
 
-### 4.1 Achado (já sinalizado, nunca documentado até agora): `agent.json` corrompido derruba `doutor.diagnostico_v011()` inteiro, não só o item do agente
+### 4.1 [CORRIGIDO em H4/HIGH-01 — ver nota abaixo] `agent.json` corrompido derruba `doutor.diagnostico_v011()` inteiro, não só o item do agente
 
 **Onde:** `src/nomos/kernel/config.py` (`load_agent()`) +
 `src/nomos/simple/doutor.py` (`diagnostico_v011()`, linha ~133).
@@ -237,26 +237,61 @@ RESULTADO=CONFIRMADO — script em
           docs/missions/repro_known_gap_agent_json_crashes_doutor.py
 ```
 
-**Por que não foi corrigido neste corte:** mesma razão do achado 4.2 —
-exigiria decidir uma política de tratamento real para `config.py`/
-`doutor.py` (kernel de identidade do agente + ferramenta de diagnóstico),
-fora do escopo declarado deste adendo (cobertura de teste de
-`council/orchestrator.py`). Corrigi-lo aqui violaria a regra de não
-agrupar correções de domínios diferentes no mesmo commit.
+**Por que não foi corrigido no momento em que este adendo foi escrito
+originalmente:** mesma razão do achado 4.2 — exigiria decidir uma
+política de tratamento real para `config.py`/`doutor.py` (kernel de
+identidade do agente + ferramenta de diagnóstico), fora do escopo
+declarado deste adendo (cobertura de teste de `council/orchestrator.py`).
+Corrigi-lo ali teria violado a regra de não agrupar correções de
+domínios diferentes no mesmo commit.
 
-**Ação recomendada para uma rodada futura dedicada:** (a) envolver a
-leitura de `config.load_agent()` dentro de `diagnostico_v011()` em seu
-próprio `try/except`, reportando "agente: configuração corrompida" como
-um item normal (não bloqueante ao ponto de abortar os outros ~15 itens);
-(b) considerar adicionar `agent.json` à lista de arquivos que
-`diagnosticar_consertos()`/`consertar()` sabem reparar (renomear para
-`.corrompido`, recriar limpo — mesmo padrão já usado para os outros 4
-arquivos); (c) o próprio `config.load_agent()` poderia opcionalmente
-ganhar seu próprio fail-closed (devolver `None` em vez de propagar,
-paralelo ao padrão já usado em `localidade.esta_ligado()`), mas isso
-precisa de análise cuidadosa de quem mais chama `load_agent()` e depende
-hoje de exceções propagando (mudança de contrato, não só um detalhe
-interno).
+**STATUS ATUALIZADO — CORRIGIDO (rodada H4/HIGH-01, dedicada, separada
+deste adendo):** os itens (a) e (b) da ação recomendada abaixo foram
+implementados, testados e commitados isoladamente (ver commit
+`H4-HIGH-01` no relatório final, seção 4c). O item (c) foi
+deliberadamente NÃO feito — ver justificativa abaixo, honrando a mesma
+disciplina de "nenhuma promessa sem entrega" já citada acima para o
+commit `75c6132`:
+
+- `diagnostico_v011()` (`src/nomos/simple/doutor.py`): a chamada a
+  `config.load_agent()` agora está isolada em seu próprio `try/except`;
+  um `agent.json` ilegível vira um item comum, não-bloqueante ("Agente:
+  configuração corrompida (agent.json ilegível)"), e o restante do
+  diagnóstico (Python, home, localidade, cofre, auditoria, agentes
+  especializados etc.) continua rodando normalmente — a função não aborta
+  mais por completo.
+- `diagnosticar_consertos()` (mesmo arquivo): `agent.json` foi
+  adicionado à lista de arquivos que o reparador sabe diagnosticar e
+  oferecer para reparo (`consertar()` já tratava esse caso pelo `else:`
+  genérico existente, recriando como `"{}"` — verificado, não presumido,
+  antes de decidir que nenhuma mudança era necessária ali).
+- Testes de regressão novos em `tests/test_doutor_v011.py`:
+  `test_diagnostico_v011_agent_json_corrompido_nao_derruba_funcao`
+  (prova que a função não aborta e que o restante dos itens continua
+  aparecendo) e
+  `test_diagnosticar_consertos_repara_agent_json_corrompido` (prova que
+  `diagnosticar_consertos()` detecta e `consertar()` repara de fato,
+  preservando o original como `.corrompido`).
+- Reprodução re-executada após a correção:
+  `docs/missions/repro_known_gap_agent_json_crashes_doutor.py` agora
+  devolve **exit code 0** — a checagem 2 (função não crasha mais) e a
+  checagem 3 (reparo disponível) passam a bater com o comportamento
+  esperado; a checagem 1 (`config.load_agent()` chamado diretamente
+  ainda propaga `JSONDecodeError`) continua reproduzindo o comportamento
+  original **de propósito** — ver item (c) abaixo.
+
+**Item (c) — deliberadamente NÃO implementado, com justificativa:**
+`config.load_agent()` em si continua sem try/except próprio. A correção
+foi aplicada no CHAMADOR (`diagnostico_v011()`), não na função
+`load_agent()`. Mudar o contrato de `load_agent()` (fazer com que nunca
+levante exceção) afetaria todo chamador existente que hoje depende dela
+propagar erros — exigiria mapear e revisar cada um deles, o que é
+exatamente o tipo de mudança de contrato mais ampla que a "Ação
+recomendada" original já sinalizava como precisando de "análise
+cuidadosa" separada. Manter esse escopo de fora aqui é uma decisão
+consciente, não um esquecimento — registrada explicitamente para não
+repetir o padrão que motivou este próprio adendo (promessa implícita sem
+entrega documentada).
 
 ### 4.2 [CORRIGIDO em H4/HIGH-02 — ver nota abaixo] `policy.json` sintaticamente válido mas de tipo errado derruba `PolicyEngine.decide()`, e `nomos doutor` não detecta
 
