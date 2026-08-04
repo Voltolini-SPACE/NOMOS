@@ -4,6 +4,8 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+## [1.3.0rc18] — 2026-08-04 (Fase 0 higiene + Horizontes 1–3 + H3-missão-débitos + H4 + H4.5: mypy 0 erros em todo o src/nomos, CI reproduzido em Python 3.12 real, `doutor`/`PolicyEngine` resilientes a config corrompida com quarentena forense do arquivo original, gate AST contra bypass do `AgentToolBoundary`, contratos residuais do Council fortalecidos)
+
 ### Fixed (Fase 0 — higiene pós-validação: 7 achados de uma auditoria externa)
 - **`kernel/vault.py`**: cofre corrompido (JSON inválido) agora levanta
   `VaultError` tratado, com mensagem acionável (backup ou `nomos vault init`)

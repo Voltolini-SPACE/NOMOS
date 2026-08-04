@@ -143,7 +143,7 @@ Python puro, multiplataforma.
 O **Motor Council** — um pipeline de múltiplos motores que revisa, julga e
 arbitra respostas antes de entregá-las — está disponível em modo **dry-run**.
 A capacidade estreou na tag `v1.3.0rc4-motor-council-dry-run` e segue presente,
-sem retrocesso, na versão atual (`1.3.0rc17`). **Ainda não é produção** e
+sem retrocesso, na versão atual (`1.3.0rc18`). **Ainda não é produção** e
 **não executa motor de verdade**.
 
 Superfícies disponíveis hoje (nenhuma executa motor real):
@@ -184,7 +184,7 @@ Detalhes técnicos e o mapa completo das fases MC0–MC18:
 
 ## Maturidade
 
-Release candidate (v1.3.0rc17, **pre-release**). Suíte com mais de 1.600 testes cobrindo
+Release candidate (v1.3.0rc18, **pre-release**). Suíte com mais de 1.600 testes cobrindo
 segurança (fail-closed, não-vazamento de segredo, opt-in de nuvem) e UX. O
 **Motor Council** está em dry-run (ver seção acima): o subcomando `simular`
 roda na CLI e no chat, mas sem execução de motor real, sem nuvem e sem
