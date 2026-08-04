@@ -9,6 +9,7 @@ modalidade e recomenda UM próximo passo acionável.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import sys
 
@@ -19,6 +20,23 @@ from nomos.kernel import config, localidade, plataforma
 
 def _linha(ok: bool, titulo: str, detalhe: str = "") -> dict:
     return {"ok": ok, "titulo": titulo, "detalhe": detalhe}
+
+
+def _sha256_arquivo(caminho) -> str:
+    """SHA-256 hex de um arquivo, em streaming (não carrega tudo em
+    memória). H4.5-B (auditoria de 2026-08-04): evidência forense
+    verificável de um arquivo colocado em quarentena, sem reter ou logar
+    o CONTEÚDO em si — só o hash. Mesma técnica já usada em
+    kernel/evidencia.py:_sha256 (streaming, blocos de 64KiB); reimplementada
+    aqui, não importada, porque evidencia.py é sobre pacotes de evidência
+    com seu próprio ciclo de vida e formato de manifesto — acoplar os dois
+    subsistemas por um símbolo privado (`_sha256`) seria mais frágil do
+    que repetir 5 linhas de stdlib."""
+    h = hashlib.sha256()
+    with open(caminho, "rb") as f:
+        for bloco in iter(lambda: f.read(65536), b""):
+            h.update(bloco)
+    return h.hexdigest()
 
 
 def diagnostico(home=None) -> list[dict]:
@@ -397,6 +415,8 @@ def consertar(home, confirmar, say=print, audit=None) -> tuple[int, list[str]]:
             (home / alvo).mkdir(parents=True, exist_ok=True)
             chmod_privado(home / alvo, 0o700)
             feitos.append(f"pasta {alvo}/ criada")
+            if audit is not None:
+                audit.append("doutor.consertado", item=a["id"])
         elif tipo == "arquivo":
             p = home / alvo
             destino = p.with_suffix(p.suffix + ".corrompido")
@@ -404,7 +424,37 @@ def consertar(home, confirmar, say=print, audit=None) -> tuple[int, list[str]]:
             while destino.exists():           # no Windows renomear p/ destino
                 destino = p.with_suffix(p.suffix + f".corrompido.{n}")
                 n += 1                        # existente falharia — preserva ambos
-            os.replace(p, destino)
+            # H4.5-B: hash ANTES de mover — evidência forense verificável do
+            # que foi colocado em quarentena, sem depender de reabrir o
+            # arquivo depois (e sem nunca logar o CONTEÚDO, só o hash).
+            # Falha ao calcular o hash não impede o reparo (best-effort);
+            # falha ao MOVER, sim — ver abaixo.
+            try:
+                hash_original: str | None = _sha256_arquivo(p)
+            except OSError:
+                hash_original = None
+            try:
+                os.replace(p, destino)        # atômico: ou move tudo, ou nada
+            except OSError as exc:
+                # não mascara com catch genérico: registra o tipo real do
+                # erro, preserva o original (os.replace não deixa estado
+                # parcial) e PARA — continuar consertando outros itens
+                # depois de uma falha de I/O inesperada aqui seria otimismo
+                # não garantido, não fail-closed.
+                feitos.append(
+                    f"FALHA ao colocar {alvo} em quarentena "
+                    f"({type(exc).__name__}); original preservado em "
+                    f"{p}, nenhum outro conserto foi tentado depois deste")
+                if audit is not None:
+                    audit.append("doutor.conserto_falhou", item=a["id"],
+                                 etapa="quarentena", erro=type(exc).__name__)
+                say(f"pronto: {len(feitos)} conserto(s) aplicado(s) "
+                    f"(1 falhou — ver acima).")
+                for f in feitos:
+                    say(f"  · {f}")
+                return 1, feitos
+            chmod_privado(destino, 0o600)     # quarentena não fica mais
+                                               # exposta do que o original
             if alvo == "localidade.json":
                 localidade.definir(home, True)          # o padrão mais seguro
             elif alvo == "policy.json":
@@ -414,9 +464,12 @@ def consertar(home, confirmar, say=print, audit=None) -> tuple[int, list[str]]:
                 p.write_text('{"rotinas": []}' if alvo == "rotinas.json" else "{}",
                              encoding="utf-8")
                 chmod_privado(p, 0o600)
-            feitos.append(f"{alvo} recriado com padrão seguro (original preservado)")
-        if audit is not None:
-            audit.append("doutor.consertado", item=a["id"])
+            resumo_hash = f", sha256={hash_original[:16]}…" if hash_original else ""
+            feitos.append(f"{alvo} recriado com padrão seguro "
+                          f"(original preservado em {destino}{resumo_hash})")
+            if audit is not None:
+                audit.append("doutor.consertado", item=a["id"],
+                             quarentena=str(destino), sha256=hash_original)
     say(f"pronto: {len(feitos)} conserto(s) aplicado(s).")
     for f in feitos:
         say(f"  ✓ {f}")
