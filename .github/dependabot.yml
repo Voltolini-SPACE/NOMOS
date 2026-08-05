@@ -1,0 +1,26 @@
+version: 2
+updates:
+  # Mesmo com pinning por SHA imutável (ci(security): commit 72cffbb),
+  # o Dependabot continua descobrindo novas versões via o COMENTÁRIO
+  # `# vX.Y.Z` ao lado do SHA. Quando houver bump, o PR chega com o novo
+  # SHA e o novo comentário — a revisão humana valida a mudança contra
+  # os release notes e a assinatura da action antes de merge.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: ci(deps)
+    groups:
+      # Agrupa updates rotineiras num PR só, para reduzir ruído; updates
+      # de segurança (--security-updates) continuam com PR próprio, por
+      # design do Dependabot.
+      actions-minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
