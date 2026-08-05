@@ -49,22 +49,44 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Construir wheel + sdist
-        # Reproducibilidade: SOURCE_DATE_EPOCH (padrão reproducible-builds.org)
-        # fixa mtimes internos ao instante do commit da tag, para que dois
-        # builds do mesmo SHA produzam artefatos com metadados normalizados.
-        # PYTHONHASHSEED=0 elimina o outro grande vetor de não-determinismo
-        # (ordenação de dicts durante o build). Bitwise-identity de wheel
-        # continua fora do escopo (pip/build ainda embutem detalhes do
-        # ambiente), mas a variação entre runs cai drasticamente.
+      - name: Construir wheel + sdist (reproducible)
+        # Contrato de reprodutibilidade H4.9: com o toolchain abaixo pinado
+        # + SOURCE_DATE_EPOCH derivado do commit + PYTHONHASHSEED=0 + locale
+        # C.UTF-8, dois builds independentes do MESMO SHA produzem wheel
+        # sha256 idêntico (verificado empiricamente em macOS local × runner
+        # Linux — hash bateu). O SDIST diverge sozinho por bug conhecido em
+        # setuptools (pypa/setuptools#2133) — normalização in-place logo
+        # abaixo faz o hash convergir também.
         env:
           PYTHONHASHSEED: "0"
+          TZ: UTC
+          LC_ALL: C.UTF-8
+          LANG: C.UTF-8
         run: |
           SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
           export SOURCE_DATE_EPOCH
           echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH ($(date -u -d @$SOURCE_DATE_EPOCH -Iseconds))"
-          python -m pip install --upgrade pip build
-          python -m build
+          # Toolchain PINADO — versões exatas testadas em H4.9. Qualquer
+          # bump aqui exige rerodar o experimento forense de reprodução
+          # (tools/reproducible_sdist.py + tests/test_reproducible_sdist.py
+          # + tests/test_make_sbom.py + tests/test_reproducible_build.py).
+          python -m pip install --upgrade "pip==26.2.1"
+          python -m pip install \
+            "setuptools==83.0.0" \
+            "wheel==0.45.1" \
+            "build==1.5.0" \
+            "packaging==26.3" \
+            "pyproject_hooks==1.2.0"
+          # --no-isolation: usar o venv atual (com pins acima) como env de
+          # build. Sem isso, `build` cria um venv temporário que puxa a
+          # versão MAIS RECENTE de setuptools disponível a cada run, o que
+          # quebra reprodutibilidade.
+          python -m build --no-isolation
+          # Normaliza o sdist: reescreve tar members (mtime, uid, gid,
+          # uname, gname, mode) e o header gzip. Preserva nomes e conteúdo.
+          # O artefato NORMALIZADO é o sujeito de attestation + SBOM +
+          # SHA256SUMS abaixo.
+          python tools/reproducible_sdist.py dist/*.tar.gz
 
       - name: "Attestation SLSA de proveniência (wheel + sdist)"
         # Emite uma atestação SLSA-provenance assinada por Sigstore/Fulcio
