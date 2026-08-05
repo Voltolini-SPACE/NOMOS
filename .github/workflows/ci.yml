@@ -160,6 +160,28 @@ jobs:
       - name: "Vulnerabilidades conhecidas nas dependências instaladas (bloqueante)"
         run: python -m pip_audit
 
+  reprodutibilidade:
+    # Gate H4.9: prova bit-a-bit que dois builds independentes do mesmo
+    # commit produzem wheel + sdist com sha256 idêntico. Usa o mesmo
+    # toolchain pinado no release.yml e o mesmo normalizador de sdist
+    # (tools/reproducible_sdist.py). Se falhar, `tools/repro_check.py`
+    # imprime o primeiro membro/byte divergente — leia essa saída antes
+    # de assumir bug transitório.
+    name: reprodutibilidade (bloqueante)
+    runs-on: ubuntu-latest
+    env:
+      PYTHONHASHSEED: "0"
+      TZ: UTC
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: "Prova de reprodutibilidade (2 builds independentes)"
+        run: python tools/repro_check.py
+
   smoke:
     name: smoke pós-instalação (wheel)
     runs-on: ${{ matrix.os }}
