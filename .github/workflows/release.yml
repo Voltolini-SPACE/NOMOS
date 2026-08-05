@@ -4,20 +4,21 @@ on:
   push:
     tags: ["v*"]
 
-# Default de mínimo privilégio (H4.9): contents:read para o job de
-# validação (que executa código do repo — pytest/ruff/pip install).
-# O job publicar sobrescreve com o que efetivamente precisa
-# (contents:write + id-token:write + attestations:write).
+# Default de mínimo privilégio (H4.9/H4.10): contents:read para tudo.
+# Apenas o job `publicar` sobrescreve com o mínimo que precisa para criar
+# release + assinar SLSA. `validar` e `construir` executam código do repo
+# mas com token somente-leitura — se algo malicioso rodar (teste, deps,
+# ou tools/), não consegue escrever no repo nem obter OIDC token.
 permissions:
   contents: read
 
 jobs:
+  # -------------------------------------------------------------------
+  # JOB 1 — validar: suíte de testes / lint. Sem privilégio elevado.
+  # -------------------------------------------------------------------
   validar:
     name: Suíte completa antes de publicar
     runs-on: ubuntu-latest
-    # Explicit, para documentar: validar NUNCA precisa escrever no repo,
-    # emitir attestation ou obter OIDC. Se um teste ou uma dep de teste
-    # for maliciosa, o GITHUB_TOKEN dela só lê.
     permissions:
       contents: read
     env:
@@ -30,7 +31,6 @@ jobs:
       - name: Habilitar user namespaces (Linux)
         if: runner.os == 'Linux'
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-
       - name: Instalar
         run: |
           python -m pip install --upgrade pip
@@ -40,18 +40,20 @@ jobs:
       - name: Testes
         run: python -m pytest -q
 
-  publicar:
-    name: Construir e publicar release
+  # -------------------------------------------------------------------
+  # JOB 2 — construir: build + normalize + smoke + SBOM + SHA256SUMS +
+  # upload-artifact. TAMBÉM SEM PRIVILÉGIO ELEVADO — se qualquer coisa
+  # aqui for hostil, o dano fica na sandbox do job, sem OIDC.
+  # H4.10 §5: código do repositório (python -m build, tools/*.py) só roda
+  # neste job, nunca no publicar. Todos os artefatos vão para
+  # `dist-verified/` e são consumidos read-only pelo próximo job.
+  # -------------------------------------------------------------------
+  construir:
+    name: Construir e verificar artefatos
     needs: validar
     runs-on: ubuntu-latest
-    # Escopo mínimo por-job: attestations exige id-token para assinar via
-    # Sigstore/Fulcio; attestations:write persiste a atestação SLSA anexada
-    # ao repositório. contents:write continua necessário para a criação da
-    # release em si (softprops/action-gh-release).
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -63,9 +65,8 @@ jobs:
         # + SOURCE_DATE_EPOCH derivado do commit + PYTHONHASHSEED=0 + locale
         # C.UTF-8, dois builds independentes do MESMO SHA produzem wheel
         # sha256 idêntico (verificado empiricamente em macOS local × runner
-        # Linux — hash bateu). O SDIST diverge sozinho por bug conhecido em
-        # setuptools (pypa/setuptools#2133) — normalização in-place logo
-        # abaixo faz o hash convergir também.
+        # Linux). Sdist diverge sozinho por bug conhecido em setuptools
+        # (pypa/setuptools#2133) — normalização in-place faz convergir.
         env:
           PYTHONHASHSEED: "0"
           TZ: UTC
@@ -75,10 +76,9 @@ jobs:
           SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
           export SOURCE_DATE_EPOCH
           echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH ($(date -u -d @$SOURCE_DATE_EPOCH -Iseconds))"
-          # Toolchain PINADO — versões exatas testadas em H4.9. Qualquer
-          # bump aqui exige rerodar o experimento forense de reprodução
-          # (tools/reproducible_sdist.py + tests/test_reproducible_sdist.py
-          # + tests/test_make_sbom.py + tests/test_reproducible_build.py).
+          # Toolchain PINADO — versões exatas testadas em H4.9/H4.10.
+          # Bump aqui exige rerodar tools/repro_check.py e a suíte de
+          # tests/test_reproducible_sdist.py.
           python -m pip install --upgrade "pip==26.2.1"
           python -m pip install \
             "setuptools==83.0.0" \
@@ -86,38 +86,15 @@ jobs:
             "build==1.5.0" \
             "packaging==26.3" \
             "pyproject_hooks==1.2.0"
-          # --no-isolation: usar o venv atual (com pins acima) como env de
-          # build. Sem isso, `build` cria um venv temporário que puxa a
-          # versão MAIS RECENTE de setuptools disponível a cada run, o que
-          # quebra reprodutibilidade.
           python -m build --no-isolation
-          # Normaliza o sdist: reescreve tar members (mtime, uid, gid,
-          # uname, gname, mode) e o header gzip. Preserva nomes e conteúdo.
-          # O artefato NORMALIZADO é o sujeito de attestation + SBOM +
-          # SHA256SUMS abaixo.
           python tools/reproducible_sdist.py dist/*.tar.gz
 
-      - name: "Attestation SLSA de proveniência (wheel + sdist)"
-        # Emite uma atestação SLSA-provenance assinada por Sigstore/Fulcio
-        # para cada artefato distribuível (wheel e sdist), antes de o dist/
-        # receber instaladores/SBOM/SHA256SUMS. A verificação pelo
-        # consumidor final é `gh attestation verify <artefato> -R
-        # Voltolini-SPACE/NOMOS` — deve retornar sucesso e o predicate
-        # https://slsa.dev/provenance/v1.
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
-        with:
-          subject-path: |
-            dist/*.whl
-            dist/*.tar.gz
-
       - name: Smoke do wheel construído + gerar SBOM
-        # SOURCE_DATE_EPOCH também para o SBOM: timestamp e serialNumber
-        # deterministicos, e cada artefato distribuível (wheel/sdist) é
-        # referenciado por sha256 dentro do SBOM — o SBOM deixa de "flutuar"
-        # sobre o dist/, passa a apontar para os arquivos exatos que ele
-        # descreve.
         env:
           PYTHONHASHSEED: "0"
+          TZ: UTC
+          LC_ALL: C.UTF-8
+          LANG: C.UTF-8
         run: |
           SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
           export SOURCE_DATE_EPOCH
@@ -134,7 +111,65 @@ jobs:
           cp installer/install.ps1 installer/uninstall.ps1 dist/
           cd dist
           sha256sum * > SHA256SUMS
+          echo "--- SHA256SUMS ---"
           cat SHA256SUMS
+
+      - name: Empacotar artefatos verificados
+        # `dist-verified` contém EXATAMENTE o que será atestado e publicado.
+        # O job publicar consome isso via download-artifact e nada mais.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist-verified
+          path: dist/
+          retention-days: 7
+          if-no-files-found: error
+
+  # -------------------------------------------------------------------
+  # JOB 3 — publicar: privilégio elevado (id-token + attestations +
+  # contents:write). H4.10 §5: NÃO executa checkout do código, NÃO roda
+  # tools/*.py, NÃO instala o pacote, NÃO reconstrói artefatos. Só:
+  #   1. Baixa dist-verified do job construir.
+  #   2. Reverifica sha256sum -c SHA256SUMS.
+  #   3. Assina SLSA-provenance (Sigstore/Fulcio via OIDC).
+  #   4. Cria a release do GitHub.
+  # -------------------------------------------------------------------
+  publicar:
+    name: Publicar release + attestation
+    needs: construir
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # criar a release
+      id-token: write        # obter OIDC token (Sigstore)
+      attestations: write    # persistir attestation no repositório
+    steps:
+      - name: Baixar artefatos verificados
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist-verified
+          path: dist/
+
+      - name: Reverificar hashes (defesa em profundidade)
+        # Mesmo que o artifact intermediário do GitHub proteja em trânsito,
+        # rechecar aqui garante que os bytes recebidos batem com o
+        # SHA256SUMS gerado no job construir. Se alguém interceptar o
+        # transporte de artifact, este passo falha fechado.
+        run: |
+          cd dist
+          echo "--- SHA256SUMS recebido ---"
+          cat SHA256SUMS
+          echo "--- verificando ---"
+          sha256sum -c SHA256SUMS
+
+      - name: "Attestation SLSA de proveniência (wheel + sdist)"
+        # `subject-path` aponta para arquivos JÁ NO DISCO (baixados no
+        # step anterior). Nenhum código Python do repo executa aqui —
+        # esta action é fornecida pelo próprio GitHub, escrita em
+        # TypeScript, com SHA pinado por segurança.
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: |
+            dist/*.whl
+            dist/*.tar.gz
 
       - name: Resolve release flags
         id: release_flags
@@ -171,6 +206,9 @@ jobs:
 
             Esta release inclui `sbom.cdx.json` (CycloneDX 1.5): inventário
             de dependências para auditoria de supply chain.
+
+            Para a proveniência criptográfica dos artefatos:
+            `gh attestation verify <artefato> -R Voltolini-SPACE/NOMOS`.
 
             O NOMOS **nunca** se atualiza sozinho: para checar novidades,
             rode `nomos atualizar` (opt-in, com sua aprovação).
