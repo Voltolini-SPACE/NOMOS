@@ -2,7 +2,82 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased]
+## [Unreleased] — H4.9: reprodutibilidade forense e hardening da cadeia de actions
+
+### Added (supply chain)
+- **`tools/reproducible_sdist.py`**: normalizador in-place para `.tar.gz`.
+  Corrige o bug pypa/setuptools#2133 (setuptools 83 não respeita
+  `SOURCE_DATE_EPOCH` no `build_sdist` — mtimes e gzip header ficam com
+  wall-clock). Reescreve APENAS metadados de container (tar member
+  metadata + gzip header): mtime→epoch, uid/gid→0, uname/gname→"",
+  mode→0o644/0o755, ordem alfabética, USTAR format, gzip mtime=0.
+  Nomes, permissões executivas e conteúdo bit-a-bit dos arquivos são
+  preservados. Idempotente (asserção in-tool).
+- **`tools/repro_check.py`**: gate hermético que faz DOIS builds
+  independentes (diretórios separados, venvs separados, pip caches
+  separados) e compara sha256 de wheel + sdist. Falha com diagnóstico
+  útil (primeiro membro divergente, mtimes, uid/gid, sizes). Custo
+  local: ~19s.
+- **Job `reprodutibilidade`** em `.github/workflows/ci.yml`
+  (bloqueante): executa `tools/repro_check.py` em cada push/PR.
+- **`.github/dependabot.yml`**: descoberta semanal de novas versões
+  das actions. Compatível com o pinning por SHA — Dependabot lê o
+  comentário `# vX.Y.Z` ao lado do SHA para calcular bumps. Grupo
+  minor+patch para reduzir ruído; security-updates continuam com PR
+  isolado por design do Dependabot.
+- **`docs/SUPPLY_CHAIN.md`**: contrato normativo da cadeia de
+  publicação — as 4 camadas de garantia por artefato, toolchain
+  pinado, protocolo de bump, matriz de permissions, roteiro de
+  verificação pelo consumidor, tabela de estado por versão.
+  `docs/INSTALL.md` ganha cross-link.
+
+### Changed (CI/CD)
+- **Toolchain de build PINADO no release.yml**: pip==26.2.1,
+  setuptools==83.0.0, wheel==0.45.1, build==1.5.0, packaging==26.3,
+  pyproject_hooks==1.2.0. `python -m build --no-isolation` obrigatório
+  para não deixar `build` puxar a versão MAIS RECENTE de setuptools a
+  cada run. Env do step: `PYTHONHASHSEED=0`, `TZ=UTC`, `LC_ALL=LANG=C.UTF-8`.
+- **Sdist NORMALIZADO no release.yml**: passo `python
+  tools/reproducible_sdist.py dist/*.tar.gz` executado após o build e
+  ANTES da attestation, SBOM e SHA256SUMS. O artefato normalizado é o
+  sujeito de todas as três garantias downstream.
+- **Todas as GitHub Actions pinadas por SHA imutável de 40
+  caracteres** (formato `owner/action@<SHA40> # vX.Y.Z`). Cobertura
+  total: `actions/checkout@v7.0.1`, `actions/setup-python@v7.0.0`,
+  `actions/attest-build-provenance@v4.1.1`,
+  `softprops/action-gh-release@v3.0.2`,
+  `actions/configure-pages@v6.0.0`,
+  `actions/upload-pages-artifact@v5.0.0`,
+  `actions/deploy-pages@v5.0.0`. SHAs resolvidos oficialmente via
+  `git ls-remote`. Defesa contra ataques via re-aponte de tag
+  (padrão observado em tj-actions/changed-files 2025 etc.).
+- **Permissions do release.yml reduzidas a mínimo privilégio**:
+  top-level `contents: read` (antes `write`); job `validar` explícito
+  `contents: read` (antes herdava write — se um teste ou dep de teste
+  fosse maliciosa, tinha token de escrita); job `publicar` preserva
+  `contents: write + id-token: write + attestations: write` (necessários
+  para gerar release + assinar SLSA).
+
+### Verified (empírico H4.9)
+- Wheel de `v1.3.0rc19` reconstruído localmente (macOS aarch64,
+  Python 3.14) com o toolchain pinado produz sha256 IDÊNTICO ao
+  publicado pelo runner Linux do CI:
+  `598ae56d471fd266137aa6f58b14cc15c3fc88e37b98b9a29ee1f9e00e37ecef`.
+- Dois builds independentes com o mesmo toolchain + normalizador de
+  sdist convergem para hashes idênticos:
+  wheel `2a16ac637dbe748dd7a4034c9eac72de74bfacd03ce8d9deff91289f92f5b94a`,
+  sdist normalizado `1c359f5fb5b26a8dcd93649778c25ba9961dc9239a10cc41d68bdd9b77d6bac1`
+  (source tree do HEAD desta branch — inclui os novos tools e testes;
+  para o commit exato `deb263a` da tag rc19 o hash do wheel é diferente
+  porque source é diferente, mas ambos convergem entre si).
+- `pip install nomos-<versao>.tar.gz` normalizado instala o pacote
+  corretamente e `nomos --version` retorna a versão esperada.
+
+### Note
+- **`v1.3.0rc19` já publicada NÃO é alterada**: retag ou substituição
+  de assets é proibida. Todas as garantias novas passam a valer
+  automaticamente na próxima release que sair depois de merge desta
+  branch — ver `docs/SUPPLY_CHAIN.md` §8 (tabela de estado por versão).
 
 ## [1.3.0rc19] — 2026-08-04 (H4.8: supply-chain hardening — Node 24, build attestations SLSA, builds reproducible-friendly, SBOM amarrado por sha256 aos artefatos)
 
