@@ -83,6 +83,10 @@ Os três controles são independentes: `SHA256SUMS` prova integridade de
 transporte, o SBOM descreve o que está dentro, e a attestation prova
 quem/onde/como construiu.
 
+Para o contrato completo (toolchain pinado, reprodutibilidade bit-a-bit,
+pinning das actions por SHA, matriz de permissions), veja
+[SUPPLY_CHAIN.md](SUPPLY_CHAIN.md).
+
 ## Atualizar
 
 ```bash
