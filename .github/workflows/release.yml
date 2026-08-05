@@ -171,6 +171,19 @@ jobs:
             dist/*.whl
             dist/*.tar.gz
 
+      - name: "Attestation do SBOM (predicate cyclonedx)"
+        # H4.10 §7: fecha o gap "SBOM_ATTESTATION=NOT_IMPLEMENTED" do rc19.
+        # Atesta o próprio sbom.cdx.json como sujeito, apontando o wheel
+        # e o sdist como componentes descritos. Verificação:
+        #   gh attestation verify sbom.cdx.json -R Voltolini-SPACE/NOMOS \
+        #     --predicate-type https://cyclonedx.org/bom
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: |
+            dist/*.whl
+            dist/*.tar.gz
+          sbom-path: dist/sbom.cdx.json
+
       - name: Resolve release flags
         id: release_flags
         shell: bash
