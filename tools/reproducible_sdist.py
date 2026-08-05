@@ -60,6 +60,79 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+class UnsafeSdistError(Exception):
+    """Falha fechada de segurança do normalizador de sdist."""
+
+
+# Tipos de membro aceitos: arquivo regular, diretório, symlink e hardlink.
+# Tudo o mais (device/FIFO/char/block) é dispositivo especial e não deveria
+# jamais estar num sdist do Python — se aparece, é hostil ou corrupto.
+_ACCEPTED_TYPES = frozenset({
+    tarfile.REGTYPE,
+    tarfile.AREGTYPE,
+    tarfile.DIRTYPE,
+    tarfile.SYMTYPE,
+    tarfile.LNKTYPE,
+})
+
+# USTAR limita o campo `name` a 100 bytes e o `prefix` a 155 bytes (total
+# efetivo ~255). Nomes maiores exigem PAX (que reintroduz não-determinismo
+# no output). Rejeitar > 255 bytes UTF-8 preserva o formato USTAR estrito.
+_USTAR_NAME_LIMIT = 255
+_USTAR_LINKNAME_LIMIT = 100  # USTAR não tem `prefix` para linkname
+
+
+def _validate_members(members: list[tarfile.TarInfo]) -> None:
+    """Fail-closed sobre a lista de membros do sdist bruto.
+
+    Rejeita qualquer construção que possa comprometer o extract-time do
+    usuário final, o formato USTAR de saída, ou a integridade da
+    normalização.
+    """
+    seen: set[str] = set()
+    for m in members:
+        # 1) Tipos suportados. Dispositivos especiais e todo o resto: nope.
+        if m.type not in _ACCEPTED_TYPES:
+            raise UnsafeSdistError(
+                f"tipo de membro não suportado em sdist: {m.name!r} type={m.type!r}"
+            )
+        # 2) Caminho absoluto.
+        if m.name.startswith("/"):
+            raise UnsafeSdistError(f"caminho absoluto em membro: {m.name!r}")
+        # 3) Path traversal (componente `..`). Cobre "../x", "a/../b", "../".
+        parts = m.name.replace("\\", "/").split("/")
+        if any(p == ".." for p in parts):
+            raise UnsafeSdistError(f"path traversal em membro: {m.name!r}")
+        # 4) Nome vazio/nulo.
+        if not m.name.strip() or "\x00" in m.name:
+            raise UnsafeSdistError(f"nome inválido em membro: {m.name!r}")
+        # 5) Limites USTAR (255 bytes para name, 100 para linkname).
+        if len(m.name.encode("utf-8")) > _USTAR_NAME_LIMIT:
+            raise UnsafeSdistError(
+                f"nome maior que {_USTAR_NAME_LIMIT} bytes (limite USTAR): {m.name!r}"
+            )
+        if m.linkname:
+            if m.linkname.startswith("/"):
+                raise UnsafeSdistError(
+                    f"symlink/hardlink com destino absoluto: {m.name!r} → {m.linkname!r}"
+                )
+            lparts = m.linkname.replace("\\", "/").split("/")
+            if any(p == ".." for p in lparts):
+                raise UnsafeSdistError(
+                    f"symlink/hardlink com traversal: {m.name!r} → {m.linkname!r}"
+                )
+            if len(m.linkname.encode("utf-8")) > _USTAR_LINKNAME_LIMIT:
+                raise UnsafeSdistError(
+                    f"linkname maior que {_USTAR_LINKNAME_LIMIT} bytes: {m.linkname!r}"
+                )
+        # 6) Duplicatas após normalização. `_normalize_key` deve casar com a
+        # ordenação usada em normalize_sdist.
+        key = m.name
+        if key in seen:
+            raise UnsafeSdistError(f"nome duplicado após normalização: {key!r}")
+        seen.add(key)
+
+
 def _normalize_member(m: tarfile.TarInfo, epoch: int) -> tarfile.TarInfo:
     new = tarfile.TarInfo(name=m.name)
     new.size = m.size
@@ -84,6 +157,7 @@ def normalize_sdist(path: Path, epoch: int) -> tuple[str, str]:
     before = _sha256(path)
     with tarfile.open(path, "r:gz") as tf:
         members = sorted(tf.getmembers(), key=lambda m: m.name)
+        _validate_members(members)
         payloads: list[tuple[tarfile.TarInfo, bytes | None]] = []
         for m in members:
             if m.isfile():
@@ -140,7 +214,16 @@ def main(argv: list[str]) -> int:
             print(f"FALHA: não é arquivo: {a}", file=sys.stderr)
             exit_rc = 4
             continue
-        before, after = normalize_sdist(p, epoch)
+        try:
+            before, after = normalize_sdist(p, epoch)
+        except UnsafeSdistError as e:
+            print(f"FALHA (fail-closed): {p.name}: {e}", file=sys.stderr)
+            exit_rc = 5
+            continue
+        except tarfile.TarError as e:
+            print(f"FALHA (tar inválido): {p.name}: {e}", file=sys.stderr)
+            exit_rc = 6
+            continue
         change = "unchanged" if before == after else "normalized"
         print(f"{p.name}: {change}  before={before}  after={after}")
     return exit_rc
