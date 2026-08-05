@@ -4,13 +4,22 @@ on:
   push:
     tags: ["v*"]
 
+# Default de mínimo privilégio (H4.9): contents:read para o job de
+# validação (que executa código do repo — pytest/ruff/pip install).
+# O job publicar sobrescreve com o que efetivamente precisa
+# (contents:write + id-token:write + attestations:write).
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validar:
     name: Suíte completa antes de publicar
     runs-on: ubuntu-latest
+    # Explicit, para documentar: validar NUNCA precisa escrever no repo,
+    # emitir attestation ou obter OIDC. Se um teste ou uma dep de teste
+    # for maliciosa, o GITHUB_TOKEN dela só lê.
+    permissions:
+      contents: read
     env:
       PYTHONUTF8: "1"
     steps:
