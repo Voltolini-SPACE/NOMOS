@@ -7,7 +7,7 @@
     <meta name="keywords" content="agente IA, local-first, privacidade, segurança, automação, ollama, whisper, stable diffusion, skills, dry-run">
     <meta name="author" content="Se7enpay">
     <meta name="theme-color" content="#0A0F0D">
-    <link rel="canonical" href="https://nomos.se7enpay.com/">
+    <link rel="canonical" href="https://voltolini-space.github.io/NOMOS/">
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="assets/favicon.svg">
     <!-- Open Graph -->
@@ -16,8 +16,8 @@
     <meta property="og:type" content="website">
     <meta property="og:locale" content="pt_BR">
     <meta property="og:site_name" content="NOMOS">
-    <meta property="og:url" content="https://nomos.se7enpay.com/">
-    <meta property="og:image" content="assets/og-image.png">
+    <meta property="og:url" content="https://voltolini-space.github.io/NOMOS/">
+    <meta property="og:image" content="https://voltolini-space.github.io/NOMOS/assets/og-image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:image:alt" content="NOMOS — Seu agente. Sua máquina. Suas regras. Local por lei.">
@@ -25,7 +25,7 @@
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="NOMOS — Seu agente. Sua máquina. Suas regras.">
     <meta name="twitter:description" content="Agente pessoal de IA local-first: motores, memória, cofre, skills e agentes governados, com aprovação humana em cada passo.">
-    <meta name="twitter:image" content="assets/og-image.png">
+    <meta name="twitter:image" content="https://voltolini-space.github.io/NOMOS/assets/og-image.png">
     <title>NOMOS — Seu agente. Sua máquina. Suas regras.</title>
     <script>
         /* boot do tema, no <head>: aplica a escolha salva ANTES do CSS pintar
@@ -256,6 +256,8 @@
       background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.4),transparent 70%);pointer-events:none}
     /* aurora neon sutil atrás do hero */
     .hero{position:relative;isolation:isolate}
+    /* a aurora sangra -15% para fora do .hero; sem clip ela vira scroll horizontal da página */
+    html{overflow-x:clip}
     .hero::before{content:"";position:absolute;inset:-40% -15% auto -15%;height:80%;z-index:-1;pointer-events:none;
       background:radial-gradient(60% 60% at 28% 25%,rgba(90,247,142,.14),transparent 70%),radial-gradient(50% 50% at 82% 12%,rgba(86,225,233,.12),transparent 70%);
       filter:blur(34px)}
