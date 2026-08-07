@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -21,8 +22,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAKE_SBOM = ROOT / "tools" / "make_sbom.py"
 
-
-import os as _os
 
 # Variáveis essenciais em Windows — sem elas o interpretador Python filho
 # morre no arranque com `_Py_HashRandomization_Init: failed to get random
@@ -36,9 +35,9 @@ _WIN_ESSENTIALS = (
 
 
 def _run(out: Path, args: list[str], epoch: str | None) -> None:
-    env = {"PATH": _os.environ.get("PATH", "")}
+    env = {"PATH": os.environ.get("PATH", "")}
     for k in _WIN_ESSENTIALS:
-        v = _os.environ.get(k)
+        v = os.environ.get(k)
         if v is not None:
             env[k] = v
     if epoch is not None:
