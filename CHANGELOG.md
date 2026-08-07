@@ -25,7 +25,6 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
   (`.hero::before`, inset -15%) vazava ~190px além da viewport e criava
   scroll horizontal em desktop; clip contém a sangria sem mudar o visual.
   Regressão travada por `test_index_aurora_do_hero_nao_gera_scroll_horizontal`.
->>>>>>> origin/main
 
 ### Changed (H5.0 — presença GitHub: visual + marketing + copy; zero mudança de runtime)
 - **README.md**: hero ganha parágrafo de supply chain verificável + 3 badges
