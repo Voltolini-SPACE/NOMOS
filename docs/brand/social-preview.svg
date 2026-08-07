@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="NOMOS — Seu agente. Sua máquina. Suas regras.">
+  <!-- Fundo: preto terminal do Brandbook v1.0 (#0A0F0D) -->
+  <rect width="1280" height="640" fill="#0A0F0D"/>
+
+  <!-- Grade sutil de terminal -->
+  <g stroke="#5AF78E" stroke-opacity="0.05" stroke-width="1">
+    <path d="M0 80H1280M0 160H1280M0 240H1280M0 320H1280M0 400H1280M0 480H1280M0 560H1280"/>
+    <path d="M160 0V640M320 0V640M480 0V640M640 0V640M800 0V640M960 0V640M1120 0V640"/>
+  </g>
+
+  <!-- Moldura de janela de terminal -->
+  <rect x="72" y="88" width="1136" height="464" rx="14" fill="#0D1310" stroke="#5AF78E" stroke-opacity="0.35" stroke-width="2"/>
+  <rect x="72" y="88" width="1136" height="44" rx="14" fill="#101713"/>
+  <rect x="72" y="118" width="1136" height="14" fill="#101713"/>
+  <circle cx="102" cy="110" r="7" fill="#FF5F56"/>
+  <circle cx="126" cy="110" r="7" fill="#FFBD2E"/>
+  <circle cx="150" cy="110" r="7" fill="#5AF78E"/>
+  <text x="640" y="115" text-anchor="middle" font-family="Menlo, SFMono-Regular, Consolas, monospace" font-size="16" fill="#5AF78E" fill-opacity="0.55">bash — ~ — nomos</text>
+
+  <!-- Wordmark -->
+  <text x="112" y="220" font-family="Menlo, SFMono-Regular, Consolas, monospace" font-size="88" font-weight="700" fill="#F2FFF7" letter-spacing="6">NOMOS<tspan fill="#5AF78E">_</tspan></text>
+
+  <!-- Tagline canônica -->
+  <text x="112" y="286" font-family="Menlo, SFMono-Regular, Consolas, monospace" font-size="34" fill="#5AF78E">Seu agente. Sua máquina. Suas regras.</text>
+
+  <!-- Assinatura -->
+  <text x="112" y="330" font-family="Menlo, SFMono-Regular, Consolas, monospace" font-size="22" fill="#F2FFF7" fill-opacity="0.62">agente pessoal de IA · 100% local · local por lei</text>
+
+  <!-- Linha de prompt com prova -->
+  <text x="112" y="404" font-family="Menlo, SFMono-Regular, Consolas, monospace" font-size="22" fill="#F2FFF7" fill-opacity="0.85"><tspan fill="#5AF78E">$</tspan> nomos doutor</text>
+  <text x="112" y="438" font-family="Menlo, SFMono-Regular, Consolas, monospace" font-size="22" fill="#5AF78E">STATUS GERAL: PRONTO ✅</text>
+
+  <!-- Selos de prova (rodapé da janela) -->
+  <g font-family="Menlo, SFMono-Regular, Consolas, monospace" font-size="18">
+    <rect x="112" y="478" width="212" height="40" rx="8" fill="none" stroke="#5AF78E" stroke-opacity="0.5"/>
+    <text x="218" y="504" text-anchor="middle" fill="#5AF78E">1.800+ testes</text>
+    <rect x="340" y="478" width="268" height="40" rx="8" fill="none" stroke="#5AF78E" stroke-opacity="0.5"/>
+    <text x="474" y="504" text-anchor="middle" fill="#5AF78E">SLSA · Sigstore</text>
+    <rect x="624" y="478" width="300" height="40" rx="8" fill="none" stroke="#5AF78E" stroke-opacity="0.5"/>
+    <text x="774" y="504" text-anchor="middle" fill="#5AF78E">build bit-a-bit</text>
+    <rect x="940" y="478" width="228" height="40" rx="8" fill="none" stroke="#5AF78E" stroke-opacity="0.5"/>
+    <text x="1054" y="504" text-anchor="middle" fill="#5AF78E">0 telemetria</text>
+  </g>
+
+  <!-- URL -->
+  <text x="640" y="606" text-anchor="middle" font-family="Menlo, SFMono-Regular, Consolas, monospace" font-size="20" fill="#F2FFF7" fill-opacity="0.5">github.com/Voltolini-SPACE/NOMOS</text>
+</svg>

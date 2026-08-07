@@ -1,9 +1,12 @@
 # NOMOS
 
 [![CI](https://github.com/Voltolini-SPACE/NOMOS/actions/workflows/ci.yml/badge.svg)](https://github.com/Voltolini-SPACE/NOMOS/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Voltolini-SPACE/NOMOS?include_prereleases&color=5AF78E&label=release)](https://github.com/Voltolini-SPACE/NOMOS/releases)
 [![Python 3.10 to 3.13](https://img.shields.io/badge/python-3.10_to_3.13-5AF78E?logo=python&logoColor=white)](https://github.com/Voltolini-SPACE/NOMOS/blob/main/pyproject.toml)
 [![License MIT](https://img.shields.io/badge/license-MIT-5AF78E)](https://github.com/Voltolini-SPACE/NOMOS/blob/main/LICENSE)
 [![local-first](https://img.shields.io/badge/local--first-100%25-5AF78E)](https://github.com/Voltolini-SPACE/NOMOS/blob/main/docs/PRIVACIDADE.md)
+[![SLSA provenance](https://img.shields.io/badge/SLSA-provenance_v1-5AF78E)](https://github.com/Voltolini-SPACE/NOMOS/blob/main/docs/SUPPLY_CHAIN.md)
+[![reproducible build](https://img.shields.io/badge/build-bit--a--bit_reproduz%C3%ADvel-5AF78E)](https://github.com/Voltolini-SPACE/NOMOS/blob/main/docs/SUPPLY_CHAIN.md)
 
 **Seu agente. Sua máquina. Suas regras.** — *local por lei.*
 
@@ -11,6 +14,11 @@ NOMOS é um agente pessoal de IA que roda **100% no seu computador**. Cérebro,
 memória, chaves e registros ficam na sua máquina. A nuvem é opcional e só
 funciona se você "plugar" de propósito. Leve, sem exigir super-PC, e feito
 para iniciantes.
+
+E quando o NOMOS chega até você, chega **provado**: cada release publica hash,
+proveniência criptográfica (SLSA/Sigstore) e inventário de dependências — e o
+mesmo commit produz **bytes idênticos** em Linux, macOS e Windows, em Python
+3.10, 3.12 ou 3.14. Você não precisa confiar; pode [verificar](docs/SUPPLY_CHAIN.md).
 
 ```
 ███╗   ██╗ ██████╗ ███╗   ███╗ ██████╗ ███████╗
@@ -34,6 +42,8 @@ para iniciantes.
   declaram, com risco visível e aprovação humana.
 - 🚦 **Roteador automático** — escolhe o melhor motor para cada tarefa,
   local primeiro, sem você precisar entender de modelos.
+- 🔗 **Cadeia de suprimentos provada** — wheel e sdist bit-a-bit reproduzíveis,
+  assinados via Sigstore, com SBOM amarrado por SHA-256 ao artefato exato.
 - 🎨 **Do seu jeito** — nome do agente, personalidade e cores personalizáveis.
 
 ## Capacidades
@@ -81,6 +91,27 @@ nomos            # 1ª vez: assistente guiado; depois: menu principal
 Ou pelos **instaladores de 1 clique** anexados a cada release do GitHub
 (`install.sh` para Mac/Linux, `install.ps1` para Windows) — com verificação de
 integridade, backup automático e rollback. Detalhes: [docs/INSTALL.md](docs/INSTALL.md).
+
+## Verifique, não confie
+
+Todo release do NOMOS publica três camadas independentes de garantia — e
+qualquer pessoa pode conferir as três em menos de um minuto:
+
+```bash
+# 1. Integridade: os bytes que você baixou são os bytes publicados
+shasum -a 256 -c SHA256SUMS
+
+# 2. Proveniência: o pacote saiu DESTE repositório, DESTE workflow, DESTA tag
+#    (assinatura Sigstore/Fulcio + transparência Rekor)
+gh attestation verify nomos-*.whl -R Voltolini-SPACE/NOMOS
+
+# 3. Reprodutibilidade: reconstrua do fonte e obtenha o MESMO hash
+git checkout <tag> && python tools/repro_check.py
+```
+
+O inventário de dependências (`sbom.cdx.json`, CycloneDX 1.5) referencia o
+wheel e o sdist pelo SHA-256 exato — o SBOM descreve *aquele* arquivo, não
+"uma versão parecida". Contrato completo: [docs/SUPPLY_CHAIN.md](docs/SUPPLY_CHAIN.md).
 
 ## Comece por aqui
 
@@ -143,7 +174,7 @@ Python puro, multiplataforma.
 O **Motor Council** — um pipeline de múltiplos motores que revisa, julga e
 arbitra respostas antes de entregá-las — está disponível em modo **dry-run**.
 A capacidade estreou na tag `v1.3.0rc4-motor-council-dry-run` e segue presente,
-sem retrocesso, na versão atual (`1.3.0rc18`). **Ainda não é produção** e
+sem retrocesso, na versão atual (`1.3.0rc20`). **Ainda não é produção** e
 **não executa motor de verdade**.
 
 Superfícies disponíveis hoje (nenhuma executa motor real):
@@ -184,8 +215,11 @@ Detalhes técnicos e o mapa completo das fases MC0–MC18:
 
 ## Maturidade
 
-Release candidate (v1.3.0rc18, **pre-release**). Suíte com mais de 1.600 testes cobrindo
-segurança (fail-closed, não-vazamento de segredo, opt-in de nuvem) e UX. O
+Release candidate (v1.3.0rc20, **pre-release**). Suíte com mais de 1.800 testes cobrindo
+segurança (fail-closed, não-vazamento de segredo, opt-in de nuvem) e UX,
+verde em 3 sistemas × 4 versões de Python. A cadeia de publicação tem
+proveniência SLSA verificada, SBOM com amarração por hash e builds
+bit-a-bit reproduzíveis com gate próprio no CI. O
 **Motor Council** está em dry-run (ver seção acima): o subcomando `simular`
 roda na CLI e no chat, mas sem execução de motor real, sem nuvem e sem
 persistência. API interna pode mudar; os comandos da tabela acima são
