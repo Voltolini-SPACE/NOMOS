@@ -127,6 +127,46 @@ def test_cauda_parcial_e_reparada_no_proximo_append(tmp_path):
     assert eventos == ["um", "dois", "tres"]
 
 
+def test_append_usa_cache_e_nao_rele_o_arquivo_a_cada_chamada(tmp_path, monkeypatch):
+    """P1-9 da auditoria de 2026-07-17: append() chamava _tail_scan() (relê
+    o arquivo inteiro) em TODA gravação — O(n) por chamada, O(n²) agregado
+    (medido: 0.21ms/chamada com 100 linhas -> 15.46ms/chamada com 10.000).
+    Agora só relê na 1ª chamada (cache frio); as seguintes reaproveitam o
+    cache em memória, validado por um stat() O(1) a cada append()."""
+    log = AuditLog(tmp_path / "audit.jsonl")
+    chamadas = {"n": 0}
+    original = log._tail_scan
+
+    def _contando():
+        chamadas["n"] += 1
+        return original()
+
+    monkeypatch.setattr(log, "_tail_scan", _contando)
+    for i in range(20):
+        log.append("ev", n=i)
+    assert chamadas["n"] == 1, f"_tail_scan() foi chamado {chamadas['n']}x (esperado 1)"
+    assert log.estado()[0] == 20
+
+
+def test_cache_de_append_detecta_escrita_externa_ao_arquivo(tmp_path):
+    """Se OUTRA instância (outro processo, na prática — painel + CLI ao
+    mesmo tempo) gravar no MESMO arquivo, o cache desta instância fica
+    desatualizado; o próximo append() tem de perceber isso (tamanho real
+    do disco ≠ tamanho em cache, via stat()) e encadear a partir do estado
+    VERDADEIRO — nunca de um cache obsoleto, o que bifurcaria a cadeia."""
+    p = tmp_path / "audit.jsonl"
+    log_a = AuditLog(p)
+    log_a.append("de-a", n=1)
+    log_b = AuditLog(p)             # outra instância, mesmo arquivo
+    log_b.append("de-b", n=2)
+    log_a.append("de-a-de-novo", n=3)   # cache de log_a estava desatualizado
+    ok, viol = log_a.verify()
+    assert ok, f"cadeia quebrada na linha {viol} — cache ficou desatualizado"
+    assert log_a.estado()[0] == 3
+    eventos = [json.loads(li)["event"] for li in p.read_text().splitlines()]
+    assert eventos == ["de-a", "de-b", "de-a-de-novo"]
+
+
 def test_redacao_cobre_chave_e_credencial(tmp_path):
     log = AuditLog(tmp_path / "audit.jsonl")
     log.append("teste.redacao", chave="valor-em-claro",

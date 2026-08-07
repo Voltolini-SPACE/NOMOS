@@ -99,6 +99,49 @@ def _rodar_skill_conversa(ctx, nome_skill: str, argumentos, aprovador,
     return False, f"a skill '{nome_skill}' falhou (rc={rc})"
 
 
+# ---------------------------------------------------------------------------
+# Missão de eliminação de débitos residuais do Horizonte 3 (auditoria de
+# 2026-07-17), Prioridade 1, parte b: roteamento de intenção para AGENTES
+# especializados na conversa — mesmo padrão da oferta de skill acima
+# (determinístico, keyword, no máximo uma sugestão por turno, só o texto
+# DIGITADO decide, humano confirma sim/não). Primeiro caller de produção de
+# `AgentRegistry.sugerir()` (até aqui só testado em isolamento). Só é
+# checado quando NENHUMA skill casou, para não ofertar duas coisas no
+# mesmo turno — skills são o mecanismo mais antigo e continuam tendo
+# prioridade.
+# ---------------------------------------------------------------------------
+
+def _sugerir_agente_conversa(ctx, texto: str):
+    """(manifesto, ferramenta) do agente sugerido, ou None.
+
+    Ferramenta escolhida de forma determinística: a primeira declarada no
+    manifesto do agente — reflete a ordem de prioridade que o autor do
+    agente já expressou (ex.: 'programador' declara codigo_gerar primeiro,
+    seu propósito central). As 8 ferramentas da allowlist têm execução real
+    desde a parte a) desta mesma missão (agents/execucao.py)."""
+    from nomos.agents.registry import AgentRegistry
+    reg = AgentRegistry(ctx["home"])
+    mf = reg.sugerir(texto)
+    if not mf or not mf.ferramentas:
+        return None
+    return mf, mf.ferramentas[0]
+
+
+def _usar_agente_conversa(ctx, mf, ferramenta: str, alvo: str, aprovador,
+                          router) -> tuple[bool, str]:
+    """Executa ferramenta de agente a partir da conversa: o MESMO
+    AgentToolBoundary + agents.execucao usados por `nomos agentes usar`
+    (nenhum caminho de autorização novo)."""
+    from nomos.agents.boundary import AgentToolBoundary
+    from nomos.agents.execucao import ferramentas_wired
+    boundary = AgentToolBoundary(mf, ctx["policy"], aprovador, audit=ctx.get("audit"))
+    wired = ferramentas_wired(ctx, alvo=alvo, aprovador=aprovador, router=router)
+    if ferramenta not in wired:
+        return False, f"'{ferramenta}' não está disponível nesta versão."
+    ok, resultado = boundary.usar_ferramenta(ferramenta, wired[ferramenta], alvo=alvo)
+    return ok, str(resultado)
+
+
 def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool = True,
                  aprovador=None, say_token=None) -> int:
     c = lambda n, t: cor(n, t, colorido)
@@ -109,13 +152,27 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
     tobj = tema_mod.carregar(perfil)
     demo = perfil.get("modo_cerebro") == "demo"
     ultima_rota = {"motor": None}   # para /bem e /mal (feedback local)
-    ultima_troca = {"mensagens": None}   # para /contexto (transparência total)
+    # Horizonte 3/missao de debitos, P2 (2026-07-17): anotacao explicita --
+    # o literal `{"mensagens": None}` sozinho faz mypy inferir
+    # `dict[str, None]` (o unico valor presente e None), mas a linha 601
+    # (mais abaixo) grava ali o `contexto` real enviado ao motor
+    # (list[dict[str, str]]) sempre que uma mensagem e processada. O tipo
+    # correto e a uniao dos dois usos reais: nunca gravado (None, estado
+    # inicial) ou a lista de mensagens da ultima troca. Mudanca so de
+    # anotacao -- o valor inicial em tempo de execucao continua None.
+    ultima_troca: dict[str, list[dict[str, str]] | None] = {"mensagens": None}
     # F2: histórico. Modo privado (perfil) => store em memória, não toca o disco.
     from nomos.conversations.store import ConversationStore
     privado0 = bool(perfil.get("conversa_privada"))
     conv_store = ConversationStore(ctx["home"] / "conversas.db", privado=privado0)
     conversa_id = conv_store.nova_conversa()
-    estado_privado = {"on": privado0}
+    # Horizonte 3/missao de debitos, P2: mesma causa raiz de ultima_troca
+    # acima -- o literal `{"on": privado0}` faz mypy inferir
+    # `dict[str, bool]` (privado0 e bool), mas a linha ~427 (mais abaixo)
+    # tambem usa este dict como "bag" de estado da sessao para guardar o
+    # contexto retomado de /continuar (list[dict[str, str]]). Anotacao
+    # ampliada para refletir o uso real; comportamento inalterado.
+    estado_privado: dict[str, bool | list[dict[str, str]]] = {"on": privado0}
     say(c("fraco", f"({nome} pronto — /ajuda mostra os comandos)"))
     while True:
         try:
@@ -267,6 +324,23 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                     f"Dica: {motores.DICAS['codigo']}")
                 continue
             modelo = m.get("detalhe")
+            if not modelo:
+                # Horizonte 3/missao de debitos, P2 (2026-07-17): defensivo.
+                # motores.ativo() so devolve motores com disponivel=True, e
+                # no mapa de "codigo" (cognition/motores.py) disponivel e
+                # detalhe SEMPRE derivam da MESMA variavel de origem
+                # (cod_local/texto_local) -- ou seja, disponivel=True hoje
+                # implica detalhe ser uma string nao-vazia, e este ramo nao
+                # deveria disparar com o codigo atual. Mesmo assim, sem essa
+                # checagem, mypy so ve `m.get("detalhe")` como `Any | None`
+                # (Optional) e um None real aqui viraria TypeError dentro de
+                # OllamaProvider(model=None). A guarda deixa explicito o
+                # contrato esperado, da a mypy o estreitamento necessario, e
+                # falha com mensagem amigavel (nao um traceback) se essa
+                # correlacao mudar no futuro.
+                say(f"{nome}: ainda estou sem motor de código. "
+                    f"Dica: {motores.DICAS['codigo']}")
+                continue
             sistema = (f"Você é {nome}, programador(a) sênior. Responda em português "
                        "com código claro e comentado. Nunca invente APIs.")
             try:
@@ -343,8 +417,15 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
         if linha == "/privado":
             estado_privado["on"] = not estado_privado["on"]
             conv_store.close()
+            # bool(...) (Horizonte 3/missao de debitos, P2): estado_privado
+            # agora e dict[str, bool | list[...]] (mesmo dict serve de bag
+            # para "on" e "retomado"), entao estado_privado["on"] e
+            # estaticamente bool | list[...] mesmo sendo SEMPRE bool em tempo
+            # de execucao (unica chave que recebe esse valor). bool() e
+            # no-op para um bool real e da a mypy o tipo exato que
+            # ConversationStore(privado: bool) exige.
             conv_store = ConversationStore(ctx["home"] / "conversas.db",
-                                           privado=estado_privado["on"])
+                                           privado=bool(estado_privado["on"]))
             conversa_id = conv_store.nova_conversa()
             if estado_privado["on"]:
                 say(f"{nome}: modo privado LIGADO 🕶️ — esta conversa NÃO será "
@@ -494,9 +575,11 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
             continue
         from nomos.cognition.prompt_guard import texto_confiavel
         from nomos.ext import skill_intencao as intencao
-        # F1/ISSUE-001: a oferta de skill considera SÓ o texto digitado pelo
-        # usuário — nunca conteúdo recuperado de arquivo/memória.
-        sugestao = intencao.sugerir_skill(texto_confiavel(linha), ctx["home"],
+        # F1/ISSUE-001: a oferta de skill (e, agora, a de agente) considera
+        # SÓ o texto digitado pelo usuário — nunca conteúdo recuperado de
+        # arquivo/memória.
+        texto_digitado = texto_confiavel(linha)
+        sugestao = intencao.sugerir_skill(texto_digitado, ctx["home"],
                                           ctx.get("skills") or (ctx["home"] / "skills"))
         if sugestao:
             say(f"{nome}: posso usar a skill '{sugestao['name']}' para isso"
@@ -514,15 +597,50 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                 mem.remember("note", f"skill {sugestao['name']} usada na conversa")
                 continue
             say(c("fraco", "(ok, sigo eu mesmo)"))
+        else:
+            # H3/missão de débitos residuais, P1b: agente especializado por
+            # intenção — só ofertado quando nenhuma skill casou (evita duas
+            # ofertas no mesmo turno; skills têm prioridade por serem o
+            # mecanismo mais antigo).
+            sugestao_agente = _sugerir_agente_conversa(ctx, texto_digitado)
+            if sugestao_agente:
+                mf_ag, ferramenta_ag = sugestao_agente
+                say(f"{nome}: posso acionar o agente '{mf_ag.name}' "
+                    f"(ferramenta '{ferramenta_ag}') para isso — {mf_ag.objetivo}. "
+                    "Quer? (sim/não)")
+                try:
+                    resp = ask("> ").strip().casefold()
+                except (EOFError, KeyboardInterrupt):
+                    say("")
+                    resp = "não"
+                if resp == "sim":
+                    motor = router if ferramenta_ag in ("codigo_gerar", "arquivo_resumir") else None
+                    ok, msg = _usar_agente_conversa(ctx, mf_ag, ferramenta_ag,
+                                                    texto_digitado, aprovador, motor)
+                    say(f"{nome}: {msg}")
+                    mem.remember("note",
+                                f"agente {mf_ag.name} ({ferramenta_ag}) usado na conversa")
+                    continue
+                say(c("fraco", "(ok, sigo eu mesmo)"))
         from nomos.cognition import rag
         bloco_rag, n_lembrancas = rag.contexto_relevante(mem, linha)
         contexto = [{"role": "system", "content": system_prompt(perfil)}]
         if bloco_rag:
             contexto.append({"role": "system", "content": bloco_rag})
         # /continuar: injeta o contexto retomado uma única vez (antes do recente)
-        retomado = estado_privado.pop("retomado", None)
-        if retomado:
-            contexto += retomado
+        # Horizonte 3/missao de debitos, P2: nome proprio ("retomado_injetado",
+        # nao "retomado") -- o comando /continuar (mais acima) ja usa
+        # "retomado" para o list[dict] devolvido por
+        # conv_store.turnos_para_contexto(); mypy infere um unico tipo
+        # estatico por nome de variavel na funcao inteira, e os dois ramos
+        # sao mutuamente exclusivos em runtime mas nao para mypy. isinstance()
+        # estreita o tipo de dict[str, bool | list[...]].pop(...) (que
+        # devolve bool | list[dict[str, str]] | None) para list antes do uso,
+        # em vez de um truthy-check generico que mypy nao aproveita para
+        # estreitamento de Union. Comportamento identico ao anterior.
+        retomado_injetado = estado_privado.pop("retomado", None)
+        if isinstance(retomado_injetado, list):
+            contexto += retomado_injetado
         contexto += [
             {"role": ("assistant" if m.role == "assistant" else "user"), "content": m.text}
             for m in reversed(mem.recent(6)) if m.role in {"user", "assistant"}
@@ -560,6 +678,15 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
             if n_lembrancas:
                 say(c("fraco", f"(usei {n_lembrancas} lembrança(s) suas para "
                                "contextualizar)"))
+            # P2-1 (auditoria de 2026-07-17): mesmo produtor real de
+            # cli.py::one_turn() — o "modo simples" (nomos start) é o outro
+            # fluxo de chat de produção e tinha a mesma lacuna (fila de
+            # revisão de memória sempre vazia, ISSUE-020 nunca disparava).
+            novas_candidatas = mem.propor_candidatas_do_texto(linha)
+            if novas_candidatas:
+                say(c("fraco", f"({nome} percebeu {len(novas_candidatas)} "
+                               "coisa(s) que parecem fato/preferência/tarefa "
+                               "— reveja com: nomos memoria revisar)"))
         else:
             say(resposta_demo(linha, nome))
             say(c("fraco", f"(detalhe técnico: {out.reason})"))

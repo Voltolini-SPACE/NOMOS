@@ -2,8 +2,8 @@
 
 Empacota o NOMOS_HOME (perfil, memórias, cofre, política, trilha, rotinas,
 skills, feedback, trust) em tar → Fernet (AES+HMAC) com chave PBKDF2-SHA256
-600k. Exclui por padrão o que é re-baixável/efêmero: `modelos/` (GBs) e
-`sandbox/` — sempre avisando.
+600k. Exclui por padrão o que é re-baixável/efêmero: `cerebros/` (modelos
+GGUF, GBs) e `sandbox/` — sempre avisando.
 
 Restaurar é conservador por lei:
 - home de destino NÃO-vazio => só com confirmação explícita do chamador;
@@ -28,7 +28,7 @@ from nomos.kernel.plataforma import chmod_privado
 
 ITERACOES = 600_000
 MAGICO = b"NOMOS-BACKUP-TOTAL-v1\n"
-EXCLUIR_PADRAO = ("modelos", "sandbox", "backups")
+EXCLUIR_PADRAO = ("cerebros", "sandbox", "backups")
 
 
 class BackupTotalError(Exception):

@@ -9,6 +9,7 @@ modalidade e recomenda UM próximo passo acionável.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import sys
 
@@ -19,6 +20,23 @@ from nomos.kernel import config, localidade, plataforma
 
 def _linha(ok: bool, titulo: str, detalhe: str = "") -> dict:
     return {"ok": ok, "titulo": titulo, "detalhe": detalhe}
+
+
+def _sha256_arquivo(caminho) -> str:
+    """SHA-256 hex de um arquivo, em streaming (não carrega tudo em
+    memória). H4.5-B (auditoria de 2026-08-04): evidência forense
+    verificável de um arquivo colocado em quarentena, sem reter ou logar
+    o CONTEÚDO em si — só o hash. Mesma técnica já usada em
+    kernel/evidencia.py:_sha256 (streaming, blocos de 64KiB); reimplementada
+    aqui, não importada, porque evidencia.py é sobre pacotes de evidência
+    com seu próprio ciclo de vida e formato de manifesto — acoplar os dois
+    subsistemas por um símbolo privado (`_sha256`) seria mais frágil do
+    que repetir 5 linhas de stdlib."""
+    h = hashlib.sha256()
+    with open(caminho, "rb") as f:
+        for bloco in iter(lambda: f.read(65536), b""):
+            h.update(bloco)
+    return h.hexdigest()
 
 
 def diagnostico(home=None) -> list[dict]:
@@ -129,9 +147,25 @@ def diagnostico_v011(home=None, ctx: dict | None = None) -> list[dict]:
                        "criada" if home.exists() else "ainda não existe",
                        "" if home.exists() else "rode: nomos init"))
 
-    # agente / onboarding
-    agente = config.load_agent()
-    if agente and agente.get("onboarding_completo"):
+    # agente / onboarding (achado H4/HIGH-01, auditoria de 2026-07-17):
+    # config.load_agent() não tem try/except próprio (json.loads() cru) —
+    # um agent.json corrompido derrubava diagnostico_v011() INTEIRO com
+    # JSONDecodeError não tratada, e nenhum dos outros ~15 itens (Python,
+    # home, localidade, cofre, auditoria etc.) chegava a ser reportado.
+    # Corrigido isolando a leitura: um agente ilegível vira um item comum,
+    # não-bloqueante (mesmo padrão de todo o resto desta função), e o
+    # restante do diagnóstico continua rodando normalmente.
+    try:
+        agente = config.load_agent()
+        agente_ilegivel = False
+    except Exception:
+        agente = None
+        agente_ilegivel = True
+    if agente_ilegivel:
+        itens.append(_item(False, "Agente: configuração corrompida (agent.json ilegível)",
+                           "não impede o uso básico; refaça o onboarding quando quiser",
+                           "rode: nomos start"))
+    elif agente and agente.get("onboarding_completo"):
         itens.append(_item(True, f"Agente '{agente.get('agent_name')}' configurado"))
     else:
         itens.append(_item(False, "Ainda sem agente",
@@ -156,18 +190,22 @@ def diagnostico_v011(home=None, ctx: dict | None = None) -> list[dict]:
                            "sem chave, a nuvem não funciona",
                            "guarde a chave: nomos chaves"))
 
-    # auditoria
+    # auditoria (achado P1-1, auditoria 2026-07-17: agora também olha a
+    # âncora HMAC quando existe, sem exigir passphrase — ver
+    # audit_anchor.resumo_sem_passphrase para o porquê e os limites disso)
     try:
+        from nomos.kernel import audit_anchor
         if ctx and "audit" in ctx:
-            intacta, linha_ruim = ctx["audit"].verify()
+            log = ctx["audit"]
         else:
             from nomos.kernel.audit import AuditLog
-            intacta, linha_ruim = AuditLog(home / "logs" / "audit.jsonl").verify()
-        itens.append(_item(intacta, "Auditoria " + ("íntegra" if intacta
-                                                    else f"VIOLADA na linha {linha_ruim}"),
-                           "cadeia de hash conferida",
-                           "" if intacta else "investigue o arquivo de auditoria",
-                           bloqueante=not intacta))
+            log = AuditLog(home / "logs" / "audit.jsonl")
+        vault_ctx = (ctx or {}).get("vault")
+        bloqueante, texto = audit_anchor.resumo_sem_passphrase(log, vault=vault_ctx)
+        itens.append(_item(not bloqueante, "Auditoria " + texto,
+                           "cadeia de hash conferida" if not bloqueante else "",
+                           "" if not bloqueante else "rode: nomos logs verify --cofre",
+                           bloqueante=bloqueante))
     except Exception:
         itens.append(_item(True, "Auditoria ainda vazia", "nada registrado até agora"))
 
@@ -218,6 +256,31 @@ def diagnostico_v011(home=None, ctx: dict | None = None) -> list[dict]:
         itens.append(_item(True, "Skills: não foi possível checar agora",
                            "sem impacto no uso básico"))
 
+    # agentes especializados (achado P2-6, Horizonte 2 -> wiring real no
+    # Horizonte 3/item 1 -> 8/8 ferramentas na missão de eliminação de
+    # débitos residuais, auditoria de 2026-07-17): AgentToolBoundary TEM
+    # caller de produção real — `nomos agentes usar <agente> <ferramenta>`
+    # passa pelo mesmo `policy.gate` do kernel, fail-closed, com aprovação e
+    # auditoria reais (nenhum caminho de autorização novo). As 8 ferramentas
+    # da allowlist têm execução real ligada (memoria_buscar, arquivo_ler,
+    # arquivo_resumir, arquivo_escrever, codigo_gerar, doutor,
+    # logs_verificar, skill_rodar — ver agents/execucao.py). Item
+    # informativo, não bloqueante.
+    try:
+        from nomos.agents.registry import AgentRegistry
+        ag = AgentRegistry(home).listar()
+        itens.append(_item(
+            True,
+            f"{len(ag)} agente(s) especializado(s) catalogado(s)" if ag
+            else "Nenhum agente especializado catalogado",
+            (("· " + ", ".join(a.name for a in ag) + " ") if ag else "")
+            + "— ferramentas por agente (AgentToolBoundary) usam "
+              "'nomos agentes usar <agente> <ferramenta>'; 8/8 ferramentas "
+              "da allowlist têm execução ligada"))
+    except Exception:
+        itens.append(_item(True, "Agentes: não foi possível checar agora",
+                           "sem impacto no uso básico"))
+
     return itens
 
 
@@ -229,10 +292,19 @@ def _dica_modal(modal: str) -> str:
 
 
 def status_geral(itens: list[dict]) -> str:
+    """PRONTO/BLOQUEADO conforme só os itens 'bloqueante' (o que de fato
+    impede o uso básico). Itens não-bloqueantes (recursos opcionais como
+    voz/imagem/skills, que por padrão NÃO vêm instalados) não derrubam o
+    status geral — eles continuam listados individualmente no relatório,
+    mas uma instalação nova e saudável reporta PRONTO, não PARCIAL.
+
+    Achado P1-3 da auditoria de 2026-07-17: antes desta correção, QUALQUER
+    item com ok=False contava para "PARCIAL", inclusive capacidades
+    opcionais nunca instaladas por padrão — na prática 'PRONTO' era quase
+    inalcançável, minando a confiança no check-up.
+    """
     if any(i.get("bloqueante") and not i["ok"] for i in itens):
         return "BLOQUEADO"
-    if any(not i["ok"] for i in itens):
-        return "PARCIAL"
     return "PRONTO"
 
 
@@ -270,11 +342,29 @@ def diagnosticar_consertos(home) -> list[dict]:
         if not p.exists():
             return False
         try:
-            _json.loads(p.read_text(encoding="utf-8"))
-            return False
+            dados = _json.loads(p.read_text(encoding="utf-8"))
         except Exception:
             return True
+        # achado H4/HIGH-02: todos os arquivos monitorados aqui esperam um
+        # objeto JSON (dict) na raiz — um JSON sintaticamente válido mas de
+        # tipo errado (ex.: "[]", "null", "42") passava despercebido por
+        # esta checagem (só testava se o parse tinha sucesso), mesmo
+        # derrubando o consumidor real (ex.: PolicyEngine.decide()) com uma
+        # exceção não tratada. Agora tratado como corrompido também.
+        return not isinstance(dados, dict)
 
+    if _ilegivel("agent.json"):
+        # achado H4/HIGH-01: agent.json não estava entre os arquivos que
+        # este diagnosticador sabe reparar, mesmo já derrubando
+        # diagnostico_v011() inteiro quando corrompido (corrigido acima).
+        # Recriar como "{}" é seguro: config.load_agent() devolve {} (dict
+        # vazio, falsy), e todo chamador já trata isso como "sem agente
+        # configurado ainda" — o mesmo estado de quem nunca rodou onboarding.
+        achados.append({"id": "arquivo:agent.json",
+                        "problema": "agent.json corrompido (configuração do "
+                                    "agente não carrega)",
+                        "acao": "preservar como .corrompido e recriar vazio "
+                                "(equivalente a nunca ter feito onboarding)"})
     if _ilegivel("localidade.json"):
         achados.append({"id": "arquivo:localidade.json",
                         "problema": "localidade.json corrompido (hoje ele já "
@@ -325,6 +415,8 @@ def consertar(home, confirmar, say=print, audit=None) -> tuple[int, list[str]]:
             (home / alvo).mkdir(parents=True, exist_ok=True)
             chmod_privado(home / alvo, 0o700)
             feitos.append(f"pasta {alvo}/ criada")
+            if audit is not None:
+                audit.append("doutor.consertado", item=a["id"])
         elif tipo == "arquivo":
             p = home / alvo
             destino = p.with_suffix(p.suffix + ".corrompido")
@@ -332,7 +424,37 @@ def consertar(home, confirmar, say=print, audit=None) -> tuple[int, list[str]]:
             while destino.exists():           # no Windows renomear p/ destino
                 destino = p.with_suffix(p.suffix + f".corrompido.{n}")
                 n += 1                        # existente falharia — preserva ambos
-            os.replace(p, destino)
+            # H4.5-B: hash ANTES de mover — evidência forense verificável do
+            # que foi colocado em quarentena, sem depender de reabrir o
+            # arquivo depois (e sem nunca logar o CONTEÚDO, só o hash).
+            # Falha ao calcular o hash não impede o reparo (best-effort);
+            # falha ao MOVER, sim — ver abaixo.
+            try:
+                hash_original: str | None = _sha256_arquivo(p)
+            except OSError:
+                hash_original = None
+            try:
+                os.replace(p, destino)        # atômico: ou move tudo, ou nada
+            except OSError as exc:
+                # não mascara com catch genérico: registra o tipo real do
+                # erro, preserva o original (os.replace não deixa estado
+                # parcial) e PARA — continuar consertando outros itens
+                # depois de uma falha de I/O inesperada aqui seria otimismo
+                # não garantido, não fail-closed.
+                feitos.append(
+                    f"FALHA ao colocar {alvo} em quarentena "
+                    f"({type(exc).__name__}); original preservado em "
+                    f"{p}, nenhum outro conserto foi tentado depois deste")
+                if audit is not None:
+                    audit.append("doutor.conserto_falhou", item=a["id"],
+                                 etapa="quarentena", erro=type(exc).__name__)
+                say(f"pronto: {len(feitos)} conserto(s) aplicado(s) "
+                    f"(1 falhou — ver acima).")
+                for f in feitos:
+                    say(f"  · {f}")
+                return 1, feitos
+            chmod_privado(destino, 0o600)     # quarentena não fica mais
+                                               # exposta do que o original
             if alvo == "localidade.json":
                 localidade.definir(home, True)          # o padrão mais seguro
             elif alvo == "policy.json":
@@ -342,9 +464,12 @@ def consertar(home, confirmar, say=print, audit=None) -> tuple[int, list[str]]:
                 p.write_text('{"rotinas": []}' if alvo == "rotinas.json" else "{}",
                              encoding="utf-8")
                 chmod_privado(p, 0o600)
-            feitos.append(f"{alvo} recriado com padrão seguro (original preservado)")
-        if audit is not None:
-            audit.append("doutor.consertado", item=a["id"])
+            resumo_hash = f", sha256={hash_original[:16]}…" if hash_original else ""
+            feitos.append(f"{alvo} recriado com padrão seguro "
+                          f"(original preservado em {destino}{resumo_hash})")
+            if audit is not None:
+                audit.append("doutor.consertado", item=a["id"],
+                             quarentena=str(destino), sha256=hash_original)
     say(f"pronto: {len(feitos)} conserto(s) aplicado(s).")
     for f in feitos:
         say(f"  ✓ {f}")

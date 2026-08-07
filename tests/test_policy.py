@@ -44,6 +44,23 @@ def test_politica_corrompida_nega_tudo(tmp_path):
     assert e.decide(Category.CODE_EXEC).effect is Effect.DENY
 
 
+def test_politica_json_valido_mas_tipo_errado_nega_tudo_sem_crash(tmp_path):
+    """H4/HIGH-02: JSON sintaticamente válido, mas de tipo errado (lista,
+    string, número, null em vez de objeto) não pode escapar do fallback
+    fail-closed — antes desta correção, `rules()` devolvia o valor cru
+    (ex.: `[]`) sem lançar exceção, e `decide()` quebrava com
+    `AttributeError: 'list' object has no attribute 'get'` em vez de negar
+    de forma controlada."""
+    for conteudo_invalido in ("[]", "null", "42", '"uma string qualquer"'):
+        path = tmp_path / "policy.json"
+        e = PolicyEngine(path)
+        path.write_text(conteudo_invalido)
+        d = e.decide(Category.READ_LOCAL)   # não pode lançar exceção
+        assert d.effect is Effect.DENY, conteudo_invalido
+        assert e.decide(Category.CODE_EXEC).effect is Effect.DENY, conteudo_invalido
+        path.unlink()
+
+
 def test_gate_sem_aprovador_nega(tmp_path):
     d = _engine(tmp_path).decide(Category.CODE_EXEC)
     assert gate(d, None) is False

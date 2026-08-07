@@ -68,3 +68,18 @@ def test_init_duplicado_recusado(tmp_path):
     v.init(PW)
     with pytest.raises(VaultError):
         v.init(PW)
+
+
+def test_cofre_corrompido_levanta_vaulterror_tratado(tmp_path):
+    """Fase 0: JSON inválido no arquivo do cofre deve virar VaultError (com
+    mensagem acionável), nunca um json.JSONDecodeError cru — quem chama (CLI)
+    só sabe mostrar erro tratado para VaultError/VaultLocked."""
+    v = _vault(tmp_path)
+    v.init(PW)
+    (tmp_path / "vault.json").write_text("{ isto nao é json valido ]]]")
+    with pytest.raises(VaultError) as excinfo:
+        v.get("qualquer", PW)
+    assert not isinstance(excinfo.value, VaultLocked)
+    assert "corrompido" in str(excinfo.value).lower()
+    # fail-closed: nada foi reparado/reescrito no arquivo corrompido
+    assert (tmp_path / "vault.json").read_text() == "{ isto nao é json valido ]]]"

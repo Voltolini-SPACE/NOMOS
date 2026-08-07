@@ -1,0 +1,422 @@
+# Adendo — Cobertura direta de `CouncilOrchestratorDryRun.run()` + KNOWN_GAPS (doutor.py / JSON corrompido)
+
+**Complementa:** `docs/missions/H3_MISSAO_DEBITOS_RELATORIO_FINAL.md`
+**Motivo do adendo:** o relatório final declarou `MYPY_ERRORS=0` como critério
+estático atingido, mas o arquivo mais crítico do lote de correções de tipo
+(`council/orchestrator.py`, 22 erros zerados, commit `352fb12`) tinha 99% de
+cobertura de LINHA sem uma prova direta e explícita, por cenário, de que os
+11 comportamentos exigidos por governança (status/motivo corretos, nenhuma
+execução indevida, auditoria registrada quando exigida, invariantes
+preservadas, nenhum erro virando sucesso aparente) estavam realmente
+cobertos. Este adendo fecha essa lacuna, sem ampliar o escopo da missão.
+
+---
+
+## 1. O que foi feito
+
+### 1.1 Leitura integral de `council/orchestrator.py`
+
+Arquivo completo (693 linhas) relido do zero para reconstituir com precisão
+o modelo mental de `CouncilOrchestratorDryRun.run()`: as 8 etapas do
+pipeline (`INPUT_VALIDATED` → `LOCAL_PROVIDER_EVALUATED` →
+`CANDIDATES_CREATED` → `SIMULATOR_RAN` → `POLICY_GATE_EVALUATED` →
+`FINAL_ENVELOPE_CREATED` → `AUDIT_ENVELOPE_CREATED` →
+`ORCHESTRATION_COMPLETED`/`ORCHESTRATION_BLOCKED`), a invariante
+`_marcar_raiz()` (só a PRIMEIRA falha vira a causa raiz do resultado), e os
+3 asserts de estreitamento de tipo adicionados na correção de mypy (linhas
+410, 567, 617 — todos defesa em profundidade, nenhum muda lógica de
+negócio).
+
+### 1.2 Auditoria da cobertura DIRETA existente (não presumida)
+
+```text
+COMANDO_EXECUTADO=pytest tests/council/ -q --cov=nomos.council.orchestrator --cov-report=term-missing
+RETORNO=0
+EVIDÊNCIA=Name  Stmts Miss Cover Missing
+          src/nomos/council/orchestrator.py 262 2 99% 102, 105
+          303 passed
+RESULTADO=99% de cobertura de LINHA (as 2 linhas faltantes são de uma
+          função auxiliar não relacionada a run()). Cobertura de linha
+          alta, mas achada insuficiente porque não prova, por si só, que
+          CADA um dos 11 cenários pedidos tem asserção direta sobre
+          status+motivo, ausência de execução indevida, registro de
+          auditoria e não-transformação de erro em sucesso aparente.
+```
+
+### 1.3 Novo arquivo de teste dedicado
+
+`tests/council/test_orchestrator_dry_run_direct_coverage.py` — 42 testes
+novos, rotulados 1:1 com os 11 cenários exigidos:
+
+| # | Cenário | Testes |
+|---|---|---|
+| 1 | entrada válida | `test_01_entrada_valida_completa_com_sucesso_real` |
+| 2 | falha de entrada | `test_02_falha_de_entrada_pos_construcao_bloqueia_imediatamente`, `test_02b_...max_candidates_invalido...` |
+| 3 | aprovação concedida | `test_03_aprovacao_concedida_gate_libera_conteudo_presente` |
+| 4 | aprovação recusada ou ausente | `test_04_aprovacao_recusada_ou_ausente_bloqueia_sempre` |
+| 5 | falha no gate | `test_05_falha_no_gate_por_excecao_e_fail_closed` |
+| 6 | decisão válida do gate | `test_06a_...quando_liberado`, `test_06b_...quando_negado` |
+| 7 | falha de auditoria | `test_07a_...por_excecao`, `test_07b_...por_negacao_explicita` |
+| 8 | auditoria bem-sucedida | `test_08_...registra_envelopes_redigidos`, `test_08b_...modo_privado_nunca_persiste` |
+| 9 | raiz permitida | `test_09_raiz_permitida_significa_nenhuma_falha_raiz_marcada` |
+| 10 | raiz fora das permissões | `test_10a_...` (parametrizado, provider), `test_10b_...primeira_falha_gate_nao_sobrescreve_provider`, `test_10c_...simulador` |
+| 11 | exceções inesperadas fail-closed | `test_11_excecao_inesperada_de_cada_componente_e_fail_closed` (parametrizado: provider/simulator/gate/audit_builder, cada um com um tipo de exceção CUSTOMIZADO, não um dos já mapeados) |
+
+Mais 6 testes de invariante transversal, aplicados sistematicamente a 5
+cenários diferentes (sucesso, gate nega A6, gate nega dado sensível,
+sucesso em modo privado, provider sem motor): nenhuma execução indevida
+(`dry_run`/`would_execute`/`would_write_audit`), `blocked == not allowed`
+sempre, `failure_code is not None` se-e-somente-se `allowed is False`,
+ordem das etapas sempre preservada quando todas presentes, e auditoria
+genuinamente AUSENTE (`audit_result == {}`, não um dict parcial) quando a
+etapa não é alcançada.
+
+Destaque de rigor: o teste do cenário 11 usa um tipo de exceção
+**customizado** (`_ExcecaoCustomizadaDoTeste`, não `RuntimeError` nem
+qualquer outro tipo já mapeado no código), provando que o `except
+Exception` de cada etapa plugável é genuinamente genérico — não uma lista
+de tipos conhecidos que por acaso cobre os testes existentes.
+
+---
+
+## 2. Evidência de validação (bateria completa, comando + retorno real)
+
+```text
+COMANDO_EXECUTADO=pytest tests/council/test_orchestrator_dry_run_direct_coverage.py -v
+RETORNO=0
+EVIDÊNCIA=42 passed
+RESULTADO=PASS — todos os 42 testes novos isolados
+
+COMANDO_EXECUTADO=pytest tests/council/ -q
+RETORNO=0
+EVIDÊNCIA=345 passed (303 pré-existentes + 42 novos)
+RESULTADO=PASS — nenhuma regressão nos testes de council
+
+COMANDO_EXECUTADO=pytest tests/council/test_orchestrator_security.py -v
+RETORNO=0
+EVIDÊNCIA=11 passed
+RESULTADO=PASS — teste de pureza AST (AST_PURITY_GATE) intacto e verde
+
+COMANDO_EXECUTADO=mypy src/nomos --ignore-missing-imports
+RETORNO=0
+EVIDÊNCIA=Success: no issues found in 112 source files
+RESULTADO=PASS — MYPY_ERRORS=0 mantido
+
+COMANDO_EXECUTADO=ruff check src tests examples
+RETORNO=0 (após corrigir 1 import não usado e 2 variáveis locais não usadas
+          no próprio arquivo de teste novo, achados pelo próprio ruff)
+EVIDÊNCIA=All checks passed!
+RESULTADO=PASS — RUFF_ERRORS=0
+
+COMANDO_EXECUTADO=pytest -q -n4  (suíte completa)
+RETORNO=0
+EVIDÊNCIA=1908 passed (1866 antes deste adendo + 42 novos; 0 regressões)
+RESULTADO=PASS — FULL_SUITE=PASS
+
+COMANDO_EXECUTADO=pytest --cov=nomos --cov-report=term-missing --cov-fail-under=80 -q -n4
+RETORNO=0
+EVIDÊNCIA=Required test coverage of 80% reached. Total coverage: 84.83%. 1908 passed
+RESULTADO=PASS — gate de cobertura geral do CI
+
+COMANDO_EXECUTADO=pytest -q -p no:cacheprovider --cov=nomos.kernel.evidencia
+          --cov=nomos.ext.skill_catalogo --cov-report=term --cov-fail-under=90
+          tests/test_evidencia_pacote.py tests/test_mc29_skills_catalogo.py
+          tests/test_mc29_painel.py tests/test_mc30_onda_a.py
+RETORNO=0
+EVIDÊNCIA=Required test coverage of 90% reached. Total coverage: 95.45%. 33 passed
+RESULTADO=PASS — gate dirigido MC30-A5 do CI (comando exato do ci.yml)
+
+COMANDO_EXECUTADO=python -m build --wheel
+RETORNO=0
+EVIDÊNCIA=Successfully built nomos-1.3.0rc17-py3-none-any.whl
+RESULTADO=PASS — WHEEL_BUILD=PASS
+
+COMANDO_EXECUTADO=pip install <wheel> em venv limpo; nomos --version;
+          python -c "from nomos.council.orchestrator import
+          CouncilOrchestratorDryRun; print('...')"
+RETORNO=0
+EVIDÊNCIA=nomos 1.3.0rc17 / "orchestrator importa OK do wheel instalado"
+RESULTADO=PASS — wheel instala e o módulo corrigido funciona de dentro dele
+
+COMANDO_EXECUTADO=tools/nomos_update_agent.py --check --json
+RETORNO=0
+EVIDÊNCIA=consistent=true, checks_passed=13/13
+RESULTADO=PASS — SITE_CONSISTENCY=TRUE
+```
+
+Nenhuma correção de lógica de negócio foi necessária durante o loop — os
+únicos ajustes foram 2 achados do PRÓPRIO ruff no arquivo de teste novo
+(um import não usado, duas variáveis locais não usadas), corrigidos e
+re-validados antes do commit. `council/orchestrator.py` em si não foi
+tocado neste adendo — só ganhou testes.
+
+---
+
+## 3. Checklist de encerramento (critério do usuário, item a item)
+
+```text
+MYPY_ERRORS=0
+RUFF_ERRORS=0
+FULL_SUITE=PASS (1908 passed, 0 regressões)
+COUNCIL_DRY_RUN_DIRECT_COVERAGE=PASS (42 testes novos, 11/11 cenários
+  cobertos com asserção direta de status/motivo/execução/auditoria/
+  invariantes/não-mascaramento de erro — ver §1.3 e §2)
+AST_PURITY_GATE=PASS (11 testes de tests/council/test_orchestrator_security.py)
+WHEEL_BUILD=PASS
+SITE_CONSISTENCY=TRUE
+LOCAL_GIT_STATUS=CLEAN (após o commit deste adendo)
+REMOTE_PUSH=BLOCKED_BY_CREDENTIALS (ver §5 — reconfirmado, não tratado
+  como concluído)
+KNOWN_GAPS=2 (registrados em §4, nenhum corrigido neste corte, ambos
+  reproduzíveis por script dedicado — não descartados silenciosamente)
+```
+
+---
+
+## 4. KNOWN_GAPS registrados — não corrigidos neste corte
+
+Dois achados distintos e independentes, ambos sobre a mesma classe de
+problema ("`doutor.py` e JSON corrompido"), documentados separadamente
+porque têm causas raiz e arquivos afetados diferentes.
+
+### 4.1 [CORRIGIDO em H4/HIGH-01 — ver nota abaixo] `agent.json` corrompido derruba `doutor.diagnostico_v011()` inteiro, não só o item do agente
+
+**Onde:** `src/nomos/kernel/config.py` (`load_agent()`) +
+`src/nomos/simple/doutor.py` (`diagnostico_v011()`, linha ~133).
+
+**Origem:** este achado já tinha sido ENCONTRADO durante a correção de
+tipos de `interface/painel_web.py` (commit `75c6132`, P2 6/8) — a própria
+mensagem daquele commit diz, textualmente: *"descobri que
+dados_dashboard() já crasha antes de chegar neste bloco corrigido, porque
+chama doutor_mod.diagnostico_v011(home, ctx) mais cedo na mesma função
+(fora de qualquer try/except), que por sua vez chama config.load_agent()
+SEM proteção contra JSON inválido [...] sinalizada para o relatório final
+da missão como um KNOWN_GAP a considerar depois do P2."* Esse compromisso
+não foi honrado no relatório final original
+(`H3_MISSAO_DEBITOS_RELATORIO_FINAL.md`) — o achado ficou só na mensagem
+do commit, nunca chegou ao documento de fechamento. Este adendo corrige
+essa omissão.
+
+**O problema, em uma frase:** `config.load_agent()` chama `json.loads()`
+sem NENHUM `try/except` ao redor; `doutor.diagnostico_v011()` chama
+`config.load_agent()` logo nas primeiras linhas da função, também sem
+proteção — então um `agent.json` corrompido não vira um item "❌
+bloqueante" no relatório do doutor (que é o comportamento esperado de
+TODO o resto da função, cheia de `try/except` por item); em vez disso, a
+função INTEIRA aborta com `json.JSONDecodeError` não tratada, e nenhum dos
+outros ~15 itens de diagnóstico (Python, home, localidade, cofre,
+auditoria, agentes especializados etc.) chega a ser reportado.
+
+**Por que importa mais que uma corrupção comum:** `agent.json` não está
+entre os 4 arquivos que `diagnosticar_consertos()` sabe diagnosticar e
+oferecer para reparar (`localidade.json`, `policy.json`,
+`skills_estado.json`, `rotinas.json`) — ou seja, a ferramenta cujo
+propósito inteiro é "diagnostique e conserte corrupção com segurança" nem
+appropriadamente detecta nem oferece reparo para este arquivo específico;
+ela simplesmente quebra. O mesmo caminho (`diagnostico_v011()`) também é
+chamado por `dados_dashboard()` no painel web, então o painel também cai.
+
+**Reprodução (comando real, executado, saída real):**
+
+```text
+COMANDO_EXECUTADO=python3 docs/missions/repro_known_gap_agent_json_crashes_doutor.py
+RETORNO=1 (sentinela: 1 enquanto a falha existir; 0 se um dia for corrigida)
+EVIDÊNCIA=1) config.load_agent() CRASHA sem try/except: JSONDecodeError:
+             Expecting property name enclosed in double quotes: line 1
+             column 2 (char 1)
+          2) doutor.diagnostico_v011() CRASHA (não é um item 'bloqueante'
+             reportado — a função inteira aborta): JSONDecodeError:
+             Expecting property name enclosed in double quotes: line 1
+             column 2 (char 1)
+          3) 'nomos doutor consertar' sabe reparar agent.json corrompido?
+             False
+
+          RESULTADO: falha reproduzida como documentado no commit 75c6132
+          e neste KNOWN_GAP.
+RESULTADO=CONFIRMADO — script em
+          docs/missions/repro_known_gap_agent_json_crashes_doutor.py
+```
+
+**Por que não foi corrigido no momento em que este adendo foi escrito
+originalmente:** mesma razão do achado 4.2 — exigiria decidir uma
+política de tratamento real para `config.py`/`doutor.py` (kernel de
+identidade do agente + ferramenta de diagnóstico), fora do escopo
+declarado deste adendo (cobertura de teste de `council/orchestrator.py`).
+Corrigi-lo ali teria violado a regra de não agrupar correções de
+domínios diferentes no mesmo commit.
+
+**STATUS ATUALIZADO — CORRIGIDO (rodada H4/HIGH-01, dedicada, separada
+deste adendo):** os itens (a) e (b) da ação recomendada abaixo foram
+implementados, testados e commitados isoladamente (ver commit
+`H4-HIGH-01` no relatório final, seção 4c). O item (c) foi
+deliberadamente NÃO feito — ver justificativa abaixo, honrando a mesma
+disciplina de "nenhuma promessa sem entrega" já citada acima para o
+commit `75c6132`:
+
+- `diagnostico_v011()` (`src/nomos/simple/doutor.py`): a chamada a
+  `config.load_agent()` agora está isolada em seu próprio `try/except`;
+  um `agent.json` ilegível vira um item comum, não-bloqueante ("Agente:
+  configuração corrompida (agent.json ilegível)"), e o restante do
+  diagnóstico (Python, home, localidade, cofre, auditoria, agentes
+  especializados etc.) continua rodando normalmente — a função não aborta
+  mais por completo.
+- `diagnosticar_consertos()` (mesmo arquivo): `agent.json` foi
+  adicionado à lista de arquivos que o reparador sabe diagnosticar e
+  oferecer para reparo (`consertar()` já tratava esse caso pelo `else:`
+  genérico existente, recriando como `"{}"` — verificado, não presumido,
+  antes de decidir que nenhuma mudança era necessária ali).
+- Testes de regressão novos em `tests/test_doutor_v011.py`:
+  `test_diagnostico_v011_agent_json_corrompido_nao_derruba_funcao`
+  (prova que a função não aborta e que o restante dos itens continua
+  aparecendo) e
+  `test_diagnosticar_consertos_repara_agent_json_corrompido` (prova que
+  `diagnosticar_consertos()` detecta e `consertar()` repara de fato,
+  preservando o original como `.corrompido`).
+- Reprodução re-executada após a correção:
+  `docs/missions/repro_known_gap_agent_json_crashes_doutor.py` agora
+  devolve **exit code 0** — a checagem 2 (função não crasha mais) e a
+  checagem 3 (reparo disponível) passam a bater com o comportamento
+  esperado; a checagem 1 (`config.load_agent()` chamado diretamente
+  ainda propaga `JSONDecodeError`) continua reproduzindo o comportamento
+  original **de propósito** — ver item (c) abaixo.
+
+**Item (c) — deliberadamente NÃO implementado, com justificativa:**
+`config.load_agent()` em si continua sem try/except próprio. A correção
+foi aplicada no CHAMADOR (`diagnostico_v011()`), não na função
+`load_agent()`. Mudar o contrato de `load_agent()` (fazer com que nunca
+levante exceção) afetaria todo chamador existente que hoje depende dela
+propagar erros — exigiria mapear e revisar cada um deles, o que é
+exatamente o tipo de mudança de contrato mais ampla que a "Ação
+recomendada" original já sinalizava como precisando de "análise
+cuidadosa" separada. Manter esse escopo de fora aqui é uma decisão
+consciente, não um esquecimento — registrada explicitamente para não
+repetir o padrão que motivou este próprio adendo (promessa implícita sem
+entrega documentada).
+
+### 4.2 [CORRIGIDO em H4/HIGH-02 — ver nota abaixo] `policy.json` sintaticamente válido mas de tipo errado derruba `PolicyEngine.decide()`, e `nomos doutor` não detecta
+
+**Onde:** `src/nomos/kernel/policy.py` (`PolicyEngine.rules()` e
+`PolicyEngine.decide()`) + `src/nomos/simple/doutor.py`
+(`diagnosticar_consertos()` / `_ilegivel()`).
+
+**O problema, em uma frase:** o detector de corrupção do `nomos doutor` só
+testa se o arquivo faz parse como JSON (`json.loads()` sem exceção) — não
+se o resultado tem o FORMATO esperado (um objeto/dict). Um `policy.json`
+contendo `[]` (uma lista — JSON perfeitamente válido) passa despercebido
+pelo `doutor`, mas faz `PolicyEngine.decide()` — a função de decisão do
+gate, usada em TODO caminho protegido por política — lançar um
+`AttributeError` não tratado em vez de negar de forma controlada.
+
+**Por que isso importa:** os outros 3 arquivos que `doutor.py` monitora
+(`localidade.json`, `skills_estado.json`, `rotinas.json`) já têm essa
+mesma classe de problema coberta nos seus próprios loaders — verificado
+neste adendo, não presumido:
+- `localidade.esta_ligado()` envolve TANTO o `json.loads()` QUANTO o
+  `.get()` subsequente no mesmo `try/except`, então falha fechado para
+  `True` mesmo com `[]` como conteúdo (reproduzido: ver comando abaixo).
+- `rotinas._ler()` faz `isinstance(dados, dict)` explicitamente antes de
+  chamar `.get()`, então `[]`/`null`/`42` viram `[]` (lista vazia de
+  rotinas) sem exceção.
+- `skill_status._ler()` envolve `json.loads()` inteiro em `try/except` e
+  devolve `{}` em qualquer falha (embora não valide shape, seu uso
+  posterior — `.get(name, {})` — funciona igual para `[]` quanto para
+  `{}` vazio, então não crasha na prática).
+
+`PolicyEngine` é o ÚNICO dos 4 onde essa lacuna de validação de formato
+tem um efeito observável real: um crash não tratado em vez de uma negação
+educada.
+
+**Reprodução (comando real, executado, saída real):**
+
+```text
+COMANDO_EXECUTADO=python3 docs/missions/repro_known_gap_policy_json_shape.py
+RETORNO=1 (o script devolve 1 quando reproduz a falha documentada, para
+          servir de sentinela: se um dia isso mudar, o script passa a
+          devolver 0 e sinaliza que este KNOWN_GAP precisa ser revisado)
+EVIDÊNCIA=1) PolicyEngine.rules() não lança exceção: []
+          2) PolicyEngine.decide() CRASHOU (não tratado): AttributeError:
+             'list' object has no attribute 'get'
+          3) 'nomos doutor' detectou o policy.json como corrompido? False
+
+          RESULTADO: falha reproduzida como documentado em KNOWN_GAPS
+          (crash não tratado + doutor não detecta).
+RESULTADO=CONFIRMADO — script em docs/missions/repro_known_gap_policy_json_shape.py
+```
+
+Verificação de controle (mesma técnica, mas no loader que JÁ é resiliente,
+para confirmar que a lacuna é específica de `PolicyEngine`, não um
+padrão geral não testado):
+
+```text
+COMANDO_EXECUTADO=python3 -c "... localidade.esta_ligado(home) com
+          localidade.json='[]' ..."
+EVIDÊNCIA=True (fail-closed correto, sem crash)
+RESULTADO=confirma que a lacuna NÃO é geral — é específica de PolicyEngine
+```
+
+**Por que não foi corrigido no momento em que este adendo foi escrito
+originalmente:** corrigir exigiria decidir uma política de tratamento
+(validar shape em `PolicyEngine.rules()` e tratar como se fosse ilegível?
+ensinar `doutor._ilegivel()` a checar `isinstance(..., dict)` também?) —
+uma mudança de comportamento real do kernel de política, fora do escopo
+declarado deste adendo (que era exclusivamente cobertura de teste de
+`council/orchestrator.py`). Misturar essa correção ali teria violado a
+regra de não agrupar correções de domínios diferentes no mesmo commit.
+
+**STATUS ATUALIZADO — CORRIGIDO (rodada H4/HIGH-02, dedicada, separada
+deste adendo):** a ação recomendada abaixo foi implementada, testada e
+commitada isoladamente (ver commit `H4-HIGH-02` no relatório final,
+seção 4c). Registro do que foi feito, para honrar a mesma disciplina de
+"nenhuma promessa sem entrega" já aplicada ao achado 4.1/commit
+`75c6132`:
+
+- `PolicyEngine.rules()` (`src/nomos/kernel/policy.py`): agora separa o
+  `try/except` do `json.loads()` de uma checagem explícita
+  `isinstance(dados, dict)` — qualquer JSON sintaticamente válido mas de
+  tipo errado (lista, string, número, `null`) cai no mesmo fallback
+  fail-closed já usado para JSON invalido (`{"version": 0,
+  "fail_closed": True, "rules": {}}`), nunca mais escapando cru para
+  `decide()`.
+- `doutor.py._ilegivel()` (`src/nomos/simple/doutor.py`,
+  `diagnosticar_consertos()`): mesma checagem `isinstance(dados, dict)`
+  adicionada — aplica-se a TODOS os arquivos monitorados por esse helper
+  (`policy.json`, `localidade.json`, `skills_estado.json`,
+  `rotinas.json`), não só `policy.json`, então `nomos doutor consertar`
+  agora detecta e oferece reparo para qualquer um deles com esse tipo de
+  corrupção.
+- Teste de regressão novo:
+  `tests/test_policy.py::test_politica_json_valido_mas_tipo_errado_nega_tudo_sem_crash`
+  — parametrizado sobre `"[]"`, `"null"`, `"42"`,
+  `'"uma string qualquer"'`, prova que `decide()` nunca lança exceção e
+  sempre nega (fail-closed real, não um crash mascarado).
+- Reprodução re-executada após a correção:
+  `docs/missions/repro_known_gap_policy_json_shape.py` agora devolve
+  **exit code 0** (o script foi desenhado como sentinela: 1 enquanto o
+  bug existisse, 0 quando corrigido) — evidência de que o comportamento
+  documentado acima como "achado" deixou de ser reproduzível.
+
+O item (c) da ação recomendada original (item de compat com
+`test_v011_doutor_conserta.py`) foi coberto de forma equivalente pelos
+testes acima; não foi necessário um arquivo com esse nome específico.
+
+---
+
+## 5. Site/git (instrução permanente do usuário) e push
+
+Aplicado, como em todos os commits anteriores desta missão:
+
+```text
+COMANDO_EXECUTADO=tools/nomos_update_agent.py --check --json
+RETORNO=0
+EVIDÊNCIA=consistent=true, checks_passed=13/13
+RESULTADO=PASS
+
+COMANDO_EXECUTADO=git push origin loop/fase3-agent-boundary-wiring
+RETORNO=1 (falha, idêntica às tentativas anteriores)
+EVIDÊNCIA=fatal: could not read Password for
+          'https://Voltolini-SPACE@github.com': No such device or address
+RESULTADO=REMOTE_PUSH=BLOCKED_BY_CREDENTIALS — bloqueio externo confirmado
+          de novo, não tratado como push concluído. Trabalho íntegro e
+          commitado localmente; ação externa necessária (credencial Git
+          não-interativa) para publicar no remoto.
+```

@@ -44,8 +44,12 @@ def test_prova_strip_tecnica():
 # --------------------------------------------------------------------------
 def test_prova_tem_saida_real_do_doutor():
     prova = _secao_prova()
-    for marca in ("nomos doutor", "STATUS GERAL", "Modo só-local LIGADO",
-                  "Auditoria íntegra", "PARCIAL"):
+    # "PARCIAL" saiu da lista: era a saída real ANTES do achado P1-3 da
+    # auditoria de 2026-07-17 (status_geral() contava itens opcionais
+    # ausentes contra o status geral). Corrigido, o exemplo real da home
+    # recém-criada agora mostra "PRONTO ✅" — ver test_doutor_v011.py.
+    for marca in ("nomos doutor", "STATUS GERAL", "PRONTO",
+                  "Modo só-local LIGADO", "Auditoria íntegra"):
         assert marca in prova, f"terminal do doutor sem {marca!r}"
 
 

@@ -150,9 +150,25 @@ def cmd_consent(ctx, args) -> int:
 
 
 def cmd_panic(ctx, args) -> int:
+    # Fase 0 (higiene pós-validação): o botão de pânico só revogava
+    # consentimento de dispositivo — mais estreito do que "corta tudo"
+    # sugere. Agora também nega toda aprovação pendente (ninguém consegue
+    # aprovar depois do pânico algo que foi solicitado antes) e trava a
+    # localidade de volta a LIGADO (egress volta a ser bloqueado mesmo que
+    # você tivesse destravado antes). Continua sem gate/aprovação — pânico
+    # tem que ser instantâneo, sem fricção.
     ctx["consent"].panic()
-    ctx["audit"].append("panic.executado", efeito="todos os consentimentos revogados")
-    print("PÂNICO: microfone, câmera e tela revogados imediatamente.")
+    negadas = _queue(ctx).deny_all()
+    localidade.definir(ctx["home"], True)
+    ctx["audit"].append(
+        "panic.executado",
+        efeito="consentimentos revogados; aprovações pendentes negadas; localidade travada",
+        aprovacoes_negadas=negadas,
+    )
+    print(
+        "PÂNICO: microfone, câmera e tela revogados; "
+        f"{negadas} aprovação(ões) pendente(s) negada(s); modo só-local travado."
+    )
     return EXIT_OK
 
 
@@ -432,6 +448,81 @@ def cmd_agentes(ctx, args) -> int:
     return EXIT_ERROR
 
 
+# ---------------------------------------------------------------------------
+# Horizonte 3 / item 1 (auditoria de 2026-07-17): wiring real e fail-closed
+# do AgentToolBoundary — fecha o achado P2-6 (Horizonte 2), que era mitigado/
+# diferido porque nenhum fluxo de produção instanciava a boundary.
+#
+# Missão de eliminação de débitos residuais (Prioridade 1, mesma auditoria):
+# as 8 ferramentas da allowlist (agents/manifest.FERRAMENTAS) têm agora
+# execução real ligada — as funções `exec_*` e o dispatch `ferramentas_wired`
+# moraram aqui até esta rodada; foram extraídas para
+# `agents.execucao` porque ganharam um SEGUNDO caller de produção
+# (`simple/amigavel.py::iniciar_chat`, oferta de agente por intenção na
+# conversa), e duplicar a lógica de execução em dois módulos arriscaria
+# divergência. `nomos agentes usar <nome> <ferramenta>` continua sendo o
+# caller original: passa pelo MESMO AgentToolBoundary já testado no
+# Horizonte 1/2 (agents/boundary.py, lógica intocada) — fora do manifesto
+# => negado; dentro => mesmo `policy.gate` do kernel, fail-closed sem
+# TTY/aprovação, auditado. Ver `agents/execucao.py` para o mapeamento
+# ferramenta -> primitiva reaproveitada.
+# ---------------------------------------------------------------------------
+
+def cmd_agente_usar(ctx, args) -> int:
+    from nomos.simple.erros import fmt
+    from nomos.agents.boundary import AgentToolBoundary
+    from nomos.agents.execucao import ferramentas_wired
+    from nomos.agents.manifest import FERRAMENTAS
+    reg = _agent_registry(ctx)
+    mf = reg.obter(args.nome)
+    if not mf:
+        print(fmt("E003", f"agente '{args.nome}' não existe"), file=sys.stderr)
+        return EXIT_ERROR
+    if not reg.ativo(mf.name):
+        print(fmt("E003", f"agente '{args.nome}' está inativo — ative com: "
+                          f"nomos agentes ativar {args.nome}"), file=sys.stderr)
+        return EXIT_DENIED
+    aprovador = _approver_for(ctx, args)
+    sem_motor = getattr(args, "sem_motor", False)
+    # router só é construído quando a ferramenta pedida realmente precisa dele
+    # (evita custo/efeito colateral de _router() para as demais 7 ferramentas
+    # — ex.: 'doutor' não deve poder falhar por causa de configuração de
+    # motor que nunca vai usar).
+    precisa_motor = args.ferramenta == "codigo_gerar" or (
+        args.ferramenta == "arquivo_resumir" and not sem_motor)
+    router = _router(ctx) if precisa_motor else None
+    wired = ferramentas_wired(ctx, alvo=args.alvo or "",
+                              conteudo=getattr(args, "conteudo", "") or "",
+                              sem_motor=sem_motor, aprovador=aprovador,
+                              router=router)
+    if args.ferramenta not in wired:
+        if args.ferramenta in FERRAMENTAS:
+            # fallback defensivo: hoje as 8 ferramentas da allowlist estão
+            # todas em `wired` (missão de eliminação de débitos, Horizonte
+            # 3/P1) — este ramo só protegeria uma allowlist futura que
+            # cresça sem o wiring correspondente ainda ter sido feito.
+            print(fmt("E003", f"'{args.ferramenta}' está na allowlist mas "
+                              "ainda não tem execução ligada nesta versão; "
+                              f"ferramentas disponíveis agora: "
+                              f"{', '.join(sorted(wired))}"),
+                 file=sys.stderr)
+        else:
+            print(fmt("E003", f"'{args.ferramenta}' não é uma ferramenta "
+                              "conhecida"), file=sys.stderr)
+        return EXIT_ERROR
+    # o MESMO AgentToolBoundary testado no Horizonte 1/2 — nenhum caminho de
+    # autorização novo; fora do manifesto ou sem aprovação => negado.
+    boundary = AgentToolBoundary(mf, ctx["policy"], aprovador, audit=ctx["audit"])
+    ok, resultado = boundary.usar_ferramenta(args.ferramenta,
+                                             wired[args.ferramenta],
+                                             alvo=args.alvo or "")
+    if not ok:
+        print(resultado, file=sys.stderr)
+        return EXIT_DENIED
+    print(resultado)
+    return EXIT_OK
+
+
 def cmd_conversas(ctx, args) -> int:
     from nomos.simple.erros import fmt
     sub = getattr(args, "conversas_cmd", None)
@@ -527,7 +618,15 @@ def cmd_backup(ctx, args) -> int:
     try:
         if args.backup_cmd == "criar":
             n, excluidas = bt.criar(ctx["home"], Path(args.arquivo), senha)
-            ctx["audit"].append("backup.total.criado", arquivos=n)
+            # Horizonte 3/item 2 (2026-07-17): correlaciona com
+            # "backup.total.restaurado" pelo nome do arquivo de backup — já
+            # é o identificador que o comando recebe como argumento
+            # (args.arquivo); campo novo e distinto de `arquivos` (a
+            # CONTAGEM de arquivos dentro do backup, não o backup em si),
+            # para não colidir. Mesma causa-raiz do P2-5, documentada como
+            # gap explícito no Horizonte 2 e agora fechada.
+            ctx["audit"].append("backup.total.criado", arquivos=n,
+                                arquivo_backup=Path(args.arquivo).name)
             print(f"{n} arquivo(s) do seu NOMOS guardados cifrados em {args.arquivo}")
             if excluidas:
                 print(f"(fora do backup, por serem re-baixáveis: {', '.join(excluidas)})")
@@ -555,7 +654,12 @@ def cmd_backup(ctx, args) -> int:
                     return EXIT_DENIED
             n, guardado = bt.restaurar(ctx["home"], Path(args.arquivo), senha,
                                        permitir_sobrescrever=permitir or not tem_conteudo)
-            ctx["audit"].append("backup.total.restaurado", arquivos=n)
+            # Horizonte 3/item 2: mesmo campo `arquivo_backup` de
+            # "backup.total.criado" — permite reconstruir onde um backup
+            # específico foi criado e onde/quando foi restaurado a partir
+            # do log de auditoria, filtrando por este nome.
+            ctx["audit"].append("backup.total.restaurado", arquivos=n,
+                                arquivo_backup=Path(args.arquivo).name)
             print(f"{n} arquivo(s) restaurados.")
             if guardado:
                 print(f"(seu NOMOS anterior está preservado em {guardado})")
@@ -1218,6 +1322,14 @@ def cmd_chat(ctx, args) -> int:
         if out.ok:
             mem.remember("user", user_text)
             mem.remember("assistant", out.text)
+            # P2-1 (auditoria de 2026-07-17): produtor real da fila de
+            # revisão de memória (ISSUE-020) — antes, propor_candidata()
+            # nunca era chamado por nenhum fluxo real, só em teste.
+            novas_candidatas = mem.propor_candidatas_do_texto(user_text)
+            if novas_candidatas:
+                print(f"(percebi {len(novas_candidatas)} coisa(s) que parecem "
+                      "fato/preferência/tarefa — revise com: nomos memoria revisar)",
+                      file=sys.stderr)
             print(f"[rota={out.route} model={out.model}]", file=sys.stderr)
             return EXIT_OK
         return EXIT_DENIED if "negad" in out.reason else EXIT_ERROR
@@ -1295,8 +1407,14 @@ def cmd_memory(ctx, args) -> int:
         ctx["audit"].append("memoria.consolidada", notas=len(criadas))
         if not criadas:
             print("nada novo para consolidar — suas notas já estão em dia.")
-        for n in criadas:
-            print(f"  + {n}")
+        # Horizonte 3/missao de debitos, P2 (2026-07-17): "nota" em vez de
+        # "n" -- "n" já é usado mais acima nesta função (linha ~1379) para
+        # a quantidade (int) exportada em `--exportar`; mypy infere um
+        # único tipo estático por nome de variável na função inteira, e os
+        # dois ramos (exportar/consolidar) são mutuamente exclusivos em
+        # runtime mas não para mypy. Puramente mecânico.
+        for nota in criadas:
+            print(f"  + {nota}")
         return EXIT_OK
     if args.mem_cmd == "recent":
         for it in mem.recent(args.k):
@@ -1317,8 +1435,10 @@ def cmd_memory(ctx, args) -> int:
 
 
 def cmd_status(ctx, args) -> int:
+    from nomos.kernel import audit_anchor
     agent = config.load_agent()
-    intact, bad = ctx["audit"].verify()
+    _bloqueante, auditoria_txt = audit_anchor.resumo_sem_passphrase(
+        ctx["audit"], vault=ctx.get("vault"))
     print(f"NOMOS {__version__} | home: {ctx['home']}")
     nome_agente = (agent or {}).get("agent_name")
     print(f"agente: {nome_agente or '— (crie com nomos agent create)'}")
@@ -1329,7 +1449,7 @@ def cmd_status(ctx, args) -> int:
         print(f"consentimento {dev}: {'CONCEDIDO' if ok else 'desligado'}")
     from nomos.ext import skills as skills_mod
     print(f"skills instaladas: {len(skills_mod.list_installed(ctx['skills']))}")
-    print(f"auditoria: {'ÍNTEGRA' if intact else f'VIOLADA na linha {bad}'}")
+    print(f"auditoria: {auditoria_txt}")
     return EXIT_OK
 
 
@@ -1557,10 +1677,20 @@ def cmd_mcp(ctx, args) -> int:
                   f"[{c.get('nivel', c['nivel_padrao'])}]")
             if c["descricao"]:
                 print(f"      {c['descricao'][:96]}")
+            # Horizonte 3/missao de debitos, P2 (2026-07-17): `c["assinatura"]`
+            # em vez de `c.get("assinatura")` -- mcp_catalogo.conectores_exemplo()
+            # SEMPRE grava essa chave (é a origem de todo item de `conns`; até
+            # os de `buscar_conectores()` vêm de lá por baixo), com o valor de
+            # verificar_assinatura(...)[0], que por sua vez é sempre `str`
+            # (tuple[str, str], nunca None). `.get()` sem default devolve
+            # `Any | None` (o "| None" é real mesmo com Any no meio), e o dict
+            # literal abaixo exige chave `str` -- indexação direta reflete a
+            # garantia de fato (chave sempre presente) em vez de inventar um
+            # default que nunca dispara.
             _ass = {"assinado_confiavel": "✍ assinado (autor confiável)",
                     "assinado_desconhecido": "✍ assinado (autor não pinado)",
                     "assinatura_invalida": "⚠ assinatura inválida"}.get(
-                        c.get("assinatura"))
+                        c["assinatura"])
             if _ass:
                 print(f"      {_ass}")
             if c["status"] != "confiavel":
@@ -1787,12 +1917,23 @@ def cmd_mcp(ctx, args) -> int:
         ctx["audit"].append("mcp.client.conectado", server=manifesto["nome"],
                             tools=len(tools), confianca=confianca)
         srv_nome = cli_mcp.server_info.get("name", "?")
-        marca = "✓ confiável" if confianca == "confiavel" else "⚠ experimental"
-        print(f"conectado a '{manifesto['nome']}' [{marca}] (server: {srv_nome}) — "
+        # Horizonte 3/missao de debitos, P2 (2026-07-17): "selo"/"tool" em vez
+        # de "marca"/"t" -- ambos já são usados mais acima nesta MESMA função
+        # (cmd_mcp) nos ramos "buscar"/"exemplos", com tipos DIFERENTES:
+        # `marca` lá é um dict[str,str] de rótulos; `t` lá itera
+        # mcp_server.TOOLS (lista de dicts heterogêneos name/description/
+        # inputSchema — o mesmo "Pattern F" já visto em simple/rotinas.py,
+        # cujo tipo inferido nem sequer é indexável). Os ramos são mutuamente
+        # exclusivos em runtime (cada `if sub == ...` só roda um), mas mypy
+        # infere um único tipo estático por nome de variável na função
+        # inteira. Puramente mecânico, sem tocar mcp_server.py (fora do
+        # escopo desta correção) nem mudar nenhum comportamento.
+        selo = "✓ confiável" if confianca == "confiavel" else "⚠ experimental"
+        print(f"conectado a '{manifesto['nome']}' [{selo}] (server: {srv_nome}) — "
               f"{len(tools)} tool(s):\n")
-        for t in tools:
-            print(f"  [{t['nivel']}] {t['name']} — "
-                  f"{t.get('description', '')[:70]}")
+        for tool in tools:
+            print(f"  [{tool['nivel']}] {tool['name']} — "
+                  f"{tool.get('description', '')[:70]}")
         if confianca != "confiavel":
             print("\n(confie neste manifesto: nomos mcp confiar "
                   f"{args.manifesto})")
@@ -1960,7 +2101,14 @@ def cmd_evidencia(ctx, args) -> int:
         return EXIT_OK
     if sub == "verificar":
         ok, problemas = ev.verificar_pacote(Path(args.pacote))
-        ctx["audit"].append("evidencia.verificada", ok=ok)
+        # Horizonte 3/item 2 (2026-07-17): correlaciona com "evidencia.criada"
+        # pelo nome do pacote — já é o identificador que o comando recebe
+        # como argumento (args.pacote); antes não era propagado para o
+        # audit log, então os dois eventos não tinham campo em comum (mesma
+        # causa-raiz do P2-5 em kernel/missao.py, documentada como gap
+        # explícito no Horizonte 2 e agora fechada).
+        ctx["audit"].append("evidencia.verificada", ok=ok,
+                            pacote=Path(args.pacote).name)
         if ok:
             print("pacote íntegro ✓ — todos os hashes conferem.")
             return EXIT_OK
@@ -2017,6 +2165,20 @@ def build_parser() -> argparse.ArgumentParser:
         ap2.add_argument("nome")
         ap2.set_defaults(fn=cmd_agentes)
     ag2sub.add_parser("diagnostico").set_defaults(fn=cmd_agentes)
+    us = ag2sub.add_parser("usar", help="usa uma ferramenta declarada do agente "
+                           "— mesmo gate de política do kernel, fail-closed "
+                           "(Horizonte 3, item 1)")
+    us.add_argument("nome")
+    us.add_argument("ferramenta")
+    us.add_argument("--alvo", default="",
+                    help="consulta, caminho ou pedido, conforme a ferramenta")
+    us.add_argument("--conteudo", default="",
+                    help="texto a gravar (arquivo_escrever)")
+    us.add_argument("--panel", action="store_true",
+                    help="aprova via painel local em vez de terminal")
+    us.add_argument("--sem-motor", action="store_true", dest="sem_motor",
+                    help="arquivo_resumir: só heurística local, sem motor de IA")
+    us.set_defaults(fn=cmd_agente_usar)
     ag2.set_defaults(fn=cmd_agentes, agentes_cmd=None)
 
     cv = sub.add_parser("conversas", help="histórico de conversas (local, cifrável)")
@@ -2391,12 +2553,19 @@ def build_parser() -> argparse.ArgumentParser:
     # SÓ `conselho simular` (dry-run) e mantém os demais subcomandos
     # DESABILITADOS/fail-closed. Aparece no --help para descoberta. O REMAINDER
     # + fn são só defesa em profundidade caso o curto-circuito seja removido.
-    co = sub.add_parser(
+    # Horizonte 3/missao de debitos, P2 (2026-07-17): "cns" em vez de "co" --
+    # "co" já foi usado mais acima (linha ~2476) para o resultado de
+    # `sub.add_parser("consent", ...).add_subparsers(...)`, que é um
+    # `_SubParsersAction`, um tipo DIFERENTE do `ArgumentParser` simples
+    # devolvido por `sub.add_parser("conselho", ...)` aqui (sem
+    # `.add_subparsers()` encadeado). mypy infere um único tipo estático por
+    # nome de variável na função inteira. Puramente mecânico.
+    cns = sub.add_parser(
         "conselho",
         help=("Motor Council — pré-release; só `simular` (dry-run), demais "
               "subcomandos DESABILITADOS"))
-    co.add_argument("resto", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
-    co.set_defaults(fn=cmd_conselho)
+    cns.add_argument("resto", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
+    cns.set_defaults(fn=cmd_conselho)
 
     sub.add_parser("status", help="resumo do estado: motores, cofre, cadeado, auditoria").set_defaults(fn=cmd_status)
     lg = sub.add_parser("logs", help="auditoria: ver e verificar a cadeia de hash").add_subparsers(dest="logs_cmd", required=True)

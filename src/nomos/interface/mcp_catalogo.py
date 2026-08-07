@@ -288,7 +288,11 @@ def verificar_assinatura(manifesto_bruto: dict, home: Path) -> tuple[str, str]:
     entrada = trust.entry(fp)
     if entrada is None or entrada.get("pubkey") != bloco.get("pubkey"):
         return ("assinado_desconhecido", fp)
-    return ("assinado_confiavel", entrada.get("label", fp))
+    # Horizonte 3/item 3: str() normaliza o tipo declarado da função
+    # (tuple[str, str]) — entry() devolve `dict | None` (sem tipar valores),
+    # então .get() vinha como Any|None para o mypy. Sem efeito no caminho
+    # normal (label, quando presente, já é sempre string neste modelo).
+    return ("assinado_confiavel", str(entrada.get("label", fp)))
 
 
 def diagnostico_conectores(home: Path, raiz: Path | None = None) -> dict:

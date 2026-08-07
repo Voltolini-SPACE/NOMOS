@@ -15,6 +15,9 @@
 - Ler `CLAUDE.md`, o bloco **ESTADO ATUAL** de `loop/LOOP_LOG.md` e `loop/BACKLOG.md`.
 - Conferir `git status`: se a árvore não estiver limpa, **abortar** e registrar
   (nunca trabalhar por cima de mudanças humanas não commitadas).
+- **1.b · Exclusividade do repo** (lição da Rodada 2): anotar o hash do HEAD;
+  se `.git/index.lock` existir/reaparecer ou o HEAD mudar em qualquer ponto da
+  rodada, há sessão concorrente → **abortar imediatamente**.
 
 ### 2 · Escolher missão (exatamente 1 por rodada)
 - Pegar a primeira missão com status `pronta` no BACKLOG (ordem = prioridade).

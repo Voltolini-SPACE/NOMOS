@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from nomos.cognition.providers import (
-    AnthropicProvider, ChatReply, OllamaProvider, ProviderUnavailable,
+    AnthropicProvider, OllamaProvider, ProviderUnavailable,
 )
 from nomos.kernel.policy import Category
 from nomos.kernel.vault import Vault, VaultError
@@ -60,7 +60,12 @@ class Router:
                 self.audit.append("chat.embutido.falhou", motivo=type(exc).__name__)
         if self.ollama.available():
             try:
-                r: ChatReply = self.ollama.chat(messages)
+                # Horizonte 3/item 3: anotação explícita removida — `r` já
+                # é inferido corretamente como ChatReply pelo retorno de
+                # chat(); a anotação aqui colidia (mesmo escopo de função,
+                # ramos mutuamente exclusivos que o mypy não funde) com o
+                # `r` implícito da linha 56, sem mudar nenhum tipo real.
+                r = self.ollama.chat(messages)
                 self.audit.append("chat.local", model=r.model, egress="nenhum")
                 return ChatOutcome(True, "local", r.text, r.provider, r.model)
             except ProviderUnavailable as exc:

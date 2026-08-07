@@ -28,11 +28,15 @@ import json
 import platform as _plataforma
 import re
 import secrets
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import TypedDict
 from urllib.parse import parse_qs
+
+from nomos.interface._html import esc
 
 # ---------------------------------------------------------------------------
 # identidade visual — paleta da marca CONGELADA (brandbook v1.0)
@@ -116,6 +120,22 @@ _CSS = """
  .chip.ok{background:rgba(90,247,142,.15);color:var(--neon)}
  .chip.warn{background:rgba(242,193,78,.15);color:var(--amarelo)}
  .chip.err{background:rgba(255,92,87,.15);color:var(--vermelho)}
+ /* P2-10 (auditoria de 2026-07-17): o `background` de .chip.ok/.warn/.err
+    é um rgba(...) LITERAL fixo (os valores RGB do tema ESCURO — não usa
+    var(), então não muda com o tema); só `color` usa var(--neon/
+    --amarelo/--vermelho), que troca no tema claro. Medido com a fórmula
+    WCAG oficial sobre a cor REAL renderizada (alpha blend do literal
+    sobre --surface2, não a variável isolada): no tema claro, chip.ok
+    ficava em 4.51:1 (passa, mas raspando o piso — frágil a arredondamento
+    de renderização) e chip.warn em 4.13:1 (FALHA o AA de 4.5:1); chip.err
+    já passava com folga (4.85:1), não precisa de override. Overrides
+    abaixo, só no tema claro, escurecem o TEXTO (mesma família de cor,
+    fundo inalterado) para dar folga real acima do piso. Tema ESCURO não
+    muda: --neon #5AF78E já é claro o bastante sobre fundo escuro. */
+ :root[data-tema="claro"] .chip.ok{color:#0b783a}
+ :root[data-tema="claro"] .chip.warn{color:#7f6111}
+ @media (prefers-color-scheme:light){:root:not([data-tema]) .chip.ok{color:#0b783a}
+   :root:not([data-tema]) .chip.warn{color:#7f6111}}
  .sysbox .linha{margin:.22rem 0}
 
  /* ---- topo do conteúdo ---- */
@@ -229,6 +249,7 @@ _CSS = """
    padding:.4rem 1.1rem;cursor:pointer;border:1px solid var(--dim);
    background:var(--surface2);color:var(--neon);align-self:flex-end}
  .composer button:hover{background:rgba(90,247,142,.12)}
+ .composer button:disabled{opacity:.6;cursor:progress}
  .chat-nota{color:var(--fraco);font-size:.72rem;margin:.4rem 0 0}
 
  /* recolhíveis: detalhe dá acesso sem poluir (fecha por padrão) */
@@ -366,6 +387,19 @@ _JS = """
  if(rel){rel.textContent=new Date().toLocaleTimeString();
    setInterval(function(){
      rel.textContent=new Date().toLocaleTimeString();},1000);}
+ // achado P1-6 (auditoria 2026-07-17): enviar uma mensagem no chat não
+ // dava NENHUM indicador de carregamento — como a geração roda síncrona
+ // na mesma thread HTTP, a aba parecia travada enquanto o motor pensava.
+ // O submit continua um POST normal (sem fetch/JS extra na resposta);
+ // isto só trava o botão e avisa, durante a espera pela próxima página.
+ document.querySelectorAll('form.composer').forEach(function(cf){
+   cf.addEventListener('submit',function(){
+     var b=cf.querySelector('button[type="submit"]');
+     var ta=cf.querySelector('textarea[name="mensagem"]');
+     if(ta&&!ta.value.trim())return;   // required cuida da validação nativa
+     if(b){b.disabled=true;b.textContent='enviando…';b.setAttribute('aria-busy','true');}
+   });
+ });
 })();
 """
 
@@ -385,6 +419,21 @@ _HEADERS_SEGURANCA = {
 }
 
 
+# boot do tema ANTES do <style>, em QUALQUER documento do painel: aplica a
+# escolha salva já na 1ª pintura (sem flash). Sem escolha, o CSS respeita
+# prefers-color-scheme sozinho. Horizonte 3/item 4 (2026-07-17): extraído
+# do corpo de `_doc()` (onde vivia sozinho, só para o painel principal) para
+# uma constante compartilhada — `render_dash()` também passa a usá-la, para
+# que o Dash ganhe a mesma aplicação antecipada de tema (antes só o painel
+# principal tinha isso; o Dash não lia `localStorage` em lugar nenhum, então
+# o bloco CSS de tema claro do P2-8 ficava "inerte"). Extração pura: a saída
+# de `_doc()` não muda em nada, é literalmente a mesma string de antes.
+_BOOT_TEMA = ("<script>try{var t=localStorage.getItem('nomos-tema');"
+              "if(t==='claro'||t==='escuro')"
+              "document.documentElement.setAttribute('data-tema',t);}"
+              "catch(e){}</script>")
+
+
 def _doc(titulo: str, corpo: str, refresh: int | None = None) -> str:
     """Documento HTML completo, autossuficiente (CSS/JS inline, nada externo).
 
@@ -393,15 +442,9 @@ def _doc(titulo: str, corpo: str, refresh: int | None = None) -> str:
     recarregaria no meio de uma decisão e apagaria o filtro digitado."""
     meta = (f'\n<meta name="nomos-refresh" content="{int(refresh)}">'
             if refresh else "")
-    # boot do tema ANTES do <style>: aplica a escolha salva já na 1ª pintura
-    # (sem flash). Sem escolha, o CSS respeita prefers-color-scheme sozinho.
-    boot = ("<script>try{var t=localStorage.getItem('nomos-tema');"
-            "if(t==='claro'||t==='escuro')"
-            "document.documentElement.setAttribute('data-tema',t);}"
-            "catch(e){}</script>")
     return ("<!doctype html><html lang=\"pt-br\"><meta charset=\"utf-8\">\n"
             "<meta name=\"viewport\" content=\"width=device-width, "
-            "initial-scale=1\">" + meta + "\n" + boot + "\n<title>" +
+            "initial-scale=1\">" + meta + "\n" + _BOOT_TEMA + "\n<title>" +
             html.escape(titulo) + "</title>\n<style>" + _CSS + "</style>\n" +
             corpo + "\n<script>" + _JS + "</script>\n</html>")
 
@@ -462,6 +505,17 @@ def _contexto_chat(store, conversa_id: int, texto_usuario: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # coleta de dados — SÓ leitura; nada aqui muda estado
 # ---------------------------------------------------------------------------
+# Horizonte 3/missao de debitos, P2 (2026-07-17): TypedDict para as séries
+# de atividade abaixo -- o literal `{"buckets": [0] * 24, "total": 0}`
+# mistura list[int] e int sob chaves diferentes do MESMO dict, o que faz
+# mypy inferir um tipo de valor largo demais (mesma causa raiz já vista em
+# simple/rotinas.py: dict heterogêneo). Aqui usado por dois dicts
+# (24h/7d) com o MESMO formato. Zero mudança de comportamento.
+class _AtividadeSerie(TypedDict):
+    buckets: list[int]
+    total: int
+
+
 def dados_dashboard(ctx) -> dict:
     """Coleta tudo que o painel mostra. Só leitura; nada muda de estado."""
     from nomos import __version__
@@ -518,8 +572,8 @@ def dados_dashboard(ctx) -> dict:
 
     # Atividade (MC39/MC39.1 — Dash): eventos da trilha, SÓ timestamps —
     # numa passada única, duas séries REAIS: por hora (24h) e por dia (7d).
-    atividade_24h = {"buckets": [0] * 24, "total": 0}
-    atividade_7d = {"buckets": [0] * 7, "total": 0}
+    atividade_24h: _AtividadeSerie = {"buckets": [0] * 24, "total": 0}
+    atividade_7d: _AtividadeSerie = {"buckets": [0] * 7, "total": 0}
     try:
         if trilha.exists():
             agora_ts = time.time()
@@ -574,11 +628,17 @@ def dados_dashboard(ctx) -> dict:
         from nomos.agents.registry import AgentRegistry
         reg = AgentRegistry(home)   # UMA instância: reusa o parse dos manifests
         for a in reg.listar():
-            agentes.append({"nome": a.nome, "risco_max": a.risco_max,
+            agentes.append({"nome": a.name, "risco_max": a.risco_max,
                             "ferramentas": list(a.ferramentas),
-                            "ativo": reg.ativo(a.nome)})
-    except Exception:
+                            "ativo": reg.ativo(a.name)})
+    except Exception as exc:
+        # bug real encontrado na auditoria de 2026-07-17 (achado P1-2):
+        # esta seção ficava SEMPRE vazia e em silêncio por causa de um erro
+        # de atributo (a.nome vs a.name). Agora, se algo continuar dando
+        # errado aqui, ao menos fica um rastro no stderr em vez de sumir.
         agentes = []
+        print(f"[nomos painel] aviso: falha ao listar agentes: "
+              f"{type(exc).__name__}: {exc}", file=sys.stderr)
 
     # MCP (MC33): o NOMOS como servidor (tools read-only) + servers confiáveis
     try:
@@ -671,11 +731,40 @@ def dados_dashboard(ctx) -> dict:
             for c in _cat.conectores_exemplo(home)]
 
     # Sistema (Painel 4.0): metadados locais da instalação — nada sensível
+    #
+    # BUG REAL corrigido aqui (Horizonte 3/missao de debitos, P2,
+    # 2026-07-17), achado pelo mypy e confirmado por leitura do codigo,
+    # não um mero ajuste de tipagem:
+    # 1) `nomos.simple.onboarding.carregar_perfil` NUNCA existiu —
+    #    onboarding.py só exporta listar_modelos/escolher_modelo/
+    #    salvar_perfil/run_onboarding (confirmado por grep em todo o
+    #    src/). O `import` sempre levantava ImportError, sempre
+    #    engolido pelo `except Exception` abaixo, então este bloco
+    #    SEMPRE caía no fallback "NOMOS" — silenciosamente, sem log,
+    #    desde que este código existe.
+    # 2) Mesmo corrigindo só o import, o resultado ainda seria sempre
+    #    "NOMOS": as chaves checadas ("nome_agente", "agente") nunca
+    #    existiram no perfil salvo — `kernel/config.py::save_agent()`
+    #    grava exclusivamente a chave "agent_name" (mesma chave lida em
+    #    todos os outros pontos do código, ex.: cli.py:1437
+    #    `(agent or {}).get("agent_name")`).
+    # Corrigido lendo o perfil DIRETO do `home` já em escopo (mesmo
+    # arquivo AGENT_FILE que config.load_agent() lê, mas parametrizado
+    # pelo `home` explícito desta função — não pelo NOMOS_HOME global —
+    # porque TODO o resto de dados_dashboard() já é parametrizado por
+    # `home` explícito, propositalmente, para isolamento em testes;
+    # usar config.load_agent() sem argumento ignoraria esse `home` e
+    # leria o perfil errado sempre que ctx["home"] != NOMOS_HOME).
+    # Efeito visível da correção: o painel agora mostra o nome REAL do
+    # agente configurado (quando existir `agent.json`), em vez de
+    # sempre "NOMOS". Regressão dedicada:
+    # tests/test_h3_missao_debitos_p2_painel_nome_agente.py.
     try:
-        from nomos.simple.onboarding import carregar_perfil
-        _perfil = carregar_perfil(home) or {}
-        nome_agente = str(_perfil.get("nome_agente") or
-                          _perfil.get("agente") or "NOMOS")
+        from nomos.kernel import config as _config
+        _perfil_path = home / _config.AGENT_FILE
+        _perfil = (json.loads(_perfil_path.read_text())
+                   if _perfil_path.exists() else {})
+        nome_agente = str(_perfil.get("agent_name") or "NOMOS")
     except Exception:
         nome_agente = "NOMOS"
     sistema = {
@@ -737,7 +826,7 @@ _ABAS_NAV: list[tuple[str, str, str]] = [
 
 
 def _sidebar(d: dict, n_aprov: int) -> str:
-    e = html.escape
+    e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
     memo = d.get("memoria", {})
     badges = {
         "visao": (f'<span class="badge alerta">{n_aprov}</span>'
@@ -804,7 +893,7 @@ def _secao_chat(d: dict, chat: dict | None) -> str:
     a 2ª porta de escrita governada: enviar roda motor LOCAL (fail-closed),
     conteúdo redigido na exibição, cada turno auditado.
     """
-    e = html.escape
+    e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
     corpo = ['<h2 id="chat">Chat local</h2>']
     hist = d.get("conversas", [])
     ligado = bool(chat and chat.get("habilitado") and chat.get("token"))
@@ -828,6 +917,14 @@ def _secao_chat(d: dict, chat: dict | None) -> str:
                          "aparece quando você abre o chat local</small></p>")
         return "\n".join(corpo)
 
+    # Horizonte 3/missao de debitos, P2 (2026-07-17): `ligado` (acima) é
+    # `bool(chat and chat.get(...) and chat.get(...))` -- se `ligado` é
+    # True, `chat` necessariamente era truthy (não-None) no momento dessa
+    # avaliação, e `chat` não é reatribuído entre os dois pontos. mypy não
+    # propaga esse estreitamento através da variável booleana intermediária
+    # `ligado`, então só vê `chat: dict | None` ainda aqui. O assert
+    # documenta a invariante real e dá o estreitamento explícito.
+    assert chat is not None, "ligado=True implica chat is not None (checado acima)"
     base, token = chat["base"], chat["token"]
     aberta = chat.get("aberta")
     corpo.append('<div class="chat-wrap">')
@@ -882,7 +979,7 @@ def _bloco_ao_vivo(d: dict) -> str:
     cérebro instalado) é recolhida num <details> — só os prontos ficam à
     vista, mantendo a honestidade ("sem motor pronto") sem inundar a tela.
     """
-    e = html.escape
+    e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
     rv = d.get("roteador_vivo") or []
     prontos = [r for r in rv if r.get("motor")]
     vazios = [r for r in rv if not r.get("motor")]
@@ -912,15 +1009,28 @@ def _bloco_ao_vivo(d: dict) -> str:
     return "".join(partes)
 
 
-def _secao_aprovacoes(aprovacoes: list[dict] | None, n_meta: int) -> str:
+def _secao_aprovacoes(aprovacoes: list[dict] | None, n_meta: int,
+                      decidido: dict | None = None) -> str:
     """A ÚNICA porta de ação do painel — e ela é o gate, não um atalho.
 
     Sem fila anexada (``aprovacoes=None``): seção informativa, sem <form>.
     Com fila: cada card carrega o token single-use da própria solicitação;
     decidir consome o token (reuso/expirada = recusa na fila, não aqui).
+
+    ``decidido`` (achado P1-7, auditoria 2026-07-17): banner explícito
+    logo após uma decisão — antes, a única evidência de sucesso era a
+    lista de pendentes encolher, sem nenhuma confirmação direta.
     """
-    e = html.escape
+    e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
     corpo = ['<h2 id="aprovacoes">Aprovações — você decide</h2>']
+    if decidido and decidido.get("acao") in ("aprovar", "negar"):
+        veredito = "APROVADA ✅" if decidido["acao"] == "aprovar" else "NEGADA ⛔"
+        rid = decidido.get("id", "")
+        corpo.append(
+            f'<div class="card ok" role="status" aria-live="polite">'
+            f'Decisão registrada: solicitação {veredito}'
+            + (f' <small>(id {e(rid)})</small>' if rid else "")
+            + "</div>")
     if aprovacoes is None:
         rodape = (f"{n_meta} pendente(s) na fila — decida no terminal "
                   "(<code>nomos approvals list</code>)" if n_meta else
@@ -972,7 +1082,7 @@ def _secao_mosaic() -> list[str]:
     """Aba MOSAIC — as telas ao vivo VIVEM aqui dentro do painel (sem janelas
     separadas). Leitura livre; vistoriar e agir passam pelo caminho governado.
     Degrada em silêncio se o motor de mosaico não tiver telas."""
-    e = html.escape
+    e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
     try:
         from nomos.mosaic.engine import MosaicEngine
         tiles = MosaicEngine().build_tiles()
@@ -1032,13 +1142,16 @@ def _secao_mosaic() -> list[str]:
 
 def render_html(d: dict, refresh: int | None = None,
                 aprovacoes: list[dict] | None = None,
-                chat: dict | None = None) -> str:
+                chat: dict | None = None,
+                decidido: dict | None = None) -> str:
     """Página única (abas) com todas as seções — âncoras estáveis (MC33).
 
     ``aprovacoes=None`` ⇒ nenhum <form> de aprovação (read-only). ``chat=None``
     ou desligado ⇒ nenhum <form> de chat (a aba chat vira histórico read-only).
+    ``decidido={"acao": "aprovar"|"negar", "id": str}`` ⇒ banner de
+    confirmação da última decisão (achado P1-7, auditoria 2026-07-17).
     """
-    e = html.escape
+    e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
     classe = {"PRONTO": "ok", "PARCIAL": "warn",
               "BLOQUEADO": "err"}[d["status_geral"]]
     n_aprov = (len(aprovacoes) if aprovacoes is not None
@@ -1096,7 +1209,7 @@ def render_html(d: dict, refresh: int | None = None,
         f'{"modo só-local LIGADO 🔒" if d["so_local"] else "motores externos plugados 🔌"}'
         f"<br>próximo passo: <code>{e(d['proximo_passo'])}</code></div>")
     aba_visao.append(_bloco_ao_vivo(d))
-    aba_visao.append(_secao_aprovacoes(aprovacoes, n_aprov))
+    aba_visao.append(_secao_aprovacoes(aprovacoes, n_aprov, decidido))
     aba_visao.append('<h2 id="checkup">Check-up</h2>')
     for it in d["checkup"]:
         marca = "✅" if it["ok"] else ("❌" if it.get("bloqueante") else "⚠️")
@@ -1342,6 +1455,23 @@ _CSS_DASH = """
    --neon:#5AF78E;--dim:#2BD968;--txt:#E8FFE8;--fraco:#7c9a84;
    --ciano:#56E1E9;--amarelo:#F2C14E;--vermelho:#FF5C57;
    --glow:0 0 8px rgba(90,247,142,.45)}
+ /* P2-8 da auditoria de 2026-07-17: o Dash não tinha tema claro — ficava
+    preso no escuro mesmo com o SO em modo claro ou com o usuário já tendo
+    escolhido "claro" no painel principal (_CSS, mesmas variáveis abaixo,
+    sem --rosa porque o Dash nunca usa essa variável). Contraste AA
+    reconferido para este documento (não só copiado): todas as combinações
+    texto/fundo novas (.w .valor(.warn/.err), button.pausa, #estado,
+    .lista .mot/.mod, a, h1) ficam entre 4.69:1 e 14.81:1. */
+ :root[data-tema="claro"]{
+   --bg:#f4f7f4;--surface:#ffffff;--surface2:#eaf0ea;--line:#b9c8bc;
+   --neon:#0b7a3b;--dim:#0b7a3b;--txt:#10261a;--fraco:#3f6b50;
+   --ciano:#0a6d74;--amarelo:#8a6a12;--vermelho:#b3261e;
+   --glow:none}
+ @media (prefers-color-scheme:light){:root:not([data-tema]){
+   --bg:#f4f7f4;--surface:#ffffff;--surface2:#eaf0ea;--line:#b9c8bc;
+   --neon:#0b7a3b;--dim:#0b7a3b;--txt:#10261a;--fraco:#3f6b50;
+   --ciano:#0a6d74;--amarelo:#8a6a12;--vermelho:#b3261e;
+   --glow:none}}
  *{box-sizing:border-box}
  body{font-family:'JetBrains Mono','IBM Plex Mono','SF Mono',Menlo,Consolas,
    monospace;background:var(--bg);color:var(--txt);margin:0;font-size:14px;
@@ -1360,6 +1490,16 @@ _CSS_DASH = """
    padding:.25rem .7rem;cursor:pointer}
  button.pausa[aria-pressed="true"]{border-color:var(--amarelo);
    color:var(--amarelo)}
+ /* Horizonte 3/item 4 (2026-07-17): botão de tema do Dash — MESMOS pares
+    de cor já verificados em button.pausa acima (var(--surface)/var(--txt)/
+    var(--line)), numa classe própria (não reaproveita .pausa) para não
+    herdar o realce âmbar de [aria-pressed="true"], que aqui significa
+    "pausado" — no botão de tema, aria-pressed="true" significa só "tema
+    claro está ativo", sem relação com aviso/pausa. */
+ button.tema{font:inherit;font-size:.74rem;background:var(--surface);
+   color:var(--txt);border:1px solid var(--line);border-radius:6px;
+   padding:.25rem .7rem;cursor:pointer}
+ button.tema:hover{border-color:var(--dim);color:var(--neon)}
  main{flex:1;padding:1.1rem 1.2rem;display:grid;gap:.8rem;
    grid-template-columns:repeat(12,1fr);align-content:start}
  .w{background:var(--surface);border:1px solid var(--line);border-radius:10px;
@@ -1410,6 +1550,38 @@ _JS_DASH = """
  'use strict';
  var pausado=false, ultAt=0, antes={};
  var $=function(id){return document.getElementById(id);};
+ // ---- tema claro/escuro (Horizonte 3/item 4, 2026-07-17): mesma lógica
+ // do painel principal (_JS), agora também no Dash — antes só _CSS_DASH
+ // tinha as variáveis do tema claro (P2-8) mas nada aqui setava
+ // data-tema, então o bloco ficava "inerte" e só o prefers-color-scheme
+ // do SO valia. A chave de localStorage ('nomos-tema') é a MESMA do
+ // painel principal — a escolha explícita feita num lado vale no outro.
+ var root=document.documentElement;
+ function temaAtual(){
+   var t=root.getAttribute('data-tema');
+   if(t)return t;
+   return (window.matchMedia&&window.matchMedia('(prefers-color-scheme:light)').matches)
+     ?'claro':'escuro';
+ }
+ try{var salvo=localStorage.getItem('nomos-tema');
+   if(salvo==='claro'||salvo==='escuro')root.setAttribute('data-tema',salvo);
+ }catch(e){}
+ var tbtn=$('tema-btn');
+ function pintaBtnTema(){
+   if(!tbtn)return;
+   var claro=temaAtual()==='claro';
+   tbtn.textContent=claro?'◐ escuro':'◐ claro';
+   tbtn.setAttribute('aria-label',
+     claro?'mudar para tema escuro':'mudar para tema claro');
+   tbtn.setAttribute('aria-pressed',claro?'true':'false');
+ }
+ pintaBtnTema();
+ if(tbtn){tbtn.addEventListener('click',function(){
+   var novo=temaAtual()==='claro'?'escuro':'claro';
+   root.setAttribute('data-tema',novo);
+   try{localStorage.setItem('nomos-tema',novo);}catch(e){}
+   pintaBtnTema();
+ });}
  function marca(el){ if(!el) return;
    el.classList.remove('mudou'); void el.offsetWidth; el.classList.add('mudou'); }
  function poe(id, v, cls){ var el=$(id); if(!el) return;
@@ -1558,12 +1730,15 @@ def render_dash(versao: str) -> str:
     """Shell ESTÁTICO do NOMOS Dash — nenhum dado interpolado no HTML;
     tudo chega por polling same-origin e entra via textContent (XSS-safe).
     """
-    e = html.escape
+    e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
     corpo = (
         "<header><h1>NOMOS DASH <small>— mission control local 🔒</small></h1>"
         '<div class="hspace">'
         '<span aria-live="polite"><span id="estado">carregando…</span> · '
         'atualizado há <span id="faz">—</span></span>'
+        '<button class="tema" id="tema-btn" type="button" '
+        'aria-pressed="false" title="alternar tema claro/escuro">◐ tema'
+        "</button> "
         '<button class="pausa" id="pausa" aria-pressed="false">pausar</button>'
         '<a href="../">← painel</a></div></header>'
         "<main>"
@@ -1637,7 +1812,8 @@ def render_dash(versao: str) -> str:
         "</footer>")
     return ("<!doctype html><html lang=\"pt-br\"><meta charset=\"utf-8\">\n"
             "<meta name=\"viewport\" content=\"width=device-width, "
-            "initial-scale=1\">\n<title>NOMOS Dash</title>\n<style>"
+            "initial-scale=1\">\n" + _BOOT_TEMA +
+            "\n<title>NOMOS Dash</title>\n<style>"
             + _CSS_DASH + "</style>\n" + corpo
             + "\n<script>" + _JS_DASH + "</script>\n</html>")
 
@@ -1727,15 +1903,32 @@ class DashboardServer:
                     m = re.search(r"(?:^|&)refresh=(\d{1,4})(?:&|$)", query)
                     if m and 5 <= int(m.group(1)) <= 3600:
                         refresh = int(m.group(1))   # fora da faixa: ignorado
+                    # achado P1-7: banner de confirmação pós-decisão de
+                    # aprovação, lido da URL de redirect (PRG) do POST.
+                    decidido = None
+                    qs = parse_qs(query)
+                    acao_dec = (qs.get("decidido") or [""])[0]
+                    if acao_dec in ("aprovar", "negar"):
+                        decidido = {"acao": acao_dec,
+                                   "id": (qs.get("id") or [""])[0]}
                     try:
                         corpo = render_html(_dados(),
                                             refresh=refresh,
                                             aprovacoes=self._aprovacoes(base),
-                                            chat=self._chat(base, query))
+                                            chat=self._chat(base, query),
+                                            decidido=decidido)
                     except Exception as exc:   # painel nunca derruba nada
+                        # P2-9 da auditoria de 2026-07-17: era texto puro sem
+                        # o visual do resto do site — agora reusa _subpagina()
+                        # como as demais subpáginas (audit/roteador).
+                        corpo_erro = (
+                            "<h2>⚠️ painel indisponível</h2>"
+                            f"<p>Erro interno: <code>{html.escape(type(exc).__name__)}"
+                            "</code></p><p><small>detalhes não exibidos por "
+                            "segurança — verifique <code>~/.nomos/logs/</code>."
+                            "</small></p>")
                         return self._responder(
-                            500, f"painel indisponível: {type(exc).__name__}",
-                            "text/plain")
+                            500, _subpagina("painel indisponível", corpo_erro, base))
                     return self._responder(200, corpo)
                 if caminho == base + "/api":
                     return self._api(query)
@@ -1822,7 +2015,15 @@ class DashboardServer:
                     return self._responder(
                         500, f"api indisponível: {type(exc).__name__}",
                         "text/plain")
-                secao = (parse_qs(query).get("secao") or [None])[0]
+                # Horizonte 3/missao de debitos, P2 (2026-07-17): reescrito
+                # sem o idioma `(x.get(k) or [None])[0]` -- mypy infere o tipo
+                # do literal `[None]` a partir do lado esquerdo do `or`
+                # (list[str], vindo de parse_qs), e None não cabe em
+                # list[str]. if/else é equivalente em tudo (chave ausente OU
+                # lista vazia -> None; senão -> primeiro item) e não deixa
+                # ambiguidade de tipo.
+                _secao_vals = parse_qs(query).get("secao")
+                secao = _secao_vals[0] if _secao_vals else None
                 if secao is not None:
                     if secao not in dados:
                         corpo = json.dumps(
@@ -1894,7 +2095,7 @@ class DashboardServer:
 
             def _pagina_audit(self, query: str = ""):
                 """Auditoria completa: cadeia verificada + busca server-side."""
-                e = html.escape
+                e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
                 base = f"/d/{painel.secret}"
                 try:
                     ok, _viol = painel.ctx["audit"].verify()
@@ -1946,7 +2147,7 @@ class DashboardServer:
 
             def _pagina_roteador(self):
                 """Decisões do roteador, explicadas, por modalidade — só leitura."""
-                e = html.escape
+                e = esc   # P2-7: alias null-safe (nunca quebra em valor não-string)
                 base = f"/d/{painel.secret}"
                 try:
                     from nomos.cognition import engine_catalog as cat_mod
@@ -1968,9 +2169,15 @@ class DashboardServer:
                     linhas.append("<p><small>dados, não ação: executar continua "
                                   "passando pelo gate de aprovação</small></p>")
                 except Exception as exc:
+                    # P2-9 da auditoria de 2026-07-17: idem — página estilizada
+                    # em vez de texto puro, consistente com o resto do painel.
+                    corpo_erro = (
+                        "<h2>⚠️ roteador indisponível</h2>"
+                        f"<p>Erro interno: <code>{e(type(exc).__name__)}</code></p>"
+                        "<p><small>detalhes não exibidos por segurança — "
+                        "verifique <code>~/.nomos/logs/</code>.</small></p>")
                     return self._responder(
-                        500, f"roteador indisponível: {type(exc).__name__}",
-                        "text/plain")
+                        500, _subpagina("roteador indisponível", corpo_erro, base))
                 self._responder(200, _subpagina("roteador", "\n".join(linhas),
                                                 base))
 
@@ -2125,9 +2332,16 @@ class DashboardServer:
                     painel.fila.decide(rid, token, approve=(acao == "aprovar"))
                 except ApprovalError as exc:
                     return _erro(409, "decisão recusada", f"recusado: {exc}")
-                # PRG: decidir → recarregar o painel (evita repost no F5)
+                # PRG: decidir → recarregar o painel (evita repost no F5).
+                # Achado P1-7 (auditoria 2026-07-17): decidir uma aprovação
+                # não dava NENHUMA confirmação visual clara — só a lista
+                # encolhia. Agora a URL de destino carrega o resultado da
+                # decisão para o painel mostrar um banner explícito.
+                from urllib.parse import quote
+                destino = (base + f"/?decidido={quote(acao)}&id={quote(rid)}"
+                           "#aprovacoes")
                 self.send_response(303)
-                self.send_header("Location", base + "/#aprovacoes")
+                self.send_header("Location", destino)
                 for k, v in _HEADERS_SEGURANCA.items():
                     self.send_header(k, v)
                 self.end_headers()

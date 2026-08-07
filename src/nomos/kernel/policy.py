@@ -115,11 +115,22 @@ class PolicyEngine:
         chmod_privado(self.path, 0o600)
 
     def rules(self) -> dict:
+        # achado H4/HIGH-02, auditoria de 2026-07-17: json.loads() não
+        # lança exceção para JSON sintaticamente válido mas de tipo errado
+        # (ex.: "[]" ou "null" em vez de um objeto) — sem a checagem de
+        # isinstance abaixo, esse caso escapava do fallback fail-closed
+        # daqui e derrubava decide() adiante com AttributeError não
+        # tratado (self.rules().get(...) numa lista/None/etc.). Tratado
+        # como equivalente a "ilegível": mesmo fallback fail-closed já
+        # existente, sem mudar nenhum outro comportamento.
         try:
-            return json.loads(self.path.read_text())
+            dados = json.loads(self.path.read_text())
         except Exception:
-            # Política ilegível => nenhum trust: tudo negado.
+            dados = None
+        if not isinstance(dados, dict):
+            # Política ilegível ou de tipo errado => nenhum trust: tudo negado.
             return {"version": 0, "fail_closed": True, "rules": {}}
+        return dados
 
     def decide(self, category: Category | str, target: str = "") -> Decision:
         cat = category.value if isinstance(category, Category) else str(category)

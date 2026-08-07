@@ -243,6 +243,58 @@ def test_logs_anchor_cli_creates_anchor(nomos_home, capsys, monkeypatch):
     assert ns.cofre is True
 
 
+# ---------- P1-1 (auditoria 2026-07-17): status/doutor não ignoram mais a âncora ----------
+# Antes desta correção, `resumo_sem_passphrase` não existia e `nomos status`/
+# `nomos doutor` diziam "ÍNTEGRA" olhando só a cadeia de hash, mesmo com uma
+# âncora presente-mas-não-conferida ou com o arquivo de âncora removido.
+
+def test_resumo_sem_passphrase_sem_ancora_e_integra_simples(nomos_home):
+    log = _log(nomos_home)
+    bloqueante, texto = anchor.resumo_sem_passphrase(log, vault=None)
+    assert bloqueante is False
+    assert "íntegra" in texto and "âncora" not in texto.lower()
+
+
+def test_resumo_sem_passphrase_ancora_presente_mas_nao_conferida(nomos_home):
+    log = _log(nomos_home)
+    v = _vault(nomos_home)
+    anchor.criar_ancora(log, v, SENHA)
+    bloqueante, texto = anchor.resumo_sem_passphrase(log, vault=v)
+    assert bloqueante is False
+    assert "íntegra" in texto
+    assert "cofre" in texto.lower()          # deixa claro que dá pra conferir mais fundo
+
+
+def test_resumo_sem_passphrase_detecta_ancora_sumida_sem_passphrase(nomos_home):
+    """O caso mais importante: a chave HMAC existe no cofre (não exige
+    passphrase para SABER disso — só o nome), mas o arquivo .anchor sumiu.
+    Isso é sinal de possível remoção de prova, e agora é reportado como
+    bloqueante mesmo no comando rápido, sem passphrase nenhuma."""
+    log = _log(nomos_home)
+    v = _vault(nomos_home)
+    anchor.criar_ancora(log, v, SENHA)
+    anchor.anchor_path(log.path).unlink()    # simula remoção da prova
+    bloqueante, texto = anchor.resumo_sem_passphrase(log, vault=v)
+    assert bloqueante is True
+    assert "SUMIU" in texto
+
+
+def test_cli_status_reporta_ancora_sumida(nomos_home, monkeypatch, capsys):
+    from nomos import cli
+    monkeypatch.setenv("NOMOS_PASSPHRASE", SENHA)
+    assert cli.main(["init"]) == 0
+    log = AuditLog(nomos_home / "logs" / "audit.jsonl")
+    log.append("evento.um", x=1)
+    v = Vault(nomos_home / "vault.json")
+    v.init(SENHA)
+    anchor.criar_ancora(log, v, SENHA)
+    anchor.anchor_path(log.path).unlink()
+    capsys.readouterr()
+    assert cli.main(["status"]) == 0
+    out = capsys.readouterr().out
+    assert "SUMIU" in out                    # não fica só "auditoria: ÍNTEGRA"
+
+
 @pytest.fixture(autouse=True)
 def _limpa_env(monkeypatch):
     monkeypatch.delenv("NOMOS_PASSPHRASE", raising=False)

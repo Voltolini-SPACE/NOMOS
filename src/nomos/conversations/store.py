@@ -24,6 +24,11 @@ _STOP = {"o", "a", "os", "as", "de", "da", "do", "e", "que", "para", "com",
 class ConversationStore:
     def __init__(self, path: Path | str, privado: bool = False):
         self.privado = privado
+        # Horizonte 3/item 3: tipo declarado explicitamente — os dois ramos
+        # abaixo atribuem tipos diferentes de propósito (":memory:" é só um
+        # marcador inerte no modo privado; nenhuma operação de Path é feita
+        # nele, só no ramo `else`, onde já é sempre um Path real).
+        self.path: str | Path
         if privado:
             self.path = ":memory:"
             self.conn = sqlite3.connect(":memory:")
@@ -49,6 +54,8 @@ class ConversationStore:
             CREATE TABLE IF NOT EXISTS turnos(
               id INTEGER PRIMARY KEY, conversa_id INTEGER NOT NULL,
               ts REAL NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS idx_turnos_conversa_id
+              ON turnos(conversa_id);
             """
         )
         try:
@@ -85,6 +92,13 @@ class ConversationStore:
             "INSERT INTO conversas(criada_em, motor, agente, ultima_ts) "
             "VALUES (?, ?, ?, ?)", (time.time(), motor, agente, time.time()))
         self.conn.commit()
+        # Horizonte 3/item 3: lastrowid é `int | None` na assinatura do
+        # sqlite3 (só seria None sem INSERT bem-sucedido, o que não é o
+        # caso aqui — acabamos de inserir); o assert documenta essa
+        # garantia real para o mypy. int(None) já levantaria TypeError de
+        # qualquer forma antes desta mudança, então nenhum caminho feliz
+        # muda de comportamento.
+        assert cur.lastrowid is not None
         return int(cur.lastrowid)
 
     def add_turno(self, conversa_id: int, role: str, text: str) -> int:
@@ -104,6 +118,7 @@ class ConversationStore:
             ).fetchone()
             if atual and not atual[0]:
                 self._auto_titulo_tags(conversa_id, text)
+        assert cur.lastrowid is not None    # mesma garantia de nova_conversa()
         return int(cur.lastrowid)
 
     def _auto_titulo_tags(self, conversa_id: int, primeiro_texto: str) -> None:
@@ -134,21 +149,28 @@ class ConversationStore:
         return c.rowcount > 0
 
     # ---------- leitura ----------
-    def _linha_conversa(self, r) -> Conversation:
-        n = self.conn.execute("SELECT COUNT(*) FROM turnos WHERE conversa_id=?",
-                              (r[0],)).fetchone()[0]
+    # Achado P1-8 da auditoria de 2026-07-17: `_linha_conversa` disparava um
+    # `SELECT COUNT(*) FROM turnos WHERE conversa_id=?` PRÓPRIO para cada
+    # linha — um N+1 clássico (`listar(50)` = 51 statements, `buscar(k=10)`
+    # ~31, medido via `sqlite3.set_trace_callback()` na Fase 6). Agora quem
+    # chama já traz a contagem pronta (agregada num único GROUP BY, ou —
+    # em `abrir()` — derivada do próprio `len(turnos)` que já foi buscado),
+    # e este método só monta o objeto: nunca mais executa uma query.
+    def _linha_conversa(self, r, n_turnos: int) -> Conversation:
         return Conversation(id=r[0], criada_em=r[1], titulo=r[2],
                             tags=[t for t in (r[3] or "").split(",") if t],
                             motor=r[4], agente=r[5], fixada=bool(r[6]),
                             usar_como_memoria=bool(r[7]), ultima_ts=r[8],
-                            n_turnos=n)
+                            n_turnos=n_turnos)
 
     def listar(self, limite: int = 50) -> list[Conversation]:
         rows = self.conn.execute(
-            "SELECT id,criada_em,titulo,tags,motor,agente,fixada,usar_memoria,"
-            "ultima_ts FROM conversas ORDER BY fixada DESC, ultima_ts DESC "
+            "SELECT c.id,c.criada_em,c.titulo,c.tags,c.motor,c.agente,"
+            "c.fixada,c.usar_memoria,c.ultima_ts,COUNT(t.id) FROM conversas c "
+            "LEFT JOIN turnos t ON t.conversa_id=c.id "
+            "GROUP BY c.id ORDER BY c.fixada DESC, c.ultima_ts DESC "
             "LIMIT ?", (int(limite),)).fetchall()
-        return [self._linha_conversa(r) for r in rows]
+        return [self._linha_conversa(r[:9], r[9]) for r in rows]
 
     def abrir(self, conversa_id: int) -> tuple[Conversation | None, list[Turn]]:
         r = self.conn.execute(
@@ -159,7 +181,7 @@ class ConversationStore:
         turnos = [Turn(*t) for t in self.conn.execute(
             "SELECT id,conversa_id,ts,role,text FROM turnos WHERE conversa_id=? "
             "ORDER BY ts, id", (conversa_id,)).fetchall()]
-        return self._linha_conversa(r), turnos
+        return self._linha_conversa(r, len(turnos)), turnos
 
     def buscar(self, termo: str, k: int = 10) -> list[tuple[Conversation, str]]:
         """(conversa, trecho) por palavra-chave + significado, sem rede."""
@@ -186,11 +208,23 @@ class ConversationStore:
                 for i, _ in ordem:
                     cid = todos[i][0]
                     achados.setdefault(cid, todos[i][1][:120])
+        ids = list(achados)[:k]
+        if not ids:
+            return []
+        # achado P1-8: um único SELECT com contagem agregada por id, em vez
+        # de `abrir()` (2 queries cada) para cada um dos k achados.
+        marcadores = ",".join("?" * len(ids))
+        rows = self.conn.execute(
+            "SELECT c.id,c.criada_em,c.titulo,c.tags,c.motor,c.agente,"
+            "c.fixada,c.usar_memoria,c.ultima_ts,COUNT(t.id) FROM conversas c "
+            f"LEFT JOIN turnos t ON t.conversa_id=c.id WHERE c.id IN "
+            f"({marcadores}) GROUP BY c.id", ids).fetchall()
+        por_id = {r[0]: self._linha_conversa(r[:9], r[9]) for r in rows}
         saida = []
-        for cid, trecho in list(achados.items())[:k]:
-            conv, _ = self.abrir(cid)
+        for cid in ids:
+            conv = por_id.get(cid)
             if conv:
-                saida.append((conv, trecho))
+                saida.append((conv, achados[cid]))
         return saida
 
     def turnos_para_contexto(self, conversa_id: int, n: int = 6) -> list[dict]:

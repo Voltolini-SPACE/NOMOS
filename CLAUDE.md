@@ -13,6 +13,8 @@ repo `Voltolini-SPACE/NOMOS`. Código em `src/`, testes em `tests/`, site em
 4. Evidência por missão: toda mudança nasce com teste + entrada no CHANGELOG.
 5. REGRA MC33: o site sempre reflete o produto.
 6. Componente AGPL nunca linkado (só processo externo).
+7. REGRA MC35 (dogfooding): ferramenta interna validada DEVE virar missão de
+   produto para todos os usuários (ver docs/missions/MC35 §7).
 
 ## Como trabalhar aqui
 - Método: **loop-100** (SPEC → IMPLEMENTAR → TESTAR → VALIDAR → EVIDENCIAR →

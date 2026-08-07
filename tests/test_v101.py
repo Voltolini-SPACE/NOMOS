@@ -105,15 +105,19 @@ def _povoar(nomos_home):
     (nomos_home / "agent.json").write_text('{"agent_name": "Atlas"}')
     (nomos_home / "logs").mkdir(exist_ok=True)
     (nomos_home / "logs" / "audit.jsonl").write_text('{"event": "x"}\n')
-    (nomos_home / "modelos").mkdir(exist_ok=True)
-    (nomos_home / "modelos" / "grande.gguf").write_bytes(b"G" * 1024)
+    (nomos_home / "cerebros").mkdir(exist_ok=True)
+    (nomos_home / "cerebros" / "grande.gguf").write_bytes(b"G" * 1024)
 
 
 def test_backup_total_roundtrip(nomos_home, tmp_path):
     _povoar(nomos_home)
     destino = tmp_path / "meu-nomos.backup"
     n, excluidas = bt.criar(nomos_home, destino, "senha-forte-123")
-    assert n == 2 and "modelos/" in excluidas          # modelo NÃO vai
+    # regressão: EXCLUIR_PADRAO listava "modelos/", mas os modelos GGUF reais
+    # ficam em "cerebros/" (cognition/embutido.py::pasta_modelos()) — o
+    # backup embutia modelos de vários GB por engano. Ver Fase 1/2 da
+    # auditoria de 2026-07-17 (achado P1-4).
+    assert n == 2 and "cerebros/" in excluidas         # modelo NÃO vai
     assert b"Atlas" not in destino.read_bytes()        # cifrado de verdade
 
     novo_home = tmp_path / "novo-home"

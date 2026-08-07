@@ -327,6 +327,91 @@ def test_token_jamais_vaza_para_api_ou_dados(nomos_home):
 
 
 # ---------------------------------------------------------------------------
+# 5b. feedback visual pós-ação (achados P1-6/P1-7 da auditoria de 2026-07-17)
+# ---------------------------------------------------------------------------
+def test_decisao_de_aprovacao_mostra_banner_de_confirmacao(nomos_home):
+    """P1-7: antes, o POST em aprovacoes/decidir fazia 303 de volta para
+    '#aprovacoes' sem nenhum sinal de que a decisão realmente foi registrada
+    — quem decide não tinha como distinguir sucesso silencioso de um clique
+    perdido. Agora o redirect carrega ?decidido=<acao>&id=<rid> e o painel
+    renderiza um banner "Decisão registrada" com o veredito."""
+    ctx = _ctx(nomos_home)
+    fila = ApprovalQueue(nomos_home / "approvals", audit=ctx["audit"])
+    rid, _ = fila.request("A2_WRITE_LOCAL", "plano.md", "salvar")
+    srv = DashboardServer(ctx)
+    url = srv.start()
+    try:
+        token = fila.token_of(rid)
+        req = urllib.request.Request(
+            f"{url}aprovacoes/decidir",
+            data=f"id={rid}&token={token}&action=aprovar".encode(),
+            method="POST")
+        with urllib.request.urlopen(req, timeout=5) as r:  # nosec B310
+            final_url = r.geturl()
+            corpo = r.read().decode()
+        assert "decidido=aprovar" in final_url and f"id={rid}" in final_url
+        assert "Decisão registrada" in corpo
+        assert "APROVADA" in corpo
+    finally:
+        srv.stop()
+
+
+def test_decisao_de_negar_tambem_mostra_banner(nomos_home):
+    ctx = _ctx(nomos_home)
+    fila = ApprovalQueue(nomos_home / "approvals", audit=ctx["audit"])
+    rid, _ = fila.request("A4_NET", "https://exemplo.com", "buscar dados")
+    srv = DashboardServer(ctx)
+    url = srv.start()
+    try:
+        token = fila.token_of(rid)
+        req = urllib.request.Request(
+            f"{url}aprovacoes/decidir",
+            data=f"id={rid}&token={token}&action=negar".encode(),
+            method="POST")
+        with urllib.request.urlopen(req, timeout=5) as r:  # nosec B310
+            corpo = r.read().decode()
+        assert "Decisão registrada" in corpo
+        assert "NEGADA" in corpo
+    finally:
+        srv.stop()
+
+
+def test_carregar_painel_direto_nao_mostra_banner_de_decisao(nomos_home):
+    """O banner é efêmero e só aparece vindo do redirect pós-decisão — uma
+    carga normal da página (sem ?decidido=) não deve exibi-lo."""
+    ctx = _ctx(nomos_home)
+    fila = ApprovalQueue(nomos_home / "approvals", audit=ctx["audit"])
+    fila.request("A3_EXEC", "script.sh", "rodar")
+    srv = DashboardServer(ctx)
+    url = srv.start()
+    try:
+        _, corpo, _ = _get(url)
+        assert "Decisão registrada" not in corpo
+    finally:
+        srv.stop()
+
+
+def test_composer_de_chat_expoe_indicador_de_carregamento(nomos_home):
+    """P1-6: sem nenhum sinal de "enviando", um clique em Enviar sem feedback
+    visual convida o usuário a clicar de novo (ou achar que o painel travou).
+    O form.composer agora tem um listener que desabilita o botão e troca o
+    texto por 'enviando…' com aria-busy, e a folha de estilos cobre o estado
+    :disabled."""
+    ctx = _ctx(nomos_home)
+    srv = DashboardServer(ctx, chat_habilitado=True)
+    url = srv.start()
+    try:
+        _, corpo, _ = _get(url)
+        assert 'class="composer"' in corpo
+        assert "querySelectorAll('form.composer')" in corpo
+        assert "enviando" in corpo
+        assert "aria-busy" in corpo
+        assert "composer button:disabled" in corpo
+    finally:
+        srv.stop()
+
+
+# ---------------------------------------------------------------------------
 # 6. headers de segurança em toda resposta
 # ---------------------------------------------------------------------------
 def test_headers_de_seguranca_presentes(nomos_home):

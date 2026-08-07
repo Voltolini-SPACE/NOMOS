@@ -2,7 +2,187 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased]
+## [Unreleased] — H4.9: reprodutibilidade forense e hardening da cadeia de actions
+
+### Added (supply chain)
+- **`tools/reproducible_sdist.py`**: normalizador in-place para `.tar.gz`.
+  Corrige o bug pypa/setuptools#2133 (setuptools 83 não respeita
+  `SOURCE_DATE_EPOCH` no `build_sdist` — mtimes e gzip header ficam com
+  wall-clock). Reescreve APENAS metadados de container (tar member
+  metadata + gzip header): mtime→epoch, uid/gid→0, uname/gname→"",
+  mode→0o644/0o755, ordem alfabética, USTAR format, gzip mtime=0.
+  Nomes, permissões executivas e conteúdo bit-a-bit dos arquivos são
+  preservados. Idempotente (asserção in-tool).
+- **`tools/repro_check.py`**: gate hermético que faz DOIS builds
+  independentes (diretórios separados, venvs separados, pip caches
+  separados) e compara sha256 de wheel + sdist. Falha com diagnóstico
+  útil (primeiro membro divergente, mtimes, uid/gid, sizes). Custo
+  local: ~19s.
+- **Job `reprodutibilidade`** em `.github/workflows/ci.yml`
+  (bloqueante): executa `tools/repro_check.py` em cada push/PR.
+- **`.github/dependabot.yml`**: descoberta semanal de novas versões
+  das actions. Compatível com o pinning por SHA — Dependabot lê o
+  comentário `# vX.Y.Z` ao lado do SHA para calcular bumps. Grupo
+  minor+patch para reduzir ruído; security-updates continuam com PR
+  isolado por design do Dependabot.
+- **`docs/SUPPLY_CHAIN.md`**: contrato normativo da cadeia de
+  publicação — as 4 camadas de garantia por artefato, toolchain
+  pinado, protocolo de bump, matriz de permissions, roteiro de
+  verificação pelo consumidor, tabela de estado por versão.
+  `docs/INSTALL.md` ganha cross-link.
+
+### Changed (CI/CD)
+- **Toolchain de build PINADO no release.yml**: pip==26.2.1,
+  setuptools==83.0.0, wheel==0.45.1, build==1.5.0, packaging==26.3,
+  pyproject_hooks==1.2.0. `python -m build --no-isolation` obrigatório
+  para não deixar `build` puxar a versão MAIS RECENTE de setuptools a
+  cada run. Env do step: `PYTHONHASHSEED=0`, `TZ=UTC`, `LC_ALL=LANG=C.UTF-8`.
+- **Sdist NORMALIZADO no release.yml**: passo `python
+  tools/reproducible_sdist.py dist/*.tar.gz` executado após o build e
+  ANTES da attestation, SBOM e SHA256SUMS. O artefato normalizado é o
+  sujeito de todas as três garantias downstream.
+- **Todas as GitHub Actions pinadas por SHA imutável de 40
+  caracteres** (formato `owner/action@<SHA40> # vX.Y.Z`). Cobertura
+  total: `actions/checkout@v7.0.1`, `actions/setup-python@v7.0.0`,
+  `actions/attest-build-provenance@v4.1.1`,
+  `softprops/action-gh-release@v3.0.2`,
+  `actions/configure-pages@v6.0.0`,
+  `actions/upload-pages-artifact@v5.0.0`,
+  `actions/deploy-pages@v5.0.0`. SHAs resolvidos oficialmente via
+  `git ls-remote`. Defesa contra ataques via re-aponte de tag
+  (padrão observado em tj-actions/changed-files 2025 etc.).
+- **Permissions do release.yml reduzidas a mínimo privilégio**:
+  top-level `contents: read` (antes `write`); job `validar` explícito
+  `contents: read` (antes herdava write — se um teste ou dep de teste
+  fosse maliciosa, tinha token de escrita); job `publicar` preserva
+  `contents: write + id-token: write + attestations: write` (necessários
+  para gerar release + assinar SLSA).
+
+### Verified (empírico H4.9)
+- Wheel de `v1.3.0rc19` reconstruído localmente (macOS aarch64,
+  Python 3.14) com o toolchain pinado produz sha256 IDÊNTICO ao
+  publicado pelo runner Linux do CI:
+  `598ae56d471fd266137aa6f58b14cc15c3fc88e37b98b9a29ee1f9e00e37ecef`.
+- Dois builds independentes com o mesmo toolchain + normalizador de
+  sdist convergem para hashes idênticos:
+  wheel `2a16ac637dbe748dd7a4034c9eac72de74bfacd03ce8d9deff91289f92f5b94a`,
+  sdist normalizado `1c359f5fb5b26a8dcd93649778c25ba9961dc9239a10cc41d68bdd9b77d6bac1`
+  (source tree do HEAD desta branch — inclui os novos tools e testes;
+  para o commit exato `deb263a` da tag rc19 o hash do wheel é diferente
+  porque source é diferente, mas ambos convergem entre si).
+- `pip install nomos-<versao>.tar.gz` normalizado instala o pacote
+  corretamente e `nomos --version` retorna a versão esperada.
+
+### Note
+- **`v1.3.0rc19` já publicada NÃO é alterada**: retag ou substituição
+  de assets é proibida. Todas as garantias novas passam a valer
+  automaticamente na próxima release que sair depois de merge desta
+  branch — ver `docs/SUPPLY_CHAIN.md` §8 (tabela de estado por versão).
+
+## [1.3.0rc19] — 2026-08-04 (H4.8: supply-chain hardening — Node 24, build attestations SLSA, builds reproducible-friendly, SBOM amarrado por sha256 aos artefatos)
+
+### Changed (CI/CD)
+- **GitHub Actions migradas para Node 24**. Runner passou a deprecar Node 20
+  em 2025-09-19; sem migração, o warning "Node.js 20 is deprecated" aparecia
+  em todo run do release rc18. Versões estáveis mais recentes escolhidas:
+  `actions/checkout` v4→v7, `actions/setup-python` v5→v7,
+  `softprops/action-gh-release` v2→v3, `actions/configure-pages` v5→v6,
+  `actions/upload-pages-artifact` v3→v5, `actions/deploy-pages` v4→v5.
+  Nenhuma mudança em runtime, permissions, matrix ou cache.
+
+### Added (supply chain)
+- **Attestation SLSA-provenance nos artefatos de release** via
+  `actions/attest-build-provenance@v4` (Sigstore/Fulcio). Emitida para o
+  wheel e o sdist logo após o build, antes de o `dist/` receber
+  instaladores/SBOM/SHA256SUMS. Permissões `id-token: write` +
+  `attestations: write` movidas para escopo por-job (só o job `publicar`,
+  não `validar`). Consumidor verifica com
+  `gh attestation verify <artefato> -R Voltolini-SPACE/NOMOS` — sucesso
+  significa que o artefato saiu deste workflow no commit da tag, e não
+  de outra máquina/ramo/cadeia interceptada.
+- **SBOM referencia wheel/sdist por sha256**. `tools/make_sbom.py` (v0.1.0
+  → v0.2.0) aceita caminhos de artefato como argumentos posicionais extras
+  e os embute em `metadata.component.externalReferences[type=distribution]`
+  com hash SHA-256. O SBOM deixa de "flutuar" sobre `dist/` e passa a
+  apontar para os arquivos exatos que descreve.
+
+### Added (docs)
+- **`docs/INSTALL.md` ganhou seção "Cadeia de suprimentos"**: descreve as
+  três camadas independentes (SHA256SUMS + SBOM CycloneDX + attestation
+  SLSA), com os comandos exatos de verificação.
+
+### Fixed (build reproducibility)
+- **`SOURCE_DATE_EPOCH` derivado do commit da tag** aplicado ao passo de
+  build (`python -m build`) e ao passo de geração de SBOM. Fixa mtimes
+  internos ao instante do commit em vez do wall-clock do runner.
+  Complementado por `PYTHONHASHSEED=0` para eliminar não-determinismo por
+  ordenação de dicts. Bitwise-identity de wheel continua fora do escopo
+  (pip/build embutem detalhes do ambiente na METADATA), mas a variação
+  cai de "hash sempre diferente" para "hash diferente só quando o ambiente
+  do runner muda".
+- **SBOM determinístico**: quando `SOURCE_DATE_EPOCH` está no ambiente,
+  `timestamp` deriva dele (mesma UTC, mesmo instante) e `serialNumber`
+  passa a ser `uuid5` sobre namespace fixo + purl@epoch (em vez de `uuid4`
+  aleatório). `json.dump(sort_keys=True)`. Verificado localmente: dois
+  runs com o mesmo `SOURCE_DATE_EPOCH` produzem SBOM bit-a-bit idêntico.
+
+## [1.3.0rc18] — 2026-08-04 (Fase 0 higiene + Horizontes 1–3 + H3-missão-débitos + H4 + H4.5: mypy 0 erros em todo o src/nomos, CI reproduzido em Python 3.12 real, `doutor`/`PolicyEngine` resilientes a config corrompida com quarentena forense do arquivo original, gate AST contra bypass do `AgentToolBoundary`, contratos residuais do Council fortalecidos)
+
+### Fixed (Fase 0 — higiene pós-validação: 7 achados de uma auditoria externa)
+- **`kernel/vault.py`**: cofre corrompido (JSON inválido) agora levanta
+  `VaultError` tratado, com mensagem acionável (backup ou `nomos vault init`)
+  — antes propagava `json.JSONDecodeError` cru, que caía no branch genérico de
+  erro da CLI ("algo deu errado do meu lado") em vez do branch específico de
+  `VaultError`/`VaultLocked`. Continua fail-closed, sem tentativa de reparo
+  automático. 1 teste novo (`test_vault.py`).
+- **`kernel/audit.py`**: `SECRET_PATTERNS` ganhou 4 assinaturas (Google API
+  key, Slack token, `env_secret`, `generic_secret` — a mesma família de
+  assinaturas de `nomos.memory.policy`, duplicadas aqui de propósito para não
+  criar dependência de kernel/ em memory/). Fecha o buraco em que um segredo
+  num campo de auditoria com nome "inocente" (não listado em
+  `SENSITIVE_KEYS`) só era pego se batesse um dos 5 padrões originais
+  (`sk-`, `AKIA`, `gh*_`, Bearer, JWT); formatos de chave/senha genéricos
+  passavam ilegíveis para o log. Assinaturas "só cabeçalho" (chave privada
+  PEM, SSH) ficam de fora de propósito — precisam de redação por CAMPO
+  inteiro, não por substring, e ficam para uma missão própria. 2 testes novos
+  (`test_audit_consent.py`).
+  **Correção pós-revisão independente:** duas das três alternativas do padrão
+  `env_secret` (`process.env.X`, `os.environ['X']`) casavam só o RÓTULO, não
+  o valor — `.sub()` trocava o rótulo por `[REDIGIDO]` e deixava o segredo de
+  verdade intacto logo depois (pior: consumir só o rótulo atrapalhava o
+  `generic_secret` seguinte, que sozinho teria pego o resto). Corrigido para
+  as duas alternativas exigirem `=valor` no próprio match, igual à terceira
+  (`export`). Teste de regressão isolado (`test_redacao_env_secret_cobre_valor_no_process_env_e_os_environ`)
+  usa segredos sem prefixo reconhecível por outro padrão, para provar a
+  cobertura real do `env_secret` — o teste original não pegava esse buraco
+  porque os valores de exemplo também batiam em outro padrão independente.
+- **`nomos panic`**: escopo estreito demais — só revogava consentimento de
+  dispositivo (mic/câmera/tela), apesar do texto "corta tudo"/"tranca tudo"
+  no README e na ajuda da CLI. Agora também nega **toda aprovação pendente**
+  (`ApprovalQueue.deny_all()`, novo — não exige token, é ação do dono local)
+  e trava a **localidade** de volta a LIGADO (`localidade.definir(...,
+  True)`), mesmo que a nuvem tivesse sido destravada antes. Sem gate/aprovação
+  adicional: pânico continua instantâneo, sem fricção. 3 testes novos
+  (`test_approvals.py` ×2, `test_cli.py` ×1).
+- **Documentação desatualizada**: `docs/architecture/MOTOR_COUNCIL_SPEC_v1.md`
+  tinha `IMPLEMENTATION=false` no cabeçalho de status contradizendo o próprio
+  corpo do documento (que já lista MC1–MC8 entregues em dry-run) — corrigido
+  para `partial_dry_run` com nota explicando a evolução. `README.md` ainda
+  citava a tag `v1.3.0rc4-motor-council-dry-run` e "mais de 1.100 testes" na
+  seção Maturidade; atualizado para refletir `1.3.0rc17` e "mais de 1.600
+  testes" (gate `tools/nomos_update_agent.py --check` confirma consistência).
+
+### Added (Fase 0 — higiene pós-validação, continuação)
+- **`playwright` como extra opcional**: `pyproject.toml` ganhou
+  `[project.optional-dependencies] mosaic = ["playwright>=1.40"]`. O import já
+  era preguiçoso (`mosaic/browser.py`) e falhava controlado sem o pacote — a
+  mudança é só tornar a instalação explícita (`pip install 'nomos[mosaic]'`)
+  em vez de exigir `pip install playwright` avulso e não-documentado como
+  dependência formal do projeto. `docs/NOMOS_MOSAIC.md` atualizada.
+- **SBOM no pipeline de release**: `.github/workflows/release.yml` agora roda
+  `tools/make_sbom.py` (CycloneDX 1.5) contra o wheel recém-instalado na venv
+  limpa de smoke, e inclui `sbom.cdx.json` no `SHA256SUMS` e nos artefatos da
+  release — o gerador já existia mas não estava plugado em lugar nenhum do CI.
 
 ### Changed (Mosaic vive no painel + site "em ação")
 - **Mosaic agora é uma aba do `nomos painel`** (`data-aba="mosaic"`), sem janelas

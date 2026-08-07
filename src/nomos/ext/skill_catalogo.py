@@ -43,7 +43,7 @@ def _capacidade(mf: dict, status: str) -> dict:
 
 
 def _manifestos_instalados(skills_dir: Path) -> list[dict]:
-    out = []
+    out: list[dict] = []
     if not skills_dir.exists():
         return out
     for child in sorted(skills_dir.iterdir()):

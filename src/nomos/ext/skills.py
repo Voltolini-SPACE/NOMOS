@@ -144,7 +144,7 @@ def install(src: Path, skills_dir: Path, engine: PolicyEngine, approver,
 
 
 def list_installed(skills_dir: Path) -> list[dict]:
-    out = []
+    out: list[dict] = []
     if not skills_dir.exists():
         return out
     for child in sorted(skills_dir.iterdir()):

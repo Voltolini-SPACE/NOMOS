@@ -223,6 +223,11 @@ class EmbeddedProvider:
     def chat(self, messages: list[dict]):
         from nomos.cognition.providers import ChatReply
         self._carregar()
+        # Horizonte 3/item 3: _carregar() OU define self._llm OU levanta
+        # CerebroIndisponivel — nunca retorna com self._llm ainda None; o
+        # assert documenta essa garantia para o mypy (que não estreita
+        # atributos de instância através de chamada de método).
+        assert self._llm is not None
         out = self._llm.create_chat_completion(messages=messages, max_tokens=512)
         texto = out["choices"][0]["message"]["content"]
         return ChatReply(text=texto, provider=self.name, model=self.modelo.id)
@@ -231,6 +236,7 @@ class EmbeddedProvider:
         """Streaming do cérebro embutido (v1.1): token a token, tudo local."""
         from nomos.cognition.providers import ChatReply
         self._carregar()
+        assert self._llm is not None   # mesma garantia de chat(), acima
         pedacos: list[str] = []
         for evento in self._llm.create_chat_completion(messages=messages,
                                                        max_tokens=512, stream=True):

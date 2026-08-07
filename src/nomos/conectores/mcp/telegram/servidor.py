@@ -30,6 +30,12 @@ import sys
 import urllib.error
 import urllib.request
 
+# redação de segredo compartilhada entre os conectores (achado P1-5 da
+# auditoria de 2026-07-17) — vive em mcp/_comum.py, um nível acima desta
+# pasta; ver a docstring de _comum.py para o porquê do sys.path.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from _comum import redigir as _redigir_comum  # noqa: E402
+
 PROTOCOLO = "2024-11-05"
 API_BASE = os.environ.get("NOMOS_TELEGRAM_API",
                           "https://api.telegram.org")
@@ -79,8 +85,7 @@ def _token() -> str:
 
 def _redigir(texto: str) -> str:
     """Qualquer eco acidental do token vira *** — inclusive em erros."""
-    tok = os.environ.get("NOMOS_TELEGRAM_TOKEN", "").strip()
-    return texto.replace(tok, "***") if tok else texto
+    return _redigir_comum(texto, os.environ.get("NOMOS_TELEGRAM_TOKEN", ""))
 
 
 def chamar_api(metodo: str, params: dict) -> dict:

@@ -178,8 +178,13 @@ def servir(ctx, entrada=None, saida=None) -> int:
         try:
             msg = json.loads(linha)
         except Exception:
-            resposta = {"jsonrpc": "2.0", "id": None,
-                        "error": {"code": -32700, "message": "JSON inválido"}}
+            # Horizonte 3/item 3: anotado explicitamente — sem isso, o
+            # mypy infere o tipo de `resposta` só desta 1a atribuição
+            # (dict "estreito"), e a reatribuição de _despachar() (dict |
+            # None) mais abaixo conflitava. Mesmo formato em todo o loop.
+            resposta: dict | None = {
+                "jsonrpc": "2.0", "id": None,
+                "error": {"code": -32700, "message": "JSON inválido"}}
             saida.write(json.dumps(resposta, ensure_ascii=False) + "\n")
             saida.flush()
             continue

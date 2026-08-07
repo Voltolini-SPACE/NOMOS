@@ -12,12 +12,12 @@ Garantias:
 """
 from __future__ import annotations
 
-import html
 import secrets
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
 
+from nomos.interface._html import esc as html_escape
 from nomos.interface.painel_web import _HEADERS_SEGURANCA
 from nomos.kernel.approvals import ApprovalError, ApprovalQueue
 from nomos.kernel.policy import rotulo_categoria
@@ -106,11 +106,13 @@ class PanelServer:
                         continue
                     items.append(_ITEM.format(
                         base=base, rid=a.id,
-                        token=html.escape(token),
-                        category=html.escape(rotulo_categoria(a.category)),
-                        cat_raw=html.escape(a.category),
-                        target=html.escape(a.target),
-                        reason=html.escape(a.reason),
+                        # P2-7: helper único do pacote interface — null-safe
+                        # (era html.escape(...) puro, quebrava em None)
+                        token=html_escape(token),
+                        category=html_escape(rotulo_categoria(a.category)),
+                        cat_raw=html_escape(a.category),
+                        target=html_escape(a.target),
+                        reason=html_escape(a.reason),
                         left=max(0.0, a.expires - now),
                     ))
                 body = "\n".join(items) or "<p>nenhuma solicitação pendente.</p>"

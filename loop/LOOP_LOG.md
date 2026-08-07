@@ -1,12 +1,13 @@
 # LOOP_LOG — estado e diário do loop NOMOS
 
 ## ESTADO ATUAL
-- **Última rodada:** 1 (ABORTADA, 2026-07-06 18:04 UTC)
+- **Última rodada:** 2 (ABORTADA, 2026-07-06 18:57 UTC)
 - **Missão em curso:** nenhuma (L1 segue `pronta` no BACKLOG)
 - **Branch ativa do loop:** nenhuma (repo na `main`)
-- **Aguardando humano:** (1) remover `.git/index.lock` — criado às 15:03 por um processo git no Mac (GitHub Desktop/IDE?); o agente não tem permissão para removê-lo. Fechar o app git e rodar `rm .git/index.lock`; (2) commitar (ou stash) as 34 mudanças pendentes na árvore + a estrutura do loop.
-- **Próxima ação do loop:** re-executar a rodada (missão L1) após o desbloqueio
+- **Aguardando humano:** encerrar/concluir a **sessão de agente paralela** que está commitando MC36 no repo (é dela o `index.lock` persistente). Depois, commitar 3 pendências desta sessão: `CLAUDE.md` (regra 7), `loop/BACKLOG.md` (LP7/LP8) e `docs/missions/MC35_NOMOS_LOOP_PRODUTO_SPEC.md`.
+- **Próxima ação do loop:** rodada da missão L1, com repo exclusivo
 - **Trava:** livre
+- **Regra aprendida (candidata a protocolo):** antes da etapa 3, verificar se o HEAD mudou durante a rodada — HEAD movendo = sessão concorrente = abortar.
 
 ---
 
@@ -23,6 +24,14 @@
 - **Pendências para o humano:** push da branch? decisão? nada?
 - **Nota para a próxima rodada:** contexto que não pode se perder
 -->
+
+### Rodada 2 — 2026-07-06 18:57 UTC — ABORTADA
+- **Missão:** L1 (não iniciada)
+- **Motivo (fail-closed, etapa 1):** sessão de agente concorrente ativa no host — commits `MC36 bloco 1/2` chegaram durante a rodada e `index.lock` recriado continuamente (6 tentativas de commit em ~25 s, todas travadas). Duas sessões na mesma árvore = risco de corrupção mútua.
+- **Progresso aproveitado:** humano destravou o git e commitou `chore(repo): pendências MC34 + sistema de loop` ✓ · pytest 9.1.1 e ruff 0.15.20 instalados no ambiente da rodada ✓
+- **O que foi feito no produto:** nada — sem branch, sem commit.
+- **Pendências para o humano:** ver ESTADO ATUAL.
+- **Nota para a próxima rodada:** checar concorrência (HEAD estável + ausência de index.lock) antes de prosseguir; considerar promover isso a etapa 1.b do LOOP_PROMPT.
 
 ### Rodada 1 — 2026-07-06 18:04 UTC — ABORTADA
 - **Missão:** L1 (não iniciada)

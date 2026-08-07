@@ -86,10 +86,19 @@ def test_titulo_de_conversa_e_redigido(nomos_home):
 
 
 def test_secao_agentes_lista_oficiais_com_risco(nomos_home):
-    corpo = render_html(dados_dashboard(_ctx(nomos_home)))
+    ctx = _ctx(nomos_home)
+    dados = dados_dashboard(ctx)
+    # regressão do achado P1-2 (auditoria 2026-07-17): dados_dashboard()
+    # engolia um AttributeError (a.nome vs a.name) e devolvia "agentes: []"
+    # SEMPRE, mesmo com os 3 agentes oficiais empacotados presentes. O
+    # antigo "assert X or 'nenhum agente'" nunca teria pego essa regressão
+    # porque sempre tinha um lado verdadeiro — agora exige dado real.
+    assert dados["agentes"], "lista de agentes veio vazia; ver achado P1-2"
+    nomes = {a["nome"] for a in dados["agentes"]}
+    assert {"pesquisador-local", "programador", "seguranca"} <= nomes
+    corpo = render_html(dados)
     assert 'id="agentes"' in corpo
-    # os agentes oficiais vêm no pacote; risco máx sempre visível
-    assert "risco máx" in corpo or "nenhum agente" in corpo
+    assert "risco máx" in corpo
 
 
 # 4. badge de atenção quando há candidatas de memória a revisar

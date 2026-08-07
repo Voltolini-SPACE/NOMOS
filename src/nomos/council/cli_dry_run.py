@@ -33,6 +33,7 @@ from nomos.council.cli_diag import run_diagnostico
 from nomos.council.cli_disabled import run_disabled
 from nomos.council.cli_info import run_ajuda, run_modos, run_status
 from nomos.council.forbidden_flags import FORBIDDEN_FLAGS, is_forbidden_flag
+from nomos.council.models import CouncilMode
 from nomos.council.safe_output import build_safe_output, render_json_output
 
 # --------------------------------------------------------------------------
@@ -53,12 +54,17 @@ DENIED_EXIT_CODE = 3
 # identificador para o pipeline dry-run; nenhum conteúdo do usuário entra nele.
 _SESSION_ID = "cli-conselho-simular"
 
-# Português (UX) -> valor interno do CouncilMode.
-_MODE_MAP = {
-    "rapido": "fast",
-    "balanceado": "balanced",
-    "critico": "critical",
-    "paranoico": "paranoid",
+# Português (UX) -> valor interno do CouncilMode. Tipado com o enum
+# diretamente (Horizonte 3/item 3) em vez de string solta: o valor sempre
+# foi coercionado para CouncilMode em runtime via _coerce_enum() dentro de
+# CouncilOrchestrationInput — CouncilMode é subtipo de str, então o valor
+# em si não muda (CouncilMode.FAST == "fast"), só o tipo estático fica
+# correto desde a origem, sem precisar de coerção extra aqui.
+_MODE_MAP: dict[str, CouncilMode] = {
+    "rapido": CouncilMode.FAST,
+    "balanceado": CouncilMode.BALANCED,
+    "critico": CouncilMode.CRITICAL,
+    "paranoico": CouncilMode.PARANOID,
 }
 _MODE_DEFAULT = "balanceado"
 

@@ -113,8 +113,14 @@ class ClienteMCP:
 
         def _ler() -> None:
             # leitor daemon: erro de I/O só encerra o stream — o None
-            # abaixo sinaliza o fim para quem consome a fila
+            # abaixo sinaliza o fim para quem consome a fila. O assert
+            # (Horizonte 3/item 3) documenta que stdout=PIPE acima sempre
+            # dá um stream real; se isso um dia deixar de ser verdade, o
+            # AssertionError cai no mesmo suppress(Exception) que já
+            # tratava qualquer outro erro de I/O aqui — comportamento
+            # idêntico ao de antes, só com o tipo declarado para o mypy.
             with contextlib.suppress(Exception):
+                assert proc.stdout is not None
                 for linha in proc.stdout:
                     self._fila.put(linha)
             self._fila.put(None)          # EOF/erro: sinaliza fim
@@ -130,6 +136,11 @@ class ClienteMCP:
     def __exit__(self, *exc) -> None:
         if self._proc is not None:
             try:
+                # Horizonte 3/item 3: mesmo raciocínio de _ler() acima — se
+                # stdin fosse None por algum motivo, .close() já levantaria
+                # AttributeError, capturado pelo except abaixo; o assert só
+                # declara isso para o mypy, sem mudar o comportamento.
+                assert self._proc.stdin is not None
                 self._proc.stdin.close()
                 self._proc.wait(timeout=5)
             except Exception:

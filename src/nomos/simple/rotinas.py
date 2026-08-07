@@ -18,8 +18,10 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from typing import TypedDict
 
 from nomos.kernel.plataforma import chmod_privado
 from nomos.kernel.policy import Category, gate
@@ -199,9 +201,29 @@ def briefing(ctx) -> str:
     return "\n".join(linhas)
 
 
+# Horizonte 3/missao de debitos, P2 (2026-07-17): TypedDicts para as duas
+# "tabelas de configuracao" abaixo (_CANAIS/_ENTRADA). Cada entrada mistura
+# valores str com um valor NAO-str (lambda em _CANAIS; dict aninhado em
+# _ENTRADA) sob as MESMAS chaves -- um dict-literal heterogeneo assim faz
+# mypy inferir o tipo de valor da linha inteira como o "join" estrutural
+# entre os tipos vistos (ex.: str e dict[str,int] tem Collection[str] como
+# supertipo comum, ja que iterar um dict devolve suas chaves), resultando
+# num tipo largo demais para uso real (nao chamavel, nao aceito por
+# str/os.environ.get). TypedDict declara o formato exato pretendido por
+# chave, preservando os literais como estavam. Zero mudanca de
+# comportamento em tempo de execucao.
+class _CanalSaidaCfg(TypedDict):
+    tool: str
+    args: Callable[[str, str], dict[str, str]]
+    manifesto_env: str
+    manifesto_pad: str
+    dir: str
+    rotulo: str
+
+
 # Canais de entrega do briefing (MC41/MC45): cada um mapeia para a tool do
 # seu conector MCP e como montar os argumentos. Um só caminho governado.
-_CANAIS = {
+_CANAIS: dict[str, _CanalSaidaCfg] = {
     "telegram": {
         "tool": "telegram_enviar",
         "args": lambda destino, texto: {"chat_id": str(destino),
@@ -322,7 +344,23 @@ def entregar_briefing(ctx, canal: str, destino: str, manifesto_path,
 # ENTRADA (Fase 3): LER o que chegou por um conector, com a mesma governança
 # do briefing (manifesto CONFIÁVEL + gate A3 + auditoria). Só leitura.
 # --------------------------------------------------------------------------
-_ENTRADA = {
+class _CanalEntradaCfg(TypedDict, total=False):
+    # total=False (Horizonte 3/missao de debitos, P2): "titulo" só existe na
+    # entrada "calendario" -- as demais chaves estão sempre presentes nos 3
+    # literais abaixo, mas marcar o TypedDict inteiro como total=False é a
+    # forma mais simples de permitir isso sem depender de NotRequired
+    # (3.11+). O acesso via cfg["chave"] continua tipado como declarado
+    # abaixo; total=False só afasta a checagem de completude do LITERAL.
+    tool: str
+    args: dict[str, object]
+    manifesto_env: str
+    manifesto_pad: str
+    dir: str
+    rotulo: str
+    titulo: str
+
+
+_ENTRADA: dict[str, _CanalEntradaCfg] = {
     "telegram": {
         "tool": "telegram_atualizacoes",
         "args": {"limite": 20},

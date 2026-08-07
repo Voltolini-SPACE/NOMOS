@@ -4,17 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nomos"
-version = "1.3.0rc17"
+version = "1.3.0rc19"
 description = "NOMOS Personal Agent Foundry — plataforma local-first que instala, configura, governa e executa o agente pessoal do usuário"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [{name = "Se7enpay"}]
 readme = "README.md"
-dependencies = ["cryptography>=42.0", "argon2-cffi>=23.1"]
+dependencies = ["cryptography>=46.0.7", "argon2-cffi>=23.1"]
 
 [project.optional-dependencies]
 cerebro = ["llama-cpp-python>=0.2.0"]
 arquivos = ["pypdf>=4.0"]
+mosaic = ["playwright>=1.40"]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.5", "build>=1.2"]
 
 [project.urls]
@@ -36,6 +37,21 @@ target-version = "py310"
 select = ["E4", "E7", "E9", "F", "B", "S110"]
 ignore = ["E731"]
 
+# P2-11 da auditoria de 2026-07-17: sem esta seção, `mypy src/nomos` (ou
+# qualquer escopo que inclua conectores/mcp/) ABORTA com "Duplicate module
+# named 'servidor'" antes de checar qualquer coisa — os 7 conectores MCP
+# (calendario/email-imap/email-smtp/signal/slack/telegram/whatsapp-cloud)
+# têm cada um seu próprio servidor.py sem __init__.py nos diretórios, e o
+# mypy tenta importá-los como módulos Python normais com o mesmo nome.
+# Não são módulos: cada servidor.py roda como script standalone via
+# subprocess (ver conectores/mcp/_comum.py) — nunca são importados pelo
+# pacote nomos. Excluir é a correção correta (reflete a arquitetura real);
+# adicionar __init__.py criaria um segundo caminho de import que nunca é
+# usado, quebrando o isolamento deliberado desses conectores.
+[tool.mypy]
+ignore_missing_imports = true
+exclude = ["src/nomos/conectores/mcp/.*/servidor\\.py"]
+
 [tool.setuptools.package-data]
 "nomos.agents" = ["oficiais/*.json"]
-"nomos.conectores" = ["mcp/*/manifesto.json", "mcp/*/servidor.py", "mcp/*/README.md"]
+"nomos.conectores" = ["mcp/_comum.py", "mcp/*/manifesto.json", "mcp/*/servidor.py", "mcp/*/README.md"]

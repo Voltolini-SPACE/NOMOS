@@ -12,18 +12,29 @@ Garantias S0:
 from __future__ import annotations
 
 import os
-try:
-    import resource   # Unix-only; ausente no Windows
-except ImportError:  # pragma: no cover - exercitado via simulação de SO
-    resource = None
 import shutil
 import signal
 import subprocess  # nosec B404 - execução isolada é o propósito do sandbox
 import tempfile
+from types import ModuleType
 
 from nomos.kernel.audit import redact_text
 from dataclasses import dataclass
 from functools import lru_cache
+
+# Horizonte 3/item 3 (2026-07-17): a anotação explícita (linha abaixo) dá ao
+# mypy o tipo do nome ANTES das duas atribuições possíveis (import real no
+# Unix, None no except do Windows) — sem ela, o tipo era inferido só do
+# `import resource` (Module), e `resource = None` no except virava erro de
+# tipo. Fica como o ÚLTIMO import do arquivo (em vez de logo após `import
+# os`, como na primeira tentativa) porque o ruff só reconhece o padrão
+# try/import-except-None como um bloco contíguo de imports quando não há
+# nenhuma instrução "solta" (nem esta anotação) ANTES dele.
+resource: ModuleType | None
+try:
+    import resource   # Unix-only; ausente no Windows
+except ImportError:  # pragma: no cover - exercitado via simulação de SO
+    resource = None
 
 
 class IsolationUnavailable(Exception):
@@ -85,7 +96,16 @@ def run(
                 "rede negada ausente (fail-closed). Aprove explicitamente "
                 "allow_network=True via política ou habilite unshare/rootless."
             )
-        argv = [shutil.which("unshare"), "-rn", "--", *argv]
+        unshare = shutil.which("unshare")
+        # Horizonte 3/item 3: netns_available() (linha acima) já confirmou
+        # 'unshare' via este mesmo shutil.which() como sua primeira
+        # checagem — chamar de novo aqui é só para obter o caminho, não
+        # para revalidar. O assert documenta essa garantia para o mypy e
+        # falha alto (em vez de silenciosamente passar None ao Popen) no
+        # caso extremo de TOCTOU (binário removido do PATH entre as duas
+        # chamadas) — mais seguro que o comportamento anterior, não menos.
+        assert unshare is not None, "netns_available() já confirmou 'unshare' no PATH"
+        argv = [unshare, "-rn", "--", *argv]
         isolated = True
 
     env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8", "HOME": "/tmp"}  # nosec B108 - HOME efêmero dentro do processo isolado

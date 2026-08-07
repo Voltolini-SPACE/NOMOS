@@ -168,7 +168,7 @@ def adicionar_ao_catalogo(home: Path, entrada: dict) -> dict:
         raise RegistroError("entrada inválida para o catálogo: " + "; ".join(problemas))
     p = _caminho_catalogo(home)
     p.parent.mkdir(parents=True, exist_ok=True)
-    data = {"skills": []}
+    data: dict[str, list[dict]] = {"skills": []}
     if p.exists():
         try:
             data = json.loads(p.read_text())

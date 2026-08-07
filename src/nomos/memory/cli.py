@@ -93,6 +93,18 @@ def main(argv=None) -> int:
             if not args.json:
                 print("conteúdo vazio/ inválido — nada a gravar.")
             return EXIT_USAGE
+        # Horizonte 3/missao de debitos, P2 (2026-07-17): `AddResult.entry`
+        # e Optional[dict] no dataclass (memory/engine.py), mas os 3 `return`
+        # acima ja eliminaram TODOS os motivos que MemoryEngine.add() produz
+        # com entry=None (REJECTION_CODE, INVALID_*, EMPTY*) -- por
+        # eliminacao, chegar aqui so e possivel com reason in {"DRY_RUN",
+        # "APPLIED"}, os dois unicos casos em que add() de fato constroi e
+        # devolve `entry`. O assert documenta essa invariante (que ja
+        # valia, so nao era visivel ao mypy) e falharia alto, nao
+        # silenciosamente, se um motivo novo violar essa correlacao no
+        # futuro -- mais seguro que suprimir o erro de tipo.
+        assert res.entry is not None, (
+            f"invariante violada: reason={res.reason!r} chegou sem entry")
         if not args.json:
             if res.applied:
                 print(f"OK gravado: {res.entry['id']}")
@@ -123,19 +135,27 @@ def main(argv=None) -> int:
 
     # ---- compact ----
     if args.compact:
-        res = eng.compact(apply=apply)
+        # Horizonte 3/missao de debitos, P2: nome proprio (nao "res") --
+        # eng.compact() devolve CompactResult, um dataclass DIFERENTE do
+        # AddResult usado no bloco `--add` acima. Ambos os ramos sao
+        # mutuamente exclusivos em runtime (cada `if args.*` so roda um),
+        # mas mypy infere um unico tipo estatico por nome de variavel na
+        # funcao inteira -- reusar "res" para os dois fazia o segundo
+        # assignment "estreitar" para o tipo do primeiro. Renomear elimina
+        # o conflito sem mudar nenhum comportamento.
+        res_compact = eng.compact(apply=apply)
         if args.json:
             print(json.dumps({
-                "dry_run": res.dry_run, "applied": res.applied,
-                "groups": res.plan.groups, "reduction": res.plan.reduction,
-                "path": res.path,
+                "dry_run": res_compact.dry_run, "applied": res_compact.applied,
+                "groups": res_compact.plan.groups, "reduction": res_compact.plan.reduction,
+                "path": res_compact.path,
             }, ensure_ascii=False, indent=2))
         else:
-            estado = "APLICADO" if res.applied else "DRY-RUN (nada gravado)"
-            print(f"Compactação [{estado}]: {res.plan.reduction} "
-                  f"({res.plan.groups} grupo(s)). Histórico bruto preservado.")
-            if res.path:
-                print(f"  derivado: {res.path}")
+            estado = "APLICADO" if res_compact.applied else "DRY-RUN (nada gravado)"
+            print(f"Compactação [{estado}]: {res_compact.plan.reduction} "
+                  f"({res_compact.plan.groups} grupo(s)). Histórico bruto preservado.")
+            if res_compact.path:
+                print(f"  derivado: {res_compact.path}")
         return EXIT_OK
 
     # ---- validate ----

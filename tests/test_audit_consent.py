@@ -41,6 +41,39 @@ def test_redacao_por_chave_e_por_padrao(tmp_path):
     assert clean["aninhado"]["ok"] == "texto normal"
 
 
+def test_redacao_por_padrao_em_campo_de_nome_inesperado(tmp_path):
+    """Fase 0: campo com nome comum ('detalhe', 'nota') carregando um segredo
+    precisa ser redigido pelo PADRÃO do valor, não só pelo nome do campo —
+    SENSITIVE_KEYS sozinho não pega isso."""
+    clean = redact({
+        "detalhe": 'chamada com password="hunter2-super-forte" no corpo',
+        "nota": "export SLACK_TOKEN=xoxb-1234567890-abcdefghij",
+        "webhook_google": "chave AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ01234",
+    })
+    assert "hunter2-super-forte" not in clean["detalhe"]
+    assert REDACTED in clean["detalhe"]
+    assert "xoxb-1234567890-abcdefghij" not in clean["nota"]
+    assert "AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ01234" not in clean["webhook_google"]
+
+
+def test_redacao_env_secret_cobre_valor_no_process_env_e_os_environ(tmp_path):
+    """Fase 0 (achado de revisão independente): as alternativas
+    'process.env.X' e "os.environ['X']" do padrão env_secret casavam só o
+    RÓTULO, não o valor -- '.sub()' trocava o rótulo por [REDIGIDO] e deixava
+    o segredo de verdade intacto logo depois (ex.: 'process.env.API_KEY=' virava
+    '[REDIGIDO]=abcdef123456...', com o valor exposto). Pior: consumir só o
+    rótulo atrapalhava o padrão genérico seguinte, que sozinho teria pego o
+    resto. As duas alternativas agora exigem '=valor' no próprio match."""
+    clean = redact({
+        "log_processo": "process.env.API_KEY=abcdef123456fooobarbaz",
+        "log_python": "os.environ['DB_PASSWORD']=hunter2plaintext",
+    })
+    assert "abcdef123456fooobarbaz" not in clean["log_processo"]
+    assert REDACTED in clean["log_processo"]
+    assert "hunter2plaintext" not in clean["log_python"]
+    assert REDACTED in clean["log_python"]
+
+
 def test_log_nunca_contem_padrao_de_segredo(tmp_path):
     path = tmp_path / "audit.jsonl"
     log = AuditLog(path)

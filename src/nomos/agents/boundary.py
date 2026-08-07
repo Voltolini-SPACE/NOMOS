@@ -6,6 +6,19 @@ Este módulo é a garantia de que "agente não é bypass":
 - `usar_ferramenta` decide pela categoria de política da ferramenta e passa
   pelo MESMO `policy.gate` do kernel. Sem aprovação/TTY => negado (fail-closed).
 Nenhum caminho novo de autorização é criado aqui.
+
+Status de integração (achado P2-6, Horizonte 2 -> wiring real no Horizonte 3/
+item 1 -> 8/8 ferramentas na missão de eliminação de débitos residuais,
+auditoria de 2026-07-17, Prioridade 1 / parte a): esta classe é totalmente
+implementada e testada em isolamento, e tem um caller real de produção —
+`cli.py::cmd_agente_usar` (`nomos agentes usar <agente> <ferramenta>`) —
+para as 8 ferramentas da allowlist (`memoria_buscar`, `arquivo_ler`,
+`arquivo_resumir`, `arquivo_escrever`, `codigo_gerar`, `doutor`,
+`logs_verificar`, `skill_rodar`; ver `agents/execucao.py` para a primitiva
+reaproveitada por cada uma). `AgentRegistry.sugerir` segue sem caller de
+produção — é sobre ROTEAMENTO de agente por intenção no chat, item
+distinto (parte b da mesma Prioridade 1). `nomos doutor` reporta o estado
+ao vivo (não-bloqueante).
 """
 from __future__ import annotations
 
