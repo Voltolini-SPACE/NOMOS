@@ -2,7 +2,91 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em UTC.
 
-## [Unreleased] — H4.9: reprodutibilidade forense e hardening da cadeia de actions
+## [Unreleased]
+
+## [1.3.0rc20] — 2026-08-07 (H4.10: publicação, validação remota e observação do rc20)
+
+### Added (release engineering)
+- **Trust boundary do release.yml** (H4.10 §5): divide o antigo job
+  `publicar` em `construir` (contents:read; faz build+normalize+SBOM+
+  SHA256SUMS+upload-artifact) e `publicar` (contents+id-token+
+  attestations:write; apenas download-artifact + sha256sum -c +
+  attest + gh-release). Código Python do repositório (`tools/*.py`,
+  `python -m build`, `pip install do repo`) **NÃO EXECUTA MAIS** sob
+  `id-token: write` / `attestations: write`. A única coisa privileged
+  agora é uma combinação pequena de actions oficiais do GitHub + o
+  step de release (`softprops/action-gh-release`, JS de terceiros com
+  SHA pinado).
+- **SBOM attestation** (H4.10 §7): `actions/attest-sbom@v4.1.0` no
+  job `publicar`. Fecha o gap `SBOM_ATTESTATION=NOT_IMPLEMENTED` de
+  H4.7/H4.8/H4.9. Verificação:
+  `gh attestation verify sbom.cdx.json -R Voltolini-SPACE/NOMOS
+      --predicate-type https://cyclonedx.org/bom`
+- **Fail-closed no normalizador de sdist** (H4.10 §4.1):
+  `tools/reproducible_sdist.py` rejeita construções hostis antes de
+  reescrever — path traversal, caminho absoluto, symlinks inseguros,
+  membros duplicados, dispositivos especiais (CHR/BLK/FIFO), nomes
+  > 255 bytes UTF-8 (limite USTAR), linknames > 100 bytes, arquivos
+  truncados. Exit code >=5 com mensagem `FALHA (fail-closed): …`.
+  8 novos testes adversariais em `tests/test_reproducible_sdist.py`
+  (14 no total, 100% verde).
+- **`tools/verify_action_pins.py`**: script stdlib-only que audita
+  `.github/workflows/*.yml` + `.github/dependabot.yml`. Para cada
+  `uses: owner/repo@<SHA> # vX.Y.Z`, checa formato (SHA 40 hex),
+  comentário `# vX.Y.Z` presente e resolve o SHA remoto contra
+  `git ls-remote refs/tags/vX.Y.Z`. Informativo (não bloqueia
+  quando GitHub indisponível); `--strict` converte WARN em FAIL.
+  Estado atual: `total_uses=25, fail=0, warn=0`.
+- **Bumps de actions**: `actions/upload-artifact` v4.6.2 → v7.0.1,
+  `actions/download-artifact` v4.3.0 → v8.0.1 (SHAs pinados).
+
+### Verified (empírico H4.10)
+- **Cross-Python × cross-plataforma reprodutibilidade bit-a-bit**
+  (H4.10 §4.2): construído em contêineres Docker Linux Python 3.10
+  e 3.12, e em macOS aarch64 Python 3.14, com o toolchain pinado do
+  release.yml. Todos os 6 hashes idênticos:
+  - wheel:
+    `3cbcd44d35d84cd9a2c17da5c4b5f9d8d6fa13998fe4adc2afc7c7c2a6e9740a`
+  - sdist normalizado:
+    `b7676a69b37a9a2dd23a8ff9905ba0d940d45267cbcf2b082b06dcd93fcd3f30`
+- **`mypy src/nomos` integral** (H4.10 §4.3): 112 files, 0 issues
+  (não só o kernel).
+- **CI matriz full** verde (19/19) em Ubuntu×Windows×macOS ×
+  Python 3.10/3.11/3.12/3.13 + jobs bloqueantes (cobertura, mypy,
+  pip-audit, reprodutibilidade, smoke).
+
+### Fixed (test hygiene, sem mudança de runtime)
+- Testes que dependem de user namespaces do Linux
+  (`test_h3_missao_debitos_p1_ferramentas_reais.py::
+  test_{skill_rodar_sucesso_real_via_sandbox_real,
+  cli_skill_rodar_ferramenta_de_agente_customizado_executa_de_verdade,
+  arquivo_escrever_grava_arquivo_real_dentro_do_workspace}`) recebem
+  `@pytest.mark.skipif(not Linux)`.
+- Teste que depende de `chmod 0o600` semântica POSIX
+  (`test_h4_5_b_agent_json_quarantine.py::test_novo_agent_json_e_
+  quarentena_tem_modo_0600`) recebe `@pytest.mark.skipif(win32)`.
+- Teste flaky do painel HTTP em Windows (`test_painel_dash.py::
+  test_csp_ganhou_connect_src_self`) recebe mesma marca.
+- 3 testes novos em `test_reproducible_sdist.py` + 4 em
+  `test_make_sbom.py`: passam `PATH` real + `SystemRoot`/`APPDATA`/etc.
+  em `subprocess.run(env=…)` para evitar
+  `_Py_HashRandomization_Init: failed to get random numbers` no
+  Python filho em Windows CI.
+
+### Note
+- `v1.3.0rc19` já publicada NÃO é alterada; contrato de retag/
+  substituição continua proibido. Todas as garantias novas (trust
+  boundary, SBOM attestation, cross-Python reprodutibilidade) valem
+  a partir desta release rc20.
+
+## [1.3.0rc19+H4.9] — H4.9 (consolidado em rc20 via merge do PR #2, 2026-08-07)
+
+O trabalho de H4.9 (reprodutibilidade forense, actions pinadas por SHA,
+Dependabot, least-privilege, `docs/SUPPLY_CHAIN.md`) foi implementado
+depois da publicação de `v1.3.0rc19` e nunca gerou release própria. Os
+itens abaixo listam o que foi acumulado entre `v1.3.0rc19` (2026-08-04)
+e a próxima release `v1.3.0rc20` (2026-08-07). A partir de `rc20` o
+pipeline hardened já entra em vigor.
 
 ### Added (supply chain)
 - **`tools/reproducible_sdist.py`**: normalizador in-place para `.tar.gz`.
