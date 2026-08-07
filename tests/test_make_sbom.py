@@ -22,14 +22,27 @@ ROOT = Path(__file__).resolve().parents[1]
 MAKE_SBOM = ROOT / "tools" / "make_sbom.py"
 
 
+import os as _os
+
+# Variáveis essenciais em Windows — sem elas o interpretador Python filho
+# morre no arranque com `_Py_HashRandomization_Init: failed to get random
+# numbers`. Mesmo motivo documentado em `tests/_cli_env.py`.
+_WIN_ESSENTIALS = (
+    "SystemRoot", "SYSTEMROOT", "SystemDrive", "windir", "TEMP", "TMP",
+    "PATHEXT", "COMSPEC", "APPDATA", "LOCALAPPDATA",
+    "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "USERNAME",
+    "PYTHONUTF8", "PYTHONIOENCODING",
+)
+
+
 def _run(out: Path, args: list[str], epoch: str | None) -> None:
-    env = {"PATH": ""}
-    # PATH vazio de propósito: espelha `tests/_cli_env.py`; o comando abaixo
-    # invoca `sys.executable` explicitamente, então não precisa de PATH.
+    env = {"PATH": _os.environ.get("PATH", "")}
+    for k in _WIN_ESSENTIALS:
+        v = _os.environ.get(k)
+        if v is not None:
+            env[k] = v
     if epoch is not None:
         env["SOURCE_DATE_EPOCH"] = epoch
-    # importlib.metadata depende do sys.path do próprio processo — não precisa
-    # de PYTHONPATH extra; roda no mesmo interpretador que descobriu o nomos.
     subprocess.run(
         [sys.executable, str(MAKE_SBOM), str(out), *args],
         check=True,
