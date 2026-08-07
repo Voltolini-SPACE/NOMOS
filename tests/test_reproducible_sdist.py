@@ -59,8 +59,23 @@ def _make_sdist(path: Path, entries: list[tuple[str, bytes | None, int]]) -> Non
             gz.write(buf.getvalue())
 
 
+# Variáveis essenciais em Windows — sem elas o interpretador Python filho
+# morre no arranque com `_Py_HashRandomization_Init: failed to get random
+# numbers`. Mesmo motivo documentado em `tests/_cli_env.py`.
+_WIN_ESSENTIALS = (
+    "SystemRoot", "SYSTEMROOT", "SystemDrive", "windir", "TEMP", "TMP",
+    "PATHEXT", "COMSPEC", "APPDATA", "LOCALAPPDATA",
+    "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "USERNAME",
+    "PYTHONUTF8", "PYTHONIOENCODING",
+)
+
+
 def _run(argv: list[str], epoch: str | None) -> subprocess.CompletedProcess:
     env = {"PATH": os.environ.get("PATH", "")}
+    for k in _WIN_ESSENTIALS:
+        v = os.environ.get(k)
+        if v is not None:
+            env[k] = v
     if epoch is not None:
         env["SOURCE_DATE_EPOCH"] = epoch
     return subprocess.run(
@@ -159,7 +174,7 @@ def test_falha_sem_epoch(tmp_path: Path) -> None:
     _make_sdist(p, [("proj/", None, 1_000), ("proj/x.txt", b"x", 1_000)])
     r = _run([str(p)], epoch=None)
     assert r.returncode != 0
-    assert "SOURCE_DATE_EPOCH" in r.stderr
+    assert "SOURCE_DATE_EPOCH" in (r.stderr or "")
 
 
 def test_falha_epoch_invalido(tmp_path: Path) -> None:
@@ -220,7 +235,7 @@ def test_rejeita_path_traversal(tmp_path: Path) -> None:
     ])
     r = _run([str(p)], epoch="1785875362")
     assert r.returncode != 0
-    assert "traversal" in r.stderr.lower() or "traversal" in r.stdout.lower()
+    assert "traversal" in (r.stderr or "").lower() or "traversal" in (r.stdout or "").lower()
 
 
 def test_rejeita_caminho_absoluto(tmp_path: Path) -> None:
@@ -231,7 +246,7 @@ def test_rejeita_caminho_absoluto(tmp_path: Path) -> None:
     ])
     r = _run([str(p)], epoch="1785875362")
     assert r.returncode != 0
-    assert "absoluto" in r.stderr.lower() or "absoluto" in r.stdout.lower()
+    assert "absoluto" in (r.stderr or "").lower() or "absoluto" in (r.stdout or "").lower()
 
 
 def test_rejeita_symlink_absoluto(tmp_path: Path) -> None:
@@ -285,8 +300,10 @@ def test_rejeita_dispositivo_especial(tmp_path: Path) -> None:
             gz.write(buf.getvalue())
     r = _run([str(p)], epoch="1785875362")
     assert r.returncode != 0
-    assert "não suportado" in r.stderr or "not supported" in r.stderr.lower() \
-        or "nao suportado" in r.stderr.lower() or "type" in r.stderr.lower()
+    err = (r.stderr or "")
+    lo = err.lower()
+    assert "não suportado" in err or "not supported" in lo \
+        or "nao suportado" in lo or "type" in lo
 
 
 def test_rejeita_membros_duplicados(tmp_path: Path) -> None:
@@ -299,7 +316,7 @@ def test_rejeita_membros_duplicados(tmp_path: Path) -> None:
     ])
     r = _run([str(p)], epoch="1785875362")
     assert r.returncode != 0
-    assert "duplicado" in r.stderr.lower() or "duplicad" in r.stderr.lower()
+    assert "duplicado" in (r.stderr or "").lower() or "duplicad" in (r.stderr or "").lower()
 
 
 def test_rejeita_arquivo_truncado(tmp_path: Path) -> None:

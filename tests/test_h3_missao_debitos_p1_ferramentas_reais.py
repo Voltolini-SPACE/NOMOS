@@ -22,12 +22,24 @@ tests/test_v14_agentes.py) — só o que acontece DEPOIS de autorizado.
 import hashlib
 import json
 import stat
+import sys
 from pathlib import Path
 
 import pytest
 
 from nomos import cli
 from nomos.agents import execucao as ex
+
+# H4.10: alguns testes deste módulo dependem de user namespaces do Linux
+# (unshare/rootless) e/ou de semântica POSIX de `mode` em arquivos. Windows
+# e macOS não têm essas garantias no runner do CI. Skipif isolado marcando
+# só os testes afetados — o restante do módulo continua rodando em toda
+# a matriz. NÃO é mudança de escopo do H4.9: apenas higiene de plataforma
+# que já existia como débito antes.
+_ONLY_LINUX = pytest.mark.skipif(
+    not sys.platform.startswith("linux"),
+    reason="requer user namespaces do Linux (unshare/rootless) ou modo POSIX",
+)
 
 
 # --------------------------- ctx unitário (mesmo formato de cli._paths) ---
@@ -52,6 +64,7 @@ def _ativar(nome: str) -> None:
 
 # =============================== arquivo_escrever ==========================
 
+@_ONLY_LINUX
 def test_arquivo_escrever_grava_arquivo_real_dentro_do_workspace(nomos_home):
     ctx = _ctx(nomos_home)
     msg = ex.exec_arquivo_escrever(ctx, "notas/teste.txt", "conteudo real de verdade")
@@ -211,6 +224,7 @@ def test_skill_rodar_skill_inexistente_retorna_motivo_claro(nomos_home):
     assert "não está instalada" in msg
 
 
+@_ONLY_LINUX
 def test_skill_rodar_sucesso_real_via_sandbox_real(nomos_home, tmp_path):
     """Execução real: subprocess python3 de verdade dentro do
     runtime.sandbox (unshare -rn), skill instalada de verdade em disco —
@@ -293,6 +307,7 @@ def test_cli_codigo_gerar_sem_motor_configurado_e_exit_ok_com_mensagem_honesta(n
     assert "não consegui gerar código" in out or "motor" in out
 
 
+@_ONLY_LINUX
 def test_cli_skill_rodar_ferramenta_de_agente_customizado_executa_de_verdade(
         nomos_home, capsys, monkeypatch, tmp_path):
     from nomos.agents.manifest import AgentManifest

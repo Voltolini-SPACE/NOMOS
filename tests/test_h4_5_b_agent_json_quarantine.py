@@ -23,10 +23,22 @@ from __future__ import annotations
 import hashlib
 import json
 import stat
+import sys
 from pathlib import Path
+
+import pytest
 
 from nomos.kernel import config
 from nomos.simple import doutor
+
+# H4.10: `os.chmod(..., 0o600)` no Windows não força modo POSIX (o arquivo
+# fica 0o666=438 em vez de 0o600=384). Marcamos este teste como Linux/macOS
+# apenas — a garantia semântica de modo 0o600 vale em POSIX; em Windows
+# vale o ACL, que é testado em outro lugar.
+_POSIX_ONLY = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="mode 0o600 é semântica POSIX; Windows usa ACLs",
+)
 
 CORROMPIDO = "{corrompido: sem aspas, json invalido"
 
@@ -128,6 +140,7 @@ def test_novo_agent_json_e_minimo_e_valido(nomos_home):
 # 4) Modo do novo arquivo (e da quarentena) é 0600
 # --------------------------------------------------------------------------
 
+@_POSIX_ONLY
 def test_novo_agent_json_e_quarentena_tem_modo_0600(nomos_home):
     _corromper_agent_json(nomos_home)
 
