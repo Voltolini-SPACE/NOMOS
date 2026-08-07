@@ -119,6 +119,40 @@ def test_index_og_image_aponta_para_asset_existente():
     assert OG_PNG.exists()
 
 
+# ---- H5.1: metadata social precisa funcionar para quem COMPARTILHA ----
+# Open Graph exige URL completa em og:image; scrapers (WhatsApp/Slack/FB)
+# resolvem contra og:url — se og:url apontar para domínio inexistente e a
+# imagem for relativa, o compartilhamento quebra em silêncio.
+def test_index_social_urls_absolutas_e_coerentes():
+    ex = _parse(INDEX)
+    props = {m.get("property"): m.get("content") for m in ex.metas}
+    names = {m.get("name"): m.get("content") for m in ex.metas}
+    canonical = [link["href"] for link in ex.links if "canonical" in (link.get("rel") or "")]
+
+    og_url = props.get("og:url")
+    og_image = props.get("og:image")
+    tw_image = names.get("twitter:image")
+
+    # absolutas (exigência do protocolo OG para og:image; og:url é o objeto canônico)
+    for label, url in (("og:url", og_url), ("og:image", og_image), ("twitter:image", tw_image)):
+        assert url and url.startswith("https://"), f"{label} precisa ser URL absoluta https, veio: {url!r}"
+
+    # canonical e og:url contam a MESMA história
+    assert canonical, "sem <link rel=canonical>"
+    assert canonical[0] == og_url, f"canonical ({canonical[0]}) != og:url ({og_url})"
+
+    # a imagem social vive sob a mesma origem declarada como canônica
+    assert og_image.startswith(og_url), f"og:image ({og_image}) fora da base canônica ({og_url})"
+    assert tw_image == og_image, "twitter:image diverge de og:image"
+
+
+def test_index_aurora_do_hero_nao_gera_scroll_horizontal():
+    # .hero::before usa inset -15% (sangria decorativa); sem clip no <html>,
+    # a página inteira ganha ~190px de scroll horizontal no desktop.
+    txt = INDEX.read_text(encoding="utf-8")
+    assert "overflow-x:clip" in txt, "html sem overflow-x:clip — aurora do hero vaza e vira scroll horizontal"
+
+
 # ---- acessibilidade ----
 def test_index_acessibilidade_basica():
     ex = _parse(INDEX)

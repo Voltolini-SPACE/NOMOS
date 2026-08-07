@@ -13,6 +13,20 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
   descrevê-lo. Conteúdo e claims inalterados (gates `test_propagar` e
   `test_cobertura_docs` seguem valendo).
 
+### Fixed (H5.1 — auditoria pós-merge da presença pública; zero mudança de runtime)
+- **site/index.html**: metadata social consertada para compartilhamento real —
+  `canonical` e `og:url` apontavam para `https://nomos.se7enpay.com/` (domínio
+  sem DNS, NXDOMAIN) e `og:image`/`twitter:image` eram caminhos relativos
+  (fora do protocolo Open Graph); agora tudo aponta absoluto para a origem
+  publicada `https://voltolini-space.github.io/NOMOS/`. Se o domínio próprio
+  ganhar DNS um dia, basta trocar a base nesses 4 pontos (o teste
+  `test_index_social_urls_absolutas_e_coerentes` obriga a coerência).
+- **site/index.html**: `html{overflow-x:clip}` — a aurora do hero
+  (`.hero::before`, inset -15%) vazava ~190px além da viewport e criava
+  scroll horizontal em desktop; clip contém a sangria sem mudar o visual.
+  Regressão travada por `test_index_aurora_do_hero_nao_gera_scroll_horizontal`.
+>>>>>>> origin/main
+
 ### Changed (H5.0 — presença GitHub: visual + marketing + copy; zero mudança de runtime)
 - **README.md**: hero ganha parágrafo de supply chain verificável + 3 badges
   novos (Release, SLSA provenance, build reproduzível); bullet "Cadeia de
