@@ -4,6 +4,26 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Changed (H5.0 — presença GitHub: visual + marketing + copy; zero mudança de runtime)
+- **README.md**: hero ganha parágrafo de supply chain verificável + 3 badges
+  novos (Release, SLSA provenance, build reproduzível); bullet "Cadeia de
+  suprimentos provada" em "Por que NOMOS"; nova seção **"Verifique, não
+  confie"** com os 3 comandos de verificação (SHA256SUMS, `gh attestation
+  verify`, `tools/repro_check.py`); Maturidade atualizada para v1.3.0rc20 e
+  "mais de 1.800 testes" (real: 1.821 `def test_` — o teste
+  `test_numero_de_testes_anunciado_nao_supera_a_realidade` garante que o
+  marketing nunca supera a contagem real).
+- **site/index.html**: seção #prova ganha 2 pcards novos ("bit-a-bit" e
+  "SLSA") + terminal real de `gh attestation verify`; estatística do hero
+  1.500+→1.800+; rodapé de release atualizado rc17→rc20 com as três
+  camadas de verificação.
+- **docs/brand/social-preview.svg** (novo): social preview 1280×640 do
+  repositório, 100% dentro do Brandbook v1.0 congelado (#5AF78E/#0A0F0D,
+  janela de terminal, tagline canônica, selos de prova). SVG puro — sem
+  fonte externa, sem bitmap, auditável em code review.
+- Gate `nomos_update_agent.py --check`: 13/13 após todas as edições;
+  `test_site_prova.py` (incl. anti-overclaim) verde.
+
 ## [1.3.0rc20] — 2026-08-07 (H4.10: publicação, validação remota e observação do rc20)
 
 ### Added (release engineering)
