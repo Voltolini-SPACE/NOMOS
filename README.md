@@ -1,4 +1,12 @@
+<div align="center">
+
+<a href="https://voltolini-space.github.io/NOMOS/">
+  <img src="docs/brand/social-preview.png" alt="NOMOS — Seu agente. Sua máquina. Suas regras. Local por lei." width="760">
+</a>
+
 # NOMOS
+
+**Seu agente. Sua máquina. Suas regras.** — *local por lei.*
 
 [![CI](https://github.com/Voltolini-SPACE/NOMOS/actions/workflows/ci.yml/badge.svg)](https://github.com/Voltolini-SPACE/NOMOS/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Voltolini-SPACE/NOMOS?include_prereleases&color=5AF78E&label=release)](https://github.com/Voltolini-SPACE/NOMOS/releases)
@@ -8,7 +16,16 @@
 [![SLSA provenance](https://img.shields.io/badge/SLSA-provenance_v1-5AF78E)](https://github.com/Voltolini-SPACE/NOMOS/blob/main/docs/SUPPLY_CHAIN.md)
 [![reproducible build](https://img.shields.io/badge/build-bit--a--bit_reproduz%C3%ADvel-5AF78E)](https://github.com/Voltolini-SPACE/NOMOS/blob/main/docs/SUPPLY_CHAIN.md)
 
-**Seu agente. Sua máquina. Suas regras.** — *local por lei.*
+<p>
+  <a href="https://voltolini-space.github.io/NOMOS/">🌐 Site</a> ·
+  <a href="#instalação-estado-atual">⚡ Instalar</a> ·
+  <a href="#veja-por-dentro">🖥️ Veja por dentro</a> ·
+  <a href="#verifique-não-confie">🔏 Verifique você mesmo</a> ·
+  <a href="docs/USUARIO_INICIANTE.md">🧭 Guia do iniciante</a> ·
+  <a href="#documentação">📚 Docs</a>
+</p>
+
+</div>
 
 NOMOS é um agente pessoal de IA que roda **100% no seu computador**. Cérebro,
 memória, chaves e registros ficam na sua máquina. A nuvem é opcional e só
@@ -76,6 +93,18 @@ mesmo commit produz **bytes idênticos** em Linux, macOS e Windows, em Python
 | Botão de pânico | Um comando corta tudo: revoga consentimentos e tranca. | `nomos panic` |
 | Doutor | Check-up honesto do que está pronto e o próximo passo. | `nomos doutor` |
 <!-- NOMOS:CAPS:END -->
+
+## Veja por dentro
+
+O painel roda **só em 127.0.0.1**, com URL secreta e zero assets externos —
+nada sai da sua máquina nem para desenhar a página.
+
+| | |
+|:---:|:---:|
+| <img src="site/assets/painel-cockpit.webp" alt="Cockpit do NOMOS: status geral, motor ao vivo, atividade recente e fila de aprovações numa tela" width="420"> | <img src="site/assets/painel-aprovacoes.webp" alt="Fila de aprovações: cada pedido chega com risco, alvo, motivo e prazo — APROVAR ou NEGAR com token de uso único" width="420"> |
+| **Cockpit** — status, motores, memória e evidências numa tela | **Aprovações** — você decide; token de uso único, sem bypass |
+| <img src="site/assets/painel-dash.webp" alt="Dashboard do NOMOS com métricas e saúde dos motores locais" width="420"> | <img src="site/assets/painel-mobile.webp" alt="Painel do NOMOS em viewport móvel, mesmo tema terminal" width="420"> |
+| **Dash ao vivo** — saúde dos motores, sem telemetria externa | **No celular** — o mesmo painel, responsivo |
 
 ## Instalação (estado atual)
 

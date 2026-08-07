@@ -4,6 +4,15 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Changed (H5.2 — vitrine GitHub: hero visual + galeria; zero mudança de runtime)
+- **README.md**: capa centralizada com o social-preview (1280×640) linkando o
+  site, tagline e badges centralizados, barra de navegação rápida (Site ·
+  Instalar · Veja por dentro · Verifique · Guia · Docs) e nova seção
+  **"Veja por dentro"** com galeria 2×2 dos painéis reais
+  (`site/assets/painel-*.webp`) — o README passa a MOSTRAR o produto, não só
+  descrevê-lo. Conteúdo e claims inalterados (gates `test_propagar` e
+  `test_cobertura_docs` seguem valendo).
+
 ### Fixed (H5.1 — auditoria pós-merge da presença pública; zero mudança de runtime)
 - **site/index.html**: metadata social consertada para compartilhamento real —
   `canonical` e `og:url` apontavam para `https://nomos.se7enpay.com/` (domínio
