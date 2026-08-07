@@ -63,5 +63,5 @@ echo "[6/6] Smoke pós-instalação..."
 
 echo
 echo "NOMOS instalado. Versão: $("$BIN_DIR/nomos" --version)"
-echo "Comece com: nomos init && nomos agent create --name <NomeDoSeuAgente>"
+echo "Comece com:  nomos"
 [[ ":$PATH:" == *":$BIN_DIR:"* ]] || echo "AVISO: adicione $BIN_DIR ao PATH."

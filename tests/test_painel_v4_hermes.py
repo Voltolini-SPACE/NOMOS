@@ -66,8 +66,8 @@ def test_layout_app_abas_sidebar_e_sysbox(nomos_home):
     assert 'class="menu"' in corpo and "aria-label" in corpo
     assert "motor ao vivo" in corpo             # migrou p/ visão geral
     assert "atividade recente" in corpo         # idem (antes no rail)
-    # marca congelada segue intacta no novo layout
-    assert "--neon:#5AF78E" in corpo and "#0A0F0D" in corpo
+    # acento de marca segue no novo layout (MC40.1, proposta v1.1)
+    assert "--neon:#5AF78E" in corpo
 
 
 def test_ancoras_novas_apontam_para_secoes_que_existem(nomos_home):

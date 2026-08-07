@@ -79,7 +79,7 @@ def test_tema_escuro_e_claro_ambos_definidos(nomos_home):
     assert ':root[data-tema="claro"]' in corpo
     assert "prefers-color-scheme:light" in corpo
     # o claro redefine o fundo para um tom claro (não é o mesmo do escuro)
-    assert "#f4f7f4" in corpo
+    assert "#f6f8f6" in corpo   # MC40.1 (proposta v1.1): tom claro suavizado
 
 
 def test_botao_de_tema_e_boot_sem_flash(nomos_home):

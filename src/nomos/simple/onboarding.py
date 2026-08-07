@@ -102,10 +102,9 @@ def run_onboarding(ask=input, say=print, host_ollama: str = "http://127.0.0.1:11
         modo = "local"
     else:
         say(c("amarelo", "   não achei um cérebro local rodando — sem problema."))
-        say("   O caminho mais fácil (sem GPU, sem Ollama, ~400 MB, uma vez):")
-        say("     nomos cerebro baixar    — o cérebro leve embutido do NOMOS.")
-        say("   Prefere o Ollama? instale (ollama.com) e rode: ollama pull hermes3")
-        say("   — qualquer um dos dois eu detecto sozinho.")
+        say("   Caminho mais fácil: depois rode  nomos cerebro baixar  (uma vez,")
+        say("   ~400 MB, sem GPU). Já usa Ollama com o modelo hermes3? eu detecto")
+        say("   sozinho — veja outras opções em /motores quando quiser.")
         say("   Por enquanto fico em MODO DEMO: converso sobre o que sei fazer,")
         say("   guardo suas anotações, mas não invento respostas de IA.")
         modo, modelo = "demo", None
@@ -138,20 +137,9 @@ def run_onboarding(ask=input, say=print, host_ollama: str = "http://127.0.0.1:11
             except VaultError as exc:
                 say(f"   {exc} — tente de novo ou Enter para pular.")
 
-    say("")
-    say(c("fraco", "   Outros motores que sei usar (veja depois com /motores):"))
-    try:
-        from nomos.cognition import motores as _mot
-        mapa = _mot.detectar()
-        for modal in ("codigo", "imagem", "audio"):
-            achou = [m["id"] for m in mapa[modal] if m["disponivel"]]
-            say(f"   · {modal}: {', '.join(achou) if achou else 'nenhum ainda — ' + _mot.DICAS[modal]}")
-    except Exception as exc:  # detecção é cortesia; falha não bloqueia onboarding
-        say(c("fraco", f"   (não consegui listar outros motores agora: {type(exc).__name__})"))
-
     perfil = salvar_perfil({
         "personalidade": persona, "modelo": modelo, "modo_cerebro": modo,
-        "cofre": cofre, "onboarding_completo": True,
+        "cofre": cofre, "onboarding_completo": True, "modo_iniciante": True,
     })
 
     say("")

@@ -80,5 +80,6 @@ def menu_principal(ctx, perfil: dict, acoes: dict, ask=input, say=print) -> int:
         except KeyboardInterrupt:
             say("\n(ok, voltando ao menu)")
         except Exception as exc:   # menu nunca despeja traceback no iniciante
-            say("Algo deu errado do meu lado, mas nada foi perdido. "
+            say("Algo deu errado do meu lado, mas nada foi perdido. Rode "
+                "'8' (doutor) se quiser saber o que fazer. "
                 f"(detalhe técnico: {type(exc).__name__})")

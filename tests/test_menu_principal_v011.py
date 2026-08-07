@@ -16,6 +16,18 @@ def test_cabecalho_avisa_nuvem_plugada(nomos_home):
     assert "permissão" in cabecalho({}, nomos_home)
 
 
+def test_menu_iniciante_esconde_opcoes_avancadas(nomos_home):
+    # MC40: modo_iniciante existia mas nada setava — menu completo caía
+    # em todo mundo. Confirma que a flag, quando ligada, some com o avançado.
+    ditos = []
+    respostas = iter(["10"])
+    menu_principal({"home": nomos_home}, {"agent_name": "Atlas", "modo_iniciante": True},
+                   {}, ask=lambda p: next(respostas), say=ditos.append)
+    tudo = "\n".join(str(d) for d in ditos)
+    assert "modo iniciante" in tudo
+    assert "Gerenciar motores" not in tudo and "Guardar chaves" not in tudo
+
+
 def test_menu_navega_e_sai(nomos_home):
     ditos, chamadas = [], []
     acoes = {"2": lambda: chamadas.append("status") or 0,
