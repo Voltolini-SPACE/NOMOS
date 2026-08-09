@@ -4,6 +4,38 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (veracidade — 8 contradições entre o site e o código, achadas por auditoria)
+Auditoria automatizada comparou cada afirmação pública com o repositório; cada
+achado foi verificado por 2 céticos independentes que **executaram** os comandos.
+- **Comando inexistente anunciado como real**: a seção "em ação" diz "não é
+  maquete, é o agente executando de verdade" e mostrava
+  `nomos missao "organizar Downloads por tipo"` — que **falha com exit 2**
+  (`invalid choice`). O CLI só aceita `missao planejar|executar|desfazer` com
+  tipo e pasta. Substituído pela saída REAL de `missao planejar organizar`.
+- **Risco publicado errado**: o mesmo bloco dizia "risco A2"; a missão
+  `organizar` é **A1** (escrita local) em `kernel/missao.py:47` e `cli.py:1546`.
+  Pela escada do próprio site, A2 é "sair para a rede", que a missão não faz.
+- **Números do Mosaic eram sintéticos**: `Gmail(2) · Outlook(4) · Instagram(4)`
+  vinham do `DemoAdapter`, que os deriva de `sha256(url)` sem rede e sem login
+  (`mosaic/browser.py`), e `--adapter` tem `default="demo"`. O card prometia
+  "telas ao vivo" com "login isolado". Agora o comando mostra `--demo`
+  explicitamente e o card está marcado **experimental** (o adaptador real é
+  opt-in, está sob `# pragma: no cover` e sem teste).
+- **Conselho anunciado como parte da liberação**: "conselho revisa a ação antes
+  de liberar" e o passo 04 "conselho revisa". O Council é **dry-run**:
+  `route_conselho` só libera `simular` e informativos, o resto é fail-closed, e
+  **nenhum módulo do kernel importa `nomos.council`**. O gate real é a política.
+- **Instalador Unix**: prometia "rollback automático se algo falhar". Não há
+  `trap` em `install.sh`; em falha ele **aborta**, e a restauração é o script
+  separado `rollback.sh`, rodado à mão.
+- **Instalador Windows**: prometia "backup e rollback iguais aos de Mac/Linux".
+  **Não existe `rollback.ps1`** — a restauração no Windows é manual.
+- **Catálogo do cérebro**: dizia "três tamanhos"; `cognition/embutido.py` tem
+  **cinco** (400 MB a 4,9 GB), todos alcançáveis pelo CLI.
+- **Reprodutibilidade**: além do cross-OS já corrigido, o card citava Python
+  3.14 (a matriz vai a 3.13) e não distinguia o gate contínuo (Linux/py3.12) da
+  verificação empírica registrada (Linux e macOS).
+
 ### Fixed (veracidade — afirmação de reprodutibilidade mais forte que a evidência)
 - **README.md** e **site/index.html** diziam que "o mesmo commit produz bytes
   idênticos em Linux, macOS e Windows" (o site citava ainda Python 3.10/3.12/3.14).

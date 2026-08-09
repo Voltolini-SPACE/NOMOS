@@ -345,7 +345,7 @@
                 <div class="pcard"><b>1.800+</b><span>testes automatizados a cada push, com cobertura ≥ 80% e checagem de tipos (mypy) num job à parte.</span></div>
                 <div class="pcard"><b>0</b><span>telemetria, rastreio ou "casa" para ligar. O modo só-local é a política — não um botão que dá para esquecer desligado.</span></div>
                 <div class="pcard"><b>SEC-01…12</b><span>invariantes de segurança que <em>são</em> testes: se o código divergir da política, a suíte inteira falha.</span></div>
-                <div class="pcard"><b>bit-a-bit</b><span>builds reproduzíveis: dois builds independentes do mesmo commit geram wheel e sdist com o MESMO sha256 — gate bloqueante no CI que refaz os dois e compara byte a byte. A suíte roda em Linux, macOS e Windows, Python 3.10 a 3.13.</span></div>
+                <div class="pcard"><b>bit-a-bit</b><span>builds reproduzíveis: dois builds independentes do mesmo commit geram wheel e sdist com o MESMO sha256 — gate bloqueante no CI (Linux, Python 3.12) que refaz os dois e compara byte a byte. Verificação empírica registrada em Linux e macOS. A suíte de testes roda em Linux, macOS e Windows, Python 3.10 a 3.13.</span></div>
                 <div class="pcard"><b>SLSA</b><span>proveniência assinada (Sigstore/Fulcio + transparência Rekor) para wheel, sdist e SBOM — cada release prova qual workflow, commit e tag o produziu.</span></div>
             </div>
 
@@ -483,19 +483,19 @@ Detalhes: docs/architecture/MOTOR_COUNCIL_INDEX_v1.md</span></pre>
 
             <div class="term" role="img" aria-label="Terminal do NOMOS executando comandos reais: missão, painel, mosaic e conselho.">
                 <div class="term-bar"><span class="d r"></span><span class="d y"></span><span class="d g"></span><span class="t">nomos — local por lei</span></div>
-<pre class="term-body"><code id="acao-term"><span class="p">$</span> <span class="c">nomos missao "organizar Downloads por tipo"</span>
-<span class="o">plano: 4 passos · risco A2 · pede 1 aprovação</span>
-<span class="o">▸ aguardando SEU ok… [aprovado]</span>
-<span class="o">✓ feito — evidência em ~/.nomos/evidencias (SHA-256)</span></code></pre>
+<pre class="term-body"><code id="acao-term"><span class="p">$</span> <span class="c">nomos missao planejar organizar ~/Downloads</span>
+<span class="o">passos: 4 (todos nível A1 — escrita local)</span>
+<span class="o">(plano apenas — nada foi movido)</span>
+<span class="o">$ nomos missao executar organizar ~/Downloads → pede seu ok</span></code></pre>
             </div>
 
             <div class="grid demos">
                 <figure class="demo"><p class="cmd">$ nomos painel</p><pre>painel local em 127.0.0.1
 abas: visão · chat · cérebro · capacidades · mosaic
 ler é livre · agir passa pelo gate · só 127.0.0.1</pre></figure>
-                <figure class="demo"><p class="cmd">$ python -m nomos.mosaic.cli --scan --apply</p><pre>vistoria 6 telas isoladas no mosaic:
-Gmail(2) · Outlook(4) · Instagram(4) · Marketplace(1)
-o agente já sabe o conteúdo quando você pedir</pre></figure>
+                <figure class="demo"><p class="cmd">$ python -m nomos.mosaic.cli --demo --scan --apply</p><pre>vistoria 6 telas no mosaic (adaptador demo)
+números sintéticos e determinísticos, sem rede
+o navegador real (playwright) é opt-in e experimental</pre></figure>
                 <figure class="demo"><p class="cmd">$ nomos conselho simular</p><pre>[NOMOS-MC-STATUS] simulação (dry-run) · fail-closed
 vários motores debatem → 1 árbitro converge
 execução real só numa fase aprovada — nunca finge</pre></figure>
@@ -516,9 +516,9 @@ execução real só numa fase aprovada — nunca finge</pre></figure>
       var mq=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)');
       if(mq&&mq.matches) return;
       var steps=[
-        {cmd:'nomos missao "organizar Downloads por tipo"',out:['plano: 4 passos · risco A2 · pede 1 aprovação','▸ aguardando SEU ok… [aprovado]','✓ feito — evidência em ~/.nomos/evidencias (SHA-256)']},
+        {cmd:'nomos missao planejar organizar ~/Downloads',out:['passos: 4 (todos nível A1 — escrita local)','(plano apenas — nada foi movido)','executar pede o seu ok e grava evidência SHA-256']},
         {cmd:'nomos painel',out:['painel local em 127.0.0.1 · abas: visão · chat · cérebro · capacidades · mosaic','ler é livre · agir passa pelo gate · só 127.0.0.1']},
-        {cmd:'python -m nomos.mosaic.cli --scan --apply',out:['vistoria 6 telas isoladas: Gmail(2) · Outlook(4) · Instagram(4)…','o agente já sabe o conteúdo quando você pedir']},
+        {cmd:'python -m nomos.mosaic.cli --demo --scan --apply',out:['vistoria 6 telas no mosaic (adaptador demo, sem rede)','o navegador real é opt-in e ainda experimental']},
         {cmd:'nomos conselho simular',out:['[NOMOS-MC-STATUS] simulação (dry-run) · fail-closed','vários motores debatem → 1 árbitro converge']}
       ];
       function esc(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;');}
@@ -543,14 +543,14 @@ execução real só numa fase aprovada — nunca finge</pre></figure>
             <summary class="grupo-recursos"><span aria-hidden="true">✨</span> Novo no NOMOS</summary>
             <div class="grid">
                 <div class="card"><div class="ico" aria-hidden="true">🧠</div><h3>Memória que atravessa sessões</h3><p>Um motor de memória auditável que guarda o essencial entre sessões — <strong>dry-run por padrão</strong>, com hash de integridade por entrada e política <strong>fail-closed</strong> que recusa segredos, CPF/CNPJ e dados sensíveis <em>antes</em> de gravar. Você aprova o que fica; nada sai da máquina.</p></div>
-                <div class="card"><div class="ico" aria-hidden="true">▦</div><h3>Mosaic — suas telas ao vivo, no painel</h3><p>Uma aba do <span class="k">nomos painel</span> com vários sites em mosaico (e-mail, redes, marketplace), cada tela com <strong>login isolado</strong> — sem interferir uma na outra. O agente vistoria cada página para já saber o conteúdo quando você pedir, e só age com a sua aprovação.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">▦</div><h3>Mosaic — suas telas no painel <span class="k">experimental</span></h3><p>Uma aba do <span class="k">nomos painel</span> com vários sites em mosaico (e-mail, redes, marketplace). Hoje o adaptador padrão é o <strong>demo</strong>: vistoria sintética, sem rede e sem login. O navegador real com login isolado por tela existe no código, é <strong>opt-in</strong> (<span class="k">--adapter playwright</span>) e ainda não tem cobertura de teste — por isso está marcado como experimental, não como pronto.</p></div>
             </div>
             </details>
 
             <details class="grupo" open>
             <summary class="grupo-recursos"><span aria-hidden="true">🧠</span> Cérebro &amp; conversa</summary>
             <div class="grid">
-                <div class="card"><div class="ico" aria-hidden="true">🧠</div><h3>Cérebro leve embutido</h3><p>Baixa um modelo pequeno (a partir de ~400 MB) que roda em qualquer laptop, sem GPU nem Ollama. Três tamanhos, do mais leve ao mais esperto — você escolhe. Uma vez só.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🧠</div><h3>Cérebro leve embutido</h3><p>Baixa um modelo pequeno (a partir de ~400 MB) que roda em qualquer laptop, sem GPU nem Ollama. Cinco tamanhos no catálogo, de ~400 MB a ~4,9 GB — você escolhe. Uma vez só.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">🚦</div><h3>Roteador automático</h3><p>Escolhe o melhor motor para cada tarefa — local primeiro, sempre. Você não precisa entender de modelos.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">💬</div><h3>Conversa de verdade</h3><p>Resposta em streaming (aparece enquanto o motor gera), memórias relevantes trazidas ao contexto com transparência total, e <span class="k">/arbitrar</span> no chat para o melhor de vários motores.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">⚖️</div><h3>Arbitragem entre motores</h3><p>Além de rotear: vários motores prontos geram respostas, debatem entre si e um árbitro converge na melhor execução <strong>real</strong>. Sem motor pronto, o NOMOS avisa — nunca inventa.</p></div>
@@ -830,7 +830,7 @@ execução real só numa fase aprovada — nunca finge</pre></figure>
                     <ul class="seg-list">
                         <li>Dry-run: simula e mostra o que aconteceria, antes.</li>
                         <li>Fila de aprovação com token de uso único e validade curta.</li>
-                        <li>Conselho (council) que revisa a ação antes de liberar.</li>
+                        <li>Conselho (council) em dry-run: hoje ele simula e explica, mas não participa da liberação real — o gate é a política.</li>
                         <li>Auditoria com âncora HMAC — evidência à prova de adulteração silenciosa.</li>
                         <li>Sandbox para rodar o que precisa de isolamento.</li>
                     </ul>
@@ -858,7 +858,7 @@ execução real só numa fase aprovada — nunca finge</pre></figure>
                 <div class="step"><span class="n">01</span><h3>Você fala</h3><p>Descreve o que quer, em linguagem natural.</p></div>
                 <div class="step"><span class="n">02</span><h3>Roteia o motor</h3><p>O roteador escolhe a melhor estratégia, local primeiro.</p></div>
                 <div class="step"><span class="n">03</span><h3>Simula (dry-run)</h3><p>Mostra exatamente o que faria, sem executar.</p></div>
-                <div class="step"><span class="n">04</span><h3>Conselho revisa</h3><p>A política e o conselho checam o risco da ação.</p></div>
+                <div class="step"><span class="n">04</span><h3>A política classifica</h3><p>O risco da ação é classificado na escada A0–A6 pelo gate.</p></div>
                 <div class="step"><span class="n">05</span><h3>Você aprova</h3><p>Vê tudo, aprova, nega ou ajusta.</p></div>
                 <div class="step"><span class="n">06</span><h3>Executa e registra</h3><p>Só com seu OK — e a auditoria guarda a evidência.</p></div>
             </div>
@@ -875,11 +875,11 @@ execução real só numa fase aprovada — nunca finge</pre></figure>
                  Tag atual (assets verificados): v1.3.0rc20 -->
             <div class="grid" role="group" aria-label="Downloads por sistema">
                 <div class="card"><div class="ico" aria-hidden="true">🍎</div><h3>macOS / Linux</h3>
-                    <p>Baixe o instalador de 1 clique e o pacote <span class="k">.whl</span> na mesma pasta, e rode <span class="k">bash install.sh</span> — com verificação SHA256, backup do que existia e rollback automático se algo falhar.</p>
+                    <p>Baixe o instalador de 1 clique e o pacote <span class="k">.whl</span> na mesma pasta, e rode <span class="k">bash install.sh</span> — com verificação SHA256 e backup automático do que existia. Se algo falhar, o instalador aborta e você restaura com um comando: <span class="k">bash rollback.sh</span>.</p>
                     <p style="margin-top:0.9rem;"><a class="btn btn-primary" href="https://github.com/Voltolini-SPACE/NOMOS/releases/download/v1.3.0rc20/install.sh">Baixar install.sh</a> <a class="btn btn-ghost" href="https://github.com/Voltolini-SPACE/NOMOS/releases/download/v1.3.0rc20/nomos-1.3.0rc20-py3-none-any.whl">Baixar o .whl</a></p>
                 </div>
                 <div class="card"><div class="ico" aria-hidden="true">🪟</div><h3>Windows</h3>
-                    <p>Baixe o instalador e o <span class="k">.whl</span> na mesma pasta e rode <span class="k">install.ps1</span> no PowerShell — mesma verificação de integridade, backup e rollback do instalador de Mac/Linux.</p>
+                    <p>Baixe o instalador e o <span class="k">.whl</span> na mesma pasta e rode <span class="k">install.ps1</span> no PowerShell — mesma verificação de integridade e backup do instalador de Mac/Linux. A restauração no Windows ainda é manual: não há <span class="k">rollback.ps1</span> por enquanto.</p>
                     <p style="margin-top:0.9rem;"><a class="btn btn-primary" href="https://github.com/Voltolini-SPACE/NOMOS/releases/download/v1.3.0rc20/install.ps1">Baixar install.ps1</a> <a class="btn btn-ghost" href="https://github.com/Voltolini-SPACE/NOMOS/releases/download/v1.3.0rc20/nomos-1.3.0rc20-py3-none-any.whl">Baixar o .whl</a></p>
                 </div>
                 <div class="card"><div class="ico" aria-hidden="true">🐙</div><h3>Pelo código (git)</h3>
