@@ -90,6 +90,19 @@ distintos corrigidos). 15 testes novos em `test_orquestracao_hardening.py`.
   `desregistrar`, e audit quebrado MANTINHA a capacidade ativa. Como revogar
   REDUZ autoridade, a direção segura da falha é remover: a remoção acontece e
   o chamador é avisado da trilha incompleta (nunca enganado).
+- **A-10 (P2) falsos positivos criados pelo A-4**: varrer TODA chave reprovava
+  passo honesto (`params={"reboot": False}`) e juntar QUALQUER sequência criava
+  adjacência inexistente (`["...executar DROP", "TABLE clientes..."]` de um log
+  virava `DROP TABLE`). Agora: chave só é varrida quando NÃO parece nome de
+  parâmetro (tem espaço/metacaractere ⇒ é payload, como `{"rm -rf /": True}`),
+  e a junção só ocorre quando a sequência parece argv (elementos sem espaço).
+  O que o A-4 fechou continua fechado — provado por teste.
+- **A-11 (P2) `str()` cru fora de `params`**: o A-6 protegeu só os params;
+  objeto hostil em `id`/`ferramenta`/`motor`/`depende_de`, ou como passo
+  não-dict, ainda escapava de `planejar()` como exceção. Todos passam por
+  `_texto_seguro`; campo não inspecionável rejeita o passo.
+- **A-12** cobertura que faltava: chave sensível ANINHADA (`{"dados": {"cpf":
+  …}}`) agora tem teste — era o ponto cego que o teste original de A-2 não via.
 
 ### Changed (H5.2 — vitrine GitHub: hero visual + galeria; zero mudança de runtime)
 - **README.md**: capa centralizada com o social-preview (1280×640) linkando o

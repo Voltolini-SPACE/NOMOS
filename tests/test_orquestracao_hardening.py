@@ -357,3 +357,102 @@ def test_revogacao_acontece_mesmo_com_audit_quebrado(policy):
     with pytest.raises(ErroRegistro):
         reg.desregistrar("tmp")
     assert not reg.conhecida("tmp")            # revogada de fato
+
+
+# ---------- A-10: falsos positivos criados pelo próprio A-4 (rodada 2) ----------
+# Varrer CHAVES e juntar sequências fechou evasões, mas passou a REPROVAR
+# passo legítimo. Fail-closed não é desculpa para recusar trabalho honesto.
+
+def test_nome_de_flag_benigno_nao_reprova(registro):
+    """`params={'reboot': False}` é NOME de parâmetro, não comando."""
+    registro.registrar("ler", Category.READ_LOCAL, lambda **kw: "x", "teste")
+    plano = planejar("x", registro, passos=[
+        {"id": "p1", "ferramenta": "ler", "params": {"reboot": False,
+                                                     "shutdown": None}},
+    ])
+    assert plano.ok
+
+
+def test_linhas_de_log_nao_reprovam_por_adjacencia_falsa(registro):
+    """Juntar ['...DROP', 'TABLE...'] criava 'DROP TABLE' que não existe."""
+    registro.registrar("ler", Category.READ_LOCAL, lambda **kw: "x", "teste")
+    plano = planejar("x", registro, passos=[
+        {"id": "p1", "ferramenta": "ler",
+         "params": {"linhas": ["ERRO: falha ao executar DROP",
+                               "TABLE clientes nao existe"]}},
+    ])
+    assert plano.ok
+
+
+def test_argv_real_continua_reprovado(registro):
+    """O que A-4 fechou continua fechado: argv sem espaços é comando."""
+    registro.registrar("ler", Category.READ_LOCAL, lambda **kw: "x", "teste")
+    plano = planejar("x", registro, passos=[
+        {"id": "p1", "ferramenta": "ler", "params": {"argv": ["rm", "-rf", "/"]}},
+    ])
+    assert not plano.ok
+
+
+def test_chave_com_comando_embutido_continua_reprovada(registro):
+    """Chave com espaço/metacaractere não é nome de param — é payload."""
+    registro.registrar("ler", Category.READ_LOCAL, lambda **kw: "x", "teste")
+    plano = planejar("x", registro, passos=[
+        {"id": "p1", "ferramenta": "ler", "params": {"rm -rf /": True}},
+    ])
+    assert not plano.ok
+
+
+# ---------- A-11: str() cru fora de params (A-6 estava incompleto) ----------
+
+@pytest.mark.parametrize("campo", ["id", "ferramenta", "motor"])
+def test_campo_hostil_nao_escapa_de_planejar(registro, campo):
+    registro.registrar("ler", Category.READ_LOCAL, lambda **kw: "x", "teste")
+
+    class Hostil:
+        def __str__(self):
+            raise RuntimeError("boom")
+        __repr__ = __str__
+
+    passo = {"id": "p1", "ferramenta": "ler"}
+    passo[campo] = Hostil()
+    plano = planejar("x", registro, passos=[passo, {"id": "ok",
+                                                    "ferramenta": "ler"}])
+    assert plano.ok
+    assert [p.id for p in plano.passos] == ["ok"]
+
+
+def test_depende_de_com_item_hostil_nao_escapa(registro):
+    registro.registrar("ler", Category.READ_LOCAL, lambda **kw: "x", "teste")
+
+    class Hostil:
+        def __str__(self):
+            raise RuntimeError("boom")
+        __repr__ = __str__
+
+    plano = planejar("x", registro, passos=[
+        {"id": "a", "ferramenta": "ler"},
+        {"id": "b", "ferramenta": "ler", "depende_de": [Hostil()]},
+    ])
+    assert plano.ok
+    assert [p.id for p in plano.passos] == ["a"]
+
+
+def test_passo_nao_dict_hostil_nao_escapa(registro):
+    registro.registrar("ler", Category.READ_LOCAL, lambda **kw: "x", "teste")
+
+    class Hostil:
+        def __str__(self):
+            raise RuntimeError("boom")
+        __repr__ = __str__
+
+    plano = planejar("x", registro, passos=[Hostil(), {"id": "ok",
+                                                       "ferramenta": "ler"}])
+    assert plano.ok
+
+
+# ---------- A-12: chave sensível ANINHADA (cobertura que faltava) ----------
+
+def test_chave_sensivel_aninhada_e_vista():
+    from nomos.orquestracao.roteamento import classificar_no
+    tarefa = classificar_no(No("n1", "t", params={"dados": {"cpf": "111"}}))
+    assert tarefa.dados_sensiveis is True

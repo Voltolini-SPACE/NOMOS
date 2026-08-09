@@ -29,6 +29,8 @@ from nomos.orquestracao.grafo import GrafoTarefas, No
 from nomos.orquestracao.registro import RegistroCapacidades
 
 _ID_RE = re.compile(r"^[a-z][a-z0-9\-]{0,63}$")
+# nome de parâmetro plausível: identificador simples, sem espaço nem shell
+_NOME_PARAM_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_\-.]{0,63}$")
 
 # CONGELADA (NH-003): padrões que nenhum param de passo pode conter.
 # Deliberadamente pequena e de alta precisão — falso positivo em texto
@@ -127,7 +129,7 @@ def _textos_de(valor, _prof: int = 0, _vistos: set | None = None) -> list[str]:
     if isinstance(valor, dict):
         saida: list[str] = []
         for k, v in valor.items():
-            saida.append(_texto_seguro(k))
+            saida.extend(_chave_suspeita(k))
             saida.extend(_textos_de(v, _prof + 1, _vistos))
         return saida
     if isinstance(valor, (list, tuple, set)):
@@ -135,9 +137,41 @@ def _textos_de(valor, _prof: int = 0, _vistos: set | None = None) -> list[str]:
         partes: list[str] = []
         for v in itens:
             partes.extend(_textos_de(v, _prof + 1, _vistos))
-        # a junção é o que reconstrói 'rm -rf /' a partir de ['rm','-rf','/']
-        return partes + [" ".join(_texto_seguro(x) for x in itens)]
+        partes.extend(_juncao_argv(itens))
+        return partes
     return [_texto_seguro(valor)]
+
+
+def _chave_suspeita(chave) -> list[str]:
+    """Chave de param só entra na varredura se NÃO parecer um nome de param.
+
+    Achado da rodada 2: varrer toda chave reprovava passo legítimo
+    (`params={"reboot": False}` casava com o padrão de `reboot`). Um nome de
+    parâmetro real não tem espaço nem metacaractere de shell; uma chave que
+    tem, não é nome — é payload (`{"rm -rf /": True}`).
+    """
+    texto = _texto_seguro(chave)
+    if texto is INSPECAO_IMPOSSIVEL or INSPECAO_IMPOSSIVEL in texto:
+        return [texto]
+    if _NOME_PARAM_RE.match(texto):
+        return []                    # nome de parâmetro comum: não é comando
+    return [texto]
+
+
+def _juncao_argv(itens: list) -> list[str]:
+    """Junta a sequência SÓ quando ela parece argv (elementos sem espaço).
+
+    A junção existe para reconstruir `rm -rf /` a partir de
+    `["rm","-rf","/"]`. Mas juntar QUALQUER lista criava adjacência que não
+    existe no dado real — `["...executar DROP", "TABLE clientes..."]` (linhas
+    de log) virava `DROP TABLE` e reprovava um passo honesto (rodada 2).
+    """
+    if not itens or len(itens) > 64:
+        return []
+    textos = [_texto_seguro(x) for x in itens]
+    if any(not t or " " in t or "\n" in t or "\t" in t for t in textos):
+        return []                    # tem elemento com espaço: não é argv
+    return [" ".join(textos)]
 
 
 def _param_perigoso(params: dict) -> str:
@@ -146,7 +180,7 @@ def _param_perigoso(params: dict) -> str:
     Param que não dá nem para inspecionar é tratado como perigoso (fail-closed)."""
     textos: list[str] = []
     for chave, valor in params.items():
-        textos.append(_texto_seguro(chave))
+        textos.extend(_chave_suspeita(chave))
         try:
             textos.extend(_textos_de(valor))
         except Exception:
@@ -212,16 +246,16 @@ def planejar(objetivo: str, registro: RegistroCapacidades,
 
     for bruto in passos:
         if not isinstance(bruto, dict):
-            _rejeitar(str(bruto)[:40], "passo malformado (não é objeto)")
+            _rejeitar(_texto_seguro(bruto)[:40], "passo malformado (não é objeto)")
             continue
-        pid = str(bruto.get("id", ""))
+        pid = _texto_seguro(bruto.get("id", ""))
         if not _ID_RE.match(pid):
             _rejeitar(pid or "<sem-id>", "id inválido")
             continue
         if pid in aceitos:
             _rejeitar(pid, "id duplicado")
             continue
-        ferramenta = str(bruto.get("ferramenta", ""))
+        ferramenta = _texto_seguro(bruto.get("ferramenta", ""))
         categoria = registro.categoria_de(ferramenta)   # NUNCA do plano
         if categoria is None:
             _rejeitar(pid, f"ferramenta fora do registro: '{ferramenta}'")
@@ -241,10 +275,17 @@ def planejar(objetivo: str, registro: RegistroCapacidades,
         if isinstance(bruto_dep, str) or not isinstance(bruto_dep, (list, tuple)):
             _rejeitar(pid, "depende_de precisa ser lista de ids")
             continue
-        depende_de = tuple(str(d) for d in bruto_dep)
+        depende_de = tuple(_texto_seguro(d) for d in bruto_dep)
+        if any(INSPECAO_IMPOSSIVEL in d for d in depende_de):
+            _rejeitar(pid, "depende_de com item não inspecionável")
+            continue
+        motor = _texto_seguro(bruto.get("motor", ""))
+        if INSPECAO_IMPOSSIVEL in motor:
+            _rejeitar(pid, "motor não inspecionável")
+            continue
         aceitos[pid] = PassoTipado(
             id=pid, ferramenta=ferramenta, categoria=categoria, params=params,
-            depende_de=depende_de, motor=str(bruto.get("motor", "")),
+            depende_de=depende_de, motor=motor,
             # idempotência é atributo da CAPACIDADE, nunca do plano: é o bit
             # que autoriza repetir efeito colateral (NH-004). Um plano hostil
             # que se declarasse idempotente transformaria 1 aprovação humana
