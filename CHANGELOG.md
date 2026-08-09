@@ -27,6 +27,14 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
   fecha); orçamento global de tentativas por missão (anti retry-storm);
   exceção nunca escapa. Timeout duro continua no sandbox (não duplicado).
   Auditoria `recuperacao.*`. 9 testes.
+- **NH-003 `orquestracao/planejador.py`**: plano tipado governado. Categoria
+  de cada passo vem SEMPRE do registro (plano não declara nem rebaixa o
+  próprio risco — anti-escalação); ferramenta desconhecida ⇒ passo
+  rejeitado com dependentes transitivos; params com padrão perigoso ⇒
+  rejeitado (`REGEX_PERIGO` congelada — espírito do guard v2 do Hermes,
+  reimplementado à moda NOMOS); sugestão de LLM é DATA (parse defensivo,
+  malformado ⇒ plano falha fechado); risco agregado + `exige_aprovacao`;
+  `para_grafo()` liga ao NH-002. Auditoria `planejador.*`. 22 testes.
 
 ### Changed (H5.2 — vitrine GitHub: hero visual + galeria; zero mudança de runtime)
 - **README.md**: capa centralizada com o social-preview (1280×640) linkando o
