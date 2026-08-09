@@ -345,7 +345,7 @@
                 <div class="pcard"><b>1.800+</b><span>testes automatizados a cada push, com cobertura ≥ 80% e checagem de tipos (mypy) num job à parte.</span></div>
                 <div class="pcard"><b>0</b><span>telemetria, rastreio ou "casa" para ligar. O modo só-local é a política — não um botão que dá para esquecer desligado.</span></div>
                 <div class="pcard"><b>SEC-01…12</b><span>invariantes de segurança que <em>são</em> testes: se o código divergir da política, a suíte inteira falha.</span></div>
-                <div class="pcard"><b>bit-a-bit</b><span>builds reproduzíveis: o mesmo commit gera o MESMO hash em Linux, macOS e Windows, Python 3.10/3.12/3.14 — com gate próprio no CI que refaz dois builds e compara.</span></div>
+                <div class="pcard"><b>bit-a-bit</b><span>builds reproduzíveis: dois builds independentes do mesmo commit geram wheel e sdist com o MESMO sha256 — gate bloqueante no CI que refaz os dois e compara byte a byte. A suíte roda em Linux, macOS e Windows, Python 3.10 a 3.13.</span></div>
                 <div class="pcard"><b>SLSA</b><span>proveniência assinada (Sigstore/Fulcio + transparência Rekor) para wheel, sdist e SBOM — cada release prova qual workflow, commit e tag o produziu.</span></div>
             </div>
 

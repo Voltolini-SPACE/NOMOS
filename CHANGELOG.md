@@ -4,6 +4,17 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (veracidade — afirmação de reprodutibilidade mais forte que a evidência)
+- **README.md** e **site/index.html** diziam que "o mesmo commit produz bytes
+  idênticos em Linux, macOS e Windows" (o site citava ainda Python 3.10/3.12/3.14).
+  O gate de reprodutibilidade do CI (`ci.yml`, job `reprodutibilidade`) roda
+  **só em `ubuntu-latest` com Python 3.12** e prova que **dois builds
+  independentes do mesmo commit** geram wheel e sdist com o mesmo sha256 —
+  o que é forte, mas não é a prova cross-OS que o texto anunciava. A matriz de
+  3 SOs × 4 Pythons é a da **suíte de testes**, não a do gate de bytes.
+  Textos corrigidos para o que a evidência sustenta. Achado por auditoria
+  automatizada das superfícies públicas contra o repositório.
+
 ### Changed (MC33 — site reflete o produto: seção de orquestração)
 - **site/index.html**: nova seção `#orquestracao` (+ link no nav) descrevendo
   registro de capacidades, grafo de tarefas, plano tipado e recuperação, com

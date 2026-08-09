@@ -33,9 +33,11 @@ funciona se você "plugar" de propósito. Leve, sem exigir super-PC, e feito
 para iniciantes.
 
 E quando o NOMOS chega até você, chega **provado**: cada release publica hash,
-proveniência criptográfica (SLSA/Sigstore) e inventário de dependências — e o
-mesmo commit produz **bytes idênticos** em Linux, macOS e Windows, em Python
-3.10, 3.12 ou 3.14. Você não precisa confiar; pode [verificar](docs/SUPPLY_CHAIN.md).
+proveniência criptográfica (SLSA/Sigstore) e inventário de dependências — e dois
+builds independentes do mesmo commit produzem wheel e sdist com **o mesmo
+sha256**, verificado a cada CI por um gate bloqueante. A suíte roda em Linux,
+macOS e Windows, em Python 3.10 a 3.13. Você não precisa confiar; pode
+[verificar](docs/SUPPLY_CHAIN.md).
 
 ```
 ███╗   ██╗ ██████╗ ███╗   ███╗ ██████╗ ███████╗
