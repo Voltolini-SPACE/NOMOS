@@ -103,6 +103,16 @@ distintos corrigidos). 15 testes novos em `test_orquestracao_hardening.py`.
   `_texto_seguro`; campo não inspecionável rejeita o passo.
 - **A-12** cobertura que faltava: chave sensível ANINHADA (`{"dados": {"cpf":
   …}}`) agora tem teste — era o ponto cego que o teste original de A-2 não via.
+### Fixed (test-hygiene — isolamento de home; zero mudança de runtime)
+- **tests/test_chat_ux.py** (`test_tema_troca_paleta`): o teste chamava
+  `config.save_agent("Luna")` sem redirecionar o home, então gravava no
+  `~/.nomos/agent.json` REAL do usuário (era o único dos 156 arquivos de teste
+  a escrever no home real — `nomos_home()` usa `NOMOS_HOME`, senão
+  `Path.home()/.nomos`). Contradizia a própria higiene local-first do projeto.
+  Correção: `monkeypatch.setenv("NOMOS_HOME", str(tmp_path))` antes do
+  `save_agent`. Prova RED→GREEN: antes do fix, rodar o teste com `HOME`
+  redirecionado criava `$HOME/.nomos/agent.json`; depois, o home real fica
+  intocado e a escrita vai para o `tmp_path`. Suíte 1974 passed / ruff limpo.
 
 ### Changed (H5.2 — vitrine GitHub: hero visual + galeria; zero mudança de runtime)
 - **README.md**: capa centralizada com o social-preview (1280×640) linkando o
