@@ -4,6 +4,15 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (NH — orquestração governada de execução; convergência NOMOS×HERMES)
+- **NH-001 `orquestracao/registro.py`**: registro dinâmico governado de
+  capacidades. A allowlist nativa de 8 ferramentas permanece imutável (não
+  pode ser sombreada nem removida); capacidade nova exige nome válido,
+  `Category` real, executor chamável, origem, e passa pelo MESMO
+  `policy.gate` do kernel como A5_SKILL_INSTALL (sem política ou sem
+  aprovador ⇒ negado fail-closed). Desconhecida ⇒ categoria `None`/risco A6.
+  Toda mutação auditada (`registro.capacidade.*`). 16 testes.
+
 ### Changed (H5.2 — vitrine GitHub: hero visual + galeria; zero mudança de runtime)
 - **README.md**: capa centralizada com o social-preview (1280×640) linkando o
   site, tagline e badges centralizados, barra de navegação rápida (Site ·
