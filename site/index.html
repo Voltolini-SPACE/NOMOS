@@ -279,6 +279,7 @@
                 <a href="#acao">em ação</a>
                 <a href="#recursos">recursos</a>
                 <a href="#motores">motores</a>
+                <a href="#orquestracao">orquestração</a>
                 <a href="#seguranca">segurança</a>
                 <a href="#painel">painel</a>
                 <a href="#conexoes">conexões</a>
@@ -667,6 +668,23 @@ execução real só numa fase aprovada — nunca finge</pre></figure>
                 <div class="card"><div class="ico" aria-hidden="true">🛡️</div><h3>segurança</h3><p>Perfil voltado a revisão e postura de segurança, honesto sobre limites.</p></div>
                 <div class="card"><div class="ico" aria-hidden="true">🧱</div><h3>Crie o seu (SDK)</h3><p><span class="k">nomos agent create --name meu-agente</span> cria a identidade; o manifesto do agente (o mesmo formato dos oficiais) declara ferramentas, motores preferidos e risco máximo. Seu agente, suas regras.</p></div>
             </div>
+        </div>
+    </section>
+
+    <!-- Orquestração -->
+    <section id="orquestracao" aria-labelledby="orq-t">
+        <div class="wrap">
+            <div class="tag">// orquestração governada</div>
+            <h2 id="orq-t">Missões de vários passos, com decisão em cada um</h2>
+            <p class="lead">Um objetivo vira um plano tipado; o plano vira um grafo de tarefas com dependências; e cada nó do grafo passa pela mesma escada A0–A6 antes de rodar. Se um passo é negado ou falha, tudo que dependia dele é bloqueado — e os ramos independentes seguem.</p>
+            <div class="grid">
+                <div class="card"><div class="ico" aria-hidden="true">📇</div><h3>Registro de capacidades</h3><p>Ferramentas novas entram em tempo de execução declarando sua categoria de risco. As 8 nativas continuam imutáveis: não podem ser sombreadas nem removidas. Capacidade desconhecida vale <span class="k">A6</span> — o pior caso.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🕸️</div><h3>Grafo de tarefas</h3><p>Dependências resolvidas em ordem topológica. Ciclo, id duplicado ou ferramenta fora do registro reprovam o grafo inteiro <em>antes</em> de qualquer execução.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">🧭</div><h3>Plano tipado</h3><p>A categoria de risco de cada passo vem sempre do registro — o plano nunca declara nem rebaixa o próprio risco. Sugestão de modelo é tratada como <b>dado</b>, nunca como autoridade.</p></div>
+                <div class="card"><div class="ico" aria-hidden="true">♻️</div><h3>Recuperação</h3><p>Retentativa só para capacidade declarada idempotente, com recuo exponencial, disjuntor por ferramenta e orçamento por missão. Repetir efeito colateral às cegas é pior que falhar.</p></div>
+            </div>
+            <p class="nota" style="margin-top:1.5rem;"><b>Status honesto:</b> esta camada está <b>validada</b> — 107 testes próprios, duas rodadas de auditoria adversarial e 12 defeitos corrigidos — mas <b>ainda não tem comando no CLI</b>. É fundação: nenhum módulo do NOMOS a importa hoje, então a superfície viva do produto não mudou. Detalhes em <a href="https://github.com/Voltolini-SPACE/NOMOS/blob/main/docs/ARQUITETURA_ORQUESTRACAO.md">ARQUITETURA_ORQUESTRACAO.md</a>.</p>
+            <p style="margin-top:1rem;">O que <em>não</em> está aqui é proposital: terminal, navegador, git e agendamento real pertencem a um executor especializado. O NOMOS decide; quem executa aplica. Reimplementar isso aqui transformaria o control plane em mais um agente genérico.</p>
         </div>
     </section>
 

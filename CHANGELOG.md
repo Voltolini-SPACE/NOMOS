@@ -4,6 +4,15 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Changed (MC33 — site reflete o produto: seção de orquestração)
+- **site/index.html**: nova seção `#orquestracao` (+ link no nav) descrevendo
+  registro de capacidades, grafo de tarefas, plano tipado e recuperação, com
+  **status de veracidade explícito**: a camada é *validada* (107 testes, 2
+  rodadas adversariais, 12 defeitos corrigidos) mas **ainda sem comando no
+  CLI** — nenhum módulo a importa, logo a superfície viva não mudou. A seção
+  também declara o que deliberadamente NÃO está no NOMOS (terminal, navegador,
+  git, agendamento) e por quê.
+
 ### Added (NH — orquestração governada de execução; convergência NOMOS×HERMES)
 - **NH-001 `orquestracao/registro.py`**: registro dinâmico governado de
   capacidades. A allowlist nativa de 8 ferramentas permanece imutável (não
