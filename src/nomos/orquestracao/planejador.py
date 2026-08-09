@@ -114,7 +114,9 @@ def _textos_de(valor, _prof: int = 0, _vistos: set | None = None) -> list[str]:
     if _vistos is None:
         _vistos = set()
     if _prof > _PROFUNDIDADE_MAX or len(_vistos) > _NOS_MAX:
-        return ["<profundo demais>"]
+        # inspeção incompleta NÃO pode virar "limpo": enterrar o payload além
+        # do teto seria o bypass mais barato possível (achado da rodada 2)
+        return [INSPECAO_IMPOSSIVEL]
     if isinstance(valor, str):
         return [valor]
     if isinstance(valor, (dict, list, tuple, set)):

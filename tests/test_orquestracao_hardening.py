@@ -286,3 +286,74 @@ def test_roteamento_ciclico_nao_quebra():
     ciclo.append(ciclo)
     texto = _texto_do_no(No("n1", "t", params={"loop": ciclo, "texto": "oi"}))
     assert "oi" in texto                       # não levanta e mantém o que dá
+
+
+# ---------- A-7: fail-open aberto pelo próprio A-6 (rodada 2 da auditoria) ----------
+# O teto de profundidade devolvia [] / marcador benigno EM SILÊNCIO: payload
+# enterrado fundo ficava invisível ao classificador de sensibilidade e à
+# REGEX_PERIGO. Não inspecionável tem de significar PERIGOSO, nunca "limpo".
+
+def test_perigo_enterrado_alem_do_teto_rejeitado(registro):
+    registro.registrar("ler", Category.READ_LOCAL, lambda **kw: "x", "teste")
+    fundo: object = "rm -rf /"
+    for _ in range(30):
+        fundo = {"n": fundo}
+    plano = planejar("x", registro, passos=[
+        {"id": "p1", "ferramenta": "ler", "params": {"x": fundo}},
+    ])
+    assert not plano.ok                        # antes: passava por teto benigno
+
+
+def test_sensivel_enterrado_alem_do_teto_e_tratado_como_sensivel():
+    """Inspeção incompleta ⇒ trata como sensível (nuvem barrada)."""
+    from nomos.orquestracao.roteamento import classificar_no
+    fundo: object = "minha senha do banco"
+    for _ in range(30):
+        fundo = {"n": fundo}
+    tarefa = classificar_no(No("n1", "t", params={"x": fundo}))
+    assert tarefa.dados_sensiveis is True
+
+
+def test_chave_sensivel_e_vista_pelo_classificador():
+    from nomos.orquestracao.roteamento import classificar_no
+    tarefa = classificar_no(No("n1", "t", params={"senha": "abc123"}))
+    assert tarefa.dados_sensiveis is True
+
+
+def test_escalares_nao_str_sao_vistos():
+    from nomos.orquestracao.roteamento import _texto_do_no
+    texto = _texto_do_no(No("n1", "t", params={"n": 12345, "b": b"token"}))
+    assert "12345" in texto
+
+
+def test_ciclo_no_roteamento_e_tratado_como_sensivel():
+    from nomos.orquestracao.roteamento import classificar_no
+    ciclo: list = []
+    ciclo.append(ciclo)
+    tarefa = classificar_no(No("n1", "t", params={"loop": ciclo}))
+    assert tarefa.dados_sensiveis is True      # inspeção incompleta = sensível
+
+
+# ---------- A-8: regressão do A-1 — nativas A0 podem repetir ----------
+
+def test_nativas_a0_sao_idempotentes(registro):
+    """Repetir leitura é seguro; A-1 não podia matar retry da allowlist toda."""
+    assert registro.idempotente_de("arquivo_ler") is True
+    assert registro.idempotente_de("memoria_buscar") is True
+    assert registro.idempotente_de("logs_verificar") is True
+    assert registro.idempotente_de("arquivo_escrever") is False   # A1 muta
+    assert registro.idempotente_de("skill_rodar") is False        # A5 executa
+
+
+# ---------- A-9: revogação não pode ser travada por audit ----------
+
+def test_revogacao_acontece_mesmo_com_audit_quebrado(policy):
+    """Remover capacidade REDUZ autoridade: audit quebrado não pode manter
+    a capacidade ativa (direção segura da falha é revogar)."""
+    audit = AuditFake()
+    reg = RegistroCapacidades(policy=policy, approver=lambda d: True, audit=audit)
+    reg.registrar("tmp", Category.READ_LOCAL, lambda **kw: "x", "teste")
+    reg.audit = AuditQuebrado()
+    with pytest.raises(ErroRegistro):
+        reg.desregistrar("tmp")
+    assert not reg.conhecida("tmp")            # revogada de fato

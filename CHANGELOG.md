@@ -74,6 +74,22 @@ distintos corrigidos). 15 testes novos em `test_orquestracao_hardening.py`.
   levanta e sentinela `INSPECAO_IMPOSSIVEL`: **param que não se deixa
   inspecionar é tratado como perigoso** (fail-closed). Varredura é defesa —
   não pode virar o próprio incidente.
+- **A-7 (P1) fail-open aberto pelo próprio A-6 (rodada 2)**: o teto de
+  profundidade devolvia lista vazia / marcador benigno EM SILÊNCIO — bastava
+  enterrar o payload além de 12 níveis para sumir da `REGEX_PERIGO` e do
+  classificador de sensibilidade (o bypass mais barato possível). Agora o
+  corte marca inspeção INCOMPLETA: no planejador vira `INSPECAO_IMPOSSIVEL`
+  (passo rejeitado) e no roteamento o novo `classificar_no()` força
+  `dados_sensiveis=True` (nuvem barrada). `_texto_roteavel` também passou a
+  ler CHAVES de dict e escalares não-string (bytes/int), que antes sumiam.
+- **A-8 (P1) regressão do A-1**: exigir declaração de idempotência matou o
+  retry de TODA a allowlist nativa, sem canal de reparo. Agora nativas
+  derivam da categoria — A0 (leitura local) é seguro repetir por definição;
+  `arquivo_escrever` (A1) e `skill_rodar` (A5) seguem não-idempotentes.
+- **A-9 (P2) revogação travada por audit**: o A-5 inverteu a ordem também no
+  `desregistrar`, e audit quebrado MANTINHA a capacidade ativa. Como revogar
+  REDUZ autoridade, a direção segura da falha é remover: a remoção acontece e
+  o chamador é avisado da trilha incompleta (nunca enganado).
 
 ### Changed (H5.2 — vitrine GitHub: hero visual + galeria; zero mudança de runtime)
 - **README.md**: capa centralizada com o social-preview (1280×640) linkando o

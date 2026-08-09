@@ -71,8 +71,14 @@ class RegistroCapacidades:
 
     def idempotente_de(self, nome: str) -> bool:
         """Repetir esta capacidade é seguro? Propriedade da CAPACIDADE, nunca
-        do plano — é o que autoriza retry (NH-004). Desconhecida/nativa sem
-        declaração ⇒ False (repetir efeito colateral às cegas é pior que falhar)."""
+        do plano — é o que autoriza retry (NH-004).
+
+        Nativas: derivado da categoria — A0 (leitura local) é seguro repetir
+        por definição (não muta nada); qualquer outra ⇒ False. Dinâmicas:
+        só o que foi declarado no registro. Desconhecida ⇒ False (repetir
+        efeito colateral às cegas é pior que falhar)."""
+        if nome in FERRAMENTAS:
+            return FERRAMENTAS[nome] is Category.READ_LOCAL
         cap = self._dinamicas.get(nome)
         return bool(cap.idempotente) if cap else False
 
@@ -152,11 +158,15 @@ class RegistroCapacidades:
             raise self._negar(nome, "remover ferramenta nativa é proibido")
         if nome not in self._dinamicas:
             raise self._negar(nome, "capacidade desconhecida")
+        # Revogar REDUZ autoridade: a direção segura da falha é remover.
+        # Por isso, ao contrário de registrar(), aqui a remoção acontece
+        # mesmo se o audit falhar — mas o chamador é avisado (a trilha ficou
+        # incompleta), nunca enganado.
+        del self._dinamicas[nome]
         if self.audit is not None:
             try:
                 self.audit.append("registro.capacidade.removida", capacidade=nome)
             except Exception as exc:
                 raise ErroRegistro(
-                    f"remoção de '{nome}' negada: audit indisponível "
-                    f"({type(exc).__name__})") from None
-        del self._dinamicas[nome]
+                    f"'{nome}' foi REMOVIDA, mas o audit falhou "
+                    f"({type(exc).__name__}): trilha incompleta") from None
