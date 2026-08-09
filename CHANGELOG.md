@@ -35,6 +35,11 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
   reimplementado à moda NOMOS); sugestão de LLM é DATA (parse defensivo,
   malformado ⇒ plano falha fechado); risco agregado + `exige_aprovacao`;
   `para_grafo()` liga ao NH-002. Auditoria `planejador.*`. 22 testes.
+- **NH-007 `orquestracao/roteamento.py`**: adaptador nó→`cognition.engine_router`
+  (o roteador local-first explicável que o NOMOS JÁ tinha — não foi
+  reimplementado). Nó com `motor="auto"` recebe a `EngineRouteDecision` como
+  dado (não autoriza nada; o gate continua mandando); dado sensível nunca
+  escolhe nuvem; rota auditada sem vazar o conteúdo da tarefa. 5 testes.
 
 ### Changed (H5.2 — vitrine GitHub: hero visual + galeria; zero mudança de runtime)
 - **README.md**: capa centralizada com o social-preview (1280×640) linkando o
