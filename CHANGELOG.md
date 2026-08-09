@@ -4,6 +4,168 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (veracidade — 8 contradições entre o site e o código, achadas por auditoria)
+Auditoria automatizada comparou cada afirmação pública com o repositório; cada
+achado foi verificado por 2 céticos independentes que **executaram** os comandos.
+- **Comando inexistente anunciado como real**: a seção "em ação" diz "não é
+  maquete, é o agente executando de verdade" e mostrava
+  `nomos missao "organizar Downloads por tipo"` — que **falha com exit 2**
+  (`invalid choice`). O CLI só aceita `missao planejar|executar|desfazer` com
+  tipo e pasta. Substituído pela saída REAL de `missao planejar organizar`.
+- **Risco publicado errado**: o mesmo bloco dizia "risco A2"; a missão
+  `organizar` é **A1** (escrita local) em `kernel/missao.py:47` e `cli.py:1546`.
+  Pela escada do próprio site, A2 é "sair para a rede", que a missão não faz.
+- **Números do Mosaic eram sintéticos**: `Gmail(2) · Outlook(4) · Instagram(4)`
+  vinham do `DemoAdapter`, que os deriva de `sha256(url)` sem rede e sem login
+  (`mosaic/browser.py`), e `--adapter` tem `default="demo"`. O card prometia
+  "telas ao vivo" com "login isolado". Agora o comando mostra `--demo`
+  explicitamente e o card está marcado **experimental** (o adaptador real é
+  opt-in, está sob `# pragma: no cover` e sem teste).
+- **Conselho anunciado como parte da liberação**: "conselho revisa a ação antes
+  de liberar" e o passo 04 "conselho revisa". O Council é **dry-run**:
+  `route_conselho` só libera `simular` e informativos, o resto é fail-closed, e
+  **nenhum módulo do kernel importa `nomos.council`**. O gate real é a política.
+- **Instalador Unix**: prometia "rollback automático se algo falhar". Não há
+  `trap` em `install.sh`; em falha ele **aborta**, e a restauração é o script
+  separado `rollback.sh`, rodado à mão.
+- **Instalador Windows**: prometia "backup e rollback iguais aos de Mac/Linux".
+  **Não existe `rollback.ps1`** — a restauração no Windows é manual.
+- **Catálogo do cérebro**: dizia "três tamanhos"; `cognition/embutido.py` tem
+  **cinco** (400 MB a 4,9 GB), todos alcançáveis pelo CLI.
+- **Reprodutibilidade**: além do cross-OS já corrigido, o card citava Python
+  3.14 (a matriz vai a 3.13) e não distinguia o gate contínuo (Linux/py3.12) da
+  verificação empírica registrada (Linux e macOS).
+
+### Fixed (veracidade — afirmação de reprodutibilidade mais forte que a evidência)
+- **README.md** e **site/index.html** diziam que "o mesmo commit produz bytes
+  idênticos em Linux, macOS e Windows" (o site citava ainda Python 3.10/3.12/3.14).
+  O gate de reprodutibilidade do CI (`ci.yml`, job `reprodutibilidade`) roda
+  **só em `ubuntu-latest` com Python 3.12** e prova que **dois builds
+  independentes do mesmo commit** geram wheel e sdist com o mesmo sha256 —
+  o que é forte, mas não é a prova cross-OS que o texto anunciava. A matriz de
+  3 SOs × 4 Pythons é a da **suíte de testes**, não a do gate de bytes.
+  Textos corrigidos para o que a evidência sustenta. Achado por auditoria
+  automatizada das superfícies públicas contra o repositório.
+
+### Changed (MC33 — site reflete o produto: seção de orquestração)
+- **site/index.html**: nova seção `#orquestracao` (+ link no nav) descrevendo
+  registro de capacidades, grafo de tarefas, plano tipado e recuperação, com
+  **status de veracidade explícito**: a camada é *validada* (107 testes, 2
+  rodadas adversariais, 12 defeitos corrigidos) mas **ainda sem comando no
+  CLI** — nenhum módulo a importa, logo a superfície viva não mudou. A seção
+  também declara o que deliberadamente NÃO está no NOMOS (terminal, navegador,
+  git, agendamento) e por quê.
+
+### Added (NH — orquestração governada de execução; convergência NOMOS×HERMES)
+- **NH-001 `orquestracao/registro.py`**: registro dinâmico governado de
+  capacidades. A allowlist nativa de 8 ferramentas permanece imutável (não
+  pode ser sombreada nem removida); capacidade nova exige nome válido,
+  `Category` real, executor chamável, origem, e passa pelo MESMO
+  `policy.gate` do kernel como A5_SKILL_INSTALL (sem política ou sem
+  aprovador ⇒ negado fail-closed). Desconhecida ⇒ categoria `None`/risco A6.
+  Toda mutação auditada (`registro.capacidade.*`). 16 testes.
+- **NH-002 `orquestracao/grafo.py`**: grafo de tarefas com dependências +
+  orquestrador governado. Validação fail-closed na construção (id duplicado,
+  dependência desconhecida, ciclo por Kahn, ferramenta fora do registro ⇒
+  `ErroGrafo`, nada executa); CADA nó passa pelo MESMO `policy.gate` do
+  kernel antes de executar; negação/falha bloqueia dependentes transitivos
+  (ramos independentes seguem); nativas exigem wiring explícito de executor;
+  missão só ok com todos os nós OK; transições auditadas
+  (`orquestracao.no.*`, `orquestracao.missao.*`). Plugs para recuperação
+  (NH-004) e roteamento de motor (NH-007). 14 testes.
+- **NH-004 `orquestracao/recuperacao.py`**: recuperação fail-closed — retry
+  SÓ para nó idempotente; backoff exponencial com teto (relógio injetável);
+  circuit-breaker por ferramenta (abre com N falhas consecutivas, sucesso
+  fecha); orçamento global de tentativas por missão (anti retry-storm);
+  exceção nunca escapa. Timeout duro continua no sandbox (não duplicado).
+  Auditoria `recuperacao.*`. 9 testes.
+- **NH-003 `orquestracao/planejador.py`**: plano tipado governado. Categoria
+  de cada passo vem SEMPRE do registro (plano não declara nem rebaixa o
+  próprio risco — anti-escalação); ferramenta desconhecida ⇒ passo
+  rejeitado com dependentes transitivos; params com padrão perigoso ⇒
+  rejeitado (`REGEX_PERIGO` congelada — espírito do guard v2 do Hermes,
+  reimplementado à moda NOMOS); sugestão de LLM é DATA (parse defensivo,
+  malformado ⇒ plano falha fechado); risco agregado + `exige_aprovacao`;
+  `para_grafo()` liga ao NH-002. Auditoria `planejador.*`. 22 testes.
+- **NH-007 `orquestracao/roteamento.py`**: adaptador nó→`cognition.engine_router`
+  (o roteador local-first explicável que o NOMOS JÁ tinha — não foi
+  reimplementado). Nó com `motor="auto"` recebe a `EngineRouteDecision` como
+  dado (não autoriza nada; o gate continua mandando); dado sensível nunca
+  escolhe nuvem; rota auditada sem vazar o conteúdo da tarefa. 5 testes.
+
+### Security (NH hardening — defeitos achados por auditoria adversarial)
+Auditoria com 5 lentes adversariais; cada achado submetido a 3 céticos
+independentes (26 achados brutos → 9 confirmados por maioria → 7 defeitos
+distintos corrigidos). 15 testes novos em `test_orquestracao_hardening.py`.
+- **A-1 (P0) idempotência deixa de ser declarável pelo plano/LLM**: passa a
+  ser atributo da CAPACIDADE (`registro.idempotente_de()`, default `False`).
+  Antes, um plano hostil que se declarasse idempotente transformava UMA
+  aprovação humana em N execuções reais da ação sensível (o bit governa o
+  retry do NH-004, e o gate decide 1× por nó).
+- **A-2 (P1) classificador de sensibilidade voltou a enxergar tudo**:
+  `_texto_do_no` lia só 5 chaves preferidas (e apenas strings de topo), então
+  bastava uma chave benigna ao lado do segredo — ou um valor aninhado — para
+  `dados_sensiveis=False` e a nuvem voltar a ser elegível. Agora varre todos
+  os params recursivamente: o que o executor recebe é o que se classifica.
+- **A-3 (P2) `depende_de` com tipo errado**: string era iterada
+  caractere-a-caractere (forjando arestas silenciosamente) e valor
+  não-iterável levantava `TypeError` que escapava de `planejar()`. Agora
+  exige lista/tupla; qualquer outra coisa rejeita o passo (fail-closed).
+- **A-4 (P1) evasão da `REGEX_PERIGO`**: params em forma de lista (argv
+  `["rm","-rf","/"]`) e valores aninhados escapados por `json.dumps` (o `\s`
+  dos padrões não casa com `\\n`) passavam. A varredura agora é recursiva,
+  inclui chaves, usa o texto REAL e também a junção de sequências.
+- **A-5 (P2) registro era mutado ANTES do audit**: audit que falhasse deixava
+  capacidade ativa e não auditada. Agora audita primeiro; sem trilha, não
+  registra (e a negação nunca é mascarada por erro de audit).
+- **A-6 (P1) regressão do PRÓPRIO fix A-2/A-4 (rodada 2 da auditoria)**: varrer
+  em profundidade abriu `RecursionError` em params com estrutura CÍCLICA
+  (`a=[]; a.append(a)`) e deixava `__str__` hostil escapar de `planejar()` —
+  ambos derrubavam o processo em vez de rejeitar o passo. Agora há teto de
+  profundidade (12), conjunto de já-vistos por `id`, `_texto_seguro` que nunca
+  levanta e sentinela `INSPECAO_IMPOSSIVEL`: **param que não se deixa
+  inspecionar é tratado como perigoso** (fail-closed). Varredura é defesa —
+  não pode virar o próprio incidente.
+- **A-7 (P1) fail-open aberto pelo próprio A-6 (rodada 2)**: o teto de
+  profundidade devolvia lista vazia / marcador benigno EM SILÊNCIO — bastava
+  enterrar o payload além de 12 níveis para sumir da `REGEX_PERIGO` e do
+  classificador de sensibilidade (o bypass mais barato possível). Agora o
+  corte marca inspeção INCOMPLETA: no planejador vira `INSPECAO_IMPOSSIVEL`
+  (passo rejeitado) e no roteamento o novo `classificar_no()` força
+  `dados_sensiveis=True` (nuvem barrada). `_texto_roteavel` também passou a
+  ler CHAVES de dict e escalares não-string (bytes/int), que antes sumiam.
+- **A-8 (P1) regressão do A-1**: exigir declaração de idempotência matou o
+  retry de TODA a allowlist nativa, sem canal de reparo. Agora nativas
+  derivam da categoria — A0 (leitura local) é seguro repetir por definição;
+  `arquivo_escrever` (A1) e `skill_rodar` (A5) seguem não-idempotentes.
+- **A-9 (P2) revogação travada por audit**: o A-5 inverteu a ordem também no
+  `desregistrar`, e audit quebrado MANTINHA a capacidade ativa. Como revogar
+  REDUZ autoridade, a direção segura da falha é remover: a remoção acontece e
+  o chamador é avisado da trilha incompleta (nunca enganado).
+- **A-10 (P2) falsos positivos criados pelo A-4**: varrer TODA chave reprovava
+  passo honesto (`params={"reboot": False}`) e juntar QUALQUER sequência criava
+  adjacência inexistente (`["...executar DROP", "TABLE clientes..."]` de um log
+  virava `DROP TABLE`). Agora: chave só é varrida quando NÃO parece nome de
+  parâmetro (tem espaço/metacaractere ⇒ é payload, como `{"rm -rf /": True}`),
+  e a junção só ocorre quando a sequência parece argv (elementos sem espaço).
+  O que o A-4 fechou continua fechado — provado por teste.
+- **A-11 (P2) `str()` cru fora de `params`**: o A-6 protegeu só os params;
+  objeto hostil em `id`/`ferramenta`/`motor`/`depende_de`, ou como passo
+  não-dict, ainda escapava de `planejar()` como exceção. Todos passam por
+  `_texto_seguro`; campo não inspecionável rejeita o passo.
+- **A-12** cobertura que faltava: chave sensível ANINHADA (`{"dados": {"cpf":
+  …}}`) agora tem teste — era o ponto cego que o teste original de A-2 não via.
+### Fixed (test-hygiene — isolamento de home; zero mudança de runtime)
+- **tests/test_chat_ux.py** (`test_tema_troca_paleta`): o teste chamava
+  `config.save_agent("Luna")` sem redirecionar o home, então gravava no
+  `~/.nomos/agent.json` REAL do usuário (era o único dos 156 arquivos de teste
+  a escrever no home real — `nomos_home()` usa `NOMOS_HOME`, senão
+  `Path.home()/.nomos`). Contradizia a própria higiene local-first do projeto.
+  Correção: `monkeypatch.setenv("NOMOS_HOME", str(tmp_path))` antes do
+  `save_agent`. Prova RED→GREEN: antes do fix, rodar o teste com `HOME`
+  redirecionado criava `$HOME/.nomos/agent.json`; depois, o home real fica
+  intocado e a escrita vai para o `tmp_path`. Suíte 1974 passed / ruff limpo.
+
 ### Changed (H5.2 — vitrine GitHub: hero visual + galeria; zero mudança de runtime)
 - **README.md**: capa centralizada com o social-preview (1280×640) linkando o
   site, tagline e badges centralizados, barra de navegação rápida (Site ·

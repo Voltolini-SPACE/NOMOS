@@ -96,8 +96,11 @@ def test_demo_nunca_finge(tmp_path):
     assert "modo demo" in tela and "Paris" not in tela
 
 
-def test_tema_troca_paleta(tmp_path):
+def test_tema_troca_paleta(tmp_path, monkeypatch):
     from nomos.kernel import config
+    # Isola o home: sem isto, save_agent() escreve no ~/.nomos REAL do usuário
+    # (nomos_home() usa NOMOS_HOME, senão Path.home()/.nomos) — quebra de higiene local-first.
+    monkeypatch.setenv("NOMOS_HOME", str(tmp_path))
     config.save_agent("Luna")
     _, tela = _chat(["/tema", "2", "/sair"],
                     perfil={"agent_name": "Luna", "modo_cerebro": "demo"}, tmp_path=tmp_path)
