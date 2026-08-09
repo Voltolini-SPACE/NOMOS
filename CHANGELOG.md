@@ -12,6 +12,15 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
   `policy.gate` do kernel como A5_SKILL_INSTALL (sem política ou sem
   aprovador ⇒ negado fail-closed). Desconhecida ⇒ categoria `None`/risco A6.
   Toda mutação auditada (`registro.capacidade.*`). 16 testes.
+- **NH-002 `orquestracao/grafo.py`**: grafo de tarefas com dependências +
+  orquestrador governado. Validação fail-closed na construção (id duplicado,
+  dependência desconhecida, ciclo por Kahn, ferramenta fora do registro ⇒
+  `ErroGrafo`, nada executa); CADA nó passa pelo MESMO `policy.gate` do
+  kernel antes de executar; negação/falha bloqueia dependentes transitivos
+  (ramos independentes seguem); nativas exigem wiring explícito de executor;
+  missão só ok com todos os nós OK; transições auditadas
+  (`orquestracao.no.*`, `orquestracao.missao.*`). Plugs para recuperação
+  (NH-004) e roteamento de motor (NH-007). 14 testes.
 
 ### Changed (H5.2 — vitrine GitHub: hero visual + galeria; zero mudança de runtime)
 - **README.md**: capa centralizada com o social-preview (1280×640) linkando o
