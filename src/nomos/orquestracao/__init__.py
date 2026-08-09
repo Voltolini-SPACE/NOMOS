@@ -11,6 +11,23 @@ POLÍTICA. Todo nó passa pelo MESMO `policy.gate` A0–A6 do kernel antes de
 executar; capacidade desconhecida é negada; negação bloqueia dependentes;
 nenhum caminho novo de autorização é criado aqui.
 """
+from nomos.orquestracao.grafo import (
+    ErroGrafo, GrafoTarefas, No, Orquestrador, ResultadoMissao, ResultadoNo,
+)
+from nomos.orquestracao.planejador import PassoTipado, PlanoTipado, planejar
+from nomos.orquestracao.recuperacao import (
+    GerenciadorRecuperacao, PoliticaRecuperacao,
+)
 from nomos.orquestracao.registro import Capacidade, ErroRegistro, RegistroCapacidades
 
-__all__ = ["Capacidade", "ErroRegistro", "RegistroCapacidades"]
+# `roteamento` fica FORA deste __init__ de propósito: ele importa
+# `cognition.engine_router` (catálogo de motores, política, localidade), que é
+# bem mais pesado que o resto do pacote. Quem precisa de roteamento importa
+# explicitamente `from nomos.orquestracao.roteamento import roteador_de_no`.
+__all__ = [
+    "Capacidade", "ErroRegistro", "RegistroCapacidades",
+    "No", "GrafoTarefas", "Orquestrador", "ErroGrafo",
+    "ResultadoNo", "ResultadoMissao",
+    "planejar", "PlanoTipado", "PassoTipado",
+    "GerenciadorRecuperacao", "PoliticaRecuperacao",
+]
