@@ -21,6 +21,12 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
   missão só ok com todos os nós OK; transições auditadas
   (`orquestracao.no.*`, `orquestracao.missao.*`). Plugs para recuperação
   (NH-004) e roteamento de motor (NH-007). 14 testes.
+- **NH-004 `orquestracao/recuperacao.py`**: recuperação fail-closed — retry
+  SÓ para nó idempotente; backoff exponencial com teto (relógio injetável);
+  circuit-breaker por ferramenta (abre com N falhas consecutivas, sucesso
+  fecha); orçamento global de tentativas por missão (anti retry-storm);
+  exceção nunca escapa. Timeout duro continua no sandbox (não duplicado).
+  Auditoria `recuperacao.*`. 9 testes.
 
 ### Changed (H5.2 — vitrine GitHub: hero visual + galeria; zero mudança de runtime)
 - **README.md**: capa centralizada com o social-preview (1280×640) linkando o
