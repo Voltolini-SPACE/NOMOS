@@ -17,19 +17,36 @@ from typing import Callable
 from nomos.cognition import engine_router as er
 
 
-def _texto_roteavel(valor) -> list[str]:
-    """Strings de um param, recursivamente (dict/list inclusos)."""
+_PROFUNDIDADE_MAX = 12
+_NOS_MAX = 5000
+
+
+def _texto_roteavel(valor, _prof: int = 0, _vistos: set | None = None) -> list[str]:
+    """Strings de um param, recursivamente (dict/list inclusos).
+
+    Teto de profundidade + já-vistos por `id`: estrutura cíclica não pode
+    virar `RecursionError` no meio de uma decisão de roteamento.
+    """
+    if _vistos is None:
+        _vistos = set()
+    if _prof > _PROFUNDIDADE_MAX or len(_vistos) > _NOS_MAX:
+        return []
     if isinstance(valor, str):
         return [valor]
+    if isinstance(valor, (dict, list, tuple, set)):
+        marca = id(valor)
+        if marca in _vistos:
+            return []
+        _vistos.add(marca)
     if isinstance(valor, dict):
         saida: list[str] = []
         for v in valor.values():
-            saida.extend(_texto_roteavel(v))
+            saida.extend(_texto_roteavel(v, _prof + 1, _vistos))
         return saida
     if isinstance(valor, (list, tuple, set)):
         saida = []
         for v in valor:
-            saida.extend(_texto_roteavel(v))
+            saida.extend(_texto_roteavel(v, _prof + 1, _vistos))
         return saida
     return []
 

@@ -223,3 +223,66 @@ def test_audit_ok_registra_normalmente(policy):
     reg.registrar("boa", Category.READ_LOCAL, lambda **kw: "x", "teste")
     assert reg.conhecida("boa")
     assert "registro.capacidade.registrada" in audit.nomes()
+
+
+# ---------- A-6 (P1): varredores recursivos não podem quebrar (auto-achado) ----------
+# Regressão introduzida pelo PRÓPRIO fix A-2/A-4: varrer em profundidade abriu
+# RecursionError em estrutura cíclica e deixou __str__ hostil escapar de
+# planejar(). Fail-closed exige rejeitar o passo, nunca derrubar o processo.
+
+def test_param_ciclico_nao_quebra(registro):
+    registro.registrar("ler", Category.READ_LOCAL, lambda **kw: "x", "teste")
+    ciclo: list = []
+    ciclo.append(ciclo)
+    plano = planejar("x", registro, passos=[
+        {"id": "p1", "ferramenta": "ler", "params": {"loop": ciclo}},
+        {"id": "p2", "ferramenta": "ler"},
+    ])
+    assert plano.ok
+    assert "p2" in [p.id for p in plano.passos]
+
+
+def test_param_dict_ciclico_nao_quebra(registro):
+    registro.registrar("ler", Category.READ_LOCAL, lambda **kw: "x", "teste")
+    d: dict = {}
+    d["eu"] = d
+    plano = planejar("x", registro, passos=[
+        {"id": "p1", "ferramenta": "ler", "params": {"d": d}},
+    ])
+    assert isinstance(plano.ok, bool)          # não levanta
+
+
+def test_param_profundo_nao_quebra(registro):
+    registro.registrar("ler", Category.READ_LOCAL, lambda **kw: "x", "teste")
+    fundo: object = "fim"
+    for _ in range(5000):
+        fundo = [fundo]
+    plano = planejar("x", registro, passos=[
+        {"id": "p1", "ferramenta": "ler", "params": {"f": fundo}},
+    ])
+    assert isinstance(plano.ok, bool)
+
+
+def test_str_hostil_rejeita_passo(registro):
+    """Objeto cujo __str__ levanta não pode derrubar o planejamento."""
+    registro.registrar("ler", Category.READ_LOCAL, lambda **kw: "x", "teste")
+
+    class Hostil:
+        def __str__(self):
+            raise RuntimeError("boom")
+        __repr__ = __str__
+
+    plano = planejar("x", registro, passos=[
+        {"id": "p1", "ferramenta": "ler", "params": {"mau": Hostil()}},
+        {"id": "p2", "ferramenta": "ler"},
+    ])
+    assert plano.ok
+    assert [p.id for p in plano.passos] == ["p2"]
+
+
+def test_roteamento_ciclico_nao_quebra():
+    from nomos.orquestracao.roteamento import _texto_do_no
+    ciclo: list = []
+    ciclo.append(ciclo)
+    texto = _texto_do_no(No("n1", "t", params={"loop": ciclo, "texto": "oi"}))
+    assert "oi" in texto                       # não levanta e mantém o que dá

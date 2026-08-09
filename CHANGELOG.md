@@ -66,6 +66,14 @@ distintos corrigidos). 15 testes novos em `test_orquestracao_hardening.py`.
 - **A-5 (P2) registro era mutado ANTES do audit**: audit que falhasse deixava
   capacidade ativa e não auditada. Agora audita primeiro; sem trilha, não
   registra (e a negação nunca é mascarada por erro de audit).
+- **A-6 (P1) regressão do PRÓPRIO fix A-2/A-4 (rodada 2 da auditoria)**: varrer
+  em profundidade abriu `RecursionError` em params com estrutura CÍCLICA
+  (`a=[]; a.append(a)`) e deixava `__str__` hostil escapar de `planejar()` —
+  ambos derrubavam o processo em vez de rejeitar o passo. Agora há teto de
+  profundidade (12), conjunto de já-vistos por `id`, `_texto_seguro` que nunca
+  levanta e sentinela `INSPECAO_IMPOSSIVEL`: **param que não se deixa
+  inspecionar é tratado como perigoso** (fail-closed). Varredura é defesa —
+  não pode virar o próprio incidente.
 
 ### Changed (H5.2 — vitrine GitHub: hero visual + galeria; zero mudança de runtime)
 - **README.md**: capa centralizada com o social-preview (1280×640) linkando o

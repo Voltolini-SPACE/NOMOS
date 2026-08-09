@@ -78,7 +78,25 @@ class PlanoTipado:
         return GrafoTarefas(nos, registro)
 
 
-def _textos_de(valor) -> list[str]:
+_PROFUNDIDADE_MAX = 12      # além disso, o param é fundo demais para ser plano
+_NOS_MAX = 5000             # teto de nós visitados por param (anti-DoS)
+
+
+# marcador de valor que não se deixou inspecionar; presença ⇒ passo rejeitado
+# (fail-closed: o que não dá para examinar não passa)
+INSPECAO_IMPOSSIVEL = "\x00<nomos:inconvertível>"
+
+
+def _texto_seguro(valor) -> str:
+    """`str(valor)` que nunca levanta — objeto com `__str__` hostil vira
+    marcador opaco em vez de derrubar o planejamento."""
+    try:
+        return str(valor)
+    except Exception:
+        return INSPECAO_IMPOSSIVEL
+
+
+def _textos_de(valor, _prof: int = 0, _vistos: set | None = None) -> list[str]:
     """Todas as formas textuais de um param, recursivamente.
 
     Achado da auditoria adversarial: `json.dumps` de valor aninhado ESCAPA o
@@ -87,34 +105,57 @@ def _textos_de(valor) -> list[str]:
     perigosa. Por isso: (a) descemos em dict/list extraindo cada string com o
     whitespace REAL; (b) juntamos os elementos de sequência com espaço, que é
     como um executor de shell os reconstruiria.
+
+    Rodada 2 da auditoria (auto-achado): descer em profundidade abriu
+    `RecursionError` em estrutura CÍCLICA e permitia `__str__` hostil escapar.
+    Daí o teto de profundidade, o conjunto de já-vistos (por `id`) e o
+    `_texto_seguro` — varrer é defesa, não pode virar o próprio incidente.
     """
+    if _vistos is None:
+        _vistos = set()
+    if _prof > _PROFUNDIDADE_MAX or len(_vistos) > _NOS_MAX:
+        return ["<profundo demais>"]
     if isinstance(valor, str):
         return [valor]
+    if isinstance(valor, (dict, list, tuple, set)):
+        marca = id(valor)
+        if marca in _vistos:
+            return ["<ciclo>"]
+        _vistos.add(marca)
     if isinstance(valor, dict):
         saida: list[str] = []
         for k, v in valor.items():
-            saida.append(str(k))
-            saida.extend(_textos_de(v))
+            saida.append(_texto_seguro(k))
+            saida.extend(_textos_de(v, _prof + 1, _vistos))
         return saida
     if isinstance(valor, (list, tuple, set)):
         itens = list(valor)
         partes: list[str] = []
         for v in itens:
-            partes.extend(_textos_de(v))
+            partes.extend(_textos_de(v, _prof + 1, _vistos))
         # a junção é o que reconstrói 'rm -rf /' a partir de ['rm','-rf','/']
-        return partes + [" ".join(str(x) for x in itens)]
-    return [str(valor)]
+        return partes + [" ".join(_texto_seguro(x) for x in itens)]
+    return [_texto_seguro(valor)]
 
 
 def _param_perigoso(params: dict) -> str:
     """Nome do 1º padrão perigoso encontrado (ou ''). Varre valores E chaves,
-    em profundidade, sempre com o texto real (nunca só o JSON escapado)."""
+    em profundidade, sempre com o texto real (nunca só o JSON escapado).
+    Param que não dá nem para inspecionar é tratado como perigoso (fail-closed)."""
     textos: list[str] = []
     for chave, valor in params.items():
-        textos.append(str(chave))
-        textos.extend(_textos_de(valor))
-        textos.append(json.dumps(valor, default=str))   # cinto e suspensório
+        textos.append(_texto_seguro(chave))
+        try:
+            textos.extend(_textos_de(valor))
+        except Exception:
+            return "param não inspecionável"
+        try:
+            textos.append(json.dumps(valor, default=_texto_seguro))
+        except (TypeError, ValueError, RecursionError):
+            pass                      # a varredura acima já cobriu o conteúdo
     for texto in textos:
+        if INSPECAO_IMPOSSIVEL in texto:
+            return "param não inspecionável"
         for rx in REGEX_PERIGO:
             if rx.search(texto):
                 return rx.pattern
