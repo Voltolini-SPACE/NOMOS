@@ -36,6 +36,7 @@ class Capacidade:
     executor: Callable | None
     origem: str
     nativa: bool
+    idempotente: bool = False   # repetir é seguro? default conservador
 
 
 def _risco(categoria: Category | None) -> str:
@@ -68,6 +69,13 @@ class RegistroCapacidades:
     def risco_de(self, nome: str) -> str:
         return _risco(self.categoria_de(nome))
 
+    def idempotente_de(self, nome: str) -> bool:
+        """Repetir esta capacidade é seguro? Propriedade da CAPACIDADE, nunca
+        do plano — é o que autoriza retry (NH-004). Desconhecida/nativa sem
+        declaração ⇒ False (repetir efeito colateral às cegas é pior que falhar)."""
+        cap = self._dinamicas.get(nome)
+        return bool(cap.idempotente) if cap else False
+
     def executor_de(self, nome: str) -> Callable | None:
         """Executor de capacidade DINÂMICA. Nativas devolvem None de propósito:
         a execução delas continua no wiring explícito (`agents/execucao`)."""
@@ -87,12 +95,21 @@ class RegistroCapacidades:
     # ---------- mutação (governada, auditada) ----------
 
     def _negar(self, nome: str, motivo: str) -> ErroRegistro:
+        """A negação já é o resultado seguro; audit que falha não pode
+        transformá-la noutra exceção — mas também não é engolida em silêncio:
+        vai anexada ao motivo."""
+        extra = ""
         if self.audit is not None:
-            self.audit.append("registro.capacidade.negada", capacidade=nome, motivo=motivo)
-        return ErroRegistro(f"registro de '{nome}' negado: {motivo}")
+            try:
+                self.audit.append("registro.capacidade.negada", capacidade=nome,
+                                  motivo=motivo)
+            except Exception as exc:
+                extra = f" (audit indisponível: {type(exc).__name__})"
+        return ErroRegistro(f"registro de '{nome}' negado: {motivo}{extra}")
 
     def registrar(self, nome: str, categoria: Category | str,
-                  executor: Callable, origem: str) -> Capacidade:
+                  executor: Callable, origem: str,
+                  idempotente: bool = False) -> Capacidade:
         if not isinstance(nome, str) or not NOME_RE.match(nome or ""):
             raise self._negar(str(nome), "nome inválido (minúsculas, dígitos e hífen; 2–32)")
         if nome in FERRAMENTAS:
@@ -114,11 +131,20 @@ class RegistroCapacidades:
         if not gate(decisao, self.approver):
             raise self._negar(nome, f"gate negou ({decisao.reason})")
         cap = Capacidade(nome=nome, categoria=categoria, executor=executor,
-                         origem=origem, nativa=False)
-        self._dinamicas[nome] = cap
+                         origem=origem, nativa=False,
+                         idempotente=bool(idempotente))
+        # auditar ANTES de mutar: se não dá para registrar a trilha, não se
+        # registra a capacidade (senão sobraria capacidade ativa e invisível)
         if self.audit is not None:
-            self.audit.append("registro.capacidade.registrada", capacidade=nome,
-                              categoria=categoria.value, origem=origem)
+            try:
+                self.audit.append("registro.capacidade.registrada", capacidade=nome,
+                                  categoria=categoria.value, origem=origem,
+                                  idempotente=bool(idempotente))
+            except Exception as exc:
+                raise ErroRegistro(
+                    f"registro de '{nome}' negado: audit indisponível "
+                    f"({type(exc).__name__})") from None
+        self._dinamicas[nome] = cap
         return cap
 
     def desregistrar(self, nome: str) -> None:
@@ -126,6 +152,11 @@ class RegistroCapacidades:
             raise self._negar(nome, "remover ferramenta nativa é proibido")
         if nome not in self._dinamicas:
             raise self._negar(nome, "capacidade desconhecida")
-        del self._dinamicas[nome]
         if self.audit is not None:
-            self.audit.append("registro.capacidade.removida", capacidade=nome)
+            try:
+                self.audit.append("registro.capacidade.removida", capacidade=nome)
+            except Exception as exc:
+                raise ErroRegistro(
+                    f"remoção de '{nome}' negada: audit indisponível "
+                    f"({type(exc).__name__})") from None
+        del self._dinamicas[nome]

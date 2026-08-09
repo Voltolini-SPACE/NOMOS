@@ -17,15 +17,36 @@ from typing import Callable
 from nomos.cognition import engine_router as er
 
 
+def _texto_roteavel(valor) -> list[str]:
+    """Strings de um param, recursivamente (dict/list inclusos)."""
+    if isinstance(valor, str):
+        return [valor]
+    if isinstance(valor, dict):
+        saida: list[str] = []
+        for v in valor.values():
+            saida.extend(_texto_roteavel(v))
+        return saida
+    if isinstance(valor, (list, tuple, set)):
+        saida = []
+        for v in valor:
+            saida.extend(_texto_roteavel(v))
+        return saida
+    return []
+
+
 def _texto_do_no(no) -> str:
-    """Extrai o texto roteável dos params (sem inventar; concatena valores str)."""
-    partes = []
-    for chave in ("texto", "prompt", "objetivo", "conteudo", "pergunta"):
-        v = no.params.get(chave)
-        if isinstance(v, str):
-            partes.append(v)
-    if not partes:                     # fallback: qualquer valor textual
-        partes = [v for v in no.params.values() if isinstance(v, str)]
+    """Texto a classificar = TUDO que o executor vai receber.
+
+    Achado da auditoria adversarial: a versão anterior lia só 5 chaves
+    preferidas e caía no resto apenas se elas nada rendessem — bastava uma
+    chave benigna (`texto`) ao lado do segredo (`anexo`) para o classificador
+    de sensibilidade ficar cego e a nuvem voltar a ser elegível. Valores
+    aninhados também nunca eram lidos. O executor recebe o dict inteiro, logo
+    a classificação tem de ver o dict inteiro.
+    """
+    partes: list[str] = []
+    for valor in no.params.values():
+        partes.extend(_texto_roteavel(valor))
     return " ".join(partes)
 
 

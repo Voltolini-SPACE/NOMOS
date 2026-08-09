@@ -78,10 +78,43 @@ class PlanoTipado:
         return GrafoTarefas(nos, registro)
 
 
+def _textos_de(valor) -> list[str]:
+    """Todas as formas textuais de um param, recursivamente.
+
+    Achado da auditoria adversarial: `json.dumps` de valor aninhado ESCAPA o
+    whitespace real (`\\n` vira `\\\\n`), furando todo padrão que depende de
+    `\\s`; e uma lista tipo argv (`["rm","-rf","/"]`) nunca formava a string
+    perigosa. Por isso: (a) descemos em dict/list extraindo cada string com o
+    whitespace REAL; (b) juntamos os elementos de sequência com espaço, que é
+    como um executor de shell os reconstruiria.
+    """
+    if isinstance(valor, str):
+        return [valor]
+    if isinstance(valor, dict):
+        saida: list[str] = []
+        for k, v in valor.items():
+            saida.append(str(k))
+            saida.extend(_textos_de(v))
+        return saida
+    if isinstance(valor, (list, tuple, set)):
+        itens = list(valor)
+        partes: list[str] = []
+        for v in itens:
+            partes.extend(_textos_de(v))
+        # a junção é o que reconstrói 'rm -rf /' a partir de ['rm','-rf','/']
+        return partes + [" ".join(str(x) for x in itens)]
+    return [str(valor)]
+
+
 def _param_perigoso(params: dict) -> str:
-    """Nome do 1º padrão perigoso encontrado nos valores (ou '')."""
-    for valor in params.values():
-        texto = valor if isinstance(valor, str) else json.dumps(valor, default=str)
+    """Nome do 1º padrão perigoso encontrado (ou ''). Varre valores E chaves,
+    em profundidade, sempre com o texto real (nunca só o JSON escapado)."""
+    textos: list[str] = []
+    for chave, valor in params.items():
+        textos.append(str(chave))
+        textos.extend(_textos_de(valor))
+        textos.append(json.dumps(valor, default=str))   # cinto e suspensório
+    for texto in textos:
         for rx in REGEX_PERIGO:
             if rx.search(texto):
                 return rx.pattern
@@ -158,11 +191,22 @@ def planejar(objetivo: str, registro: RegistroCapacidades,
         if padrao:
             _rejeitar(pid, f"param perigoso (padrão {padrao!r})")
             continue
-        depende_de = tuple(str(d) for d in (bruto.get("depende_de") or ()))
+        # `depende_de` PRECISA ser sequência: string era iterada
+        # caractere-a-caractere (forjando arestas silenciosamente) e valor
+        # não-iterável levantava TypeError que escapava de planejar()
+        bruto_dep = bruto.get("depende_de") or ()
+        if isinstance(bruto_dep, str) or not isinstance(bruto_dep, (list, tuple)):
+            _rejeitar(pid, "depende_de precisa ser lista de ids")
+            continue
+        depende_de = tuple(str(d) for d in bruto_dep)
         aceitos[pid] = PassoTipado(
             id=pid, ferramenta=ferramenta, categoria=categoria, params=params,
             depende_de=depende_de, motor=str(bruto.get("motor", "")),
-            idempotente=bool(bruto.get("idempotente", False)))
+            # idempotência é atributo da CAPACIDADE, nunca do plano: é o bit
+            # que autoriza repetir efeito colateral (NH-004). Um plano hostil
+            # que se declarasse idempotente transformaria 1 aprovação humana
+            # em N execuções reais da ação sensível.
+            idempotente=registro.idempotente_de(ferramenta))
 
     # dependente de passo rejeitado/ausente cai junto (transitivo, até fixar)
     mudou = True

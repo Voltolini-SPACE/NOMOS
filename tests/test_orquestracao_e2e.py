@@ -37,8 +37,10 @@ def ambiente(tmp_path):
     audit = AuditFake()
     reg = RegistroCapacidades(policy=policy, approver=lambda d: True, audit=audit)
     trilha: list[str] = []
+    # idempotência é declarada pela CAPACIDADE (hardening A-1), não pelo plano
     reg.registrar("coletar", Category.READ_LOCAL,
-                  lambda **kw: trilha.append("coletar") or "dados", "e2e")
+                  lambda **kw: trilha.append("coletar") or "dados", "e2e",
+                  idempotente=True)
     reg.registrar("analisar", Category.READ_LOCAL,
                   lambda **kw: trilha.append("analisar") or "analise", "e2e")
     reg.registrar("salvar", Category.WRITE_LOCAL,
@@ -49,7 +51,7 @@ def ambiente(tmp_path):
 def test_e2e_fluxo_feliz(ambiente):
     policy, reg, audit, trilha, home = ambiente
     plano = planejar("relatório diário", reg, passos=[
-        {"id": "c", "ferramenta": "coletar", "idempotente": True},
+        {"id": "c", "ferramenta": "coletar"},
         {"id": "a", "ferramenta": "analisar", "depende_de": ["c"], "motor": "auto",
          "params": {"texto": "resuma os dados coletados"}},
         {"id": "s", "ferramenta": "salvar", "depende_de": ["a"]},
@@ -100,7 +102,7 @@ def test_e2e_recupera_falha_transiente(ambiente):
                                                         backoff_base=0),
                            audit=audit, dormir=lambda s: None))
     plano = planejar("coletar com rede ruim", reg, passos=[
-        {"id": "c", "ferramenta": "coletar", "idempotente": True},
+        {"id": "c", "ferramenta": "coletar"},
     ])
     r = orq.executar(plano.para_grafo(reg))
     assert r.ok

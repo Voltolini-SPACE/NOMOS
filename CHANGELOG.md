@@ -41,6 +41,32 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
   dado (não autoriza nada; o gate continua mandando); dado sensível nunca
   escolhe nuvem; rota auditada sem vazar o conteúdo da tarefa. 5 testes.
 
+### Security (NH hardening — defeitos achados por auditoria adversarial)
+Auditoria com 5 lentes adversariais; cada achado submetido a 3 céticos
+independentes (26 achados brutos → 9 confirmados por maioria → 7 defeitos
+distintos corrigidos). 15 testes novos em `test_orquestracao_hardening.py`.
+- **A-1 (P0) idempotência deixa de ser declarável pelo plano/LLM**: passa a
+  ser atributo da CAPACIDADE (`registro.idempotente_de()`, default `False`).
+  Antes, um plano hostil que se declarasse idempotente transformava UMA
+  aprovação humana em N execuções reais da ação sensível (o bit governa o
+  retry do NH-004, e o gate decide 1× por nó).
+- **A-2 (P1) classificador de sensibilidade voltou a enxergar tudo**:
+  `_texto_do_no` lia só 5 chaves preferidas (e apenas strings de topo), então
+  bastava uma chave benigna ao lado do segredo — ou um valor aninhado — para
+  `dados_sensiveis=False` e a nuvem voltar a ser elegível. Agora varre todos
+  os params recursivamente: o que o executor recebe é o que se classifica.
+- **A-3 (P2) `depende_de` com tipo errado**: string era iterada
+  caractere-a-caractere (forjando arestas silenciosamente) e valor
+  não-iterável levantava `TypeError` que escapava de `planejar()`. Agora
+  exige lista/tupla; qualquer outra coisa rejeita o passo (fail-closed).
+- **A-4 (P1) evasão da `REGEX_PERIGO`**: params em forma de lista (argv
+  `["rm","-rf","/"]`) e valores aninhados escapados por `json.dumps` (o `\s`
+  dos padrões não casa com `\\n`) passavam. A varredura agora é recursiva,
+  inclui chaves, usa o texto REAL e também a junção de sequências.
+- **A-5 (P2) registro era mutado ANTES do audit**: audit que falhasse deixava
+  capacidade ativa e não auditada. Agora audita primeiro; sem trilha, não
+  registra (e a negação nunca é mascarada por erro de audit).
+
 ### Changed (H5.2 — vitrine GitHub: hero visual + galeria; zero mudança de runtime)
 - **README.md**: capa centralizada com o social-preview (1280×640) linkando o
   site, tagline e badges centralizados, barra de navegação rápida (Site ·
