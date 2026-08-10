@@ -470,9 +470,9 @@ def cmd_agentes(ctx, args) -> int:
 
 def cmd_agente_usar(ctx, args) -> int:
     from nomos.simple.erros import fmt
-    from nomos.agents.boundary import AgentToolBoundary
     from nomos.agents.execucao import ferramentas_wired
     from nomos.agents.manifest import FERRAMENTAS
+    from nomos.runtime.governado import usar_ferramenta_governada
     reg = _agent_registry(ctx)
     mf = reg.obter(args.nome)
     if not mf:
@@ -510,12 +510,15 @@ def cmd_agente_usar(ctx, args) -> int:
             print(fmt("E003", f"'{args.ferramenta}' não é uma ferramenta "
                               "conhecida"), file=sys.stderr)
         return EXIT_ERROR
-    # o MESMO AgentToolBoundary testado no Horizonte 1/2 — nenhum caminho de
-    # autorização novo; fora do manifesto ou sem aprovação => negado.
-    boundary = AgentToolBoundary(mf, ctx["policy"], aprovador, audit=ctx["audit"])
-    ok, resultado = boundary.usar_ferramenta(args.ferramenta,
-                                             wired[args.ferramenta],
-                                             alvo=args.alvo or "")
+    # ABSORPTION-02/FASE 1: esta rota era boundary-only — gate A0–A6 sim, mas
+    # sem token assinado, escopo, TTL, nonce ou anti-replay. Agora atravessa a
+    # MESMA cadeia governada do runtime: registry → PDP → PEP → boundary →
+    # adapter. Nenhuma política nova; `usar_ferramenta_governada` reusa a
+    # `sessao_pdp` do runtime e o boundary continua lá dentro.
+    ok, resultado = usar_ferramenta_governada(
+        ctx, mf, args.ferramenta, alvo=args.alvo or "",
+        conteudo=getattr(args, "conteudo", "") or "",
+        aprovador=aprovador, router=router, sem_motor=sem_motor)
     if not ok:
         print(resultado, file=sys.stderr)
         return EXIT_DENIED

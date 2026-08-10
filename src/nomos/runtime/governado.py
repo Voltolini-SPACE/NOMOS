@@ -153,6 +153,98 @@ def executores_nativos(ctx, aprovador=None, router=None,
     return {nome: _fazer(nome) for nome in FERRAMENTAS if nome in mf.ferramentas}
 
 
+def sessao_pdp(registro, manifesto, audit=None, ttl_s: int = 3600):
+    """(decisor, autorização) de SESSÃO para um manifesto. **Fonte única.**
+
+    Usada tanto pelo `RuntimeGovernado` quanto pelo caminho de ferramenta
+    única (`usar_ferramenta_governada`). Existe uma só para que não apareça
+    um `legacy_pdp`/`simple_policy` paralelo: quem quiser governar execução
+    passa por aqui.
+
+    A autorização é escopada pelo MANIFESTO — capacidades = as declaradas,
+    teto de risco = `risco_max` do manifesto. Um agente que só declara
+    `arquivo_ler` recebe autorização para exatamente isso.
+    """
+    from datetime import timedelta
+
+    from nomos.pdp.autorizacao import ArmazemNonce, Autorizacao, Chaveiro, agora_utc
+    from nomos.pdp.decisor import Decisor
+
+    chaveiro = Chaveiro({"sessao": secrets.token_bytes(32)})
+    decisor = Decisor(chaveiro, registro, audiencia=AUDIENCIA_RUNTIME,
+                      armazem_nonce=ArmazemNonce(), audit=audit)
+    agora = agora_utc()
+    autorizacao = chaveiro.assinar(Autorizacao(
+        capacidades=tuple(manifesto.ferramentas),
+        sujeito=manifesto.name,
+        audiencia=AUDIENCIA_RUNTIME,
+        emitida_em=agora,
+        expira_em=agora + timedelta(seconds=ttl_s),
+        risco_max=manifesto.risco_max,
+        jti=secrets.token_hex(8)), "sessao")
+    return decisor, autorizacao
+
+
+def usar_ferramenta_governada(ctx, manifesto, ferramenta: str, *, alvo: str = "",
+                              conteudo: str = "", aprovador=None, router=None,
+                              sem_motor: bool = False,
+                              decisor=None, autorizacao=None) -> tuple[bool, object]:
+    """UMA ferramenta pela cadeia governada completa (ABSORPTION-02 / FASE 1).
+
+        caller → registry → PDP → PEP → AgentToolBoundary → adapter → efeito
+
+    Este é o caminho que `nomos agentes usar` e a conversa amigável passaram a
+    usar. Antes eles chamavam o boundary direto: gate A0–A6 sim, mas sem token
+    assinado, escopo, TTL, nonce ou anti-replay. Nenhuma política nova foi
+    criada aqui — é a MESMA `sessao_pdp` do runtime.
+
+    Devolve `(ok, resultado|motivo)`, no mesmo contrato que o boundary já
+    entregava, para os chamadores não precisarem mudar de forma.
+    """
+    from nomos.agents.boundary import AgentToolBoundary
+    from nomos.pdp.decisor import Pedido
+    from nomos.pdp.pep import NegadoPeloPEP
+
+    # 1. identidade/contexto ANTES do PDP: a ferramenta pertence a este agente?
+    #    Quem responde continua sendo o boundary, com a mensagem e o evento de
+    #    auditoria (`agente.ferramenta.negada`) que já existiam — o caminho
+    #    governado não pode piorar o diagnóstico de "não é sua ferramenta".
+    boundary = AgentToolBoundary(manifesto, ctx["policy"], aprovador,
+                                 audit=ctx.get("audit"))
+    if not boundary.permitido(ferramenta):
+        def _nunca_executa():                      # não é chamado: fora do manifesto
+            raise ErroRuntime("executor inalcançável")
+        return boundary.usar_ferramenta(ferramenta, _nunca_executa, alvo=alvo or "")
+
+    registro = RegistroCapacidades(policy=ctx["policy"], approver=aprovador,
+                                   audit=ctx.get("audit"))
+    if decisor is None or autorizacao is None:
+        d, a = sessao_pdp(registro, manifesto, audit=ctx.get("audit"))
+        decisor = decisor or d
+        autorizacao = autorizacao or a
+
+    brutos = executores_nativos(ctx, aprovador=aprovador, router=router,
+                                sem_motor=sem_motor, manifesto=manifesto)
+    if ferramenta not in brutos:
+        # está no manifesto mas sem wiring nesta versão ⇒ falha fechada
+        return False, (f"'{ferramenta}' está no manifesto de "
+                       f"'{manifesto.name}' mas não tem execução ligada "
+                       "nesta versão")
+    peps = proteger_executores(brutos, decisor, audit=ctx.get("audit"))
+    pedido = Pedido(capacidade=ferramenta, sujeito=manifesto.name,
+                    recurso=alvo or "",
+                    argumentos={"alvo": alvo or "", "conteudo": conteudo or ""},
+                    nonce=secrets.token_hex(16))
+    try:
+        return True, peps[ferramenta](pedido, autorizacao,
+                                      alvo=alvo or "", conteudo=conteudo or "")
+    except NegadoPeloPEP as exc:
+        return False, str(exc)
+    except ErroRuntime as exc:
+        # negação do boundary chega embrulhada — continua sendo negação
+        return False, str(exc)
+
+
 def proteger_executores(executores: dict[str, Callable], decisor,
                         audit=None) -> dict[str, "PontoDeAplicacao"]:
     """Embrulha cada executor num PEP. Devolve capacidade → PontoDeAplicacao.
@@ -208,32 +300,11 @@ class RuntimeGovernado:
 
     def _preparar_pdp(self, decisor, autorizacao, ttl_s: int):
         """Decisor + autorização de sessão. Ambos obrigatórios para executar."""
-        from datetime import timedelta
-
-        from nomos.pdp.autorizacao import (
-            ArmazemNonce, Autorizacao, Chaveiro, agora_utc,
-        )
-        from nomos.pdp.decisor import Decisor
-
         if decisor is not None and autorizacao is not None:
             return decisor, autorizacao
-        chaveiro = Chaveiro({"sessao": secrets.token_bytes(32)})
-        if decisor is None:
-            decisor = Decisor(chaveiro, self.registro,
-                              audiencia=AUDIENCIA_RUNTIME,
-                              armazem_nonce=ArmazemNonce(),
-                              audit=self.audit)
-        if autorizacao is None:
-            agora = agora_utc()
-            autorizacao = chaveiro.assinar(Autorizacao(
-                capacidades=tuple(self.manifesto.ferramentas),
-                sujeito=self.manifesto.name,
-                audiencia=AUDIENCIA_RUNTIME,
-                emitida_em=agora,
-                expira_em=agora + timedelta(seconds=ttl_s),
-                risco_max=self.manifesto.risco_max,
-                jti=secrets.token_hex(8)), "sessao")
-        return decisor, autorizacao
+        d, a = sessao_pdp(self.registro, self.manifesto, audit=self.audit,
+                          ttl_s=ttl_s)
+        return (decisor or d), (autorizacao or a)
 
     def _adaptar(self, nome: str, pep) -> Callable:
         """Converte o PEP ao contrato `executor(**params)` do Orquestrador.

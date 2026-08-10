@@ -537,12 +537,13 @@ def test_rotas_ate_o_adapter_sao_exatamente_estas():
     aplicador — `AgentToolBoundary` (gate A0–A6 + manifesto) e/ou o PEP de
     capacidade. Rota nova sem aplicador quebra este teste.
 
-    Estado honesto hoje:
-    - `runtime/governado.py`: boundary **e** PDP/PEP de capacidade;
-    - `cli.py` (`nomos agentes usar`) e `simple/amigavel.py`: boundary apenas.
-      Não são bypass do A0–A6 (o gate do kernel decide e nega), mas NÃO
-      atravessam o PDP de token/escopo/TTL/replay. Fechar essas duas é item
-      declarado da ABSORPTION-02 — aqui fica registrado, não escondido.
+    Estado após ABSORPTION-02/FASE 1: **zero rotas boundary-only**.
+    - `runtime/governado.py`: boundary + PDP/PEP (runtime e ferramenta única);
+    - `cli.py` (`nomos agentes usar`): delega a `usar_ferramenta_governada`;
+    - `simple/amigavel.py`: saiu da lista — não alcança mais o adapter sozinho.
+
+    Uma rota nova, ou uma rota que volte a chamar o executor sem aplicador,
+    quebra este teste.
     """
     import pathlib
     raiz = pathlib.Path(__file__).resolve().parents[1] / "src" / "nomos"
@@ -555,14 +556,16 @@ def test_rotas_ate_o_adapter_sao_exatamente_estas():
             if "from nomos.agents.execucao import" in txt:
                 rotas[arq.relative_to(raiz).as_posix()] = txt
 
-    assert set(rotas) == {"cli.py", "runtime/governado.py", "simple/amigavel.py"}, (
+    assert set(rotas) == {"cli.py", "runtime/governado.py"}, (
         f"conjunto de rotas até o adapter mudou: {sorted(rotas)}")
 
     for nome, txt in rotas.items():
         assert "AgentToolBoundary" in txt, f"{nome} alcança o adapter sem boundary"
 
-    # a rota do runtime é a única que hoje soma o PDP de capacidade
+    # e agora TODA rota também atravessa o PDP de capacidade
     assert "proteger_executores" in rotas["runtime/governado.py"]
+    assert "usar_ferramenta_governada" in rotas["cli.py"], (
+        "cli.py voltou a chamar o executor sem passar pelo caminho governado")
 
 
 def test_default_deny_e_a_regra(tmp_path):
