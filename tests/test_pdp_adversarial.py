@@ -529,6 +529,42 @@ def test_decisao_do_pdp_fica_na_trilha(tmp_path):
     assert eventos.index("pdp.decisao") < eventos.index("pep.aplicacao")
 
 
+def test_rotas_ate_o_adapter_sao_exatamente_estas():
+    """DIRECT ROUTE BYPASS — censo estrutural, não impressão.
+
+    Enumera TODO módulo de `src/` que alcança `ferramentas_wired` (o dispatch
+    dos 8 executores) e fixa a lista. Cada rota precisa referenciar um
+    aplicador — `AgentToolBoundary` (gate A0–A6 + manifesto) e/ou o PEP de
+    capacidade. Rota nova sem aplicador quebra este teste.
+
+    Estado honesto hoje:
+    - `runtime/governado.py`: boundary **e** PDP/PEP de capacidade;
+    - `cli.py` (`nomos agentes usar`) e `simple/amigavel.py`: boundary apenas.
+      Não são bypass do A0–A6 (o gate do kernel decide e nega), mas NÃO
+      atravessam o PDP de token/escopo/TTL/replay. Fechar essas duas é item
+      declarado da ABSORPTION-02 — aqui fica registrado, não escondido.
+    """
+    import pathlib
+    raiz = pathlib.Path(__file__).resolve().parents[1] / "src" / "nomos"
+    rotas = {}
+    for arq in raiz.rglob("*.py"):
+        if arq.name == "execucao.py":
+            continue                       # é o próprio adapter
+        txt = arq.read_text(encoding="utf-8")
+        if "ferramentas_wired(" in txt and "import" in txt:
+            if "from nomos.agents.execucao import" in txt:
+                rotas[arq.relative_to(raiz).as_posix()] = txt
+
+    assert set(rotas) == {"cli.py", "runtime/governado.py", "simple/amigavel.py"}, (
+        f"conjunto de rotas até o adapter mudou: {sorted(rotas)}")
+
+    for nome, txt in rotas.items():
+        assert "AgentToolBoundary" in txt, f"{nome} alcança o adapter sem boundary"
+
+    # a rota do runtime é a única que hoje soma o PDP de capacidade
+    assert "proteger_executores" in rotas["runtime/governado.py"]
+
+
 def test_default_deny_e_a_regra(tmp_path):
     """Qualquer coisa que não seja ALLOW explícito é DENY."""
     chaveiro = _chaveiro()
