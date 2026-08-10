@@ -321,3 +321,37 @@ def test_p2_nao_idempotente_nao_ganha_retry_automatico():
         else:
             assert not pode_repetir_sozinho(nome), (
                 f"{nome} ({cat}) ganharia retry automático indeterminado")
+
+
+def test_p2_mesma_ocorrencia_negada_duas_vezes_conta_uma(tmp_path):
+    """A reserva precede a negação — e é ela que impede contagem dupla.
+
+    Mutação achou a lacuna: remover a reserva do caminho de negação não
+    quebrava nenhum teste, porque nenhum deles negava a MESMA ocorrência duas
+    vezes. Sem a reserva, um despacho repetido gravaria duas negações e
+    emitiria dois eventos para um único fato — a mesma família do efeito
+    duplicado, só que na trilha em vez de no mundo.
+    """
+    import json
+
+    from nomos.kernel.audit import AuditLog
+    trilha = AuditLog(tmp_path / "audit.jsonl")
+    s = Scheduler(ArmazemJobs(tmp_path / "jobs.db"),
+                  executor=lambda d, i, credencial=None: None,
+                  audit=trilha, agora_fn=lambda: T0)
+    s.criar("j", "sujeito", "fs-listar", intervalo_s=60)
+    d = s.armazem.obter("j")
+    inst = JobInstance(job_id="j", ocorrencia=d.proximo_em.isoformat())
+
+    primeira = s.negar_ocorrencia(d, inst, T0, "recusado")
+    segunda = s.negar_ocorrencia(s.armazem.obter("j"), inst, T0, "recusado")
+    assert primeira.estado_final is JobState.DENIED
+    assert segunda.estado_final is JobState.DENIED
+    assert "dedup" in segunda.detalhe, (
+        "segunda negação da MESMA ocorrência não foi deduplicada")
+
+    eventos = [json.loads(x).get("event") for x in
+               (tmp_path / "audit.jsonl").read_text().splitlines() if x.strip()]
+    assert eventos.count("scheduler.ocorrencia.negada") == 1, (
+        f"a mesma ocorrência gerou {eventos.count('scheduler.ocorrencia.negada')} "
+        "eventos de negação")
