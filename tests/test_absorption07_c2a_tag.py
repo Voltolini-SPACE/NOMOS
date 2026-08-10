@@ -302,3 +302,39 @@ def test_c2a_passa_por_pdp_e_pep(amb):
           (ctx["home"] / "logs" / "audit.jsonl").read_text().splitlines()
           if x.strip()]
     assert ev.index("pdp.decisao") < ev.index("pep.aplicacao") < ev.index("git.tag")
+
+
+def test_c2a_registrar_sem_raizes_falha_fechado():
+    """Sem escopo, `alvo` seria qualquer repositório do disco.
+
+    Lacuna encontrada por mutação: eu tinha o teste equivalente para
+    `registrar_git` (leitura) e simplesmente não escrevi o de escrita. O
+    mutante que remove a checagem sobrevivia porque nada a exercitava.
+    """
+    from nomos.adapters.wiring import registrar_git_write
+    with pytest.raises(ValueError, match="raizes"):
+        registrar_git_write(object(), raizes=())
+
+
+def test_c2a_gramatica_positiva_recusa_hifen_SOZINHA():
+    """Prova de EQUIVALÊNCIA do mutante "tag aceita hífen".
+
+    O mutante remove `(^-)` de `_TAG_PROIBIDO`. Ele sobrevive porque
+    `_TAG_OK` — que exige `[A-Za-z0-9]` no primeiro caractere — já recusa
+    tudo que começa com `-`. As duas checagens se sobrepõem nesse ponto de
+    propósito: a primeira dá a MENSAGEM que explica o perigo, a segunda é o
+    piso. Nenhuma entrada com `-` inicial atravessa só uma delas.
+
+    Este teste congela a sobreposição, para que remover uma das duas não passe
+    despercebido caso a outra também mude.
+    """
+
+    from nomos.adapters.git_write import _TAG_OK
+    for hostil in ("-d", "-f", "--delete", "--force", "-a", "-s", "-m",
+                   "--sign", "-", "-x", "--", "-HEAD"):
+        assert not _TAG_OK.match(hostil), (
+            f"{hostil!r} passaria pela gramática positiva sozinha — a "
+            "sobreposição que torna o mutante equivalente deixou de existir")
+    assert _TAG_OK.pattern.startswith("^[A-Za-z0-9]"), (
+        "a gramática positiva deixou de ancorar no primeiro caractere; o "
+        "mutante do hífen passa a ser REAL e precisa morrer por teste próprio")

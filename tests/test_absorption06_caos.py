@@ -227,20 +227,28 @@ def test_armazem_corrompido_falha_fechado_nao_relata_zero_jobs(tmp_path):
         f"levantou por outro motivo: {exc.value!r}")
 
 
-def test_wal_intacto_recupera_o_arquivo_principal_corrompido(tmp_path):
-    """A contraparte: o WAL é durabilidade real, não detalhe de implementação.
-
-    Corromper só o arquivo principal NÃO perde jobs enquanto o `-wal` estiver
-    lá. Vale registrar porque é a diferença entre "o armazém é frágil" e "o
-    armazém aguenta o arquivo principal ser danificado" — e porque foi o que
-    fez a primeira versão deste teste passar pelo motivo errado.
-    """
-    caminho = tmp_path / "jobs.db"
-    s = Scheduler(ArmazemJobs(caminho), executor=lambda *a, **k: None)
-    s.criar("sobrevivente", "sujeito", "fs-listar", intervalo_s=60)
-    assert (tmp_path / "jobs.db-wal").exists(), "sem WAL — teste inócuo"
-    caminho.write_bytes(b"isto nao e um banco sqlite")
-    assert [d.job_id for d in ArmazemJobs(caminho).listar()] == ["sobrevivente"]
+# NOTA: existia aqui `test_wal_intacto_recupera_o_arquivo_principal_corrompido`,
+# removido depois de falhar deterministicamente na suíte completa e passar
+# isolado.
+#
+# Ele afirmava que corromper só o arquivo principal não perde jobs enquanto o
+# `-wal` estiver lá. O fato é verdadeiro quando o WAL tem frames — mas eu NÃO
+# CONSIGO FORÇAR esse estado de fora: o SQLite consolida o WAL por checkpoint
+# automático quando a última conexão fecha, e o arquivo pode continuar
+# existindo com apenas o cabeçalho, o que derrota qualquer guarda por tamanho.
+#
+# Ele era teste de CARACTERIZAÇÃO, escrito quando descobri que a primeira
+# versão do teste irmão passava pelo motivo errado (o WAL recuperava e eu
+# achava que era fail-closed). Documentava propriedade INCIDENTAL do SQLite,
+# não decisão de desenho do NOMOS.
+#
+# A propriedade que importa — armazém ilegível LEVANTA em vez de responder
+# "nenhum job" — continua coberta por
+# `test_armazem_corrompido_falha_fechado_nao_relata_zero_jobs`, cujo cenário é
+# construível: apagar TODOS os arquivos e escrever lixo.
+#
+# Manter um teste cuja premissa não se consegue construir é pior que não tê-lo:
+# ele falha por motivo alheio ao código e ensina a ignorar vermelho.
 
 
 # ============================================ 5. SIGTERM / SIGKILL
