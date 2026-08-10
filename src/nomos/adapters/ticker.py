@@ -177,6 +177,13 @@ class Ticker:
             if ex is None:
                 r = ResultadoTick(r.examinados, r.executadas, r.puladas + 1,
                                   r.falhas, r.negadas)
+            elif ex.estado_final is JobState.DENIED:
+                # NEGADA não é PULADA. Antes tudo virava `puladas` e `negadas`
+                # nunca era incrementado — a CLI imprimia "executadas: 0 ·
+                # falhas: 0" e saía EXIT_OK com 100% das ocorrências recusadas.
+                # O único sinal que o operador tinha mentia.
+                r = ResultadoTick(r.examinados, r.executadas, r.puladas,
+                                  r.falhas, r.negadas + 1)
             elif ex.estado_final is JobState.SUCCEEDED:
                 r = ResultadoTick(r.examinados, r.executadas + 1, r.puladas,
                                   r.falhas, r.negadas)
@@ -274,14 +281,16 @@ class Ticker:
                               erro=type(exc).__name__)
                 self._alertar_fato(d, inst, negado=True,
                                    classe=type(exc).__name__, detalhe=str(exc))
-                return None
+                return self.scheduler.negar_ocorrencia(
+                    d, inst, agora, f"autorizador falhou: {type(exc).__name__}")
             if credencial is None:
                 self._auditar("ticker.autorizacao.negada", job=d.job_id,
                               ocorrencia=inst.ocorrencia)
                 self._alertar_fato(d, inst, negado=True,
                                    classe="AutorizacaoNegada",
                                    detalhe="autorizador recusou a ocorrência")
-                return None
+                return self.scheduler.negar_ocorrencia(
+                    d, inst, agora, "autorizador recusou a ocorrência")
 
         execucao = self.scheduler.executar_ocorrencia(d, inst, agora,
                                                       credencial=credencial)

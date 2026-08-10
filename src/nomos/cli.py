@@ -1766,9 +1766,17 @@ def cmd_scheduler(ctx, args) -> int:
         resultados = ticker.rodar_ate(max_ticks=max_ticks)
         total = sum(r.executadas for r in resultados)
         falhas = sum(r.falhas for r in resultados)
-        print(f"ticks: {len(resultados)} · ocorrências executadas: {total} · "
-              f"falhas: {falhas}")
-        return EXIT_OK if falhas == 0 else EXIT_DENIED
+        negadas = sum(r.negadas for r in resultados)
+        puladas = sum(r.puladas for r in resultados)
+        print(f"ticks: {len(resultados)} · executadas: {total} · "
+              f"negadas: {negadas} · falhas: {falhas} · puladas: {puladas}")
+        # Sair OK com ocorrências NEGADAS era o sinal invertido que o censo
+        # achou: uma passada 100% recusada devolvia EXIT_OK e imprimia
+        # "falhas: 0". Negação é decisão de segurança e o operador precisa
+        # vê-la no código de saída, não só numa linha de texto.
+        if falhas:
+            return EXIT_DENIED
+        return EXIT_OK if negadas == 0 else EXIT_DENIED
 
     print("uso: nomos scheduler listar   --raiz <dir>\n"
           "     nomos scheduler criar    --raiz <dir> --job-id ID --capacidade C\n"

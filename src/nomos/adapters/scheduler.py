@@ -55,6 +55,13 @@ class JobState(str, Enum):
     FAILED = "FAILED"
     DISABLED = "DISABLED"
     CANCELLED = "CANCELLED"
+    # P2: negação do PDP é DECISÃO DE SEGURANÇA, não erro operacional, e é
+    # TERMINAL. Antes o ticker devolvia `None` sem persistir nada: a ocorrência
+    # continuava devida, o job era reexaminado a cada tick para sempre, o
+    # autorizador era chamado de novo toda vez, e nenhum contador registrava a
+    # recusa. Um job negado que volta sozinho para a fila não foi negado — foi
+    # adiado.
+    DENIED = "DENIED"
 
 
 # Transições permitidas. Tudo o que não está aqui é recusado — a máquina de
@@ -63,7 +70,7 @@ TRANSICOES: dict[JobState, frozenset[JobState]] = {
     JobState.CREATED:   frozenset({JobState.SCHEDULED, JobState.DISABLED,
                                    JobState.CANCELLED}),
     JobState.SCHEDULED: frozenset({JobState.RUNNING, JobState.DISABLED,
-                                   JobState.CANCELLED}),
+                                   JobState.CANCELLED, JobState.DENIED}),
     JobState.RUNNING:   frozenset({JobState.SUCCEEDED, JobState.FAILED,
                                    JobState.CANCELLED}),
     JobState.SUCCEEDED: frozenset({JobState.SCHEDULED, JobState.DISABLED,
@@ -72,6 +79,11 @@ TRANSICOES: dict[JobState, frozenset[JobState]] = {
                                    JobState.CANCELLED}),
     JobState.DISABLED:  frozenset({JobState.SCHEDULED, JobState.CANCELLED}),
     JobState.CANCELLED: frozenset(),          # terminal: não ressuscita
+    # DENIED é TERMINAL: sair dele exige AUTORIDADE NOVA, não um tick a mais.
+    # A única saída é o operador reabilitar explicitamente — e `habilitar()`
+    # não está aqui de propósito: reabilitar um job negado é decidir de novo,
+    # e essa decisão é do humano, pela capacidade governada `sched-habilitar`.
+    JobState.DENIED: frozenset(),
 }
 
 
@@ -516,6 +528,32 @@ class Scheduler:
         except Exception as exc:
             self._auditar("scheduler.transicao.recusada", job=job_id,
                           para=novo.value, motivo=f"{type(exc).__name__}: {exc}")
+
+    def negar_ocorrencia(self, d: JobDefinition, inst: JobInstance,
+                         agora: datetime, motivo: str) -> JobExecution:
+        """Persiste a NEGAÇÃO. Chamada pelo ticker quando a autoridade recusa.
+
+        Reserva a ocorrência antes de marcar — a mesma chave de dedup que
+        impede efeito duplicado impede também negação contada duas vezes. Sem
+        isso, `negadas` incrementaria a cada tick para a mesma ocorrência.
+        """
+        if not self.armazem.reservar(inst):
+            return JobExecution(inst, JobState.DENIED,
+                                "ocorrência já resolvida (dedup)")
+        self.armazem.concluir(inst, JobState.DENIED, motivo)
+        self._auditar("scheduler.ocorrencia.negada", job=d.job_id,
+                      ocorrencia=inst.ocorrencia, motivo=motivo[:200])
+        # A OCORRÊNCIA é sempre marcada DENIED. O JOB só vai a terminal quando
+        # não há próxima: negar uma ocorrência não é negar as futuras, e o
+        # modelo inteiro se apoia em autorizar POR OCORRÊNCIA — matar um job
+        # recorrente por causa de um estado transitório da política
+        # contradiria isso. ONE_SHOT não tem próxima, então para ele a
+        # negação é o fim.
+        if d.recorrente():
+            self._reagendar(d, agora, JobState.DENIED)
+        else:
+            self._transicao_tolerante(d.job_id, JobState.DENIED)
+        return JobExecution(inst, JobState.DENIED, motivo)
 
     def _ocorrencia_ja_reservada(self, d: JobDefinition, inst: JobInstance,
                                  agora: datetime) -> JobExecution:
