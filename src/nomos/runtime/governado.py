@@ -503,7 +503,18 @@ class RuntimeGovernado:
 
     def planejar(self, objetivo: str, passos: list | None = None,
                  llm: Callable | None = None) -> PlanoTipado:
-        """Objetivo + passos ⇒ plano tipado. Categoria SEMPRE do registro."""
+        """Objetivo + passos ⇒ plano tipado. Categoria SEMPRE do registro.
+
+        Os passos passam pela checagem de ALIAS antes de virarem plano: a API
+        in-process recebe `dict` já materializado, onde a duplicata bruta de
+        JSON é indetectável — mas a ambiguidade SEMÂNTICA (`alvo` + `target`)
+        continua visível, e é a que um autor de plano escreve sem perceber.
+        """
+        from nomos.orquestracao.entrada import ErroEntrada, validar_params
+        try:
+            validar_params(passos if passos is not None else [])
+        except ErroEntrada as exc:
+            raise ErroRuntime(str(exc)) from None
         return planejar(objetivo, self.registro, passos=passos, llm=llm,
                         audit=self.audit)
 

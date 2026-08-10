@@ -1511,9 +1511,19 @@ def cmd_conselho(ctx, args) -> int:
 
 
 def _passos_de_json(texto: str):
-    """Lê passos de um JSON. Qualquer anomalia ⇒ None (fail-closed no chamador)."""
+    """Lê passos de um JSON. Qualquer anomalia ⇒ None (fail-closed no chamador).
+
+    Passa por `orquestracao.entrada`, não por `json.loads` direto: é ali que
+    chave duplicada e alias de autoridade são recusados. `json.loads` sozinho
+    aceitaria `{"alvo":"A","alvo":"B"}` e deixaria a última vencer em silêncio —
+    depois disso o `dict` tem um valor só e a ambiguidade é indetectável.
+    """
+    from nomos.orquestracao.entrada import ErroEntrada, carregar_plano
     try:
-        dados = json.loads(texto)
+        dados = carregar_plano(texto)
+    except ErroEntrada as exc:
+        print(f"plano recusado: {exc}", file=sys.stderr)
+        return None
     except (TypeError, ValueError):
         return None
     return dados if isinstance(dados, list) else None
