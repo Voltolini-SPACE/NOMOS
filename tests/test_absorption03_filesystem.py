@@ -8,9 +8,9 @@ Os 14 ataques exigidos pela missão estão marcados com [Nx] no docstring.
 """
 from __future__ import annotations
 
+import dataclasses
 import os
 import time
-from datetime import timedelta
 
 import pytest
 
@@ -19,9 +19,7 @@ from nomos.adapters.contrato import (
     CapabilityContext, CapabilityRequest, ErroEscopo, ErroInvalido, ErroLimite,
     ErroNaoEncontrado, ErroTimeout, versao_de_capacidade,
 )
-from nomos.adapters.filesystem import (
-    CAPACIDADES, LIMITE_LEITURA_BYTES, FilesystemAdapter,
-)
+from nomos.adapters.filesystem import CAPACIDADES, FilesystemAdapter
 from nomos.kernel.audit import AuditLog
 from nomos.kernel.policy import Category, PolicyEngine
 from nomos.orquestracao.registro import RegistroCapacidades
@@ -101,7 +99,7 @@ def test_contexto_e_frozen_adapter_nao_reescreve_a_coleira(ctx_fabrica):
     ctx = ctx_fabrica("fs_escrever")
     for campo, valor in (("risco", "A0"), ("idempotente", True),
                          ("raizes", ("/",)), ("capacidade", "fs_ler")):
-        with pytest.raises(Exception):
+        with pytest.raises(dataclasses.FrozenInstanceError):
             setattr(ctx, campo, valor)
 
 
