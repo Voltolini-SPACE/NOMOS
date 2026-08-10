@@ -313,7 +313,7 @@ class RuntimeGovernado:
                  caminhos: tuple[str, ...] = (), adapters: bool = False,
                  adapters_apenas_leitura: bool = False,
                  executaveis: tuple[str, ...] = (), scheduler=None,
-                 destrutivas: bool = False):
+                 destrutivas: bool = False, git: bool = False):
         if ctx is None or "policy" not in ctx:
             raise ErroRuntime("contexto sem política carregada — fail-closed")
         self.ctx = ctx
@@ -376,6 +376,13 @@ class RuntimeGovernado:
                     "própria política de segurança. Aguarda executor com "
                     "contrato tipado por capacidade. Módulo e testes "
                     "preservados em adapters/script.py.")
+
+            if git:
+                # C1: git de LEITURA. Opt-in explícito, como tudo que executa
+                # processo — e confinado às MESMAS raízes do filesystem.
+                from nomos.adapters.wiring import registrar_git
+                self.capacidades_adapter += registrar_git(
+                    self.registro, raizes=tuple(caminhos), audit=self.audit)
 
         # ABSORPTION-05: o scheduler tem de ser registrado AQUI, junto com os
         # demais adapters, e não depois pelo chamador. Registrar depois foi o

@@ -61,6 +61,10 @@ CATEGORIA_DE_RETRY: dict[str, str] = {
     "fs-mover": NON_RETRYABLE_MANUAL_RECOVERY,
     "fs-apagar": NON_RETRYABLE_MANUAL_RECOVERY,
     "fs-apagar-arvore": NON_RETRYABLE_MANUAL_RECOVERY,
+    # git de LEITURA: repetir devolve o mesmo, sem tocar em nada
+    "git-diff": IDEMPOTENT,
+    "git-log": IDEMPOTENT,
+    "git-show": IDEMPOTENT,
     # scheduler: leitura é idempotente; mutação de estado é protegida pela
     # chave de ocorrência (dedup) ou pela unicidade do job_id
     "sched-listar": IDEMPOTENT,

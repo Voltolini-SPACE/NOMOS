@@ -154,6 +154,68 @@ def registrar_filesystem(registro, *, raizes=(), audit=None,
     return registrados
 
 
+# ---------------------------------------------------------------- git (C1)
+
+# Todas READ_LOCAL: nenhuma muta, nenhuma usa rede. `git-fetch`/`git-push`
+# NÃO existem aqui de propósito — leitura e escrita são missões separadas, e
+# uma capacidade chamada só `git` seria o `script-rodar` de volta com outro
+# nome.
+CATEGORIAS_GIT: dict[str, Category] = {
+    "git-diff": Category.READ_LOCAL,
+    "git-log": Category.READ_LOCAL,
+    "git-show": Category.READ_LOCAL,
+}
+
+
+def _ponte_git(adapter, nome: str, registro, *, raizes=(), audit=None,
+               timeout_s: float | None = 30.0):
+    def _executar(**params):
+        if "_sujeito" in params:
+            raise ErroInvalido("'_sujeito' não é aceito: identidade vem do contexto")
+        deadline = (time.monotonic() + timeout_s) if timeout_s else None
+        ctx = CapabilityContext.de_registro(
+            registro, nome, "runtime-governado", raizes=raizes,
+            deadline_monotonic=deadline, audit=audit)
+        pedido = CapabilityRequest(capacidade=nome,
+                                   alvo=str(params.get("alvo", "") or ""),
+                                   argumentos=dict(params))
+        r = adapter.executar(pedido, ctx)
+        return r.valor if r.valor is not None else r.detalhe
+    _executar.__name__ = f"adapter_{nome.replace('-', '_')}"
+    _executar.__qualname__ = _executar.__name__
+    return _executar
+
+
+def registrar_git(registro, *, raizes=(), audit=None,
+                  binario: str | None = None) -> list[str]:
+    """Registra as 4 capacidades de git de LEITURA.
+
+    Exige `raizes`: sem escopo, `alvo` seria qualquer repositório do disco —
+    e ler repositório alheio é exfiltração com outro nome.
+    """
+    from nomos.adapters.git import GitAdapter
+    from nomos.orquestracao.registro import ErroRegistro
+    if not raizes:
+        raise ValueError(
+            "registrar_git exige `raizes`: sem escopo, o plano leria qualquer "
+            "repositório do disco")
+    adapter = GitAdapter(binario=binario)
+    registrados = []
+    for nome in sorted(CATEGORIAS_GIT):
+        try:
+            registro.registrar(nome, CATEGORIAS_GIT[nome],
+                               _ponte_git(adapter, nome, registro,
+                                          raizes=raizes, audit=audit),
+                               origem="adapters.git", idempotente=True)
+            registrados.append(nome)
+        except ErroRegistro as exc:
+            if "já registrada" in str(exc):
+                registrados.append(nome)
+                continue
+            raise
+    return registrados
+
+
 # ---------------------------------------------------------------- scheduler
 
 # Risco das operações de scheduler, pela DIREÇÃO da autoridade.
