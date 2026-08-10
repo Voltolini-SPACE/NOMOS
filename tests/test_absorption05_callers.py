@@ -527,3 +527,81 @@ def test_ticker_sem_autorizacao_nao_e_usado_em_producao():
     assert "SEM_AUTORIZACAO" not in inspect.getsource(cli)
     assert "SEM_AUTORIZACAO" not in inspect.getsource(agendador)
     assert SEM_AUTORIZACAO is not None          # existe, mas confinado a teste
+
+
+# ============ correções vindas do censo independente final (FASE 14)
+
+def test_sched_capacidades_estao_no_mapa_PEP(amb):
+    """ACHADO CENTRAL do censo: registrar o scheduler DEPOIS de montar o
+    runtime deixava sched-* fora do mapa protegido e fora da autorização, e a
+    capacidade caía no fallback do Orquestrador direto para a ponte CRUA —
+    sem PDP, sem PEP, sem escopo."""
+    from nomos.pdp.pep import PontoDeAplicacao
+    from nomos.runtime.governado import RuntimeGovernado
+    ctx, ws, _rel = amb
+    ag = _agendador(amb)
+    rt = RuntimeGovernado(ctx, _sim, caminhos=(str(ws),), adapters=True,
+                          scheduler=ag.scheduler)
+    for nome in ("sched-criar", "sched-listar", "sched-cancelar"):
+        assert nome in rt.executores, f"{nome} fora do mapa PEP"
+        assert isinstance(rt.executores_protegidos[nome], PontoDeAplicacao)
+        assert nome in rt.autorizacao.capacidades, f"{nome} fora da autorização"
+
+
+def test_sched_criar_atravessa_pdp_e_pep(amb):
+    from nomos.runtime.governado import RuntimeGovernado
+    ctx, ws, _rel = amb
+    ag = _agendador(amb)
+    rt = RuntimeGovernado(ctx, _sim, caminhos=(str(ws),), adapters=True,
+                          scheduler=ag.scheduler)
+    res = rt.rodar("criar", passos=[{
+        "id": "c", "ferramenta": "sched-criar",
+        "params": {"job_id": "x", "capacidade": "fs-listar",
+                   "alvo_job": str(ws)}}])
+    assert res.ok, res.resumo()
+    ev = _eventos(ctx)
+    assert "pdp.decisao" in ev and "pep.aplicacao" in ev
+    assert "scheduler.job.criado" in ev
+    assert ev.index("pep.aplicacao") < ev.index("scheduler.job.criado")
+
+
+def test_cron_e_alcancavel_pelo_caller_governado(amb):
+    """ACHADO: a ponte de sched-criar ignorava a agenda, então um job criado
+    pela capacidade governada virava ONE_SHOT em silêncio — o motor de cron
+    ficava inalcançável por caller de produção."""
+    from nomos.adapters.agenda import TipoAgenda
+    from nomos.runtime.governado import RuntimeGovernado
+    ctx, ws, _rel = amb
+    ag = _agendador(amb)
+    rt = RuntimeGovernado(ctx, _sim, caminhos=(str(ws),), adapters=True,
+                          scheduler=ag.scheduler)
+    res = rt.rodar("cron", passos=[{
+        "id": "c", "ferramenta": "sched-criar",
+        "params": {"job_id": "jc", "capacidade": "fs-listar",
+                   "alvo_job": str(ws), "cron": "0 9 * * 1-5",
+                   "tz": "America/Sao_Paulo"}}])
+    assert res.ok, res.resumo()
+    d = ag.scheduler.status("jc")
+    assert d.agenda().kind is TipoAgenda.CRON
+    assert d.agenda().expression == "0 9 * * 1-5"
+    assert d.agenda().timezone == "America/Sao_Paulo"
+    assert d.recorrente()
+
+
+def test_intervalo_zero_e_recusado_nao_corrigido(tmp_path, monkeypatch, capsys):
+    """`--intervalo 0` virava 1.0 em silêncio (0.0 é falsy)."""
+    from nomos import cli
+    monkeypatch.setenv("NOMOS_HOME", str(tmp_path / "h"))
+    rc = cli.main(["scheduler", "rodar", "--raiz", str(tmp_path), "--intervalo", "0"])
+    assert rc == cli.EXIT_ERROR
+    assert "intervalo" in capsys.readouterr().err
+
+
+def test_executavel_sem_adapters_e_recusado(tmp_path, monkeypatch, capsys):
+    """`--executavel` sozinho não registrava script-rodar e não avisava."""
+    from nomos import cli
+    monkeypatch.setenv("NOMOS_HOME", str(tmp_path / "h"))
+    rc = cli.main(["orquestrar", "x", "--raiz", str(tmp_path),
+                   "--executavel", sys.executable])
+    assert rc == cli.EXIT_ERROR
+    assert "--adapters" in capsys.readouterr().err

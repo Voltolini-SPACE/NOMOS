@@ -164,13 +164,31 @@ def _ponte_sched(scheduler, nome: str):
         if nome == "sched-status":
             return scheduler.status(job_id).estado.value
         if nome == "sched-criar":
+            # ACHADO DO CENSO: esta ponte não aceitava agenda, então um job
+            # criado pela capacidade governada virava ONE_SHOT em SILÊNCIO —
+            # `expression` e `tz` eram ignorados e o motor de cron ficava
+            # inalcançável por caller de produção. É o mesmo rebaixamento
+            # silencioso CRON→ONE_SHOT que a 04 corrigiu na persistência,
+            # reintroduzido na camada do caller.
+            from nomos.adapters.agenda import ScheduleSpec, TipoAgenda
+            tz = str(params.get("tz", "UTC"))
+            expressao = params.get("cron") or params.get("expression")
+            intervalo = params.get("intervalo_s")
+            schedule = None
+            if expressao:
+                # `kind` continua EXPLÍCITO: só vira cron porque veio `cron=`,
+                # nunca por adivinhação sobre o formato da string.
+                schedule = ScheduleSpec(kind=TipoAgenda.CRON,
+                                        expression=str(expressao), timezone=tz)
+            elif intervalo:
+                schedule = ScheduleSpec(kind=TipoAgenda.INTERVAL,
+                                        intervalo_s=int(intervalo), timezone=tz)
             d = scheduler.criar(
                 job_id, str(params.get("sujeito", "runtime-governado")),
                 str(params.get("capacidade", "")),
                 argumentos=params.get("argumentos") or {},
                 alvo=str(params.get("alvo_job", "") or ""),
-                intervalo_s=params.get("intervalo_s"),
-                tz=str(params.get("tz", "UTC")))
+                intervalo_s=intervalo, tz=tz, schedule=schedule)
             return d.job_id
         if nome == "sched-habilitar":
             return scheduler.habilitar(job_id).estado.value

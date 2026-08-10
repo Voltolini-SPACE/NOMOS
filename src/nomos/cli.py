@@ -1549,32 +1549,38 @@ def cmd_orquestrar(ctx, args) -> int:
         return EXIT_ERROR
     executaveis = tuple(getattr(args, "executavel", None) or ())
     usar_scheduler = bool(getattr(args, "scheduler", False))
+    if executaveis and not usar_adapters:
+        print(fmt("E010", "--executavel exige --adapters: `script-rodar` é "
+                          "registrado junto com as capacidades de arquivo"),
+              file=sys.stderr)
+        return EXIT_ERROR
     if (executaveis or usar_scheduler) and not raizes:
         print(fmt("E010", "--executavel/--scheduler exigem pelo menos um "
                           "--raiz (escopo de caminho)"), file=sys.stderr)
         return EXIT_ERROR
+    scheduler = None
+    if usar_scheduler:
+        # CALLER DE PRODUÇÃO do scheduler. O registro acontece DENTRO da
+        # construção do runtime — registrar depois deixava a capacidade fora do
+        # mapa protegido por PEP e fora da autorização assinada, e ela caía no
+        # fallback do Orquestrador direto para a ponte crua (achado do censo).
+        from nomos.runtime.agendador import AgendadorGovernado, ConfigAgendador
+        try:
+            scheduler = AgendadorGovernado(ctx, aprovador, ConfigAgendador(
+                raizes=raizes, executaveis=executaveis)).scheduler
+        except Exception as exc:
+            print(fmt("E010", f"scheduler não pôde ser montado: {exc}"),
+                  file=sys.stderr)
+            return EXIT_ERROR
     try:
         rt = RuntimeGovernado(ctx, aprovador,
                               sem_motor=getattr(args, "sem_motor", False),
                               caminhos=raizes, adapters=usar_adapters,
-                              executaveis=executaveis)
+                              executaveis=executaveis, scheduler=scheduler)
     except ValueError as exc:
         print(fmt("E010", str(exc)), file=sys.stderr)
         return EXIT_ERROR
-    if usar_scheduler:
-        # CALLER DE PRODUÇÃO do scheduler: registra no MESMO registro que o
-        # planner e o PDP consultam. Sem registry paralelo.
-        from nomos.adapters.wiring import registrar_scheduler
-        from nomos.runtime.agendador import AgendadorGovernado, ConfigAgendador
-        try:
-            ag = AgendadorGovernado(ctx, aprovador, ConfigAgendador(
-                raizes=raizes, executaveis=executaveis))
-            nomes = registrar_scheduler(rt.registro, ag.scheduler)
-        except Exception as exc:
-            print(fmt("E010", f"scheduler não registrado: {exc}"), file=sys.stderr)
-            return EXIT_ERROR
-        rt.capacidades_adapter += nomes
-        print(f"capacidades de agendamento ligadas: {', '.join(nomes)}")
+
     if usar_adapters and rt.capacidades_adapter:
         print(f"capacidades de arquivo ligadas: "
               f"{', '.join(rt.capacidades_adapter)}")
@@ -1613,6 +1619,18 @@ def cmd_orquestrar(ctx, args) -> int:
     return EXIT_OK
 
 
+def _intervalo_valido(bruto) -> float:
+    """`--intervalo 0` virava 1.0 em silêncio (0.0 é falsy) — achado do censo.
+    Zero é busy-loop; recusar é melhor que corrigir sem avisar."""
+    try:
+        valor = float(bruto if bruto is not None else 1.0)
+    except (TypeError, ValueError):
+        raise ValueError(f"--intervalo inválido: {bruto!r}") from None
+    if valor <= 0:
+        raise ValueError("--intervalo precisa ser > 0 (zero seria busy-loop)")
+    return valor
+
+
 def cmd_scheduler(ctx, args) -> int:
     """CALLER DE PRODUÇÃO do Ticker (ABSORPTION-05 / FASE 3).
 
@@ -1636,8 +1654,11 @@ def cmd_scheduler(ctx, args) -> int:
     try:
         ag = AgendadorGovernado(ctx, aprovador, ConfigAgendador(
             raizes=raizes, executaveis=executaveis,
-            intervalo_s=float(getattr(args, "intervalo", 1.0) or 1.0)))
+            intervalo_s=_intervalo_valido(getattr(args, "intervalo", 1.0))))
         nomes = ag.preparar()
+    except ValueError as exc:
+        print(fmt("E010", str(exc)), file=sys.stderr)
+        return EXIT_ERROR
     except Exception as exc:
         print(fmt("E010", f"scheduler não pôde ser preparado: {exc}"),
               file=sys.stderr)

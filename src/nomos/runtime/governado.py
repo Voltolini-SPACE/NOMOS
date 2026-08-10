@@ -310,7 +310,7 @@ class RuntimeGovernado:
                  autorizacao=None, decisor=None, ttl_s: int = 3600,
                  caminhos: tuple[str, ...] = (), adapters: bool = False,
                  adapters_apenas_leitura: bool = False,
-                 executaveis: tuple[str, ...] = ()):
+                 executaveis: tuple[str, ...] = (), scheduler=None):
         if ctx is None or "policy" not in ctx:
             raise ErroRuntime("contexto sem política carregada — fail-closed")
         self.ctx = ctx
@@ -337,6 +337,21 @@ class RuntimeGovernado:
                 self.capacidades_adapter += registrar_script(
                     self.registro, raizes=tuple(caminhos),
                     executaveis=tuple(executaveis), audit=self.audit)
+
+        # ABSORPTION-05: o scheduler tem de ser registrado AQUI, junto com os
+        # demais adapters, e não depois pelo chamador. Registrar depois foi o
+        # bypass que o censo independente encontrou: `self.executores` (mapa
+        # protegido por PEP) e `self.autorizacao` já estariam montados, então a
+        # capacidade caía no fallback `registro.executor_de()` do Orquestrador
+        # e executava pela ponte CRUA — sem PDP, sem PEP, sem escopo.
+        if scheduler is not None:
+            from nomos.adapters.wiring import registrar_scheduler
+            self.capacidades_adapter += registrar_scheduler(
+                self.registro, scheduler)
+            # capacidades de CONTROLE tocam o armazém dentro do NOMOS_HOME, não
+            # dado do usuário — o escopo precisa incluí-lo explicitamente, e só
+            # quando o scheduler é ligado.
+            caminhos = tuple(caminhos) + (str(ctx["home"]),)
 
         brutos = dict(executores if executores is not None
                       else executores_nativos(ctx, aprovador=aprovador,
@@ -367,6 +382,9 @@ class RuntimeGovernado:
             politica=politica_recuperacao, audit=self.audit)
         self.rotear_motor = None
         self._router = router
+        # Recurso padrão para capacidades de CONTROLE (sem alvo de dado). Sem
+        # ele o PDP nega com "recurso vazio" — negação pelo motivo errado.
+        self._recurso_padrao = str(ctx["home"]) if caminhos else ""
 
     # ---------------- PDP/PEP ----------------
 
@@ -392,7 +410,13 @@ class RuntimeGovernado:
             # é o `alvo`; para um processo é o `cwd` — é ali que ele lê e
             # escreve. Sem esta equivalência o PDP nega `script-rodar` com
             # "recurso vazio", que seria negar pelo motivo errado.
-            recurso = str(params.get("alvo", "") or params.get("cwd", "") or "")
+            # O RECURSO é o que a capacidade toca. Arquivo → `alvo`;
+            # processo → `cwd`; operação de scheduler → o alvo do JOB que ela
+            # agenda (`alvo_job`), ou o próprio armazém para as de controle
+            # puro (listar/status/cancelar), que não tocam dado do usuário.
+            recurso = str(params.get("alvo", "") or params.get("cwd", "")
+                          or params.get("alvo_job", "") or self._recurso_padrao
+                          or "")
             pedido = Pedido(capacidade=nome, sujeito=self.manifesto.name,
                             recurso=recurso,
                             argumentos=dict(params),
