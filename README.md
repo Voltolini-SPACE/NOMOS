@@ -79,7 +79,7 @@ macOS e Windows, em Python 3.10 a 3.13. Você não precisa confiar; pode
 | Roteador automático | Escolhe o melhor motor por tarefa — local primeiro. | `nomos motores` |
 | Memória local | SQLite na sua máquina com busca full-text; você revisa o que vira permanente. | `nomos memoria` |
 | Memória que atravessa sessões | Motor auditável: dry-run por padrão, hash de integridade, recusa segredos e PII. | `python -m nomos.memory.cli` |
-| Mosaic — telas ao vivo no painel | Várias telas isoladas em mosaico dentro do painel, vistoriadas pelo agente. | `python -m nomos.mosaic.cli` |
+| Mosaic — mosaico de telas no painel (experimental) | Várias telas em mosaico dentro do painel. O adaptador padrão é o demo (vistoria sintética, sem rede); o navegador real com login isolado é opt-in e ainda sem cobertura de teste. | `python -m nomos.mosaic.cli --demo` |
 | Conversas com retenção | Abra, busque, fixe, exporte e esqueça conversas — retenção sob seu controle. | `nomos conversas` |
 | Missões que fazem | Plano legível → uma aprovação → execução passo a passo → evidência; um comando desfaz. | `nomos missao` |
 | Fila de aprovações | Ação sensível passa por fila com token de uso único; no terminal ou no painel. | `nomos approvals` |
