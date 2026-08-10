@@ -1,115 +1,136 @@
-# NOMOS-RUNTIME-ABSORPTION-01 — RELATÓRIO FINAL
+# NOMOS-HERMES-OPENCLAW-ABSORPTION-02 — RELATÓRIO FINAL
 
-## STATUS_FINAL = PASS_RUNTIME_PDP_READY
+## STATUS_FINAL = PARTIAL_BLOCKED_CRITICAL_PARITY_GAP
 
 ```
-BASELINE_HEAD=2cea197eb188121fcd507b53f02935b5edf435ad
-MISSION_BRANCH=feat/nomos-runtime-absorption-01
-MISSION_HEAD=ponta de feat/nomos-runtime-absorption-01 (o commit de docs;
-              seu SHA não é gravável dentro dele mesmo — os 3 commits de
-              código abaixo são estáveis e verificáveis)
+BASELINE_HEAD=2cea197eb188121fcd507b53f02935b5edf435ad   (main; == origin/main)
+MISSION_BASE=fb68220cd290eccc692d6714f8de9a7d84b0cb5d    (ponta da ABSORPTION-01)
+MISSION_BRANCH=feat/nomos-absorption-02
+COMMITS=8
+WORKTREE_CLEAN=TRUE
 
-ORCHESTRATION_REAL_CALLER=TRUE
-PDP_IN_RUNTIME_PATH=TRUE
-PEP_MANDATORY=TRUE
-DIRECT_ROUTE_BYPASS=0 (caminho do runtime) / 2 rotas legadas boundary-only (documentadas)
-ADVERSARIAL_SUITE=PASS (47/47, dentes verificados por mutação)
-FULL_TEST_SUITE=PASS (2153 passed, 0 failed, 14 skipped, 2166 coletados)
+FULL_TEST_SUITE=2197 passed / 2210 coletados
+FAILED=0
+SKIPPED=14           (ambientais e pré-existentes: namespaces Linux, mypy/PyYAML
+                      fora das deps, SMTP frágil no macOS)
 LINT=PASS (ruff, src/ + tests/)
-TYPECHECK=NOT_RUN (mypy não é dependência do projeto; skip é do baseline)
-REGRESSION=0
+TYPECHECK=NOT_RUN    (mypy não é dependência do projeto; skip é do baseline)
 
-HERMES_PARITY_PERCENT=58 (11/19 aplicáveis, governadas)
-OPENCLAW_PARITY_PERCENT=50 (8/16 aplicáveis, governadas)
+PDP_MANDATORY=TRUE
+PEP_MANDATORY=TRUE
+DIRECT_MUTATING_BYPASS=0
+LEGACY_BOUNDARY_ONLY_ROUTES=0        (eram 2; fechadas na FASE 1)
 
-READY_FOR_ADAPTER_PHASE=TRUE
-READY_FOR_SERVICE_INSTALL=FALSE   (não existe daemon; é trabalho da 02)
-READY_FOR_SHADOW=FALSE            (depende de serviço + motor de inferência)
+HERMES_PARITY=5,4 %   (4 GOVERNADO de 74 aplicáveis — recalculado do zero)
+OPENCLAW_PARITY=9,1 % (5 GOVERNADO de 55 aplicáveis)
+CRITICAL_GAPS=18
+
+PROVIDER_REAL=TRUE    (Ollama vivo, qwen2.5-7b-ptctx; E2E com motor real PASSED)
+DAEMON_READY=FALSE
+SHADOW_EXECUTED=FALSE
+SHADOW_EXTERNAL_EFFECTS=0
+ROLLBACK_PROVEN=TRUE  (para o escopo desta missão: nada a desfazer)
+
+READY_FOR_SHADOW=FALSE
 READY_FOR_CANARY=FALSE
-READY_FOR_PRODUCTION_CUTOVER=FALSE
+CUTOVER=FALSE
 ```
 
-## Números exatos
-| Métrica | Baseline | Final |
+## Gates
+
+| Gate | Critério | Resultado |
 |---|---|---|
-| testes coletados | 2095 | 2166 |
-| passed | 2082 | 2153 |
-| failed | 0 | **0** |
-| skipped | 13 | 14 |
-| ruff | limpo | limpo |
+| **A — Runtime** | suíte, lint, security, adversarial, mutation | ✅ **PASS** |
+| **B — Governança** | PDP/PEP obrigatórios, bypass 0, default deny | ✅ **PASS** |
+| **C — Paridade** | `CRITICAL_HERMES_GAPS=0` e `CRITICAL_OPENCLAW_GAPS=0` | ❌ **FAIL — 18 gaps críticos** |
+| **D — Operacional** | daemon, restart, rollback, shadow safe | ❌ **FAIL — daemon não existe** |
 
-Os 14 skips são ambientais e pré-existentes (namespaces Linux, mypy/PyYAML fora
-das dependências, SMTP frágil no macOS, Ollama). Nenhum foi introduzido aqui, e
-nenhum teste foi enfraquecido, marcado xfail ou pulado para obter verde.
+`READY_FOR_SHADOW` exige A+B+C+D. **C e D falham** ⇒ `PARTIAL_BLOCKED`.
 
-## Commits locais (nenhum push, merge, PR ou tag)
+## O que foi entregue
+
+| Fase | Estado | Commit |
+|---|---|---|
+| 0 — Rebaseline | ✅ | — |
+| 1 — Fechar rotas legadas | ✅ | `9db3027` |
+| 2 — Censo de capacidades | ✅ | `CAPABILITY_MATRIX.json` (114 capacidades) |
+| 3 — Adapters nativos | ❌ NÃO EXECUTADA | — |
+| 4 — Provider abstraction | ✅ | `fd69ef2` |
+| 5 — Motor real E2E | ✅ | `b36e88a` |
+| 6 — Daemon | ❌ NÃO EXECUTADA | — |
+| 7 — Shadow | ❌ NÃO EXECUTADA | — |
+| 8 — Adversarial E2E | ⚠️ 20/30 cobertos | — |
+| 9 — Parity gate | ✅ recalculado | `PARITY_MATRIX.md` |
+| 10 — Preparação de produção | ⚠️ parcial (rollback runbook) | — |
+
+Commits: `9db3027` (rotas legadas) · `fd69ef2` (provider) · `b36e88a` (E2E) ·
+`12a5384` (fix do escopo do PDP) · 4 de evidência.
+
+## A paridade caiu de 58 % para 5 % — e isso é correção, não regressão
+
+A ABSORPTION-01 reportou 58 % / 50 % sobre uma matriz de **24 linhas grossas**.
+Este censo tem **114 linhas** com exigência de equivalência COMPORTAMENTAL e
+verificação adversarial (6 agentes instruídos a REFUTAR alegações sem
+evidência). "Git" era 1 linha; agora são 19, todas AUSENTE.
+
+A missão mandou não carregar os valores antigos. Carregá-los teria escondido
+18 gaps críticos atrás de um número confortável.
+
+## Defeito encontrado pelo censo — no código desta própria missão
+
+`decisor.py` sempre soube validar `pedido.recurso` e o contrabando por
+`argumentos.alvo/caminho/destino` contra `autorizacao.caminhos`. Mas
+`sessao_pdp` emitia a autorização **sem preencher o campo**, e o default é
+`()` — com tupla vazia o bloco inteiro é pulado. **O escopo por caminho do PDP
+estava inalcançável na prática.** Corrigido em `12a5384`, com 3 testes; a
+mutação que restaura a regressão derruba 2 deles.
+
+## Blockers restantes — lista precisa
+
+### Bloqueiam GATE C (paridade)
+1. **18 capacidades críticas com gap** (`PARITY_MATRIX.md`): 8 de scheduler,
+   4 de channels, 4 de filesystem, 2 de HTTP.
+2. **Nenhum adapter construído** (FASE 3). Sem fs-amplo, scheduler, http, git,
+   channels e browser, a paridade não sai do lugar.
+3. **`arquivo_ler` não é confinado** — só a escrita passa por
+   `_resolver_destino_seguro`; leitura aceita caminho absoluto arbitrário.
+4. **`arquivo_ler` não devolve conteúdo** — devolve metadado + bullets, e só
+   aceita 7 extensões + PDF até 5 MB.
+
+### Bloqueiam GATE D (operacional)
+5. **Não existe daemon** — sem serviço, `SINGLE_INSTANCE`, `CRASH_RECOVERY`,
+   `REBOOT_RECOVERY` e `DAEMON_REMOVABLE` não podem sequer ser medidos.
+6. **Shadow não executável** — depende de 2 e 5.
+7. **Sem timeout duro por nó** — `recuperacao.py` sempre apontou o sandbox como
+   responsável; o contrato de adapter da FASE 3 precisa implementá-lo.
+
+### Lacunas de cobertura adversarial (8 de 30)
+8. **registry race** e **capability removed after planning** — lacunas reais e
+   baratas de fechar; não dependem de adapter.
+9. HTTP destination, redirect escape, Git destructive, channel spoofing,
+   scheduler duplicate, daemon restart, stale auth after restart — **atacam
+   superfícies que ainda não existem**. Testá-las agora seria teatro.
+10. **symlink escape** e **concurrent replay** cobertos por construção
+    (`.resolve()`, lock no `ArmazemNonce`) mas **sem teste dedicado**.
+
+## Produção — intocada, verificado no fecho
 ```
-2bcfa5b feat(nomos): wire orchestration into governed runtime
-829c5cf feat(nomos): enforce PDP on runtime execution path
-a54af4a test(nomos): add adversarial authorization and bypass suite
-<docs>  docs(nomos): record runtime absorption evidence
+main NOMOS   2cea197e…  (nenhum commit, merge, push, tag)
+guard        2ecc5ff7051603675ccdf7ba087340759c246f26148a99b7db3be95628317ecc
+Hermes :9119 vivo · OpenClaw :18789 vivo
+WhatsApp enabled=False · antitamper carregado
+~/.hermes intacto (toolchain Node depende dele)
+LaunchAgents com "nomos": 0
 ```
+`PRODUCTION_MUTATED=FALSE` · `FINANCIAL_RULES_CHANGED=FALSE` ·
+`GUARDS_PRESERVED=TRUE`
 
-## Censo pós-implementação — as 12 perguntas
+## Próxima missão — ABSORPTION-03
+Ordem por alavancagem sobre os 18 gaps críticos:
+1. adapters **fs-amplo** (4 críticas) e **scheduler** (8 críticas) — fecham 12 de 18;
+2. contrato de adapter com timeout, erro tipado e audit trail;
+3. fechar registry race e capability-removed-after-planning;
+4. adapters http → git → channels → browser;
+5. só então daemon → shadow → adversarial E2E completo → canary.
 
-1. **Quantos callers reais usam `orquestracao`?** De **0 → 2** módulos de
-   produção: `runtime/governado.py` e `cli.py` (`nomos orquestrar`).
-2. **O runtime passa obrigatoriamente pelo PDP?** Sim. Comprovado pela ordem na
-   trilha: `pdp.decisao` → `pep.aplicacao` → `agente.ferramenta.usada`.
-3. **Existe caller mutante fora do PEP?** Sim, dois — `nomos agentes usar` e
-   `simple/amigavel.py`. Ambos passam pelo boundary A0–A6 (não são bypass de
-   política), mas não pelo PDP de capacidade. Fixados por censo estrutural.
-4. **Existe path direto até o adapter?** Não a partir do runtime: o executor
-   bruto vive na closure do PEP; `PontoDeAplicacao` tem `__slots__` e nenhum
-   atributo devolve o callable.
-5. **Existe bypass conhecido?** Nenhum no caminho do runtime. As duas rotas do
-   item 3 são limitação declarada, não bypass silencioso.
-6. **O NOMOS já executa efeitos reais governados?** Sim — DAG multi-nó com
-   dependências executado de verdade, com DENY bloqueando dependentes.
-7. **Que capacidades do Hermes ainda faltam?** Git, HTTP, browser, patch,
-   scheduler, PTY (esta por decisão de arquitetura, não lacuna).
-8. **Que capacidades do OpenClaw ainda faltam?** Channels (Telegram/WhatsApp),
-   gateway HTTP+WS, pareamento de dispositivo, plugins, cron interno.
-9. **Que adapters construir na próxima missão?** fs-amplo, git, http, browser,
-   scheduler, channels, provider abstraction.
-10. **O motor de inferência bloqueia só E2E ou o runtime?** **Só E2E.** Os 2153
-    testes e as execuções reais rodaram com Ollama fora — orquestração governada
-    não depende de LLM.
-11. **NOMOS já pode ser instalado como serviço para shadow?** **Não.** Não há
-    daemon: `runtime/` tem apenas sandbox; `rotinas` só exporta plist e nunca
-    chama `launchctl`.
-12. **O que ainda impede substituição completa?** Ausência de daemon, ausência
-    dos adapters do item 9, motor de inferência fora, e as duas rotas legadas.
-
-## Invariantes não negociáveis — todos verificados
-```
-DIRECT_ROUTE_BYPASS=FALSE (runtime)   PDP_OPTIONAL=FALSE      PEP_OPTIONAL=FALSE
-DEFAULT_ALLOW=FALSE                   GENERIC_SUBPROCESS_IN_KERNEL=FALSE
-UNCONTROLLED_SHELL=FALSE              UNCONTROLLED_PTY=FALSE
-UNCONTROLLED_GIT=FALSE                UNCONTROLLED_HTTP_EXEC=FALSE
-PLANNER_ASSIGNS_OWN_RISK=FALSE        RECOVERY_BYPASSES_DENY=FALSE
-TESTS_WEAKENED_TO_PASS=FALSE
-```
-`PLANNER_ASSIGNS_OWN_RISK` era **TRUE** no baseline por um caminho não coberto
-(grafo montado à mão) — corrigido nesta missão em três camadas.
-
-## Produção intocada
-```
-PRODUCTION_MUTATED=FALSE
-main NOMOS ainda em 2cea197e (nenhum commit, merge, push ou tag)
-guard planner Hermes 2ecc5ff7…317ecc  intacto
-:9119 Hermes vivo · :18789 OpenClaw vivo · WhatsApp enabled=False · antitamper carregado
-~/.hermes intocado (toolchain Node depende dele)
-LaunchAgents, hooks e infraestrutura produtiva: nenhuma alteração
-```
-
-## Próxima missão — NOMOS-RUNTIME-ABSORPTION-02 (NÃO executada)
-Ordem sugerida, do mais barato/reversível ao mais caro:
-1. Fechar as duas rotas legadas sob o PDP de capacidade.
-2. Adapters governados: fs-amplo → git → http → scheduler → browser.
-3. Provider abstraction + restaurar ≥1 motor (remontar SSD `MODELS_LOCAL`).
-4. Instalar NOMOS como serviço (daemon + healthcheck + restart).
-5. Shadow contra Hermes/OpenClaw → adversarial E2E → canary → restart/recovery
-   → cutover reversível.
-
-Hermes e OpenClaw permanecem ativos e obrigatórios durante toda a 02.
+Hermes e OpenClaw permanecem ativos e obrigatórios durante toda a 03.
