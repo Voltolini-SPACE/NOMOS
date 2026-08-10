@@ -228,7 +228,18 @@ class AgendadorGovernado:
                   if resultado.missao is not None else None)
             motivo = (no.detalhe if no is not None else resultado.motivo) or "sem detalhe"
             raise ErroRuntime(f"ocorrência falhou: {motivo}")
-        return type("R", (), {"efeito_aplicado": True})()
+        # O efeito é DERIVADO do registro, não afirmado. Antes esta linha era
+        # `efeito_aplicado: True` literal, então um job `fs-listar` — leitura
+        # A0, idempotente, que comprovadamente não muda nada — gravava efeito=1
+        # e saía como EXECUTED_EFFECT/EFFECT_APPLIED, com `autoriza_retry=False`.
+        # Isso contradiz a premissa da fonte única da ETAPA 3: só se afirma
+        # efeito quando se SABE. E a informação estava aqui o tempo todo — o
+        # registro é a autoridade sobre risco desde a ABSORPTION-03, e leitura
+        # não é mutação. Quem não observou o efeito não o declara.
+        from nomos.kernel.policy import Category
+        categoria = rt.registro.categoria_de(definicao.capacidade)
+        muta = categoria is not Category.READ_LOCAL
+        return type("R", (), {"efeito_aplicado": muta})()
 
     # ------------------------------------------------------------- ticker
 

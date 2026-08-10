@@ -25,8 +25,16 @@ anterior fazia — dá o horário errado em qualquer fuso ≠ UTC, e erra duas v
 por ano em fusos com DST.
 
 Os dois casos difíceis de DST são tratados explicitamente:
-- **horário inexistente** (o relógio pula para frente): o disparo vai para o
-  primeiro instante real após a lacuna;
+- **horário inexistente** (o relógio pula para frente): o horário de parede que
+  não existe naquele dia **não dispara nesse dia** — a próxima ocorrência é a do
+  dia seguinte. Ex.: `30 2 * * *` em `America/New_York` não dispara em
+  2026-03-08, porque 02:30 não existe ali. Esta linha já prometeu "o primeiro
+  instante real após a lacuna", o que era falso: um censo adversarial mostrou
+  que o comportamento é pular, e que o teste de DST assevera o pulo. Corrigi a
+  PROMESSA, não o comportamento — recuperar o disparo dentro da lacuna mudaria
+  `casa(local)`, arriscaria disparo duplo colidindo na chave de dedup, e é
+  decisão de produto, não conserto de defeito. Quem precisa de execução diária
+  garantida deve agendar fora da faixa 02:00–03:00;
 - **horário ambíguo** (o relógio volta): usamos a PRIMEIRA ocorrência
   (`fold=0`), para o job rodar uma vez só, e não duas.
 """

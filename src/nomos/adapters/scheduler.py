@@ -37,7 +37,7 @@ import os
 import sqlite3
 import threading
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 
@@ -168,10 +168,18 @@ class ArmazemJobs:
                 ocorrencia TEXT NOT NULL, iniciada_em TEXT NOT NULL,
                 estado TEXT NOT NULL, detalhe TEXT NOT NULL DEFAULT '',
                 efeito INTEGER NOT NULL DEFAULT 0)""")
-            try:
-                os.chmod(self.caminho, 0o600)
-            except OSError:
-                pass
+            # 0600 nos SIDECARS também, não só no .db. O `PRAGMA journal_mode
+            # =WAL` roda antes daqui e já criou `-wal`/`-shm` com o padrão
+            # 0644 — e o `-wal` carrega a coluna `argumentos` dos jobs em
+            # texto claro. Proteger só o arquivo principal é proteger a porta
+            # e deixar a janela aberta.
+            for alvo in (self.caminho,
+                         self.caminho.with_name(self.caminho.name + "-wal"),
+                         self.caminho.with_name(self.caminho.name + "-shm")):
+                try:
+                    os.chmod(alvo, 0o600)
+                except OSError:
+                    pass
 
     # ------------------------------------------------------------ definições
 
@@ -193,9 +201,41 @@ class ArmazemJobs:
         return _linha_para_def(r) if r else None
 
     def listar(self) -> list[JobDefinition]:
+        """Jobs legíveis. Uma linha corrompida NÃO derruba a coleção.
+
+        Antes isto era uma list-comprehension: uma única linha com estado
+        inválido ou `schedule` ilegível levantava e levava junto `listar()`,
+        `devidos()`, `tick()` e `rodar_ate()`. No daemon, o efeito era total —
+        um registro ruim e NENHUM job voltava a rodar, calado.
+
+        Fail-closed continua valendo, mas POR JOB: a linha ilegível não vira
+        um default (isso seria o rebaixamento silencioso que a 04 fechou), não
+        executa nunca, e fica registrada em `ilegiveis()` para ser mostrada ao
+        operador. Sumir com ela seria pior que o defeito original: o operador
+        deixaria de saber que o job existe.
+        """
         with self._lock, self._conn() as c:
             rs = c.execute("SELECT * FROM jobs ORDER BY job_id").fetchall()
-        return [_linha_para_def(r) for r in rs]
+        saida, ruins = [], {}
+        for r in rs:
+            try:
+                saida.append(_linha_para_def(r))
+            except Exception as exc:
+                ruins[str(r[0])] = f"{type(exc).__name__}: {exc}"
+        self._ilegiveis = ruins
+        return saida
+
+    def ilegiveis(self) -> dict[str, str]:
+        """`{job_id: motivo}` das linhas em quarentena na última listagem."""
+        with self._lock, self._conn() as c:
+            rs = c.execute("SELECT * FROM jobs ORDER BY job_id").fetchall()
+        ruins = {}
+        for r in rs:
+            try:
+                _linha_para_def(r)
+            except Exception as exc:
+                ruins[str(r[0])] = f"{type(exc).__name__}: {exc}"
+        return ruins
 
     def apagar(self, job_id: str) -> None:
         with self._lock, self._conn() as c:
@@ -397,18 +437,41 @@ class Scheduler:
 
     def _executar(self, d: JobDefinition, inst: JobInstance, agora: datetime,
                   credencial) -> JobExecution:
+        """Executa UMA ocorrência com encerramento GARANTIDO em toda saída.
+
+        O censo adversarial achou dois defeitos que eram o mesmo defeito:
+
+        - **D2** (livelock): quando o processo morria entre `reservar()` e
+          `concluir()`, o restart via a ocorrência como duplicada e RETORNAVA
+          antes de reagendar. `proximo_em` ficava cravado no instante original
+          e o job era reexaminado para sempre — 10 ticks, 10 chamadas ao PDP,
+          zero efeitos, zero alertas, e `executadas=1` reportado toda vez. Um
+          travamento que se anuncia como sucesso é pior que um que grita.
+        - **D3** (queda do daemon): `_mudar_estado` ficava FORA do `try`, então
+          um `sched-cancelar` do operador caindo entre `devidos()` e a execução
+          fazia `ErroScheduler: CANCELLED → RUNNING` subir até `rodar_ate` e
+          matar o ticker, com a ocorrência RUNNING órfã — que é a entrada do D2.
+
+        A causa era estrutural: o método tinha QUATRO saídas e só a feliz
+        alcançava estado + reagendamento + auditoria. Uma função com saídas que
+        fazem coisas diferentes do encerramento não tem invariante, tem sorte.
+
+        Agora existe um só ponto de saída (`_encerrar`), alcançado por todos os
+        caminhos, e as transições de estado do JOB — que são do operador e
+        podem legitimamente falhar — não derrubam a EXECUÇÃO da ocorrência.
+        """
         if d.estado in (JobState.DISABLED, JobState.CANCELLED):
             self._auditar("scheduler.execucao.recusada", job=d.job_id,
                           motivo=d.estado.value)
             return JobExecution(inst, d.estado, f"job {d.estado.value}")
 
         if not self.armazem.reservar(inst):
-            self._auditar("scheduler.ocorrencia.duplicada", job=d.job_id,
-                          ocorrencia=inst.ocorrencia)
-            return JobExecution(inst, JobState.SUCCEEDED,
-                                "ocorrência já executada (dedup)")
+            return self._ocorrencia_ja_reservada(d, inst, agora)
 
-        self._mudar_estado(d.job_id, JobState.RUNNING)
+        # A transição do JOB é do operador e pode falhar por corrida legítima
+        # (ele cancelou agora mesmo). Isso NÃO pode derrubar a ocorrência já
+        # reservada: quem reservou tem de chegar ao encerramento.
+        self._transicao_tolerante(d.job_id, JobState.RUNNING)
         efeito = False
         try:
             if self._executor is None:
@@ -427,12 +490,58 @@ class Scheduler:
             final = JobState.FAILED
             self._alertar(d, inst, type(exc).__name__, detalhe)
 
-        self._mudar_estado(d.job_id, final)
+        return self._encerrar(d, inst, agora, final, detalhe, efeito)
+
+    def _encerrar(self, d: JobDefinition, inst: JobInstance, agora: datetime,
+                  final: JobState, detalhe: str, efeito: bool) -> JobExecution:
+        """O único fim. Estado, reagendamento e trilha acontecem AQUI."""
+        self._transicao_tolerante(d.job_id, final)
         self._reagendar(d, agora, final)
         self._auditar("scheduler.execucao.fim", job=d.job_id,
                       ocorrencia=inst.ocorrencia, estado=final.value,
                       efeito=efeito)
         return JobExecution(inst, final, detalhe, efeito_aplicado=efeito)
+
+    def _transicao_tolerante(self, job_id: str, novo: JobState) -> None:
+        """Muda o estado do job sem derrubar a ocorrência em curso.
+
+        `_mudar_estado` continua levantando para o OPERADOR — a allowlist de
+        transições é invariante e não foi afrouxada. O que muda é quem absorve
+        a exceção: aqui dentro, onde o job pode ter sido cancelado ou apagado
+        por baixo de uma execução que já está acontecendo. Recusar a transição
+        é a resposta certa; matar o daemon não é.
+        """
+        try:
+            self._mudar_estado(job_id, novo)
+        except Exception as exc:
+            self._auditar("scheduler.transicao.recusada", job=job_id,
+                          para=novo.value, motivo=f"{type(exc).__name__}: {exc}")
+
+    def _ocorrencia_ja_reservada(self, d: JobDefinition, inst: JobInstance,
+                                 agora: datetime) -> JobExecution:
+        """Reserva existente: ou já concluiu (dedup honesto), ou ficou ÓRFÃ.
+
+        Distinguir os dois é o que separa "não repetir o efeito" de "travar o
+        job para sempre". A reserva que ficou em RUNNING é de um processo que
+        morreu no meio: o efeito dela é DESCONHECIDO — pode ter acontecido —
+        então ela não pode ser reexecutada, mas TAMBÉM não pode continuar
+        bloqueando a agenda.
+        """
+        estado_oc = self.armazem.ocorrencia_estado(inst)
+        if estado_oc != JobState.RUNNING.value:
+            self._auditar("scheduler.ocorrencia.duplicada", job=d.job_id,
+                          ocorrencia=inst.ocorrencia)
+            return JobExecution(inst, JobState.SUCCEEDED,
+                                "ocorrência já executada (dedup)")
+
+        # órfã: fecha como FAILED com efeito DESCONHECIDO e destrava a agenda
+        detalhe = ("reserva órfã: processo morreu entre reservar e concluir — "
+                   "o efeito é DESCONHECIDO, verifique antes de repetir")
+        self.armazem.concluir(inst, JobState.FAILED, detalhe)
+        self._alertar(d, inst, "ReservaOrfa", detalhe)
+        self._auditar("scheduler.ocorrencia.orfa", job=d.job_id,
+                      ocorrencia=inst.ocorrencia)
+        return self._encerrar(d, inst, agora, JobState.FAILED, detalhe, False)
 
     def mais_recente_ate(self, d: JobDefinition, agora: datetime) -> datetime | None:
         """Última ocorrência planejada que já venceu — sem teto de catch-up.
@@ -487,13 +596,31 @@ class Scheduler:
             return                    # one-shot fica no estado final
         base = d.proximo_em or agora
         proximo = self.proximo_apos(d, base)
-        # não acumular ocorrências vencidas: avança até o futuro
+        # não acumular ocorrências vencidas: avança até o futuro.
+        # INTERVAL é aritmética, não iteração: com passo de 1s e três dias de
+        # parada, o laço precisaria de 259.200 voltas e batia no teto de
+        # 100.000 — devolvendo um instante AINDA no passado. Um teto que
+        # silenciosamente deixa o resultado errado é pior que não ter teto.
+        esp = d.agenda()
+        if (esp.kind is TipoAgenda.INTERVAL and proximo is not None
+                and proximo <= agora and esp.intervalo_s):
+            atraso = (agora - proximo).total_seconds()
+            saltos = int(atraso // esp.intervalo_s) + 1
+            proximo = proximo + timedelta(seconds=saltos * esp.intervalo_s)
         limite = 0
         while proximo is not None and proximo <= agora and limite < 100000:
             proximo = self.proximo_apos(d, proximo)
             limite += 1
         if proximo is None:
             return
-        if transicao_valida(atual.estado, JobState.SCHEDULED):
+        if atual.estado is JobState.SCHEDULED:
+            # Já está SCHEDULED: reagendar é atualizar a AGENDA, não
+            # transicionar. Exigir `transicao_valida(SCHEDULED, SCHEDULED)`
+            # aqui — que é falsa, e corretamente falsa — travava o job órfão
+            # para sempre: o encerramento chegava até aqui e não salvava nada.
+            # Conflato de conceitos: a allowlist governa o CICLO DE VIDA do
+            # job, não o instante do próximo disparo. Ela fica intocada.
+            self.armazem.salvar(replace(atual, proximo_em=proximo))
+        elif transicao_valida(atual.estado, JobState.SCHEDULED):
             self.armazem.salvar(replace(atual, estado=JobState.SCHEDULED,
                                         proximo_em=proximo))

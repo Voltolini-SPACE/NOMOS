@@ -133,28 +133,45 @@ class Ticker:
 
     def _processar(self, d: JobDefinition, agora: datetime,
                    r: ResultadoTick) -> ResultadoTick:
-        atrasadas = self._ocorrencias_pendentes(d, agora)
+        atrasadas, descartadas = self._ocorrencias_pendentes(d, agora)
         if not atrasadas:
             return r
         if self.catchup is CatchUp.SKIP:
-            # A lista vem limitada por `catchup_max`, então "a última da lista"
-            # NÃO é necessariamente a mais recente — com downtime longo era uma
-            # ocorrência VELHA (achado do censo). Recalcula a mais recente
-            # ignorando o teto, que é de catch-up e não de SKIP.
+            # SKIP roda SÓ a mais recente. Sempre — não "quando a lista foi
+            # truncada". A versão anterior colapsava a lista apenas se
+            # `recente != atrasadas[-1]`, condição que só é verdadeira quando
+            # `catchup_max` TRUNCA a lista. Com poucas ocorrências vencidas —
+            # o restart curto, que é o caso comum — a condição era falsa e o
+            # laço abaixo executava TODAS: SKIP virava RUN_ALL_BOUNDED sem
+            # avisar. Os três testes que cobriam SKIP usavam 5h de downtime, o
+            # único regime em que o teto trunca e o acerto acontecia por
+            # acidente. Havia ainda um `if False and …` logo abaixo — a lógica
+            # geral, desativada. Um ramo morto é uma defesa que o leitor conta
+            # como presente e que nunca roda.
             recente = self.scheduler.mais_recente_ate(d, agora)
-            if recente is not None and recente != atrasadas[-1]:
+            alvo = recente if recente is not None else atrasadas[-1]
+            puladas = max(0, len(atrasadas) - 1)
+            if puladas:
                 self._auditar("ticker.catchup.pulou", job=d.job_id,
-                              politica=self.catchup.value,
-                              puladas=len(atrasadas))
-                atrasadas = [recente]
-        if False and len(atrasadas) > 1:
-            # só a mais recente interessa; as antigas são explicitamente puladas
-            puladas = len(atrasadas) - 1
-            self._auditar("ticker.catchup.pulou", job=d.job_id,
-                          politica=self.catchup.value, puladas=puladas)
-            atrasadas = atrasadas[-1:]
-            r = ResultadoTick(r.examinados, r.executadas, r.puladas + puladas,
-                              r.falhas, r.negadas)
+                              politica=self.catchup.value, puladas=puladas)
+                r = ResultadoTick(r.examinados, r.executadas,
+                                  r.puladas + puladas, r.falhas, r.negadas)
+            atrasadas = [alvo]
+        elif descartadas:
+            # RUN_ALL_BOUNDED com o teto batendo: as ocorrências além do teto
+            # são DESCARTADAS de propósito (sem teto, o daemon acorda de uma
+            # parada longa e martela o mundo). Descartar é legítimo; descartar
+            # em SILÊNCIO não é — o operador precisa conseguir responder
+            # "quantas execuções eu perdi na queda de ontem?". O número é
+            # reportado como PISO (`>=`) porque contá-las exatamente exigiria
+            # enumerar a agenda inteira a cada tick, que é o custo que o teto
+            # existe para evitar.
+            self._auditar("ticker.catchup.descartou", job=d.job_id,
+                          politica=self.catchup.value,
+                          descartadas_no_minimo=descartadas)
+            self._alertar_descarte(d, atrasadas[0], descartadas)
+            r = ResultadoTick(r.examinados, r.executadas,
+                              r.puladas + descartadas, r.falhas, r.negadas)
         for quando in atrasadas:
             ex = self._executar_ocorrencia(d, quando, agora)
             if ex is None:
@@ -168,31 +185,78 @@ class Ticker:
                                   r.falhas + 1, r.negadas)
         return r
 
-    def _ocorrencias_pendentes(self, d: JobDefinition, agora: datetime) -> list[datetime]:
-        """Instantes planejados ainda não executados, conforme a política."""
+    # Teto da SONDA que conta ocorrências descartadas. Contar exatamente
+    # exigiria enumerar a agenda inteira a cada tick — o custo que
+    # `catchup_max` existe para evitar. Contar até aqui e reportar o número
+    # como PISO dá ao operador uma grandeza verdadeira sem reintroduzir o
+    # problema: "perdi pelo menos 1000" já responde a pergunta que importa.
+    SONDA_MAX = 1000
+
+    def _ocorrencias_pendentes(self, d: JobDefinition,
+                               agora: datetime) -> tuple[list[datetime], int]:
+        """`(instantes a executar, quantas ficaram de fora)`.
+
+        A contagem de descartadas passou a sair DAQUI porque era o único lugar
+        que sabia o número: `_processar` só via a lista já cortada e reportava
+        `puladas=0` para 51 ocorrências perdidas.
+        """
         base = d.proximo_em
         if base is None or base > agora:
-            return []
+            return [], 0
         if self.catchup is CatchUp.RUN_ONCE or not d.recorrente():
-            return [base]
+            return [base], 0
+
+        if self.catchup is CatchUp.SKIP:
+            # SKIP quer UMA: a mais recente vencida. Não precisa da lista, e
+            # montá-la era trabalho jogado fora — o laço daqui era cópia do
+            # RUN_ALL_BOUNDED e ficou sem função quando o colapso virou
+            # incondicional.
+            recente = self.scheduler.mais_recente_ate(d, agora) or base
+            return [recente], self._contar_entre(d, base, recente)
+
         pendentes = [base]
-        if self.catchup is CatchUp.RUN_ALL_BOUNDED:
-            proximo = base
-            while len(pendentes) < self.catchup_max:
-                seguinte = self.scheduler.proximo_apos(d, proximo)
-                if seguinte is None or seguinte > agora:
-                    break
-                pendentes.append(seguinte)
-                proximo = seguinte
-        elif self.catchup is CatchUp.SKIP:
-            proximo = base
-            while len(pendentes) < self.catchup_max:
-                seguinte = self.scheduler.proximo_apos(d, proximo)
-                if seguinte is None or seguinte > agora:
-                    break
-                pendentes.append(seguinte)
-                proximo = seguinte
-        return pendentes
+        proximo = base
+        while len(pendentes) < self.catchup_max:
+            seguinte = self.scheduler.proximo_apos(d, proximo)
+            if seguinte is None or seguinte > agora:
+                return pendentes, 0
+            pendentes.append(seguinte)
+            proximo = seguinte
+        return pendentes, self._contar_entre(d, proximo, agora)
+
+    def _contar_entre(self, d: JobDefinition, depois_de: datetime,
+                      ate: datetime) -> int:
+        """Quantas ocorrências existem em `(depois_de, ate]`, com teto."""
+        n, proximo = 0, depois_de
+        while n < self.SONDA_MAX:
+            seguinte = self.scheduler.proximo_apos(d, proximo)
+            if seguinte is None or seguinte > ate:
+                break
+            n += 1
+            proximo = seguinte
+        return n
+
+    def _alertar_descarte(self, d: JobDefinition, quando: datetime,
+                          quantas: int) -> None:
+        """Emite `MISSED` — o estado que existia na taxonomia sem emissor.
+
+        A ETAPA 3 criou `MISSED` e `RECOVERED` e não ligou nenhum dos dois.
+        Estado de taxonomia sem emissor é vocabulário, não observabilidade: dá
+        a impressão de que o sistema distingue casos que ele nunca reporta.
+        """
+        if self.alertas is None:
+            return
+        from nomos.adapters.resultado import ResultadoOcorrencia, canonico
+        estado = canonico(ResultadoOcorrencia.MISSED,
+                          error_class="CatchUpExcedido",
+                          detalhe=f"pelo menos {quantas} ocorrência(s) "
+                                  f"além do teto de {self.catchup_max}")
+        self.alertas.emitir(EventoFalha(
+            job_id=d.job_id,
+            occurrence_id=f"{d.job_id}@{quando.isoformat()}",
+            capability=d.capacidade, error_class=estado.error_class,
+            effect_state=estado.effect_state, detalhe=estado.mensagem,
+            timestamp=self._agora()))
 
     def _executar_ocorrencia(self, d: JobDefinition, quando: datetime,
                              agora: datetime):
