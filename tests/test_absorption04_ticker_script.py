@@ -23,7 +23,7 @@ from nomos.adapters.contrato import (
 )
 from nomos.adapters.scheduler import ArmazemJobs, Scheduler
 from nomos.adapters.script import ScriptAdapter
-from nomos.adapters.ticker import CatchUp, Ticker
+from nomos.adapters.ticker import SEM_AUTORIZACAO, CatchUp, Ticker
 from nomos.kernel.audit import AuditLog
 from nomos.kernel.policy import Category
 
@@ -58,7 +58,7 @@ def test_ticker_executa_job_devido(tmp_path):
     ef = _Efeito()
     s, rel = _sched(tmp_path, ef)
     s.criar("j", "suj", "fs-ler", primeiro_em=T0)
-    t = Ticker(s, agora_fn=lambda: rel["t"], dormir=lambda _s: None)
+    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None)
     r = t.tick()
     assert r.executadas == 1
     assert len(ef.chamadas) == 1
@@ -68,7 +68,7 @@ def test_ticker_nao_executa_job_futuro(tmp_path):
     ef = _Efeito()
     s, rel = _sched(tmp_path, ef)
     s.criar("j", "suj", "fs-ler", primeiro_em=T0 + timedelta(hours=1))
-    t = Ticker(s, agora_fn=lambda: rel["t"], dormir=lambda _s: None)
+    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None)
     assert t.tick().executadas == 0
     assert ef.chamadas == []
 
@@ -77,7 +77,7 @@ def test_ticker_nao_repete_ocorrencia(tmp_path):
     ef = _Efeito()
     s, rel = _sched(tmp_path, ef)
     s.criar("j", "suj", "fs-ler", primeiro_em=T0)
-    t = Ticker(s, agora_fn=lambda: rel["t"], dormir=lambda _s: None)
+    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None)
     t.tick()
     t.tick()
     t.tick()
@@ -88,7 +88,7 @@ def test_ticker_nao_faz_busy_loop(tmp_path):
     """Dorme SEMPRE entre passadas, inclusive quando não houve trabalho."""
     pausas = []
     s, rel = _sched(tmp_path)
-    t = Ticker(s, agora_fn=lambda: rel["t"], dormir=pausas.append,
+    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=pausas.append,
                intervalo_s=0.25)
     t.rodar_ate(max_ticks=4)
     assert len(pausas) == 4
@@ -97,7 +97,7 @@ def test_ticker_nao_faz_busy_loop(tmp_path):
 
 def test_ticker_shutdown_limpo(tmp_path):
     s, rel = _sched(tmp_path)
-    t = Ticker(s, agora_fn=lambda: rel["t"], dormir=lambda _s: None)
+    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None)
     ticks = {"n": 0}
 
     def _dormir(_s):
@@ -118,7 +118,7 @@ def test_ticker_com_cron_reagenda_no_fuso(tmp_path):
     spec = ScheduleSpec(kind=TipoAgenda.CRON, expression="0 9 * * *",
                         timezone="America/Sao_Paulo")
     s.criar("j", "suj", "fs-ler", schedule=spec, primeiro_em=T0)
-    t = Ticker(s, agora_fn=lambda: rel["t"], dormir=lambda _s: None)
+    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None)
     t.tick()
     assert len(ef.chamadas) == 1
     # 09:00 em São Paulo (UTC-3) = 12:00 UTC do dia seguinte
@@ -133,7 +133,7 @@ def _job_atrasado(tmp_path, catchup, catchup_max=10):
     s, _ = _sched(tmp_path, ef, rel)
     s.criar("j", "suj", "fs-ler", intervalo_s=300, primeiro_em=T0)  # 5 min
     rel["t"] = T0 + timedelta(hours=5)                              # downtime
-    t = Ticker(s, agora_fn=lambda: rel["t"], dormir=lambda _s: None,
+    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None,
                catchup=catchup, catchup_max=catchup_max)
     t.tick()
     return ef
@@ -435,7 +435,7 @@ def test_falha_de_execucao_emite_evento(tmp_path):
     s, _ = _sched(tmp_path, ef, rel)
     s.criar("j", "suj", "fs-ler", primeiro_em=T0)
     sink = SinkDeTeste()
-    t = Ticker(s, alert_sink=sink, agora_fn=lambda: rel["t"],
+    t = Ticker(s, SEM_AUTORIZACAO, alert_sink=sink, agora_fn=lambda: rel["t"],
                dormir=lambda _s: None)
     t.tick()
     assert len(sink.eventos) == 1
@@ -538,3 +538,77 @@ def test_allowlist_de_executaveis_nao_vem_do_plano(tmp_path):
                    "executaveis": ["/bin/echo"]}}])   # tenta ampliar
     assert not res.ok
     assert "allowlist" in res.missao.nos["s"].detalhe
+
+
+# ====================== correções vindas do censo independente da FASE 8
+
+def test_ticker_sem_autorizador_e_fail_closed(tmp_path):
+    """D1 do censo: `autorizador=None` era default e executava com credencial
+    None. Invariante que se desliga por omissão não é invariante."""
+    ef = _Efeito()
+    s, rel = _sched(tmp_path, ef)
+    with pytest.raises(ValueError, match="autorizador"):
+        Ticker(s, None, agora_fn=lambda: rel["t"])
+    with pytest.raises(TypeError):
+        Ticker(s)                       # nem posicionalmente é opcional
+
+
+def test_rodar_sem_autoridade_exige_dizer_em_voz_alta(tmp_path):
+    """A escolha de rodar sem autoridade precisa ser NOMEADA, não esquecida."""
+    ef = _Efeito()
+    s, rel = _sched(tmp_path, ef)
+    s.criar("j", "suj", "fs-ler", primeiro_em=T0)
+    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"],
+               dormir=lambda _s: None)
+    assert t.tick().executadas == 1
+    assert t.autorizador is None
+
+
+def test_catchup_skip_roda_a_MAIS_RECENTE_nao_uma_velha(tmp_path):
+    """D3 do censo: com downtime > catchup_max*intervalo, SKIP executava uma
+    ocorrência VELHA. Meu teste antigo só conferia len(chamadas)==1 e não pegava.
+
+    Agora assevera QUAL ocorrência rodou.
+    """
+    ef = _Efeito()
+    rel = {"t": T0}
+    s, _ = _sched(tmp_path, ef, rel)
+    s.criar("j", "suj", "fs-ler", intervalo_s=300, primeiro_em=T0)
+    rel["t"] = T0 + timedelta(hours=5)          # 60 ocorrências perdidas
+    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"],
+               dormir=lambda _s: None, catchup=CatchUp.SKIP, catchup_max=10)
+    t.tick()
+    assert len(ef.chamadas) == 1
+    executada = datetime.fromisoformat(ef.chamadas[0].split("@", 1)[1])
+    # a mais recente que venceu está a menos de um intervalo de agora
+    assert rel["t"] - executada < timedelta(seconds=300), (
+        f"SKIP executou ocorrência velha: {executada}")
+
+
+def test_agenda_corrompida_falha_fechada(tmp_path):
+    """D5 do censo: agenda ilegível virava None e o job CRON voltava como
+    ONE_SHOT — parava de recorrer EM SILÊNCIO."""
+    import sqlite3
+
+    from nomos.adapters.contrato import ErroConflito
+    db = tmp_path / "j.db"
+    s = Scheduler(ArmazemJobs(db), executor=_Efeito(), agora_fn=lambda: T0)
+    s.criar("j", "suj", "fs-ler",
+            schedule=ScheduleSpec(kind=TipoAgenda.CRON, expression="0 9 * * *"))
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE jobs SET schedule='{corrompido' WHERE job_id='j'")
+    s2 = Scheduler(ArmazemJobs(db), executor=_Efeito(), agora_fn=lambda: T0)
+    with pytest.raises(ErroConflito, match="ilegível"):
+        s2.status("j")
+
+
+def test_scheduler_alerta_sem_depender_do_ticker(tmp_path):
+    """D4 do censo: o alerta vivia só no ticker, então falha por
+    `executar_job()` era 100% muda."""
+    sink = SinkDeTeste()
+    s = Scheduler(ArmazemJobs(tmp_path / "j.db"), executor=_Efeito(falhar=True),
+                  agora_fn=lambda: T0, alert_sink=sink)
+    d = s.criar("j", "suj", "fs-ler", primeiro_em=T0)
+    s.executar_job(d, T0)                       # caminho SEM ticker
+    assert len(sink.eventos) == 1
+    assert sink.eventos[0].job_id == "j"

@@ -41,6 +41,11 @@ from nomos.adapters.alertas import AuditAlertSink, EventoFalha
 from nomos.adapters.scheduler import JobDefinition, JobInstance, JobState
 
 
+# Sentinela para "rodar sem autoridade", que só existe para teste. É preciso
+# NOMEAR essa escolha: um `None` esquecido não pode significar a mesma coisa.
+SEM_AUTORIZACAO = object()
+
+
 class CatchUp(str, Enum):
     SKIP = "SKIP"
     RUN_ONCE = "RUN_ONCE"
@@ -60,13 +65,24 @@ class ResultadoTick:
 class Ticker:
     """Uma passada = `tick()`. Um loop com pausa = `rodar_ate()`."""
 
-    def __init__(self, scheduler, autorizador=None, *, audit=None,
+    def __init__(self, scheduler, autorizador, *, audit=None,
                  alert_sink=None, catchup: CatchUp = CatchUp.RUN_ONCE,
                  catchup_max: int = 10, intervalo_s: float = 1.0,
                  agora_fn=lambda: datetime.now(timezone.utc),
                  dormir=time.sleep):
+        # FAIL-CLOSED (achado do censo independente): `autorizador` era
+        # opcional e o default `None` fazia o ticker executar o efeito com
+        # `credencial=None`. "Autorização por ocorrência" virava opt-in — e
+        # invariante que se pode desligar por omissão não é invariante.
+        # Agora é posicional e obrigatório; quem realmente não quer autoridade
+        # tem de dizer isso em voz alta com `SEM_AUTORIZACAO`.
+        if autorizador is None:
+            raise ValueError(
+                "Ticker exige `autorizador`. Para rodar sem autoridade "
+                "(apenas em teste) passe `ticker.SEM_AUTORIZACAO` "
+                "explicitamente — o default não pode ser fail-open")
         self.scheduler = scheduler
-        self.autorizador = autorizador
+        self.autorizador = None if autorizador is SEM_AUTORIZACAO else autorizador
         self.audit = audit
         self.alertas = alert_sink or (AuditAlertSink(audit) if audit else None)
         self.catchup = catchup
@@ -120,7 +136,18 @@ class Ticker:
         atrasadas = self._ocorrencias_pendentes(d, agora)
         if not atrasadas:
             return r
-        if self.catchup is CatchUp.SKIP and len(atrasadas) > 1:
+        if self.catchup is CatchUp.SKIP:
+            # A lista vem limitada por `catchup_max`, então "a última da lista"
+            # NÃO é necessariamente a mais recente — com downtime longo era uma
+            # ocorrência VELHA (achado do censo). Recalcula a mais recente
+            # ignorando o teto, que é de catch-up e não de SKIP.
+            recente = self.scheduler.mais_recente_ate(d, agora)
+            if recente is not None and recente != atrasadas[-1]:
+                self._auditar("ticker.catchup.pulou", job=d.job_id,
+                              politica=self.catchup.value,
+                              puladas=len(atrasadas))
+                atrasadas = [recente]
+        if False and len(atrasadas) > 1:
             # só a mais recente interessa; as antigas são explicitamente puladas
             puladas = len(atrasadas) - 1
             self._auditar("ticker.catchup.pulou", job=d.job_id,

@@ -240,8 +240,14 @@ def _linha_para_def(r) -> JobDefinition:
     if len(r) > 10 and r[10]:
         try:
             schedule = ScheduleSpec.de_dict(json.loads(r[10]))
-        except Exception:
-            schedule = None            # linha legada/ilegível ⇒ cai no compat
+        except Exception as exc:
+            # FAIL-CLOSED (achado do censo): antes isto virava `None` e o job
+            # voltava como ONE_SHOT — um job CRON PARAVA DE RECORRER em
+            # silêncio. Agenda ilegível é corrupção de estado, não um default.
+            raise ErroConflito(
+                f"agenda do job '{r[0]}' está ilegível ({type(exc).__name__}) "
+                "— recusando em vez de rebaixar para ONE_SHOT em silêncio"
+            ) from None
     return JobDefinition(
         job_id=r[0], sujeito=r[1], capacidade=r[2],
         argumentos=json.loads(r[3]), alvo=r[4], intervalo_s=r[5],
@@ -263,11 +269,18 @@ class Scheduler:
     """
 
     def __init__(self, armazem: ArmazemJobs, executor=None, audit=None,
-                 agora_fn=lambda: datetime.now(timezone.utc)):
+                 agora_fn=lambda: datetime.now(timezone.utc), alert_sink=None):
         self.armazem = armazem
         self._executor = executor
         self.audit = audit
         self._agora = agora_fn
+        # Achado do censo: o alerta vivia só no ticker, então falha pelo
+        # caminho `executar_devidos()`/`executar_job()` era 100% muda. Quem
+        # conhece a falha é quem a registra.
+        self.alertas = alert_sink
+        if alert_sink is None and audit is not None:
+            from nomos.adapters.alertas import AuditAlertSink
+            self.alertas = AuditAlertSink(audit)
 
     def _auditar(self, evento: str, **campos) -> None:
         if self.audit is not None:
@@ -412,6 +425,7 @@ class Scheduler:
             detalhe = f"{type(exc).__name__}: {exc}"
             self.armazem.concluir(inst, JobState.FAILED, detalhe)
             final = JobState.FAILED
+            self._alertar(d, inst, type(exc).__name__, detalhe)
 
         self._mudar_estado(d.job_id, final)
         self._reagendar(d, agora, final)
@@ -420,9 +434,37 @@ class Scheduler:
                       efeito=efeito)
         return JobExecution(inst, final, detalhe, efeito_aplicado=efeito)
 
+    def mais_recente_ate(self, d: JobDefinition, agora: datetime) -> datetime | None:
+        """Última ocorrência planejada que já venceu — sem teto de catch-up.
+
+        `SKIP` precisa da MAIS RECENTE, não da última dentro do limite de
+        catch-up: são perguntas diferentes, e confundi-las fazia SKIP executar
+        uma ocorrência velha depois de downtime longo.
+        """
+        atual = d.proximo_em
+        if atual is None or atual > agora:
+            return None
+        limite = 0
+        while limite < 500000:
+            seguinte = self.proximo_apos(d, atual)
+            if seguinte is None or seguinte > agora:
+                return atual
+            atual = seguinte
+            limite += 1
+        return atual
+
     def proximo_apos(self, d: JobDefinition, base: datetime) -> datetime | None:
         """Próximo disparo depois de `base`, pela agenda do job (cron ou intervalo)."""
         return d.agenda().proximo(base)
+
+    def _alertar(self, d: JobDefinition, inst: JobInstance, classe: str,
+                 detalhe: str) -> None:
+        if self.alertas is None:
+            return
+        from nomos.adapters.alertas import EventoFalha
+        self.alertas.emitir(EventoFalha(
+            job_id=d.job_id, occurrence_id=inst.chave, capability=d.capacidade,
+            error_class=classe, effect_state="UNKNOWN", detalhe=detalhe or ""))
 
     def _reagendar(self, d: JobDefinition, agora: datetime, final: JobState) -> None:
         atual = self.armazem.obter(d.job_id)
