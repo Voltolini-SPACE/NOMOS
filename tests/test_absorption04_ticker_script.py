@@ -474,3 +474,67 @@ def test_alertas_nao_dependem_de_canal_externo():
             importados.update(a.name for a in no.names)
     for rede in ("socket", "http", "urllib", "requests", "smtplib", "ssl"):
         assert not any(rede in m for m in importados), f"alertas importa {rede}"
+
+
+# ============================================== caminho de produção do script
+
+def test_script_registrado_exige_raizes_e_executaveis(tmp_path):
+    from nomos.adapters.wiring import registrar_script
+    from nomos.kernel.policy import PolicyEngine
+    from nomos.orquestracao.registro import RegistroCapacidades
+    home = tmp_path / "h"
+    home.mkdir()
+    reg = RegistroCapacidades(policy=PolicyEngine(home / "policy.json"),
+                              approver=lambda d: True)
+    with pytest.raises(ValueError, match="raizes"):
+        registrar_script(reg, raizes=(), executaveis=[sys.executable])
+    with pytest.raises(ValueError, match="executaveis|allowlist"):
+        registrar_script(reg, raizes=(str(home),), executaveis=())
+
+
+def test_script_alcancavel_pelo_runtime_governado(tmp_path):
+    """Caminho de PRODUÇÃO: efeito real atravessando registry→PDP→PEP→adapter."""
+    import json
+
+    from nomos.kernel.audit import AuditLog
+    from nomos.kernel.policy import PolicyEngine
+    from nomos.runtime.governado import RuntimeGovernado
+    home = tmp_path / "h"
+    home.mkdir()
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    ctx = {"home": home, "policy": PolicyEngine(home / "policy.json"),
+           "audit": AuditLog(home / "logs" / "audit.jsonl")}
+    rt = RuntimeGovernado(ctx, lambda d: True, adapters=True,
+                          caminhos=(str(ws),), executaveis=(sys.executable,))
+    assert "script-rodar" in rt.capacidades_adapter
+    res = rt.rodar("rodar script", passos=[{
+        "id": "s", "ferramenta": "script-rodar",
+        "params": {"argv": [sys.executable, "-c", "print('governado')"],
+                   "cwd": str(ws)}}])
+    assert res.ok, res.resumo()
+    assert "governado" in res.missao.nos["s"].resultado["stdout"]
+    ev = [json.loads(x).get("event")
+          for x in (home / "logs" / "audit.jsonl").read_text().splitlines() if x.strip()]
+    assert "pdp.decisao" in ev and "pep.aplicacao" in ev and "script.fim" in ev
+
+
+def test_allowlist_de_executaveis_nao_vem_do_plano(tmp_path):
+    """Um passo hostil não amplia a allowlist fixada no registro."""
+    from nomos.kernel.audit import AuditLog
+    from nomos.kernel.policy import PolicyEngine
+    from nomos.runtime.governado import RuntimeGovernado
+    home = tmp_path / "h"
+    home.mkdir()
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    ctx = {"home": home, "policy": PolicyEngine(home / "policy.json"),
+           "audit": AuditLog(home / "logs" / "audit.jsonl")}
+    rt = RuntimeGovernado(ctx, lambda d: True, adapters=True,
+                          caminhos=(str(ws),), executaveis=(sys.executable,))
+    res = rt.rodar("escalar", passos=[{
+        "id": "s", "ferramenta": "script-rodar",
+        "params": {"argv": ["/bin/echo", "oi"], "cwd": str(ws),
+                   "executaveis": ["/bin/echo"]}}])   # tenta ampliar
+    assert not res.ok
+    assert "allowlist" in res.missao.nos["s"].detalhe

@@ -204,3 +204,77 @@ def registrar_scheduler(registro, scheduler, *, apenas_leitura: bool = False) ->
                 continue
             raise
     return registrados
+
+
+# ------------------------------------------------------------------ script
+
+CATEGORIAS_SCRIPT: dict[str, Category] = {
+    # Rodar processo é o segundo maior risco da escala. Não existe versão
+    # "leve" disto: quem autoriza `script-rodar` autoriza execução.
+    "script-rodar": Category.CODE_EXEC,
+}
+
+
+def _ponte_script(adapter, registro, *, raizes, executaveis, audit, timeout_s):
+    """Executor registrado para `script-rodar`.
+
+    A allowlist de executáveis é FIXADA no registro, não vem do chamador. Se
+    viesse por parâmetro, um plano hostil a ampliaria — exatamente o padrão que
+    o NOMOS recusa desde a ABSORPTION-01: quem executa não define o próprio
+    limite.
+    """
+    import time
+
+    from nomos.adapters.contrato import CapabilityContext, CapabilityRequest
+
+    def _executar(**params):
+        deadline = (time.monotonic() + timeout_s) if timeout_s else None
+        ctx = CapabilityContext.de_registro(
+            registro, "script-rodar",
+            params.pop("_sujeito", "runtime-governado"),
+            raizes=raizes, deadline_monotonic=deadline, audit=audit)
+        argumentos = dict(params)
+        argumentos["executaveis"] = list(executaveis)   # não negociável
+        pedido = CapabilityRequest(capacidade="script-rodar",
+                                   alvo=str(params.get("alvo", "") or ""),
+                                   argumentos=argumentos)
+        resultado = adapter.executar(pedido, ctx)
+        valor = resultado.valor
+        return {"codigo": valor.codigo, "stdout": valor.stdout,
+                "stderr": valor.stderr, "truncado": valor.truncado}
+    _executar.__name__ = "adapter_script_rodar"
+    _executar.__qualname__ = "adapter_script_rodar"
+    return _executar
+
+
+def registrar_script(registro, *, raizes, executaveis, audit=None,
+                     timeout_s: float | None = 30.0) -> list[str]:
+    """Registra `script-rodar`. Exige raízes E allowlist de executáveis.
+
+    Fail-closed nos dois eixos, pelo mesmo motivo do filesystem mutante: sem
+    escopo de dados o processo lê e escreve onde quiser, e sem allowlist de
+    binário ele roda o que quiser. Registrar assim seria entregar A5 sem
+    fronteira — e A5 sem fronteira é shell com outro nome.
+    """
+    from nomos.adapters.script import ScriptAdapter
+    from nomos.orquestracao.registro import ErroRegistro
+
+    if not raizes:
+        raise ValueError(
+            "registrar `script-rodar` exige `raizes` explícitas (escopo de "
+            "dados do processo)")
+    if not executaveis:
+        raise ValueError(
+            "registrar `script-rodar` exige `executaveis` explícitos — A5 sem "
+            "allowlist de binário é shell com outro nome")
+    try:
+        registro.registrar(
+            "script-rodar", Category.CODE_EXEC,
+            _ponte_script(ScriptAdapter(), registro, raizes=tuple(raizes),
+                          executaveis=tuple(executaveis), audit=audit,
+                          timeout_s=timeout_s),
+            origem="adapters.script", idempotente=False)
+    except ErroRegistro as exc:
+        if "já registrada" not in str(exc):
+            raise
+    return ["script-rodar"]

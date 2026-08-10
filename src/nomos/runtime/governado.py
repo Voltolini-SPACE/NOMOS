@@ -309,7 +309,8 @@ class RuntimeGovernado:
                  executores: dict[str, Callable] | None = None,
                  autorizacao=None, decisor=None, ttl_s: int = 3600,
                  caminhos: tuple[str, ...] = (), adapters: bool = False,
-                 adapters_apenas_leitura: bool = False):
+                 adapters_apenas_leitura: bool = False,
+                 executaveis: tuple[str, ...] = ()):
         if ctx is None or "policy" not in ctx:
             raise ErroRuntime("contexto sem política carregada — fail-closed")
         self.ctx = ctx
@@ -329,6 +330,13 @@ class RuntimeGovernado:
             self.capacidades_adapter = registrar_filesystem(
                 self.registro, raizes=tuple(caminhos), audit=self.audit,
                 apenas_leitura=adapters_apenas_leitura)
+            if executaveis:
+                # `script-rodar` só entra com allowlist de binário explícita —
+                # A5 sem fronteira é shell com outro nome.
+                from nomos.adapters.wiring import registrar_script
+                self.capacidades_adapter += registrar_script(
+                    self.registro, raizes=tuple(caminhos),
+                    executaveis=tuple(executaveis), audit=self.audit)
 
         brutos = dict(executores if executores is not None
                       else executores_nativos(ctx, aprovador=aprovador,
@@ -380,8 +388,13 @@ class RuntimeGovernado:
         from nomos.pdp.decisor import Pedido
 
         def _executar(**params):
+            # O RECURSO de uma capacidade é o que ela toca. Para as de arquivo
+            # é o `alvo`; para um processo é o `cwd` — é ali que ele lê e
+            # escreve. Sem esta equivalência o PDP nega `script-rodar` com
+            # "recurso vazio", que seria negar pelo motivo errado.
+            recurso = str(params.get("alvo", "") or params.get("cwd", "") or "")
             pedido = Pedido(capacidade=nome, sujeito=self.manifesto.name,
-                            recurso=str(params.get("alvo", "") or ""),
+                            recurso=recurso,
                             argumentos=dict(params),
                             nonce=secrets.token_hex(16))
             return pep(pedido, self.autorizacao, **params)
