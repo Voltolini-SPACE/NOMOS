@@ -35,6 +35,8 @@ import time
 
 from nomos.adapters.contrato import CapabilityContext, CapabilityRequest
 from nomos.adapters.filesystem import FilesystemAdapter
+from pathlib import Path
+
 from nomos.adapters.contrato import ErroInvalido
 from nomos.kernel.policy import Category
 
@@ -247,6 +249,45 @@ def _ponte_script(adapter, registro, *, raizes, executaveis, audit, timeout_s):
     return _executar
 
 
+def validar_executaveis(brutos) -> tuple[str, ...]:
+    """Canonicaliza e valida a allowlist. Qualquer anomalia ⇒ recusa.
+
+    Uma allowlist só vale se cada entrada for provada AGORA: existe, é arquivo,
+    tem bit de execução, e é o caminho REAL (realpath). Guardar o caminho
+    lógico deixaria a porta aberta para troca de symlink entre o registro e o
+    uso — o mesmo TOCTOU que `adapters/caminho.py` fecha para dados.
+
+    Duplicatas são normalizadas: dois caminhos que resolvem para o mesmo
+    binário são uma entrada só.
+    """
+    import os
+
+    if not brutos:
+        raise ValueError("allowlist de executáveis vazia")
+    reais: list[str] = []
+    for bruto in brutos:
+        if not isinstance(bruto, str) or not bruto.strip():
+            raise ValueError(f"caminho de executável inválido: {bruto!r}")
+        caminho = Path(os.path.realpath(os.path.abspath(bruto.strip())))
+        if not caminho.exists():
+            raise ValueError(f"executável não existe: {bruto!r} → {caminho}")
+        if caminho.is_dir():
+            raise ValueError(f"é diretório, não executável: {caminho}")
+        if not caminho.is_file():
+            raise ValueError(f"não é arquivo regular: {caminho}")
+        if not os.access(caminho, os.X_OK):
+            raise ValueError(f"sem bit de execução: {caminho}")
+        nome = caminho.name.lower()
+        from nomos.adapters.script import INTERPRETADORES_DE_SHELL
+        if nome in INTERPRETADORES_DE_SHELL:
+            raise ValueError(
+                f"'{bruto}' é interpretador de shell — não entra em allowlist "
+                "de script; rodar shell é outra capacidade")
+        if str(caminho) not in reais:
+            reais.append(str(caminho))
+    return tuple(reais)
+
+
 def registrar_script(registro, *, raizes, executaveis, audit=None,
                      timeout_s: float | None = 30.0) -> list[str]:
     """Registra `script-rodar`. Exige raízes E allowlist de executáveis.
@@ -267,6 +308,7 @@ def registrar_script(registro, *, raizes, executaveis, audit=None,
         raise ValueError(
             "registrar `script-rodar` exige `executaveis` explícitos — A5 sem "
             "allowlist de binário é shell com outro nome")
+    executaveis = validar_executaveis(executaveis)   # canonicaliza e prova
     try:
         registro.registrar(
             "script-rodar", Category.CODE_EXEC,

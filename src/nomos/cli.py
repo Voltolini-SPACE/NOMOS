@@ -1547,13 +1547,34 @@ def cmd_orquestrar(ctx, args) -> int:
                           "(escopo de caminho das capacidades de arquivo)"),
               file=sys.stderr)
         return EXIT_ERROR
+    executaveis = tuple(getattr(args, "executavel", None) or ())
+    usar_scheduler = bool(getattr(args, "scheduler", False))
+    if (executaveis or usar_scheduler) and not raizes:
+        print(fmt("E010", "--executavel/--scheduler exigem pelo menos um "
+                          "--raiz (escopo de caminho)"), file=sys.stderr)
+        return EXIT_ERROR
     try:
         rt = RuntimeGovernado(ctx, aprovador,
                               sem_motor=getattr(args, "sem_motor", False),
-                              caminhos=raizes, adapters=usar_adapters)
+                              caminhos=raizes, adapters=usar_adapters,
+                              executaveis=executaveis)
     except ValueError as exc:
         print(fmt("E010", str(exc)), file=sys.stderr)
         return EXIT_ERROR
+    if usar_scheduler:
+        # CALLER DE PRODUÇÃO do scheduler: registra no MESMO registro que o
+        # planner e o PDP consultam. Sem registry paralelo.
+        from nomos.adapters.wiring import registrar_scheduler
+        from nomos.runtime.agendador import AgendadorGovernado, ConfigAgendador
+        try:
+            ag = AgendadorGovernado(ctx, aprovador, ConfigAgendador(
+                raizes=raizes, executaveis=executaveis))
+            nomes = registrar_scheduler(rt.registro, ag.scheduler)
+        except Exception as exc:
+            print(fmt("E010", f"scheduler não registrado: {exc}"), file=sys.stderr)
+            return EXIT_ERROR
+        rt.capacidades_adapter += nomes
+        print(f"capacidades de agendamento ligadas: {', '.join(nomes)}")
     if usar_adapters and rt.capacidades_adapter:
         print(f"capacidades de arquivo ligadas: "
               f"{', '.join(rt.capacidades_adapter)}")
@@ -1589,6 +1610,84 @@ def cmd_orquestrar(ctx, args) -> int:
         print(fmt("E003", resultado.motivo or "missão não concluiu"), file=sys.stderr)
         return EXIT_DENIED
     print("\nmissão concluída — todos os nós OK")
+    return EXIT_OK
+
+
+def cmd_scheduler(ctx, args) -> int:
+    """CALLER DE PRODUÇÃO do Ticker (ABSORPTION-05 / FASE 3).
+
+    `Ticker` existia como classe testável sem chamador. Aqui ele ganha
+    entrypoint operacional em foreground. O autorizador é o do
+    `AgendadorGovernado` — obrigatório por construção, nunca None.
+    """
+    from nomos.simple.erros import fmt
+    from nomos.runtime.agendador import AgendadorGovernado, ConfigAgendador
+
+    sub = getattr(args, "scheduler_cmd", None)
+    raizes = tuple(getattr(args, "raiz", None) or ())
+    executaveis = tuple(getattr(args, "executavel", None) or ())
+    if not raizes:
+        print(fmt("E010", "scheduler exige pelo menos um --raiz (escopo de "
+                          "caminho das capacidades executadas pelos jobs)"),
+              file=sys.stderr)
+        return EXIT_ERROR
+
+    aprovador = _approver_for(ctx, args)
+    try:
+        ag = AgendadorGovernado(ctx, aprovador, ConfigAgendador(
+            raizes=raizes, executaveis=executaveis,
+            intervalo_s=float(getattr(args, "intervalo", 1.0) or 1.0)))
+        nomes = ag.preparar()
+    except Exception as exc:
+        print(fmt("E010", f"scheduler não pôde ser preparado: {exc}"),
+              file=sys.stderr)
+        return EXIT_DENIED
+
+    if sub == "listar":
+        jobs = ag.scheduler.listar()
+        if not jobs:
+            print("nenhum job agendado.")
+            return EXIT_OK
+        for d in jobs:
+            ag_spec = d.agenda()
+            quando = (ag_spec.expression if ag_spec.expression
+                      else (f"{ag_spec.intervalo_s}s" if ag_spec.intervalo_s
+                            else "uma vez"))
+            print(f"  {d.job_id}: {d.capacidade} · {ag_spec.kind.value} "
+                  f"({quando}, {ag_spec.timezone}) · {d.estado.value} · "
+                  f"próximo {d.proximo_em}")
+        return EXIT_OK
+
+    if sub == "rodar":
+        max_ticks = getattr(args, "max_ticks", None)
+        print(f"capacidades de agendamento: {', '.join(nomes)}")
+        print(f"armazém: {ag.armazem.caminho}")
+        print(f"ticker em foreground (intervalo {ag.config.intervalo_s}s) — "
+              f"Ctrl+C encerra.")
+        ticker = ag.ticker()
+        import signal as _sig
+
+        def _parar(_s, _f):
+            print("\nencerrando (shutdown limpo)…")
+            ticker.parar()
+
+        for numero in (_sig.SIGINT, _sig.SIGTERM):
+            try:
+                _sig.signal(numero, _parar)
+            except (ValueError, OSError, AttributeError) as exc:
+                # thread secundária ou SO sem esse sinal: segue sem handler,
+                # mas o operador fica sabendo por que Ctrl+C pode não parar
+                print(f"aviso: sem handler para sinal {numero} "
+                      f"({type(exc).__name__}) — use --max-ticks")
+        resultados = ticker.rodar_ate(max_ticks=max_ticks)
+        total = sum(r.executadas for r in resultados)
+        falhas = sum(r.falhas for r in resultados)
+        print(f"ticks: {len(resultados)} · ocorrências executadas: {total} · "
+              f"falhas: {falhas}")
+        return EXIT_OK if falhas == 0 else EXIT_DENIED
+
+    print("uso: nomos scheduler listar --raiz <dir>\n"
+          "     nomos scheduler rodar  --raiz <dir> [--intervalo N] [--max-ticks N]")
     return EXIT_OK
 
 
@@ -2395,7 +2494,33 @@ def build_parser() -> argparse.ArgumentParser:
     orq.add_argument("--adapters", action="store_true",
                      help="registra as capacidades de arquivo (fs-ler, "
                           "fs-escrever, fs-editar, …) — exige --raiz")
+    orq.add_argument("--executavel", action="append", default=[],
+                     help="binário autorizado para script-rodar (pode repetir); "
+                          "sem isto a capacidade de script NÃO é registrada")
+    orq.add_argument("--scheduler", action="store_true",
+                     help="registra as capacidades de agendamento "
+                          "(sched-criar, sched-listar, …) — exige --raiz")
     orq.set_defaults(fn=cmd_orquestrar)
+
+    sch = sub.add_parser("scheduler",
+                         help="agendador governado: lista jobs e roda o ticker "
+                              "em foreground (não instala serviço)")
+    schsub = sch.add_subparsers(dest="scheduler_cmd")
+    for nome_s in ("listar", "rodar"):
+        sc = schsub.add_parser(nome_s)
+        sc.add_argument("--raiz", action="append", default=[],
+                        help="raiz autorizada (pode repetir) — obrigatório")
+        sc.add_argument("--executavel", action="append", default=[],
+                        help="binário autorizado para script-rodar (pode repetir)")
+        sc.add_argument("--intervalo", type=float, default=1.0,
+                        help="segundos entre passadas do ticker")
+        sc.add_argument("--max-ticks", type=int, dest="max_ticks", default=None,
+                        help="para após N passadas (útil para operação pontual)")
+        sc.add_argument("--panel", action="store_true",
+                        help="aprova via painel local em vez de terminal")
+        sc.set_defaults(fn=cmd_scheduler)
+    sch.set_defaults(fn=cmd_scheduler, scheduler_cmd=None, raiz=[],
+                     executavel=[], intervalo=1.0, max_ticks=None)
 
     mip = sub.add_parser("missao",
                          help="missões que FAZEM: plano → sua aprovação → evidência")
