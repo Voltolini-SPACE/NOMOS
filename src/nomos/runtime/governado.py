@@ -173,7 +173,7 @@ def _versoes_de(registro, capacidades) -> tuple[tuple[str, str], ...]:
 
 
 def sessao_pdp(registro, manifesto, audit=None, ttl_s: int = 3600,
-               caminhos: tuple[str, ...] = ()):
+               caminhos: tuple[str, ...] = (), extras: tuple[str, ...] = ()):
     """(decisor, autorização) de SESSÃO para um manifesto. **Fonte única.**
 
     Usada tanto pelo `RuntimeGovernado` quanto pelo caminho de ferramenta
@@ -210,14 +210,15 @@ def sessao_pdp(registro, manifesto, audit=None, ttl_s: int = 3600,
                       armazem_nonce=ArmazemNonce(), audit=audit)
     agora = agora_utc()
     autorizacao = chaveiro.assinar(Autorizacao(
-        capacidades=tuple(manifesto.ferramentas),
+        capacidades=tuple(manifesto.ferramentas) + tuple(extras),
         sujeito=manifesto.name,
         audiencia=AUDIENCIA_RUNTIME,
         emitida_em=agora,
         expira_em=agora + timedelta(seconds=ttl_s),
         risco_max=manifesto.risco_max,
         caminhos=tuple(caminhos),
-        versoes=_versoes_de(registro, manifesto.ferramentas),
+        versoes=_versoes_de(registro,
+                            tuple(manifesto.ferramentas) + tuple(extras)),
         jti=secrets.token_hex(8)), "sessao")
     return decisor, autorizacao
 
@@ -307,7 +308,8 @@ class RuntimeGovernado:
                  politica_recuperacao: PoliticaRecuperacao | None = None,
                  executores: dict[str, Callable] | None = None,
                  autorizacao=None, decisor=None, ttl_s: int = 3600,
-                 caminhos: tuple[str, ...] = ()):
+                 caminhos: tuple[str, ...] = (), adapters: bool = False,
+                 adapters_apenas_leitura: bool = False):
         if ctx is None or "policy" not in ctx:
             raise ErroRuntime("contexto sem política carregada — fail-closed")
         self.ctx = ctx
@@ -318,16 +320,37 @@ class RuntimeGovernado:
         self.registro = RegistroCapacidades(policy=self.policy,
                                             approver=aprovador,
                                             audit=self.audit)
-        brutos = (executores if executores is not None
-                  else executores_nativos(ctx, aprovador=aprovador,
-                                          router=router, sem_motor=sem_motor,
-                                          manifesto=self.manifesto))
+        # ABSORPTION-03: adapters entram como capacidades DINÂMICAS, pelo
+        # caminho governado (registrar é A5 + gate + audit). A allowlist
+        # nativa de 8 ferramentas continua intocada.
+        self.capacidades_adapter: list[str] = []
+        if adapters:
+            from nomos.adapters.wiring import registrar_filesystem
+            self.capacidades_adapter = registrar_filesystem(
+                self.registro, raizes=tuple(caminhos), audit=self.audit,
+                apenas_leitura=adapters_apenas_leitura)
+
+        brutos = dict(executores if executores is not None
+                      else executores_nativos(ctx, aprovador=aprovador,
+                                              router=router, sem_motor=sem_motor,
+                                              manifesto=self.manifesto))
         # FASE 2: o PDP não é opcional. Sem decisor entregue, o runtime emite
         # a própria autorização de SESSÃO — escopo = manifesto, teto de risco =
         # o do manifesto, prazo = ttl_s. A raiz de confiança é o dono que
         # abriu o CLI; o gate humano continua acontecendo no boundary.
         self.decisor, self.autorizacao = self._preparar_pdp(
-            decisor, autorizacao, ttl_s, tuple(caminhos))
+            decisor, autorizacao, ttl_s, tuple(caminhos),
+            extras=tuple(self.capacidades_adapter))
+        # ABSORPTION-03: capacidades DINÂMICAS também precisam do PEP.
+        # Sem isto o `Orquestrador._executor_para` cai em
+        # `registro.executor_de()` e chama a ponte CRUA — um bypass do PDP
+        # aberto pelo próprio wiring. Foi o teste de trilha que pegou:
+        # `pdp.decisao` não aparecia na execução de uma capacidade de adapter.
+        for nome in self.capacidades_adapter:
+            bruto = self.registro.executor_de(nome)
+            if bruto is not None and nome not in brutos:
+                brutos[nome] = bruto
+
         self.executores_protegidos = proteger_executores(brutos, self.decisor,
                                                          audit=self.audit)
         self.executores = {nome: self._adaptar(nome, pep)
@@ -339,12 +362,13 @@ class RuntimeGovernado:
 
     # ---------------- PDP/PEP ----------------
 
-    def _preparar_pdp(self, decisor, autorizacao, ttl_s: int, caminhos=()):
+    def _preparar_pdp(self, decisor, autorizacao, ttl_s: int, caminhos=(),
+                      extras=()):
         """Decisor + autorização de sessão. Ambos obrigatórios para executar."""
         if decisor is not None and autorizacao is not None:
             return decisor, autorizacao
         d, a = sessao_pdp(self.registro, self.manifesto, audit=self.audit,
-                          ttl_s=ttl_s, caminhos=caminhos)
+                          ttl_s=ttl_s, caminhos=caminhos, extras=extras)
         return (decisor or d), (autorizacao or a)
 
     def _adaptar(self, nome: str, pep) -> Callable:

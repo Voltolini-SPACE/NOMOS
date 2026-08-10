@@ -34,9 +34,13 @@ LIMITE_LEITURA_BYTES = 8 * 1024 * 1024      # 8 MB
 LIMITE_ESCRITA_BYTES = 8 * 1024 * 1024
 LIMITE_ITENS_LISTAGEM = 5000
 
+# Nome PÚBLICO com hífen: é o que o registro dinâmico aceita
+# (`registro.NOME_RE` = ^[a-z][a-z0-9-]{1,31}$ — sem underscore). O método
+# Python correspondente continua com underscore, então o despacho é por tabela
+# em vez de getattr — mais explícito e sem construir nome de atributo.
 CAPACIDADES = (
-    "fs_ler", "fs_escrever", "fs_editar", "fs_criar_dir",
-    "fs_mover", "fs_apagar", "fs_listar", "fs_metadados",
+    "fs-ler", "fs-escrever", "fs-editar", "fs-criar-dir",
+    "fs-mover", "fs-apagar", "fs-listar", "fs-metadados",
 )
 
 
@@ -54,8 +58,7 @@ class FilesystemAdapter(Adapter):
     def executar(self, pedido: CapabilityRequest,
                  ctx: CapabilityContext) -> CapabilityResult:
         self._coerente(pedido, ctx)
-        metodo = getattr(self, f"_{pedido.capacidade}")
-        return metodo(pedido, ctx)
+        return self._DESPACHO[pedido.capacidade](self, pedido, ctx)
 
     # ------------------------------------------------------------- leitura
 
@@ -242,6 +245,13 @@ class FilesystemAdapter(Adapter):
         }
         self._auditar(ctx, "fs.metadados", alvo=str(caminho))
         return CapabilityResult.sucesso(dados)
+
+    _DESPACHO = {
+        "fs-ler": _fs_ler, "fs-escrever": _fs_escrever, "fs-editar": _fs_editar,
+        "fs-criar-dir": _fs_criar_dir, "fs-mover": _fs_mover,
+        "fs-apagar": _fs_apagar, "fs-listar": _fs_listar,
+        "fs-metadados": _fs_metadados,
+    }
 
 
 def _escrever_atomico(caminho: Path, conteudo: str) -> None:

@@ -210,11 +210,11 @@ def test_deadline_estourado_impede_inicio(tmp_path):
             return None
 
     ctx = CapabilityContext.de_registro(
-        _Reg(), "fs_escrever", "suj", raizes=(str(raiz),),
+        _Reg(), "fs-escrever", "suj", raizes=(str(raiz),),
         deadline_monotonic=time.monotonic() - 0.5)
     with pytest.raises(ErroTimeout):
         FilesystemAdapter().executar(
-            CapabilityRequest(capacidade="fs_escrever", alvo=str(raiz / "novo.txt"),
+            CapabilityRequest(capacidade="fs-escrever", alvo=str(raiz / "novo.txt"),
                               argumentos={"conteudo": "y"}), ctx)
     assert not (raiz / "novo.txt").exists()          # nenhum efeito
 
@@ -227,11 +227,11 @@ def test_restante_reflete_o_prazo():
         idempotente_de = staticmethod(lambda n: True)
         executor_de = staticmethod(lambda n: None)
 
-    ctx = CapabilityContext.de_registro(_Reg(), "fs_ler", "s",
+    ctx = CapabilityContext.de_registro(_Reg(), "fs-ler", "s",
                                         deadline_monotonic=time.monotonic() + 5)
     r = ctx.restante()
     assert r is not None and 0 < r <= 5
-    sem = CapabilityContext.de_registro(_Reg(), "fs_ler", "s")
+    sem = CapabilityContext.de_registro(_Reg(), "fs-ler", "s")
     assert sem.restante() is None
     sem.exigir_prazo()                                # sem prazo não levanta
 
