@@ -313,8 +313,8 @@
                 <div class="stat"><b>100%</b><span>local por padrão</span></div>
                 <div class="stat"><b>0</b><span>telemetria / rastreio</span></div>
                 <div class="stat"><b>A0–A6</b><span>níveis de risco governados</span></div>
-                <div class="stat"><b>1.800+</b><span>testes automatizados</span></div>
-                <div class="stat"><b>12/12</b><span>CI verde: 3 SO × 4 Python</span></div>
+                <div class="stat"><b>1.900+</b><span>testes automatizados</span></div>
+                <div class="stat"><b>19/19</b><span>checks de CI verdes</span></div>
             </div>
         </div>
     </section>
@@ -341,8 +341,8 @@
             <p class="lead">A lei da casa também vale para o marketing: aqui, cada afirmação é verificável. Abaixo estão <strong>saídas reais</strong> do NOMOS na sua máquina — e a prova técnica que roda sozinha a cada <span class="k">git push</span>.</p>
 
             <div class="prova-grid">
-                <div class="pcard"><b>12/12</b><span>combinações de CI verdes — 3 sistemas (Linux · macOS · Windows) × 4 versões de Python (3.10 → 3.13), sem <em>fail-fast</em>.</span></div>
-                <div class="pcard"><b>1.800+</b><span>testes automatizados a cada push, com cobertura ≥ 80% e checagem de tipos (mypy) num job à parte.</span></div>
+                <div class="pcard"><b>12/12</b><span>combinações de CI verdes — 3 sistemas (Linux · macOS · Windows) × 4 versões de Python (3.10 → 3.13), sem <em>fail-fast</em> — dentro de 19 checks no total, somando 7 gates bloqueantes: cobertura, mypy, pip-audit, reprodutibilidade e smoke do wheel nos 3 sistemas.</span></div>
+                <div class="pcard"><b>1.900+</b><span>funções de teste a cada push (2.082 casos executados, contando as parametrizadas), com cobertura medida em 85% — o gate reprova abaixo de 80% — e checagem de tipos (mypy) num job à parte.</span></div>
                 <div class="pcard"><b>0</b><span>telemetria, rastreio ou "casa" para ligar. O modo só-local é a política — não um botão que dá para esquecer desligado.</span></div>
                 <div class="pcard"><b>SEC-01…12</b><span>invariantes de segurança que <em>são</em> testes: se o código divergir da política, a suíte inteira falha.</span></div>
                 <div class="pcard"><b>bit-a-bit</b><span>builds reproduzíveis: dois builds independentes do mesmo commit geram wheel e sdist com o MESMO sha256 — gate bloqueante no CI (Linux, Python 3.12) que refaz os dois e compara byte a byte. Verificação empírica registrada em Linux e macOS. A suíte de testes roda em Linux, macOS e Windows, Python 3.10 a 3.13.</span></div>
@@ -504,7 +504,7 @@ execução real só numa fase aprovada — nunca finge</pre></figure>
             <h3 class="slots-h">Clipes do sistema <span class="soon">— gravações reais entram aqui (solte seus arquivos em <code>site/assets/media/</code>)</span></h3>
             <div class="grid slots">
                 <div class="slot"><span class="play" aria-hidden="true">▶</span><b>Missão que faz</b><small>plano → sua aprovação → evidência, com 1 comando para desfazer</small><em>clipe: assets/media/missao.webm</em></div>
-                <div class="slot"><span class="play" aria-hidden="true">▶</span><b>Painel local + Mosaic</b><small>suas telas ao vivo, isoladas, dentro do painel 127.0.0.1</small><em>clipe: assets/media/mosaic.webm</em></div>
+                <div class="slot"><span class="play" aria-hidden="true">▶</span><b>Painel local + Mosaic</b><small>mosaico de telas dentro do painel 127.0.0.1 (adaptador demo)</small><em>clipe: assets/media/mosaic.webm</em></div>
                 <div class="slot"><span class="play" aria-hidden="true">▶</span><b>Aprovar sem sair do fluxo</b><small>fila de aprovações com token de uso único, tudo auditado</small><em>clipe: assets/media/aprovacoes.webm</em></div>
                 <div class="slot"><span class="play" aria-hidden="true">▶</span><b>Memória que atravessa sessões</b><small>dry-run, hash de integridade, recusa segredo e dado sensível</small><em>clipe: assets/media/memoria.webm</em></div>
             </div>
@@ -595,7 +595,7 @@ execução real só numa fase aprovada — nunca finge</pre></figure>
               <li><b>Roteador automático</b> — Escolhe o melhor motor por tarefa — local primeiro. <span class="k">nomos motores</span></li>
               <li><b>Memória local</b> — SQLite na sua máquina com busca full-text; você revisa o que vira permanente. <span class="k">nomos memoria</span></li>
               <li><b>Memória que atravessa sessões</b> — Motor auditável: dry-run por padrão, hash de integridade, recusa segredos e PII. <span class="k">python -m nomos.memory.cli</span></li>
-              <li><b>Mosaic — telas ao vivo no painel</b> — Várias telas isoladas em mosaico dentro do painel, vistoriadas pelo agente. <span class="k">python -m nomos.mosaic.cli</span></li>
+              <li><b>Mosaic — mosaico de telas no painel (experimental)</b> — Várias telas em mosaico dentro do painel. O adaptador padrão é o demo (vistoria sintética, sem rede); o navegador real com login isolado é opt-in e ainda sem cobertura de teste. <span class="k">python -m nomos.mosaic.cli --demo</span></li>
               <li><b>Conversas com retenção</b> — Abra, busque, fixe, exporte e esqueça conversas — retenção sob seu controle. <span class="k">nomos conversas</span></li>
               <li><b>Missões que fazem</b> — Plano legível → uma aprovação → execução passo a passo → evidência; um comando desfaz. <span class="k">nomos missao</span></li>
               <li><b>Fila de aprovações</b> — Ação sensível passa por fila com token de uso único; no terminal ou no painel. <span class="k">nomos approvals</span></li>
@@ -767,8 +767,8 @@ execução real só numa fase aprovada — nunca finge</pre></figure>
                 <figcaption>O Dash não tem botão de agir — de propósito. Ele LÊ; decidir continua no gate de aprovações. Glanceability: a história inteira em segundos.</figcaption>
             </figure>
 
-            <h3 style="margin-top:2.2rem; font-size:1.05rem; color:var(--neon);">Suas telas ao vivo: a aba Mosaic</h3>
-            <p class="lead">Dentro do painel, a aba <strong>Mosaic</strong> junta vários sites num mosaico que se auto-organiza — e-mail, banco, mensagens, redes, marketplace — cada tela com <strong>login isolado</strong>, sem interferir uma na outra. O agente <strong>vistoria</strong> cada página para já saber o conteúdo quando você pedir; marcar, arquivar ou responder passa pela fila de aprovações. Sem janelas separadas: tudo aqui, em <span class="k">127.0.0.1</span>.</p>
+            <h3 style="margin-top:2.2rem; font-size:1.05rem; color:var(--neon);">A aba Mosaic <span class="k">experimental</span></h3>
+            <p class="lead">Dentro do painel, a aba <strong>Mosaic</strong> junta vários sites num mosaico que se auto-organiza — e-mail, banco, mensagens, redes, marketplace. <strong>Hoje o adaptador padrão é o demo</strong>: vistoria sintética e determinística, sem rede e sem login. O navegador real, com <strong>login isolado</strong> por tela, existe no código, é opt-in (<span class="k">--adapter playwright</span>) e ainda não tem cobertura de teste — por isso a aba está marcada como experimental. Quando ligado, marcar, arquivar ou responder passa pela fila de aprovações, e tudo continua em <span class="k">127.0.0.1</span>.</p>
             <figure class="shot">
                 <div class="shot-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp; painel · aba mosaic — telas isoladas, vistoriadas, só leitura</div>
                 <img src="assets/painel-mosaic.svg" alt="Aba Mosaic do painel local do NOMOS: mosaico de telas isoladas — Gmail, Banco do Brasil, WhatsApp Web, TikTok, Instagram, Mercado Livre, Outlook e LinkedIn — cada uma com badge de status e resumo da vistoria" width="1000" height="640" loading="lazy" decoding="async">
