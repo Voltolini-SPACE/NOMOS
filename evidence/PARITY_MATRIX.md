@@ -1,64 +1,64 @@
-# FASE 6 — PARIDADE RECALCULADA (FS e SCHEDULER)
+# FASE 13 — CENSO GLOBAL (independente e autoritativo)
 
-Fonte: `PARITY_MATRIX.json` — recenso com 2 agentes de censo + verificação
-adversarial instruída a REFUTAR. Percentuais NÃO foram editados à mão.
-
-## Aviso metodológico honesto
-O recenso é **estático** (não executou a suíte) e fotografou o worktree **em
-voo**: rodou enquanto eu ainda commitava. Ele mesmo registra isso — às 08:14 as
-capacidades usavam underscore (defeito real: `registro.NOME_RE` rejeita
-underscore, então `adapters=True` seria inconstruível); às 08:23 já estavam com
-hífen. E os commits `72b6489` (3 correções) e `a032ab9` (caller de produção)
-vieram DEPOIS. Onde o veredito dele foi superado, digo abaixo.
+Fonte: `PARITY_MATRIX.json` — 2 agentes de censo + verificação adversarial,
+com o critério de FULL em 7 itens. **Este resultado é autoritativo para
+promoção; não o sobrescrevi.**
 
 ## Contagem
-| Categoria | GOVERNADO | PARCIAL | AUSENTE | FORA_DO_NUCLEO |
-|---|---|---|---|---|
-| FILESYSTEM (era 0/4/5/2) | 0 | **8** | 1 | 2 |
-| SCHEDULER (era 0/7/10/1) | 0 | **10** | 7 | 1 |
-
 ```
-FS_TOTAL=11   FS_FULL=0   FS_CRITICAL_GAPS=5
-SCHEDULER_TOTAL=18  SCHEDULER_FULL=0  SCHEDULER_CRITICAL_GAPS=8
-CRITICAL_GAPS_REMAINING (nestas 2 categorias) = 13
+TOTAL_CAPABILITIES = 29   (as 2 categorias remedidas)
+FULL       = 0
+PARTIAL    = 23
+MISSING    = 3
+FORA_DO_NUCLEO = 3
+
+GOVERNED   = 12
+UNGOVERNED = 9
+NA         = 8
+
+FS_CRITICAL_GAPS        = 5
+SCHEDULER_CRITICAL_GAPS = 8
+CRITICAL_GAPS_REMAINING = 13   (HTTP/CHANNELS/GIT/BROWSER não remedidos: +6 da 02)
 ```
 
-Cinco linhas subiram de AUSENTE para PARCIAL; **nenhuma regrediu**; nenhuma
-chegou a GOVERNADO.
+| Categoria | FULL | PARTIAL | MISSING | FORA_DO_NUCLEO | críticas com gap |
+|---|---|---|---|---|---|
+| SCHEDULER/JOBS | 0 | 15 | 2 | 1 | **8** |
+| FILESYSTEM | 0 | 8 | 1 | 2 | **5** |
 
-## Por que nada é GOVERNADO — os três motivos do verificador
-| # | Motivo | Estado agora |
-|---|---|---|
-| A | sem caller de produção (`cli.py` não passava `adapters=True`) | **CORRIGIDO** em `a032ab9` — `nomos orquestrar --adapters --raiz` |
-| B | o elo (`wiring.py`) estava untracked | **CORRIGIDO** — commitado em `6122814` |
-| C | confinamento opt-in, default aberto | **CORRIGIDO** em `72b6489` — mutante exige raiz, fail-closed |
+## O motivo de ZERO FULL é um só, e é estrutural
+**Critério 2 — production caller / runtime path.** O verificador provou:
+- `registrar_scheduler()` **não tem nenhum caller em `src/`** — só os testes;
+- `Ticker` só aparece no próprio módulo e no seu teste;
+- `script-rodar` tem caller (`RuntimeGovernado.__init__`) mas só entra
+  `if executaveis:`, e `cli.py` **nunca passa `executaveis`** — não existe flag
+  `--executavel` em `nomos orquestrar`;
+- em produção, `simple/rotinas.py` (intocado) segue sendo a única superfície
+  real de agendamento.
 
-Ainda assim **não declaro GOVERNADO**: o veredito de GOVERNADO exige uma
-recontagem que eu não reexecutei depois das correções. Declarar com base no
-meu próprio julgamento derrotaria o propósito da verificação adversarial.
+Construí o motor. **Não liguei o fio.**
 
-## Gaps críticos que continuam REAIS (não são artefato de timing)
-### Filesystem — 1 lacuna funcional + herança
-- `FS-READ-BINARY` AUSENTE: `fs-ler` recusa binário explicitamente (honesto),
-  mas não há equivalente ao `/api/fs/read-data-url` do Hermes.
-- `fs-editar` não tem patch unificado/multi-arquivo nem diff auditável.
-- As nativas `arquivo_ler`/`arquivo_resumir` continuam sem resolver próprio —
-  agora protegidas pelo escopo do PDP corrigido, mas só quando `--raiz` é usado.
+## O que o censo reconheceu como genuinamente bom
+- o parser de cron é real e correto no núcleo POSIX, **incluindo o OR entre
+  dom/dow** que quase toda implementação caseira erra;
+- a timezone é de fato **aplicada** no cálculo, não armazenada;
+- os dois casos de DST têm tratamento explícito e testado;
+- a dedup por ocorrência com reserva ANTES do efeito sobrevive a restart, com
+  prova real;
+- `script.py` é "um dos executores de processo mais fechados que já vi" —
+  argv[] sem shell, shells recusados como argv[0], env por allowlist, timeout
+  com kill de grupo, allowlist de binário fixada no registro e não no plano;
+- o caminho governado de `script-rodar` está provado ponta a ponta.
 
-### Scheduler — 4 ausências estruturais
-- **`SCHED-02` cron real não existe.** Há `intervalo_s`, não expressão cron
-  (`0 7 * * *`). Hermes usa cron. Intervalo ≠ cron.
-- **`SCHED-17` timezone é armazenada, não aplicada.** O campo `tz` persiste; o
-  cálculo do próximo disparo é UTC puro. Guardar a string sem usá-la não é
-  suporte a timezone.
-- **`SCHED-12` não há daemon-ticker.** Alguém precisa chamar
-  `executar_devidos()`. Daemon está fora do escopo desta missão por decisão da
-  própria missão.
-- **`SCHED-11` exec-script-sem-LLM** e **`SCHED-15` delivery/alerta de falha**
-  não existem.
+## Divergência de ambiente registrada
+O verificador não reproduziu "2377 passed": no ambiente dele faltava
+`argon2-cffi` e o pacote não estava instalado, dando 2330 passed / 49 failed.
+**As 49 falhas são todas de módulos não relacionados** (vault2, mcp, sbom,
+evidencia, mc29-32) — zero em adapters/scheduler. É a mesma LANDMINE da
+ABSORPTION-01: sem venv com dependências, a suíte dá falso vermelho.
 
-## Outras categorias
-HTTP, CHANNELS, GIT e BROWSER **não foram remedidas** — nenhum código dessas
-áreas foi tocado. Os números da ABSORPTION-02 seguem valendo, e os 6 gaps
-críticos de HTTP/channels permanecem para a ABSORPTION-04, como a própria
-missão autorizou.
+## Aviso de timing
+O censo avaliou `HEAD=418bac5`. Os commits `cdc5f62` (script com caminho de
+produção) e `d7badbc` (4 correções de fail-open) vieram DEPOIS. Onde isso muda
+o veredito, digo — mas **não reclassifico nada por conta própria**: seria
+exatamente a autoaprovação que a missão proíbe.
