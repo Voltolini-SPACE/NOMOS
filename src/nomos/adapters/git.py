@@ -97,6 +97,19 @@ _FORMATO_SHOW = "%H%x1f%an%x1f%aI%x1f%s%x1e"
 # A lista é positiva e explícita. Preferi enumerar as chaves que executam a
 # tentar adivinhar um padrão: `core.*` tem dezenas de chaves inócuas, e uma
 # regra ampla demais quebraria repositório legítimo sem cobrir mais nada.
+#
+# HONESTIDADE SOBRE O ESTADO ATUAL: para as TRÊS operações object-only que o
+# C1 fechou, esta lista é PROVADAMENTE desnecessária. O experimento de
+# equivalência montou o repo mais hostil possível (alias, pager, external
+# diff, fsmonitor, filters clean/smudge, textconv, custom diff driver,
+# include.path, hook post-checkout, .gitattributes ligando os filtros) e
+# comparou o adapter com e sem estas linhas: canário nunca disparou e a saída
+# foi byte-idêntica nas três. As chaves aqui só são consultadas ao avaliar
+# conteúdo do WORKING TREE — que é justamente o que saiu do C1.
+#
+# Fica como defesa em profundidade, e volta a ser necessária na primeira
+# capacidade que tocar working tree (C1b) ou índice (C2, `git-add`). Manter é
+# barato; removê-la agora significaria reescrevê-la sob pressão depois.
 _NEUTRALIZAR = [
     "-c", "core.fsmonitor=false",       # roda binário no refresh do índice
     "-c", "core.pager=cat",
