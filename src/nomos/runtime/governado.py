@@ -153,7 +153,8 @@ def executores_nativos(ctx, aprovador=None, router=None,
     return {nome: _fazer(nome) for nome in FERRAMENTAS if nome in mf.ferramentas}
 
 
-def sessao_pdp(registro, manifesto, audit=None, ttl_s: int = 3600):
+def sessao_pdp(registro, manifesto, audit=None, ttl_s: int = 3600,
+               caminhos: tuple[str, ...] = ()):
     """(decisor, autorização) de SESSÃO para um manifesto. **Fonte única.**
 
     Usada tanto pelo `RuntimeGovernado` quanto pelo caminho de ferramenta
@@ -164,6 +165,21 @@ def sessao_pdp(registro, manifesto, audit=None, ttl_s: int = 3600):
     A autorização é escopada pelo MANIFESTO — capacidades = as declaradas,
     teto de risco = `risco_max` do manifesto. Um agente que só declara
     `arquivo_ler` recebe autorização para exatamente isso.
+
+    `caminhos` liga o ESCOPO POR CAMINHO do PDP. Achado do censo da
+    ABSORPTION-02: o `Decisor` sempre soube validar `pedido.recurso` (e o
+    contrabando por `argumentos.alvo/caminho/destino`) contra
+    `autorizacao.caminhos`, mas a emissão nunca preenchia o campo — com tupla
+    vazia o bloco inteiro é pulado, e o escopo ficava inalcançável na prática.
+    Agora é parâmetro explícito.
+
+    O default segue `()` = SEM restrição de caminho, e isso é decisão
+    consciente, não esquecimento: `arquivo_ler`/`arquivo_resumir` leem alvo
+    arbitrário por desenho (`exec_arquivo_ler` não passa por
+    `_resolver_destino_seguro`, que confina só a ESCRITA no workspace).
+    Ligar um escopo restritivo por padrão mudaria comportamento de leitura sem
+    o dono pedir. Quem quiser confinar passa `caminhos` — e aí é enforçado de
+    ponta a ponta (ver `test_escopo_por_caminho_e_enforcado_no_runtime`).
     """
     from datetime import timedelta
 
@@ -181,6 +197,7 @@ def sessao_pdp(registro, manifesto, audit=None, ttl_s: int = 3600):
         emitida_em=agora,
         expira_em=agora + timedelta(seconds=ttl_s),
         risco_max=manifesto.risco_max,
+        caminhos=tuple(caminhos),
         jti=secrets.token_hex(8)), "sessao")
     return decisor, autorizacao
 
@@ -188,7 +205,8 @@ def sessao_pdp(registro, manifesto, audit=None, ttl_s: int = 3600):
 def usar_ferramenta_governada(ctx, manifesto, ferramenta: str, *, alvo: str = "",
                               conteudo: str = "", aprovador=None, router=None,
                               sem_motor: bool = False,
-                              decisor=None, autorizacao=None) -> tuple[bool, object]:
+                              decisor=None, autorizacao=None,
+                              caminhos: tuple[str, ...] = ()) -> tuple[bool, object]:
     """UMA ferramenta pela cadeia governada completa (ABSORPTION-02 / FASE 1).
 
         caller → registry → PDP → PEP → AgentToolBoundary → adapter → efeito
@@ -219,7 +237,8 @@ def usar_ferramenta_governada(ctx, manifesto, ferramenta: str, *, alvo: str = ""
     registro = RegistroCapacidades(policy=ctx["policy"], approver=aprovador,
                                    audit=ctx.get("audit"))
     if decisor is None or autorizacao is None:
-        d, a = sessao_pdp(registro, manifesto, audit=ctx.get("audit"))
+        d, a = sessao_pdp(registro, manifesto, audit=ctx.get("audit"),
+                          caminhos=tuple(caminhos))
         decisor = decisor or d
         autorizacao = autorizacao or a
 
@@ -267,7 +286,8 @@ class RuntimeGovernado:
                  sem_motor: bool = False, manifesto=None,
                  politica_recuperacao: PoliticaRecuperacao | None = None,
                  executores: dict[str, Callable] | None = None,
-                 autorizacao=None, decisor=None, ttl_s: int = 3600):
+                 autorizacao=None, decisor=None, ttl_s: int = 3600,
+                 caminhos: tuple[str, ...] = ()):
         if ctx is None or "policy" not in ctx:
             raise ErroRuntime("contexto sem política carregada — fail-closed")
         self.ctx = ctx
@@ -286,7 +306,8 @@ class RuntimeGovernado:
         # a própria autorização de SESSÃO — escopo = manifesto, teto de risco =
         # o do manifesto, prazo = ttl_s. A raiz de confiança é o dono que
         # abriu o CLI; o gate humano continua acontecendo no boundary.
-        self.decisor, self.autorizacao = self._preparar_pdp(decisor, autorizacao, ttl_s)
+        self.decisor, self.autorizacao = self._preparar_pdp(
+            decisor, autorizacao, ttl_s, tuple(caminhos))
         self.executores_protegidos = proteger_executores(brutos, self.decisor,
                                                          audit=self.audit)
         self.executores = {nome: self._adaptar(nome, pep)
@@ -298,12 +319,12 @@ class RuntimeGovernado:
 
     # ---------------- PDP/PEP ----------------
 
-    def _preparar_pdp(self, decisor, autorizacao, ttl_s: int):
+    def _preparar_pdp(self, decisor, autorizacao, ttl_s: int, caminhos=()):
         """Decisor + autorização de sessão. Ambos obrigatórios para executar."""
         if decisor is not None and autorizacao is not None:
             return decisor, autorizacao
         d, a = sessao_pdp(self.registro, self.manifesto, audit=self.audit,
-                          ttl_s=ttl_s)
+                          ttl_s=ttl_s, caminhos=caminhos)
         return (decisor or d), (autorizacao or a)
 
     def _adaptar(self, nome: str, pep) -> Callable:

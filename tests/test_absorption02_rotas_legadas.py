@@ -217,3 +217,55 @@ def test_sessao_pdp_e_a_unica_fonte_de_autorizacao():
             assinantes.append(arq.relative_to(raiz).as_posix())
     assert assinantes == ["runtime/governado.py"], (
         f"emissores de autorização fora de sessao_pdp: {assinantes}")
+
+
+# ------------------------------- escopo por caminho (achado do censo)
+
+def test_escopo_por_caminho_estava_inalcancavel_e_agora_e_parametro(tmp_path):
+    """Censo da ABSORPTION-02: `Decisor` sempre soube escopar por caminho, mas
+    `sessao_pdp` nunca preenchia `caminhos` — o bloco era pulado sempre."""
+    ctx = _ctx(tmp_path)
+    registro = RegistroCapacidades(policy=ctx["policy"], audit=ctx["audit"])
+    _d, sem = sessao_pdp(registro, _mf(), audit=ctx["audit"])
+    assert sem.caminhos == ()                       # default: sem restrição
+
+    _d2, com = sessao_pdp(registro, _mf(), audit=ctx["audit"],
+                          caminhos=("/permitido",))
+    assert com.caminhos == ("/permitido",)          # agora é alcançável
+
+
+def test_escopo_por_caminho_e_enforcado_no_runtime(tmp_path):
+    """Ponta a ponta: com escopo ligado, leitura fora dele é NEGADA pelo PDP."""
+    from nomos.runtime.governado import RuntimeGovernado
+    ctx = _ctx(tmp_path)
+    permitido = tmp_path / "permitido"
+    permitido.mkdir()
+    dentro = permitido / "ok.txt"
+    dentro.write_text("conteudo")
+    fora = tmp_path / "segredo.txt"
+    fora.write_text("nao pode")
+
+    rt = RuntimeGovernado(ctx, _sim, caminhos=(str(permitido),))
+    assert rt.autorizacao.caminhos == (str(permitido),)
+
+    ok = rt.rodar("dentro", passos=[
+        {"id": "a", "ferramenta": "arquivo_ler", "params": {"alvo": str(dentro)}}])
+    assert ok.ok, ok.resumo()
+
+    negado = rt.rodar("fora", passos=[
+        {"id": "b", "ferramenta": "arquivo_ler", "params": {"alvo": str(fora)}}])
+    assert not negado.ok
+    assert "escopo" in negado.missao.nos["b"].detalhe
+
+
+def test_escopo_bloqueia_contrabando_por_argumento(tmp_path):
+    """Recurso no escopo + argumento apontando para fora ⇒ DENY."""
+    from nomos.runtime.governado import RuntimeGovernado
+    ctx = _ctx(tmp_path)
+    permitido = tmp_path / "ok"
+    permitido.mkdir()
+    rt = RuntimeGovernado(ctx, _sim, caminhos=(str(permitido),))
+    res = rt.rodar("contrabando", passos=[
+        {"id": "w", "ferramenta": "arquivo_escrever",
+         "params": {"alvo": "/etc/passwd", "conteudo": "x"}}])
+    assert not res.ok
