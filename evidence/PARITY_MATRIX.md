@@ -1,64 +1,69 @@
-# FASE 13 — CENSO GLOBAL (independente e autoritativo)
+# FASE 14 — CENSO INDEPENDENTE FINAL (autoritativo)
 
-Fonte: `PARITY_MATRIX.json` — 2 agentes de censo + verificação adversarial,
-com o critério de FULL em 7 itens. **Este resultado é autoritativo para
-promoção; não o sobrescrevi.**
+Fonte: `PARITY_MATRIX.json`. **Não sobrescrevi nada.**
 
-## Contagem
 ```
-TOTAL_CAPABILITIES = 29   (as 2 categorias remedidas)
-FULL       = 0
-PARTIAL    = 23
-MISSING    = 3
-FORA_DO_NUCLEO = 3
+TOTAL_CAPABILITIES = 53
+FULL       = 9        (todas em SCRIPT_EXEC)
+PARTIAL    = 29
+MISSING    = 8
+FORA_DO_NUCLEO = 7
 
-GOVERNED   = 12
-UNGOVERNED = 9
-NA         = 8
+GOVERNED   = 25
+UNGOVERNED = 14
+NA         = 14
 
 FS_CRITICAL_GAPS        = 5
 SCHEDULER_CRITICAL_GAPS = 8
-CRITICAL_GAPS_REMAINING = 13   (HTTP/CHANNELS/GIT/BROWSER não remedidos: +6 da 02)
+SCRIPT_CRITICAL_GAPS    = 9
+CRITICAL_GAPS_REMAINING = 22
 ```
 
 | Categoria | FULL | PARTIAL | MISSING | FORA_DO_NUCLEO | críticas com gap |
 |---|---|---|---|---|---|
-| SCHEDULER/JOBS | 0 | 15 | 2 | 1 | **8** |
-| FILESYSTEM | 0 | 8 | 1 | 2 | **5** |
+| SCRIPT_EXEC | **9** | 6 | 5 | 4 | 9 |
+| SCHEDULER/JOBS | 0 | 15 | 2 | 1 | 8 |
+| FILESYSTEM | 0 | 8 | 1 | 2 | 5 |
 
-## O motivo de ZERO FULL é um só, e é estrutural
-**Critério 2 — production caller / runtime path.** O verificador provou:
-- `registrar_scheduler()` **não tem nenhum caller em `src/`** — só os testes;
-- `Ticker` só aparece no próprio módulo e no seu teste;
-- `script-rodar` tem caller (`RuntimeGovernado.__init__`) mas só entra
-  `if executaveis:`, e `cli.py` **nunca passa `executaveis`** — não existe flag
-  `--executavel` em `nomos orquestrar`;
-- em produção, `simple/rotinas.py` (intocado) segue sendo a única superfície
-  real de agendamento.
-
-Construí o motor. **Não liguei o fio.**
-
-## O que o censo reconheceu como genuinamente bom
-- o parser de cron é real e correto no núcleo POSIX, **incluindo o OR entre
-  dom/dow** que quase toda implementação caseira erra;
-- a timezone é de fato **aplicada** no cálculo, não armazenada;
-- os dois casos de DST têm tratamento explícito e testado;
-- a dedup por ocorrência com reserva ANTES do efeito sobrevive a restart, com
-  prova real;
-- `script.py` é "um dos executores de processo mais fechados que já vi" —
-  argv[] sem shell, shells recusados como argv[0], env por allowlist, timeout
-  com kill de grupo, allowlist de binário fixada no registro e não no plano;
-- o caminho governado de `script-rodar` está provado ponta a ponta.
-
-## Divergência de ambiente registrada
-O verificador não reproduziu "2377 passed": no ambiente dele faltava
-`argon2-cffi` e o pacote não estava instalado, dando 2330 passed / 49 failed.
-**As 49 falhas são todas de módulos não relacionados** (vault2, mcp, sbom,
-evidencia, mc29-32) — zero em adapters/scheduler. É a mesma LANDMINE da
-ABSORPTION-01: sem venv com dependências, a suíte dá falso vermelho.
+**Primeiros FULL da linhagem** — 9 capacidades de execução de processo. O
+criterio 2 (production caller), que zerava tudo na 04, foi fechado.
 
 ## Aviso de timing
-O censo avaliou `HEAD=418bac5`. Os commits `cdc5f62` (script com caminho de
-produção) e `d7badbc` (4 correções de fail-open) vieram DEPOIS. Onde isso muda
-o veredito, digo — mas **não reclassifico nada por conta própria**: seria
-exatamente a autoaprovação que a missão proíbe.
+O censo avaliou `HEAD=a120123`. O commit `44c2a3c` — que corrige as quatro
+falhas que ele próprio encontrou, inclusive o bypass de PDP/PEP — veio DEPOIS.
+Onde isso muda o veredito, digo abaixo; **não reclassifico por conta própria**.
+
+## O que o censo confirmou como fechado
+1. `registrar_scheduler()` tem **2 callers de produção** alcançáveis pelo CLI.
+2. `Ticker` tem caller: `nomos scheduler rodar` **funciona de verdade** — o
+   verificador rodou e o job escreveu o arquivo real.
+3. A ocorrência executa pela cadeia governada, com a trilha em ordem:
+   `pdp.decisao → pep.aplicacao → fs.escrever → scheduler.execucao.fim`.
+   Job com alvo fora do escopo: `DENY recurso_fora_do_escopo`, nada criado.
+4. `script-rodar` alcançável, allowlist canonicalizada, symlink trocado
+   depois do registro não autoriza.
+
+## O que ele encontrou de errado — e o que fiz
+| # | Achado | Estado |
+|---|---|---|
+| 1 | **sched-* executavam sem PDP e sem PEP** (registro depois da construção do runtime) | **CORRIGIDO** `44c2a3c` |
+| 2 | **CRON inalcançável por caller** — `_ponte_sched` ignorava a agenda, job virava ONE_SHOT em silêncio | **CORRIGIDO** `44c2a3c` |
+| 3 | `--intervalo 0` virava 1.0 em silêncio | **CORRIGIDO** `44c2a3c` |
+| 4 | `--executavel` sem `--adapters` não registrava e não avisava | **CORRIGIDO** `44c2a3c` |
+| 5 | Scheduler e Ticker emitem alertas CONTRADITÓRIOS para a mesma ocorrência (UNKNOWN vs NO_EFFECT) | **REGISTRADO** |
+| 6 | política de catch-up não exposta no CLI | **REGISTRADO** |
+| 7 | 1 execução em 9 falhou 3 guards de registry race (suspeita de `__pycache__` obsoleto) | **REGISTRADO** — ver abaixo |
+
+## Achado 7 — não classifiquei como defeito, e não classifiquei como ruído
+O verificador rodou a suíte 9 vezes: 8 verdes, 1 com 3 falhas nos guards de
+registry race (`Motivo.OK` em vez de `CAPACIDADE_MUDOU`). Ele não conseguiu
+reproduzir e a causa mais provável é bytecode obsoleto em `__pycache__`
+pré-existente. **Registro como pendência real**: uma execução em nove negou três
+invariantes de segurança, e quem for congelar este HEAD deve repetir com
+`__pycache__` limpo antes de confiar.
+
+## SCHED-12 — por que continua PARTIAL, e por que isso está certo
+O verificador foi preciso: os schedulers do Hermes e do OpenClaw rodam sob
+launchd e sobrevivem a logout/reboot; no NOMOS o job só dispara enquanto alguém
+segura o processo em foreground. **A proibição de daemon nesta missão EXPLICA o
+gap, não o FECHA** — capacidade não vira FULL porque a lacuna foi autorizada.
