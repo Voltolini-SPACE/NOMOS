@@ -29,6 +29,7 @@ explícitos e o runtime segue operando (é orquestração governada, não LLM).
 """
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
@@ -39,6 +40,11 @@ from nomos.orquestracao.registro import RegistroCapacidades
 
 if TYPE_CHECKING:                      # só para anotação; import real é tardio
     from nomos.agents.manifest import AgentManifest
+    from nomos.pdp.pep import PontoDeAplicacao
+
+# Audiência deste PEP. Uma autorização emitida para outro destino não vale
+# aqui — é o que impede token de um plano virar autoridade noutro.
+AUDIENCIA_RUNTIME = "nomos:runtime-governado"
 
 
 class ErroRuntime(RuntimeError):
@@ -138,13 +144,25 @@ def executores_nativos(ctx, aprovador=None, router=None,
                                          audit=ctx.get("audit"))
             ok, resultado = boundary.usar_ferramenta(nome, fn, alvo=alvo)
             if not ok:
-                # negação do PEP é falha do nó, nunca "passa mesmo assim"
+                # negação do boundary é falha do nó, nunca "passa mesmo assim"
                 raise ErroRuntime(str(resultado))
             return resultado
         _executar.__name__ = f"nativo_{nome}"
         return _executar
 
     return {nome: _fazer(nome) for nome in FERRAMENTAS if nome in mf.ferramentas}
+
+
+def proteger_executores(executores: dict[str, Callable], decisor,
+                        audit=None) -> dict[str, "PontoDeAplicacao"]:
+    """Embrulha cada executor num PEP. Devolve capacidade → PontoDeAplicacao.
+
+    Depois disto, o executor bruto só existe dentro da closure do PEP: não há
+    atributo público que devolva o callable original.
+    """
+    from nomos.pdp.pep import proteger
+    return {nome: proteger(nome, fn, decisor, audit=audit)
+            for nome, fn in executores.items()}
 
 
 class RuntimeGovernado:
@@ -156,7 +174,8 @@ class RuntimeGovernado:
     def __init__(self, ctx, aprovador=None, *, router=None,
                  sem_motor: bool = False, manifesto=None,
                  politica_recuperacao: PoliticaRecuperacao | None = None,
-                 executores: dict[str, Callable] | None = None):
+                 executores: dict[str, Callable] | None = None,
+                 autorizacao=None, decisor=None, ttl_s: int = 3600):
         if ctx is None or "policy" not in ctx:
             raise ErroRuntime("contexto sem política carregada — fail-closed")
         self.ctx = ctx
@@ -167,15 +186,71 @@ class RuntimeGovernado:
         self.registro = RegistroCapacidades(policy=self.policy,
                                             approver=aprovador,
                                             audit=self.audit)
-        self.executores = (executores if executores is not None
-                           else executores_nativos(ctx, aprovador=aprovador,
-                                                   router=router,
-                                                   sem_motor=sem_motor,
-                                                   manifesto=self.manifesto))
+        brutos = (executores if executores is not None
+                  else executores_nativos(ctx, aprovador=aprovador,
+                                          router=router, sem_motor=sem_motor,
+                                          manifesto=self.manifesto))
+        # FASE 2: o PDP não é opcional. Sem decisor entregue, o runtime emite
+        # a própria autorização de SESSÃO — escopo = manifesto, teto de risco =
+        # o do manifesto, prazo = ttl_s. A raiz de confiança é o dono que
+        # abriu o CLI; o gate humano continua acontecendo no boundary.
+        self.decisor, self.autorizacao = self._preparar_pdp(decisor, autorizacao, ttl_s)
+        self.executores_protegidos = proteger_executores(brutos, self.decisor,
+                                                         audit=self.audit)
+        self.executores = {nome: self._adaptar(nome, pep)
+                           for nome, pep in self.executores_protegidos.items()}
         self.recuperacao = GerenciadorRecuperacao(
             politica=politica_recuperacao, audit=self.audit)
         self.rotear_motor = None
         self._router = router
+
+    # ---------------- PDP/PEP ----------------
+
+    def _preparar_pdp(self, decisor, autorizacao, ttl_s: int):
+        """Decisor + autorização de sessão. Ambos obrigatórios para executar."""
+        from datetime import timedelta
+
+        from nomos.pdp.autorizacao import (
+            ArmazemNonce, Autorizacao, Chaveiro, agora_utc,
+        )
+        from nomos.pdp.decisor import Decisor
+
+        if decisor is not None and autorizacao is not None:
+            return decisor, autorizacao
+        chaveiro = Chaveiro({"sessao": secrets.token_bytes(32)})
+        if decisor is None:
+            decisor = Decisor(chaveiro, self.registro,
+                              audiencia=AUDIENCIA_RUNTIME,
+                              armazem_nonce=ArmazemNonce(),
+                              audit=self.audit)
+        if autorizacao is None:
+            agora = agora_utc()
+            autorizacao = chaveiro.assinar(Autorizacao(
+                capacidades=tuple(self.manifesto.ferramentas),
+                sujeito=self.manifesto.name,
+                audiencia=AUDIENCIA_RUNTIME,
+                emitida_em=agora,
+                expira_em=agora + timedelta(seconds=ttl_s),
+                risco_max=self.manifesto.risco_max,
+                jti=secrets.token_hex(8)), "sessao")
+        return decisor, autorizacao
+
+    def _adaptar(self, nome: str, pep) -> Callable:
+        """Converte o PEP ao contrato `executor(**params)` do Orquestrador.
+
+        Cada execução monta o próprio `Pedido` com nonce fresco (uso único) —
+        é o adapter que carrega a identidade, nunca o nó.
+        """
+        from nomos.pdp.decisor import Pedido
+
+        def _executar(**params):
+            pedido = Pedido(capacidade=nome, sujeito=self.manifesto.name,
+                            recurso=str(params.get("alvo", "") or ""),
+                            argumentos=dict(params),
+                            nonce=secrets.token_hex(16))
+            return pep(pedido, self.autorizacao, **params)
+        _executar.__name__ = f"pep_{nome}"
+        return _executar
 
     # ---------------- planejamento ----------------
 
