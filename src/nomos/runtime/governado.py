@@ -411,6 +411,8 @@ class RuntimeGovernado:
         # o do manifesto, prazo = ttl_s. A raiz de confiança é o dono que
         # abriu o CLI; o gate humano continua acontecendo no boundary.
         self._caminhos_controle = caminhos_controle
+        from nomos.pdp.aprovacao import RegistroAprovacoes
+        self.aprovacoes = RegistroAprovacoes(ttl_s=min(300, ttl_s))
         self.decisor, self.autorizacao = self._preparar_pdp(
             decisor, autorizacao, ttl_s, tuple(caminhos),
             extras=tuple(self.capacidades_adapter),
@@ -436,6 +438,15 @@ class RuntimeGovernado:
         # Recurso padrão para capacidades de CONTROLE (sem alvo de dado). Sem
         # ele o PDP nega com "recurso vazio" — negação pelo motivo errado.
         self._recurso_padrao = str(ctx["home"]) if caminhos else ""
+
+    def _contexto_aprovacao(self):
+        """(sujeito, escopo_dados, escopo_controle, registro de aprovações).
+
+        O sujeito vem do MANIFESTO — nunca do plano (P3.10). Os escopos vêm da
+        autorização assinada, então trocá-los muda o digest.
+        """
+        return (self.manifesto.name, self.autorizacao.caminhos,
+                self.autorizacao.caminhos_controle, self.aprovacoes)
 
     # ---------------- PDP/PEP ----------------
 
@@ -535,7 +546,8 @@ class RuntimeGovernado:
                            audit=self.audit, executores=self.executores,
                            recuperacao=self.recuperacao,
                            rotear_motor=self.rotear_motor,
-                           estrito=True)
+                           estrito=True,
+                           contexto_aprovacao=self._contexto_aprovacao)
         self._auditar("runtime.execucao.inicio", objetivo=plano.objetivo[:120],
                       passos=len(plano.passos), risco=plano.risco)
         missao = orq.executar(grafo)

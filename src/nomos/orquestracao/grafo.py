@@ -145,7 +145,7 @@ class Orquestrador:
     def __init__(self, registro: RegistroCapacidades, policy, approver=None,
                  audit=None, executores: dict[str, Callable] | None = None,
                  recuperacao=None, rotear_motor: Callable | None = None,
-                 estrito: bool = False):
+                 estrito: bool = False, contexto_aprovacao=None):
         self.registro = registro
         self.policy = policy
         self.approver = approver
@@ -161,10 +161,53 @@ class Orquestrador:
         # o que o invariante da ETAPA 2 encontrou ainda aberto depois da
         # correção pontual da ABSORPTION-05.
         self.estrito = bool(estrito)
+        # P1: o que o humano precisa VER e o que o digest precisa COBRIR.
+        # `contexto_aprovacao()` devolve (sujeito, escopo_dados, escopo_controle,
+        # registro_de_aprovacoes). Sem ele o gate continua sendo o do kernel,
+        # mas sem vínculo criptográfico — modo herdado, usado pelos callers que
+        # não passam pelo RuntimeGovernado.
+        self.contexto_aprovacao = contexto_aprovacao
 
     def _auditar(self, evento: str, **campos) -> None:
         if self.audit is not None:
             self.audit.append(evento, **campos)
+
+    def _registro_aprovacoes(self):
+        return self.contexto_aprovacao()[3]
+
+    def _operacao(self, no: No, no_id: str, categoria):
+        """A operação EFETIVA, montada dos mesmos dados que vão executar.
+
+        Montada duas vezes de propósito — antes de perguntar ao humano e de
+        novo antes do efeito. Se as duas divergirem, alguma coisa mudou no
+        meio, e é exatamente isso que precisa ser recusado.
+        """
+        if self.contexto_aprovacao is None:
+            return None
+        from nomos.pdp.aprovacao import OperacaoAprovavel, versao_da_politica
+        sujeito, dados, controle, _reg = self.contexto_aprovacao()
+        params = dict(no.params)
+        recurso = str(params.get("alvo", "") or params.get("alvo_job", "")
+                      or params.get("cwd", "") or "")
+        return OperacaoAprovavel(
+            sujeito=sujeito, capacidade=no.ferramenta, recurso=recurso,
+            classe_de_risco=getattr(categoria, "value", str(categoria)),
+            argumentos=params, escopo_dados=tuple(dados),
+            escopo_controle=tuple(controle),
+            versao_da_politica=versao_da_politica(self.policy),
+            digest_do_plano=no_id)
+
+    def _gate_vinculado(self, decisao, operacao) -> bool:
+        """Gate do kernel + registro da aprovação para ESTE digest."""
+        if not gate(decisao, self.approver):
+            return False
+        if operacao is None:
+            return True
+        from nomos.kernel.policy import Effect
+        if decisao.effect is Effect.ALLOW:
+            return True                 # ALLOW não consulta humano
+        self._registro_aprovacoes().conceder(operacao)
+        return True
 
     def _executor_para(self, no: No) -> Callable | None:
         if no.ferramenta in self.executores:
@@ -198,9 +241,19 @@ class Orquestrador:
                               ferramenta=no.ferramenta, motivo="desconhecida")
                 self._bloquear_dependentes(grafo, no_id, nos)
                 continue
+            # P1 — APROVAÇÃO NÃO-CEGA.
+            # `target` era `orquestracao:{id}:{ferramenta}:{alvo}` com `alvo`
+            # SEMPRE vazio — `No.alvo` não tinha nenhum escritor. O prompt de
+            # um plano benigno e o de um plano que exfiltrava chave privada
+            # eram byte-idênticos, variando só pelo id do nó, que o autor do
+            # plano escolhe. Agora o operador lê os campos REAIS, e o digest
+            # deles é recalculado imediatamente antes do efeito.
+            operacao = self._operacao(no, no_id, categoria)
             decisao = self.policy.decide(
-                categoria, target=f"orquestracao:{no_id}:{no.ferramenta}:{no.alvo}")
-            if not gate(decisao, self.approver):
+                categoria,
+                target=(operacao.descrever() if operacao is not None
+                        else f"orquestracao:{no_id}:{no.ferramenta}:{no.alvo}"))
+            if not self._gate_vinculado(decisao, operacao):
                 nos[no_id] = ResultadoNo(status="NEGADO", detalhe=decisao.reason)
                 self._auditar("orquestracao.no.negado", no=no_id,
                               ferramenta=no.ferramenta,
@@ -221,6 +274,21 @@ class Orquestrador:
                 self._bloquear_dependentes(grafo, no_id, nos)
                 continue
             params = dict(no.params)
+            # RECÁLCULO imediatamente antes do efeito: entre o "APROVO" e esta
+            # linha, nada pode ter mudado alvo, argumento, capacidade, sujeito,
+            # escopo ou política. Se mudou, o digest não bate e nada executa.
+            from nomos.kernel.policy import Effect as _Ef
+            if operacao is not None and decisao.effect is not _Ef.ALLOW:
+                try:
+                    self._registro_aprovacoes().consumir(
+                        self._operacao(no, no_id, categoria))
+                except Exception as exc:
+                    nos[no_id] = ResultadoNo(status="NEGADO", detalhe=str(exc))
+                    self._auditar("orquestracao.no.negado", no=no_id,
+                                  ferramenta=no.ferramenta,
+                                  motivo="aprovacao_divergente")
+                    self._bloquear_dependentes(grafo, no_id, nos)
+                    continue
             if no.motor == "auto" and self.rotear_motor is not None:
                 rota = self.rotear_motor(no)
                 params["rota_motor"] = rota
