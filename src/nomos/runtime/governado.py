@@ -153,6 +153,25 @@ def executores_nativos(ctx, aprovador=None, router=None,
     return {nome: _fazer(nome) for nome in FERRAMENTAS if nome in mf.ferramentas}
 
 
+def _versoes_de(registro, capacidades) -> tuple[tuple[str, str], ...]:
+    """Impressão digital de cada descritor no instante da emissão (FASE 4).
+
+    É isto que permite ao PDP recusar autorização cujo mundo mudou: se o risco,
+    a idempotência ou o executor de uma capacidade forem alterados depois da
+    emissão, a versão deixa de bater.
+    """
+    from nomos.adapters.contrato import versao_de_capacidade
+    pares = []
+    for cap in capacidades:
+        try:
+            v = versao_de_capacidade(registro, cap)
+        except Exception:
+            v = ""
+        if v:
+            pares.append((cap, v))
+    return tuple(sorted(pares))
+
+
 def sessao_pdp(registro, manifesto, audit=None, ttl_s: int = 3600,
                caminhos: tuple[str, ...] = ()):
     """(decisor, autorização) de SESSÃO para um manifesto. **Fonte única.**
@@ -198,6 +217,7 @@ def sessao_pdp(registro, manifesto, audit=None, ttl_s: int = 3600,
         expira_em=agora + timedelta(seconds=ttl_s),
         risco_max=manifesto.risco_max,
         caminhos=tuple(caminhos),
+        versoes=_versoes_de(registro, manifesto.ferramentas),
         jti=secrets.token_hex(8)), "sessao")
     return decisor, autorizacao
 

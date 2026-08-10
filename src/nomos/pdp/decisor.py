@@ -56,6 +56,7 @@ class Motivo(str, Enum):
     POLITICA_INDISPONIVEL = "politica_indisponivel"
     ARMAZEM_INDISPONIVEL = "armazem_indisponivel"
     REGISTRO_INDISPONIVEL = "registro_indisponivel"
+    CAPACIDADE_MUDOU = "capacidade_mudou"
     ERRO_INTERNO = "erro_interno"
 
 
@@ -186,6 +187,24 @@ class Decisor:
         if not conhecida or categoria is None:
             return self._negar(Motivo.CAPACIDADE_DESCONHECIDA, pedido.capacidade,
                                capacidade=pedido.capacidade, hash_auth=chash)
+
+        # 4b. REGISTRY RACE (ABSORPTION-03/FASE 4): o descritor da capacidade
+        # mudou entre a emissão e agora? Uma autorização vale para o mundo que
+        # ela viu — risco/idempotência/executor alterados invalidam a decisão
+        # que foi tomada com os valores antigos.
+        esperada = dict(autorizacao.versoes).get(pedido.capacidade)
+        if esperada:
+            from nomos.adapters.contrato import versao_de_capacidade
+            try:
+                atual_v = versao_de_capacidade(self.registro, pedido.capacidade)
+            except Exception as exc:
+                return self._negar(Motivo.POLITICA_INDISPONIVEL, type(exc).__name__,
+                                   capacidade=pedido.capacidade, hash_auth=chash)
+            if atual_v != esperada:
+                return self._negar(
+                    Motivo.CAPACIDADE_MUDOU,
+                    f"descritor mudou desde a emissão ({esperada}→{atual_v or 'removida'})",
+                    capacidade=pedido.capacidade, risco=risco, hash_auth=chash)
 
         # 5. a capacidade pedida foi de fato concedida?
         if pedido.capacidade not in autorizacao.capacidades:

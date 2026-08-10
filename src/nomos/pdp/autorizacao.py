@@ -51,6 +51,13 @@ class Autorizacao:
     assinatura: str = ""
     emissor: str = "nomos"
     jti: str = ""
+    # ABSORPTION-03 / FASE 4 — registry race.
+    # Impressão digital do descritor de cada capacidade NO INSTANTE da emissão.
+    # Se o registro mudar entre planejar e executar (capacidade removida, risco
+    # alterado, idempotência alterada, executor trocado), a versão deixa de
+    # bater e o PDP nega — a autorização vale para o mundo que ela viu.
+    # Tupla de pares para manter o dataclass hashable e a serialização estável.
+    versoes: tuple[tuple[str, str], ...] = ()
 
     def dict_canonico(self) -> dict:
         """Forma serializável e ordenável — SEM a assinatura."""
@@ -66,6 +73,7 @@ class Autorizacao:
             "id_chave": self.id_chave,
             "emissor": self.emissor,
             "jti": self.jti,
+            "versoes": sorted([list(v) for v in self.versoes]),
         }
 
 
@@ -217,5 +225,6 @@ def atenuar(pai: Autorizacao, chaveiro: Chaveiro, id_chave: str, *,
     filho = Autorizacao(
         capacidades=caps, sujeito=pai.sujeito, audiencia=pai.audiencia,
         emitida_em=pai.emitida_em, expira_em=exp, risco_max=risco,
-        caminhos=novos_caminhos, nonce=nonce, emissor=pai.emissor, jti=jti)
+        caminhos=novos_caminhos, nonce=nonce, emissor=pai.emissor, jti=jti,
+        versoes=pai.versoes)
     return chaveiro.assinar(filho, id_chave)
