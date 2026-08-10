@@ -188,3 +188,36 @@ def test_capacidade_dinamica_nao_escapa_do_pep(tmp_path):
                              "params": {"alvo": str(raiz)}}])
     ev = _eventos(ctx)
     assert "pdp.decisao" in ev and "pep.aplicacao" in ev
+
+
+# ------------------------------------------------------------- scheduler wiring
+
+def test_scheduler_registrado_como_capacidade_governada(tmp_path):
+    from nomos.adapters.scheduler import ArmazemJobs, Scheduler
+    from nomos.adapters.wiring import CATEGORIAS_SCHED, registrar_scheduler
+    from nomos.orquestracao.registro import RegistroCapacidades
+    ctx = _ctx(tmp_path)
+    reg = RegistroCapacidades(policy=ctx["policy"], approver=_sim, audit=ctx["audit"])
+    sched = Scheduler(ArmazemJobs(tmp_path / "j.db"), executor=lambda d, i: None)
+    nomes = registrar_scheduler(reg, sched)
+    assert set(nomes) == set(CATEGORIAS_SCHED)
+    assert reg.risco_de("sched-listar") == "A0"
+    assert reg.risco_de("sched-criar") == "A5"       # armar execução é sensível
+    assert reg.risco_de("sched-cancelar") == "A1"    # desarmar é direção segura
+
+
+def test_desarmar_e_menos_sensivel_que_armar(tmp_path):
+    """A saída de emergência não pode ter fechadura mais dura que a entrada."""
+    from nomos.adapters.wiring import CATEGORIAS_SCHED
+    from nomos.kernel.policy import Category
+    assert CATEGORIAS_SCHED["sched-criar"] is Category.CODE_EXEC
+    assert CATEGORIAS_SCHED["sched-habilitar"] is Category.CODE_EXEC
+    for desarmar in ("sched-desabilitar", "sched-cancelar", "sched-apagar"):
+        assert CATEGORIAS_SCHED[desarmar] is Category.WRITE_LOCAL
+
+
+def test_operacoes_de_scheduler_sao_capacidades_separadas(tmp_path):
+    """Listar não carrega a autoridade de cancelar."""
+    from nomos.adapters.wiring import CATEGORIAS_SCHED, IDEMPOTENTES_SCHED
+    assert len(CATEGORIAS_SCHED) == 7
+    assert IDEMPOTENTES_SCHED == {"sched-listar", "sched-status"}

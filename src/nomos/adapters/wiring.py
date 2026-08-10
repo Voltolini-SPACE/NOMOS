@@ -35,6 +35,7 @@ import time
 
 from nomos.adapters.contrato import CapabilityContext, CapabilityRequest
 from nomos.adapters.filesystem import FilesystemAdapter
+from nomos.adapters.contrato import ErroInvalido
 from nomos.kernel.policy import Category
 
 # Categoria de política de cada capacidade de filesystem. É AQUI que o risco é
@@ -100,6 +101,88 @@ def registrar_filesystem(registro, *, raizes=(), audit=None,
                        timeout_s=timeout_s),
                 origem="adapters.filesystem",
                 idempotente=nome in IDEMPOTENTES_FS)
+            registrados.append(nome)
+        except ErroRegistro as exc:
+            if "já registrada" in str(exc):
+                registrados.append(nome)
+                continue
+            raise
+    return registrados
+
+
+# ---------------------------------------------------------------- scheduler
+
+# Risco das operações de scheduler, pela DIREÇÃO da autoridade.
+#
+# ARMAR execução futura (criar, habilitar) é o ato sensível: um job persistido
+# age depois, possivelmente sem ninguém olhando. Classificado como
+# A5_CODE_EXEC, porque é exatamente isso — arranjar execução.
+#
+# DESARMAR (desabilitar, cancelar, apagar) REDUZ autoridade. Exigir aprovação
+# forte para desligar algo perigoso seria pedir que a saída de emergência
+# tivesse fechadura: A1_WRITE_LOCAL basta, e a direção segura da falha é
+# conseguir desligar.
+CATEGORIAS_SCHED: dict[str, Category] = {
+    "sched-listar": Category.READ_LOCAL,
+    "sched-status": Category.READ_LOCAL,
+    "sched-criar": Category.CODE_EXEC,
+    "sched-habilitar": Category.CODE_EXEC,
+    "sched-desabilitar": Category.WRITE_LOCAL,
+    "sched-cancelar": Category.WRITE_LOCAL,
+    "sched-apagar": Category.WRITE_LOCAL,
+}
+
+IDEMPOTENTES_SCHED = {"sched-listar", "sched-status"}
+
+
+def _ponte_sched(scheduler, nome: str):
+    """Executor registrado para uma operação de scheduler.
+
+    Cada operação é uma capacidade separada de propósito: assim o gate A0–A6
+    e o PDP decidem por OPERAÇÃO — listar não carrega a autoridade de cancelar.
+    """
+    def _executar(**params):
+        job_id = str(params.get("job_id", "") or params.get("alvo", "") or "")
+        if nome == "sched-listar":
+            return [d.job_id for d in scheduler.listar()]
+        if nome == "sched-status":
+            return scheduler.status(job_id).estado.value
+        if nome == "sched-criar":
+            d = scheduler.criar(
+                job_id, str(params.get("sujeito", "runtime-governado")),
+                str(params.get("capacidade", "")),
+                argumentos=params.get("argumentos") or {},
+                alvo=str(params.get("alvo_job", "") or ""),
+                intervalo_s=params.get("intervalo_s"),
+                tz=str(params.get("tz", "UTC")))
+            return d.job_id
+        if nome == "sched-habilitar":
+            return scheduler.habilitar(job_id).estado.value
+        if nome == "sched-desabilitar":
+            return scheduler.desabilitar(job_id).estado.value
+        if nome == "sched-cancelar":
+            return scheduler.cancelar(job_id).estado.value
+        if nome == "sched-apagar":
+            scheduler.apagar(job_id)
+            return job_id
+        raise ErroInvalido(f"operação de scheduler desconhecida: {nome}")
+    _executar.__name__ = f"adapter_{nome.replace('-', '_')}"
+    _executar.__qualname__ = _executar.__name__
+    return _executar
+
+
+def registrar_scheduler(registro, scheduler, *, apenas_leitura: bool = False) -> list[str]:
+    """Registra as operações de scheduler como capacidades governadas."""
+    from nomos.orquestracao.registro import ErroRegistro
+
+    nomes = sorted(IDEMPOTENTES_SCHED) if apenas_leitura else sorted(CATEGORIAS_SCHED)
+    registrados = []
+    for nome in nomes:
+        try:
+            registro.registrar(nome, CATEGORIAS_SCHED[nome],
+                               _ponte_sched(scheduler, nome),
+                               origem="adapters.scheduler",
+                               idempotente=nome in IDEMPOTENTES_SCHED)
             registrados.append(nome)
         except ErroRegistro as exc:
             if "já registrada" in str(exc):
