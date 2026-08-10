@@ -65,6 +65,8 @@ CATEGORIA_DE_RETRY: dict[str, str] = {
     "git-diff": IDEMPOTENT,
     "git-log": IDEMPOTENT,
     "git-show": IDEMPOTENT,
+    # criar tag que já existe FALHA — repetir não é seguro nem inócuo
+    "git-tag": NON_RETRYABLE_MANUAL_RECOVERY,
     # scheduler: leitura é idempotente; mutação de estado é protegida pela
     # chave de ocorrência (dedup) ou pela unicidade do job_id
     "sched-listar": IDEMPOTENT,

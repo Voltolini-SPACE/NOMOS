@@ -216,6 +216,37 @@ def registrar_git(registro, *, raizes=(), audit=None,
     return registrados
 
 
+# ------------------------------------------------------------ git write (C2a)
+
+# Só `git-tag`. `git-add` e `git-commit` ficaram no C2c depois que a medição
+# provou que `git add` executa `filter.clean` do próprio repositório; e
+# `git-push` no C2b, por atravessar fronteira de rede.
+CATEGORIAS_GIT_WRITE: dict[str, Category] = {"git-tag": Category.WRITE_LOCAL}
+
+
+def registrar_git_write(registro, *, raizes=(), audit=None,
+                        binario: str | None = None) -> list[str]:
+    from nomos.adapters.git_write import GitTagAdapter
+    from nomos.orquestracao.registro import ErroRegistro
+    if not raizes:
+        raise ValueError("registrar_git_write exige `raizes`")
+    adapter = GitTagAdapter(binario=binario)
+    registrados = []
+    for nome in sorted(CATEGORIAS_GIT_WRITE):
+        try:
+            registro.registrar(nome, CATEGORIAS_GIT_WRITE[nome],
+                               _ponte_git(adapter, nome, registro,
+                                          raizes=raizes, audit=audit),
+                               origem="adapters.git_write", idempotente=False)
+            registrados.append(nome)
+        except ErroRegistro as exc:
+            if "já registrada" in str(exc):
+                registrados.append(nome)
+                continue
+            raise
+    return registrados
+
+
 # ---------------------------------------------------------------- scheduler
 
 # Risco das operações de scheduler, pela DIREÇÃO da autoridade.

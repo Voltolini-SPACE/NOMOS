@@ -313,7 +313,8 @@ class RuntimeGovernado:
                  caminhos: tuple[str, ...] = (), adapters: bool = False,
                  adapters_apenas_leitura: bool = False,
                  executaveis: tuple[str, ...] = (), scheduler=None,
-                 destrutivas: bool = False, git: bool = False):
+                 destrutivas: bool = False, git: bool = False,
+                 git_write: bool = False):
         if ctx is None or "policy" not in ctx:
             raise ErroRuntime("contexto sem política carregada — fail-closed")
         self.ctx = ctx
@@ -382,6 +383,12 @@ class RuntimeGovernado:
                 # processo — e confinado às MESMAS raízes do filesystem.
                 from nomos.adapters.wiring import registrar_git
                 self.capacidades_adapter += registrar_git(
+                    self.registro, raizes=tuple(caminhos), audit=self.audit)
+            if git_write:
+                # C2a: só `git-tag`. Opt-in separado do `git=` de leitura —
+                # escrever referência é autoridade distinta de ler objeto.
+                from nomos.adapters.wiring import registrar_git_write
+                self.capacidades_adapter += registrar_git_write(
                     self.registro, raizes=tuple(caminhos), audit=self.audit)
 
         # ABSORPTION-05: o scheduler tem de ser registrado AQUI, junto com os
