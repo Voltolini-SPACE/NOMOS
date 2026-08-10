@@ -314,7 +314,7 @@ class RuntimeGovernado:
                  adapters_apenas_leitura: bool = False,
                  executaveis: tuple[str, ...] = (), scheduler=None,
                  destrutivas: bool = False, git: bool = False,
-                 git_write: bool = False):
+                 git_write: bool = False, git_push_destinos=None):
         if ctx is None or "policy" not in ctx:
             raise ErroRuntime("contexto sem política carregada — fail-closed")
         self.ctx = ctx
@@ -390,6 +390,12 @@ class RuntimeGovernado:
                 from nomos.adapters.wiring import registrar_git_write
                 self.capacidades_adapter += registrar_git_write(
                     self.registro, raizes=tuple(caminhos), audit=self.audit)
+            if git_push_destinos:
+                # C2b: só existe com DESTINOS governados vindos da política.
+                from nomos.adapters.wiring import registrar_git_push
+                self.capacidades_adapter += registrar_git_push(
+                    self.registro, raizes=tuple(caminhos),
+                    destinos=git_push_destinos, audit=self.audit)
 
         # ABSORPTION-05: o scheduler tem de ser registrado AQUI, junto com os
         # demais adapters, e não depois pelo chamador. Registrar depois foi o

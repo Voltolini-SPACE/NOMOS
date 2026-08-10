@@ -67,6 +67,9 @@ CATEGORIA_DE_RETRY: dict[str, str] = {
     "git-show": IDEMPOTENT,
     # criar tag que já existe FALHA — repetir não é seguro nem inócuo
     "git-tag": NON_RETRYABLE_MANUAL_RECOVERY,
+    # push que falhou pode ter publicado: o remoto pode ter aceitado e a
+    # resposta ter se perdido. Repetir às cegas republica.
+    "git-push": NON_RETRYABLE_MANUAL_RECOVERY,
     # scheduler: leitura é idempotente; mutação de estado é protegida pela
     # chave de ocorrência (dedup) ou pela unicidade do job_id
     "sched-listar": IDEMPOTENT,

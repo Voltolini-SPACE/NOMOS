@@ -247,6 +247,44 @@ def registrar_git_write(registro, *, raizes=(), audit=None,
     return registrados
 
 
+# ------------------------------------------------------------ git push (C2b)
+
+# `git-push` é NET_EGRESS, não WRITE_LOCAL: atravessa fronteira de confiança,
+# publica em servidor de terceiro e pode disparar CI/webhooks/deploy. Compartilhar
+# a autorização de `git-tag` seria dizer que marcar um commit e publicá-lo são o
+# mesmo ato.
+CATEGORIAS_GIT_PUSH: dict[str, Category] = {"git-push": Category.NET_EGRESS}
+
+
+def registrar_git_push(registro, *, raizes=(), destinos=None, audit=None,
+                       binario: str | None = None) -> list[str]:
+    """Registra `git-push`. Exige DESTINOS governados — sem eles, nada a fazer."""
+    from nomos.adapters.git_push import GitPushAdapter
+    from nomos.orquestracao.registro import ErroRegistro
+    if not raizes:
+        raise ValueError("registrar_git_push exige `raizes`")
+    if not destinos:
+        raise ValueError(
+            "registrar_git_push exige `destinos` governados: sem destino "
+            "declarado na política, o remote do repositório viraria a "
+            "autoridade — e ele é dado que vem de fora")
+    adapter = GitPushAdapter(destinos=destinos, binario=binario)
+    registrados = []
+    for nome in sorted(CATEGORIAS_GIT_PUSH):
+        try:
+            registro.registrar(nome, CATEGORIAS_GIT_PUSH[nome],
+                               _ponte_git(adapter, nome, registro,
+                                          raizes=raizes, audit=audit),
+                               origem="adapters.git_push", idempotente=False)
+            registrados.append(nome)
+        except ErroRegistro as exc:
+            if "já registrada" in str(exc):
+                registrados.append(nome)
+                continue
+            raise
+    return registrados
+
+
 # ---------------------------------------------------------------- scheduler
 
 # Risco das operações de scheduler, pela DIREÇÃO da autoridade.
