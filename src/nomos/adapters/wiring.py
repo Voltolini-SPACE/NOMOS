@@ -90,6 +90,20 @@ def registrar_filesystem(registro, *, raizes=(), audit=None,
     """
     from nomos.orquestracao.registro import ErroRegistro
 
+    # FAIL-CLOSED: sem raiz declarada, `resolver()` não restringe nada — e
+    # registrar fs-apagar/fs-mover/fs-escrever nesse estado seria ENTREGAR
+    # menos confinamento que o legado que eles substituem (`arquivo_escrever`
+    # SEMPRE confina em NOMOS_HOME/workspace). Um censo adversarial apontou
+    # exatamente isso: `adapters=True` sem `caminhos` daria delete recursivo de
+    # caminho arbitrário. Leitura sem raiz continua permitida — é o
+    # comportamento herdado e consciente das missões anteriores.
+    if not raizes and not apenas_leitura:
+        raise ValueError(
+            "registrar capacidades MUTANTES de filesystem exige `raizes` "
+            "explícitas — sem escopo elas seriam menos confinadas que as "
+            "ferramentas nativas que substituem (use apenas_leitura=True "
+            "para registrar só leitura)")
+
     adapter = FilesystemAdapter()
     nomes = sorted(IDEMPOTENTES_FS) if apenas_leitura else sorted(CATEGORIAS_FS)
     registrados = []

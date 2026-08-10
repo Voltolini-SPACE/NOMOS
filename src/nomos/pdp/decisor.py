@@ -28,6 +28,39 @@ from nomos.pdp.autorizacao import (
 )
 
 
+def _no_escopo(recurso: str, caminhos) -> bool:
+    """Contenção por COMPONENTE, sobre o caminho CANONICALIZADO.
+
+    A primeira versão comparava por prefixo de string (`startswith`). Um censo
+    adversarial mostrou o furo: `/ws/../etc/passwd` "começa com" `/ws` e
+    passava — resolvendo, na verdade, para `/etc/passwd`. Para as capacidades
+    de adapter o `resolver()` pegaria depois (defesa em profundidade), mas as
+    ferramentas NATIVAS (`arquivo_ler`, `arquivo_resumir`) não têm resolver
+    nenhum: ali o escopo do PDP era o único confinamento, e um `..` o
+    derrotava.
+    """
+    import os
+    if not caminhos:
+        return True
+    try:
+        real = os.path.realpath(os.path.abspath(recurso))
+    except Exception:
+        return False
+    for bruto in caminhos:
+        try:
+            raiz = os.path.realpath(os.path.abspath(bruto))
+        except Exception:
+            continue
+        if real == raiz:
+            return True
+        try:
+            if os.path.commonpath([real, raiz]) == raiz:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 class Efeito(str, Enum):
     ALLOW = "ALLOW"
     DENY = "DENY"
@@ -225,8 +258,7 @@ class Decisor:
                 return self._negar(Motivo.RECURSO_FORA_DO_ESCOPO, "recurso vazio",
                                    capacidade=pedido.capacidade, risco=risco,
                                    hash_auth=chash)
-            if not any(recurso == p or recurso.startswith(p.rstrip("/") + "/")
-                       for p in autorizacao.caminhos):
+            if not _no_escopo(recurso, autorizacao.caminhos):
                 return self._negar(Motivo.RECURSO_FORA_DO_ESCOPO, recurso,
                                    capacidade=pedido.capacidade, risco=risco,
                                    hash_auth=chash)
@@ -271,8 +303,7 @@ class Decisor:
                 continue
             if not isinstance(valor, str):
                 return f"{chave} não é texto"
-            if not any(valor == p or valor.startswith(p.rstrip("/") + "/")
-                       for p in autorizacao.caminhos):
+            if not _no_escopo(valor, autorizacao.caminhos):
                 return f"{chave}={valor}"
         return ""
 

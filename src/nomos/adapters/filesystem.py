@@ -215,6 +215,12 @@ class FilesystemAdapter(Adapter):
         padrao = pedido.arg("padrao") or "*"
         if not isinstance(padrao, str):
             raise ErroInvalido("'padrao' precisa ser texto")
+        # padrão absoluto faz `Path.glob` levantar NotImplementedError CRUA —
+        # exceção não tipada escapando do adapter viola o contrato. Recusa
+        # explícita: o escopo já é o `alvo`, o padrão é relativo a ele.
+        if padrao.startswith("/") or padrao.startswith("~"):
+            raise ErroInvalido(
+                f"'padrao' precisa ser relativo ao alvo (recebido: {padrao!r})")
         recursivo = bool(pedido.arg("recursivo", False))
         it = base.rglob(padrao) if recursivo else base.glob(padrao)
         itens, truncado = [], False

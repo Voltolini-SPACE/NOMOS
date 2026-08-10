@@ -221,3 +221,102 @@ def test_operacoes_de_scheduler_sao_capacidades_separadas(tmp_path):
     from nomos.adapters.wiring import CATEGORIAS_SCHED, IDEMPOTENTES_SCHED
     assert len(CATEGORIAS_SCHED) == 7
     assert IDEMPOTENTES_SCHED == {"sched-listar", "sched-status"}
+
+
+# --------------------- correções vindas do censo adversarial da FASE 6
+
+def test_pdp_confina_por_componente_nao_por_prefixo(tmp_path):
+    """`/ws/../etc/passwd` NÃO está sob `/ws` — o `..` derrotava o escopo.
+
+    Grave porque as ferramentas NATIVAS (`arquivo_ler`, `arquivo_resumir`) não
+    têm resolver próprio: ali o escopo do PDP é o ÚNICO confinamento.
+    """
+    from nomos.pdp.decisor import _no_escopo
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    assert _no_escopo(str(ws / "ok.txt"), (str(ws),))
+    assert not _no_escopo(str(ws / ".." / "segredo.txt"), (str(ws),))
+    assert not _no_escopo("/etc/passwd", (str(ws),))
+    assert not _no_escopo(str(tmp_path / "ws-outro" / "x"), (str(ws),))
+
+
+def test_traversal_barrado_no_pdp_para_ferramenta_nativa(tmp_path):
+    """Ponta a ponta com capacidade NATIVA e escopo ligado."""
+    ctx = _ctx(tmp_path)
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (tmp_path / "segredo.txt").write_text("SEGREDO")
+    rt = RuntimeGovernado(ctx, _sim, caminhos=(str(ws),))
+    res = rt.rodar("escapar", passos=[
+        {"id": "r", "ferramenta": "arquivo_ler",
+         "params": {"alvo": str(ws / ".." / "segredo.txt")}}])
+    assert not res.ok
+    assert "escopo" in res.missao.nos["r"].detalhe
+
+
+def test_capacidade_mutante_exige_raiz_explicita(tmp_path):
+    """Fail-closed: `adapters=True` sem `caminhos` daria delete de caminho
+    arbitrário — MENOS confinado que o nativo que substitui."""
+    ctx = _ctx(tmp_path)
+    with pytest.raises(ValueError, match="exige `raizes`"):
+        RuntimeGovernado(ctx, _sim, adapters=True)      # sem caminhos
+
+
+def test_apenas_leitura_dispensa_raiz(tmp_path):
+    """Leitura sem raiz é o comportamento herdado e consciente."""
+    ctx = _ctx(tmp_path)
+    rt = RuntimeGovernado(ctx, _sim, adapters=True, adapters_apenas_leitura=True)
+    assert set(rt.capacidades_adapter) == IDEMPOTENTES_FS
+
+
+def test_fs_listar_com_padrao_absoluto_erro_tipado(tmp_path):
+    """Contrato: adapter falha com subclasse de ErroCapacidade, nunca com
+    NotImplementedError crua do pathlib."""
+    from nomos.adapters.contrato import CapabilityContext, CapabilityRequest, ErroInvalido
+    from nomos.adapters.filesystem import FilesystemAdapter
+    from nomos.adapters.wiring import CATEGORIAS_FS
+
+    class _Reg:
+        conhecida = staticmethod(lambda n: n in CATEGORIAS_FS)
+        categoria_de = staticmethod(lambda n: CATEGORIAS_FS[n])
+        risco_de = staticmethod(lambda n: "A0")
+        idempotente_de = staticmethod(lambda n: True)
+        executor_de = staticmethod(lambda n: None)
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    ctx = CapabilityContext.de_registro(_Reg(), "fs-listar", "s", raizes=(str(ws),))
+    with pytest.raises(ErroInvalido, match="relativo"):
+        FilesystemAdapter().executar(
+            CapabilityRequest(capacidade="fs-listar", alvo=str(ws),
+                              argumentos={"padrao": "/etc/*"}), ctx)
+
+
+def test_fs_criar_dir_funciona_e_e_confinado(tmp_path):
+    """`fs-criar-dir` não tinha teste nenhum — apontado pelo censo."""
+    from nomos.adapters.contrato import CapabilityContext, CapabilityRequest, ErroEscopo
+    from nomos.adapters.filesystem import FilesystemAdapter
+    from nomos.adapters.wiring import CATEGORIAS_FS
+
+    class _Reg:
+        conhecida = staticmethod(lambda n: n in CATEGORIAS_FS)
+        categoria_de = staticmethod(lambda n: CATEGORIAS_FS[n])
+        risco_de = staticmethod(lambda n: "A1")
+        idempotente_de = staticmethod(lambda n: False)
+        executor_de = staticmethod(lambda n: None)
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    ctx = CapabilityContext.de_registro(_Reg(), "fs-criar-dir", "s", raizes=(str(ws),))
+    ad = FilesystemAdapter()
+    r = ad.executar(CapabilityRequest(capacidade="fs-criar-dir",
+                                      alvo=str(ws / "novo" / "sub")), ctx)
+    assert r.ok and r.efeito_aplicado
+    assert (ws / "novo" / "sub").is_dir()
+    # idempotente na prática: recriar não marca efeito
+    r2 = ad.executar(CapabilityRequest(capacidade="fs-criar-dir",
+                                       alvo=str(ws / "novo" / "sub")), ctx)
+    assert r2.ok and not r2.efeito_aplicado
+    with pytest.raises(ErroEscopo):
+        ad.executar(CapabilityRequest(capacidade="fs-criar-dir",
+                                      alvo=str(tmp_path / "fora")), ctx)
