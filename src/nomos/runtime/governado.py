@@ -471,7 +471,8 @@ class RuntimeGovernado:
         orq = Orquestrador(self.registro, self.policy, approver=self.aprovador,
                            audit=self.audit, executores=self.executores,
                            recuperacao=self.recuperacao,
-                           rotear_motor=self.rotear_motor)
+                           rotear_motor=self.rotear_motor,
+                           estrito=True)
         self._auditar("runtime.execucao.inicio", objetivo=plano.objetivo[:120],
                       passos=len(plano.passos), risco=plano.risco)
         missao = orq.executar(grafo)

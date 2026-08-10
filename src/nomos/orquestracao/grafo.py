@@ -144,7 +144,8 @@ class Orquestrador:
 
     def __init__(self, registro: RegistroCapacidades, policy, approver=None,
                  audit=None, executores: dict[str, Callable] | None = None,
-                 recuperacao=None, rotear_motor: Callable | None = None):
+                 recuperacao=None, rotear_motor: Callable | None = None,
+                 estrito: bool = False):
         self.registro = registro
         self.policy = policy
         self.approver = approver
@@ -152,6 +153,14 @@ class Orquestrador:
         self.executores = dict(executores or {})
         self.recuperacao = recuperacao
         self.rotear_motor = rotear_motor
+        # ABSORPTION-06: modo ESTRITO desliga o fallback para
+        # `registro.executor_de()`. Quem opera sob PEP (o RuntimeGovernado)
+        # entrega o mapa protegido inteiro; qualquer capacidade fora dele é,
+        # por definição, um caminho não governado. Sem isto, registrar uma
+        # capacidade mutante direto no registro a torna executável CRUA — foi
+        # o que o invariante da ETAPA 2 encontrou ainda aberto depois da
+        # correção pontual da ABSORPTION-05.
+        self.estrito = bool(estrito)
 
     def _auditar(self, evento: str, **campos) -> None:
         if self.audit is not None:
@@ -160,6 +169,8 @@ class Orquestrador:
     def _executor_para(self, no: No) -> Callable | None:
         if no.ferramenta in self.executores:
             return self.executores[no.ferramenta]
+        if self.estrito:
+            return None          # sem ponte crua: fora do mapa ⇒ não executa
         return self.registro.executor_de(no.ferramenta)
 
     def _bloquear_dependentes(self, grafo: GrafoTarefas, raiz: str,
@@ -200,8 +211,11 @@ class Orquestrador:
             if executor is None:
                 nos[no_id] = ResultadoNo(
                     status="FALHOU",
-                    detalhe=f"sem executor para '{no.ferramenta}' "
-                            "(nativas exigem wiring explícito)")
+                    detalhe=(f"sem executor governado para '{no.ferramenta}' "
+                             "(modo estrito: capacidade fora do mapa protegido "
+                             "por PEP não executa)") if self.estrito else
+                            (f"sem executor para '{no.ferramenta}' "
+                             "(nativas exigem wiring explícito)"))
                 self._auditar("orquestracao.no.falhou", no=no_id,
                               ferramenta=no.ferramenta, motivo="sem executor")
                 self._bloquear_dependentes(grafo, no_id, nos)
