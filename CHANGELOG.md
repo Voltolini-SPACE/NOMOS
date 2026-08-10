@@ -4,6 +4,18 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (números desatualizados nas superfícies públicas)
+- **Hero do site** anunciava `1.800+` testes e o **README** "mais de 1.800",
+  números de antes das últimas missões. Corrigidos para `1.900+`, que é o
+  limite que o próprio guard do repositório permite: `test_site_prova.py`
+  exige que o número anunciado **não supere a contagem de funções**
+  `def test_` (hoje **1.922**). Os 2.082 casos que a suíte executa incluem as
+  parametrizadas — o número maior aparece só na descrição da seção de prova,
+  onde cabe a explicação, nunca como manchete.
+- **Strip de prova**: agora explicita que as 12 combinações de matriz são
+  parte de **19 checks** de CI, listando os 7 gates bloqueantes; e a cobertura
+  passa de "≥ 80%" (o piso do gate) para os **85% medidos**.
+
 ### Fixed (veracidade — 8 contradições entre o site e o código, achadas por auditoria)
 Auditoria automatizada comparou cada afirmação pública com o repositório; cada
 achado foi verificado por 2 céticos independentes que **executaram** os comandos.

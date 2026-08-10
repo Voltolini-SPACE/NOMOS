@@ -313,8 +313,8 @@
                 <div class="stat"><b>100%</b><span>local por padrão</span></div>
                 <div class="stat"><b>0</b><span>telemetria / rastreio</span></div>
                 <div class="stat"><b>A0–A6</b><span>níveis de risco governados</span></div>
-                <div class="stat"><b>1.800+</b><span>testes automatizados</span></div>
-                <div class="stat"><b>12/12</b><span>CI verde: 3 SO × 4 Python</span></div>
+                <div class="stat"><b>1.900+</b><span>testes automatizados</span></div>
+                <div class="stat"><b>19/19</b><span>checks de CI verdes</span></div>
             </div>
         </div>
     </section>
@@ -341,8 +341,8 @@
             <p class="lead">A lei da casa também vale para o marketing: aqui, cada afirmação é verificável. Abaixo estão <strong>saídas reais</strong> do NOMOS na sua máquina — e a prova técnica que roda sozinha a cada <span class="k">git push</span>.</p>
 
             <div class="prova-grid">
-                <div class="pcard"><b>12/12</b><span>combinações de CI verdes — 3 sistemas (Linux · macOS · Windows) × 4 versões de Python (3.10 → 3.13), sem <em>fail-fast</em>.</span></div>
-                <div class="pcard"><b>1.800+</b><span>testes automatizados a cada push, com cobertura ≥ 80% e checagem de tipos (mypy) num job à parte.</span></div>
+                <div class="pcard"><b>12/12</b><span>combinações de CI verdes — 3 sistemas (Linux · macOS · Windows) × 4 versões de Python (3.10 → 3.13), sem <em>fail-fast</em> — dentro de 19 checks no total, somando 7 gates bloqueantes: cobertura, mypy, pip-audit, reprodutibilidade e smoke do wheel nos 3 sistemas.</span></div>
+                <div class="pcard"><b>1.900+</b><span>funções de teste a cada push (2.082 casos executados, contando as parametrizadas), com cobertura medida em 85% — o gate reprova abaixo de 80% — e checagem de tipos (mypy) num job à parte.</span></div>
                 <div class="pcard"><b>0</b><span>telemetria, rastreio ou "casa" para ligar. O modo só-local é a política — não um botão que dá para esquecer desligado.</span></div>
                 <div class="pcard"><b>SEC-01…12</b><span>invariantes de segurança que <em>são</em> testes: se o código divergir da política, a suíte inteira falha.</span></div>
                 <div class="pcard"><b>bit-a-bit</b><span>builds reproduzíveis: dois builds independentes do mesmo commit geram wheel e sdist com o MESMO sha256 — gate bloqueante no CI (Linux, Python 3.12) que refaz os dois e compara byte a byte. Verificação empírica registrada em Linux e macOS. A suíte de testes roda em Linux, macOS e Windows, Python 3.10 a 3.13.</span></div>

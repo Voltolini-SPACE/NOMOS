@@ -247,7 +247,7 @@ Detalhes técnicos e o mapa completo das fases MC0–MC18:
 
 ## Maturidade
 
-Release candidate (v1.3.0rc20, **pre-release**). Suíte com mais de 1.800 testes cobrindo
+Release candidate (v1.3.0rc20, **pre-release**). Suíte com mais de 1.900 testes cobrindo
 segurança (fail-closed, não-vazamento de segredo, opt-in de nuvem) e UX,
 verde em 3 sistemas × 4 versões de Python. A cadeia de publicação tem
 proveniência SLSA verificada, SBOM com amarração por hash e builds
