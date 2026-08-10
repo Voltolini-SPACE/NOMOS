@@ -458,13 +458,26 @@ class Scheduler:
         return d.agenda().proximo(base)
 
     def _alertar(self, d: JobDefinition, inst: JobInstance, classe: str,
-                 detalhe: str) -> None:
+                 detalhe: str, estado=None) -> None:
+        """ABSORPTION-06: o estado vem da FONTE ÚNICA, não de um literal aqui.
+
+        Antes este método cravava `effect_state="UNKNOWN"` enquanto o Ticker
+        cravava `"NO_EFFECT"` para a MESMA ocorrência — dois intérpretes do
+        mesmo fato, dois alertas contraditórios.
+        """
         if self.alertas is None:
             return
         from nomos.adapters.alertas import EventoFalha
+        from nomos.adapters.resultado import de_execucao
+        if estado is None:
+            estado = de_execucao(houve_excecao=True, efeito_aplicado=False,
+                                 error_class=classe, detalhe=detalhe or "")
+        if not estado.alerta:
+            return
         self.alertas.emitir(EventoFalha(
             job_id=d.job_id, occurrence_id=inst.chave, capability=d.capacidade,
-            error_class=classe, effect_state="UNKNOWN", detalhe=detalhe or ""))
+            error_class=estado.error_class or classe,
+            effect_state=estado.effect_state, detalhe=estado.mensagem))
 
     def _reagendar(self, d: JobDefinition, agora: datetime, final: JobState) -> None:
         atual = self.armazem.obter(d.job_id)

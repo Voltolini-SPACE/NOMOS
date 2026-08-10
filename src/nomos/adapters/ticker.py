@@ -208,22 +208,27 @@ class Ticker:
                 self._auditar("ticker.autorizacao.falhou", job=d.job_id,
                               ocorrencia=inst.ocorrencia,
                               erro=type(exc).__name__)
-                self._alertar(d, inst, type(exc).__name__, "NO_EFFECT",
-                              str(exc))
+                self._alertar_fato(d, inst, negado=True,
+                                   classe=type(exc).__name__, detalhe=str(exc))
                 return None
             if credencial is None:
                 self._auditar("ticker.autorizacao.negada", job=d.job_id,
                               ocorrencia=inst.ocorrencia)
-                self._alertar(d, inst, "AutorizacaoNegada", "NO_EFFECT",
-                              "autorizador recusou a ocorrência")
+                self._alertar_fato(d, inst, negado=True,
+                                   classe="AutorizacaoNegada",
+                                   detalhe="autorizador recusou a ocorrência")
                 return None
 
         execucao = self.scheduler.executar_ocorrencia(d, inst, agora,
                                                       credencial=credencial)
         if execucao.estado_final is JobState.FAILED:
-            self._alertar(d, inst, "ExecucaoFalhou",
-                          "UNKNOWN" if execucao.efeito_aplicado else "NO_EFFECT",
-                          execucao.detalhe)
+            # O ticker NÃO adivinha o efeito: informa que houve exceção e
+            # deixa a fonte única classificar. Antes ele mandava "NO_EFFECT"
+            # quando `efeito_aplicado` era False — mas execução que levantou
+            # tem efeito DESCONHECIDO, não ausente. Era essa a origem da
+            # contradição com o Scheduler.
+            self._alertar_fato(d, inst, negado=False, classe="ExecucaoFalhou",
+                               detalhe=execucao.detalhe)
         return execucao
 
     # ---------------------------------------------------------------- util
@@ -232,11 +237,25 @@ class Ticker:
         if self.audit is not None:
             self.audit.append(evento, **campos)
 
-    def _alertar(self, d: JobDefinition, inst: JobInstance, classe: str,
-                 efeito: str, detalhe: str) -> None:
+    def _alertar_fato(self, d: JobDefinition, inst: JobInstance, *,
+                      negado: bool, classe: str, detalhe: str) -> None:
+        """Relata o FATO; quem classifica é `adapters.resultado`.
+
+        A assinatura só aceita fatos observáveis (foi negado? qual a classe do
+        erro?) — não existe parâmetro para o chamador declarar `effect_state`.
+        É o que impede a contradição de voltar: os dois emissores mandam a
+        mesma pergunta para o mesmo juiz.
+        """
         if self.alertas is None:
+            return
+        from nomos.adapters.resultado import de_execucao
+        estado = de_execucao(houve_excecao=not negado, efeito_aplicado=False,
+                             negado=negado, error_class=classe,
+                             detalhe=detalhe or "")
+        if not estado.alerta:
             return
         self.alertas.emitir(EventoFalha(
             job_id=d.job_id, occurrence_id=inst.chave, capability=d.capacidade,
-            error_class=classe, effect_state=efeito, detalhe=detalhe or "",
+            error_class=estado.error_class or classe,
+            effect_state=estado.effect_state, detalhe=estado.mensagem,
             timestamp=self._agora()))
