@@ -410,3 +410,141 @@ def test_c2b_categoria_nao_depende_do_esquema_da_url(amb, tmp_path):
     # a categoria vem do REGISTRO, e o registro não olha destino nenhum
     from nomos.adapters.wiring import CATEGORIAS_GIT_PUSH
     assert CATEGORIAS_GIT_PUSH == {"git-push": Category.NET_EGRESS}
+
+
+# ==================== classificação dos sobreviventes, por EXECUÇÃO
+
+def _ctx_direto(tmp_path, ws, destinos):
+    from nomos.adapters.contrato import CapabilityContext
+    from nomos.adapters.wiring import registrar_git_push
+    from nomos.orquestracao.registro import RegistroCapacidades
+    home = tmp_path / "hdireto"
+    home.mkdir(exist_ok=True)
+    reg = RegistroCapacidades(policy=PolicyEngine(home / "p.json"), approver=_sim)
+    registrar_git_push(reg, raizes=(str(ws),), destinos=destinos)
+    return CapabilityContext.de_registro(reg, "git-push", "runtime-governado",
+                                         raizes=(str(ws),))
+
+
+def test_m1_adapter_nao_confia_no_nome_do_remote(amb, tmp_path):
+    """M1: sem PDP e sem a guarda de campos, o `remote_id` desconhecido morre."""
+    from nomos.adapters.contrato import CapabilityRequest
+    _rt, ws, repo, _p, _h, _c, destinos = amb
+    ad = GitPushAdapter(destinos=destinos)
+    ctx = _ctx_direto(tmp_path, ws, destinos)
+    pedido = CapabilityRequest(capacidade="git-push", alvo=str(repo),
+                               argumentos={"remote_id": "inventado",
+                                           "source_branch": "main"})
+    with pytest.raises(ErroRemoto, match="desconhecido"):
+        ad.executar(pedido, ctx)
+    with pytest.raises(ErroRemoto):
+        ad.destino_de("nao-existe")
+
+
+def test_m4_refspec_do_plano_nao_alcanca_o_adapter(amb, tmp_path):
+    """M4: mesmo com a guarda de campos ausente, o refspec é montado aqui."""
+    from nomos.adapters.contrato import CapabilityRequest
+    _rt, ws, repo, permitido, hostil, _c, destinos = amb
+    ad = GitPushAdapter(destinos=destinos)
+    ctx = _ctx_direto(tmp_path, ws, destinos)
+    pedido = CapabilityRequest(
+        capacidade="git-push", alvo=str(repo),
+        argumentos={"remote_id": "producao", "source_branch": "main",
+                    "refspec": "+refs/heads/main:refs/heads/roubada"})
+    with pytest.raises(ErroInvalido, match="refspec"):
+        ad.executar(pedido, ctx)
+    assert _sha(permitido, "refs/heads/roubada") == ""
+
+
+def test_m11_branch_de_destino_da_politica_e_validada(amb, tmp_path):
+    """M11: destino hostil vindo da POLÍTICA também passa pela gramática."""
+    from nomos.adapters.contrato import CapabilityRequest
+    _rt, ws, repo, permitido, _h, _c, _d = amb
+    ruins = {"x": DestinoGovernado("x", f"file://{permitido}", "+main")}
+    ad = GitPushAdapter(destinos=ruins)
+    ctx = _ctx_direto(tmp_path, ws, ruins)
+    pedido = CapabilityRequest(capacidade="git-push", alvo=str(repo),
+                               argumentos={"remote_id": "x",
+                                           "source_branch": "main"})
+    with pytest.raises(ErroInvalido, match="branch_destino"):
+        ad.executar(pedido, ctx)
+
+
+def test_m6_GIT_DIR_do_host_nao_muda_o_repositorio_publicado(amb, monkeypatch,
+                                                              tmp_path):
+    """M6: `GIT_DIR` herdado redirecionaria a ORIGEM do push."""
+    rt, _ws, repo, permitido, _h, _c, _d = amb
+    outro = tmp_path / "outro"
+    outro.mkdir()
+    _git(outro, "init", "-q", "-b", "main")
+    (outro / "z.txt").write_text("do outro\n")
+    _git(outro, "add", "z.txt")
+    _git(outro, "commit", "-qm", "commit-do-outro")
+    monkeypatch.setenv("GIT_DIR", str(outro / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(outro))
+    assert _plano(rt, alvo=str(repo), remote_id="producao",
+                  source_branch="main").ok
+    monkeypatch.delenv("GIT_DIR")
+    monkeypatch.delenv("GIT_WORK_TREE")
+    esperado = _git(repo, "rev-parse", "main").stdout.strip()
+    assert _sha(permitido, "refs/heads/main") == esperado, (
+        "GIT_DIR do host mudou o repositório de ORIGEM da publicação")
+
+
+def test_m5_gramatica_positiva_recusa_mais_SOZINHA():
+    """M5: prova de EQUIVALÊNCIA — `+` não está no conjunto de `_BRANCH_OK`."""
+    from nomos.adapters.git_push import _BRANCH_OK
+    for hostil in ("+main", "+", "+refs/heads/main", "++x"):
+        assert not _BRANCH_OK.match(hostil), (
+            f"{hostil!r} passaria pela gramática positiva sozinha — o mutante "
+            "do '+' deixa de ser equivalente e precisa de teste próprio")
+    assert _BRANCH_OK.pattern.startswith("^[A-Za-z0-9]")
+
+
+def test_m10_credencial_e_inalcancavel_no_contrato_atual(amb, tmp_path):
+    """M10: prova de EQUIVALÊNCIA condicionada ao transporte.
+
+    `credential.helper` e `askPass` só são consultados por transporte que PEÇA
+    credencial. O contrato do C2b hoje só exercita destinos `file://`, que
+    nunca pedem. A neutralização fica como defesa em profundidade e volta a ser
+    necessária no primeiro destino `https://`/`ssh://` real — este teste falha
+    nesse dia, que é quando deve falhar.
+    """
+    _rt, _ws, _repo, _p, _h, _c, destinos = amb
+    from urllib.parse import urlsplit
+    for d in destinos.values():
+        assert urlsplit(d.url).scheme == "file", (
+            "destino não-file no contrato: a equivalência do M10 caducou e "
+            "credential.helper precisa de teste de execução própria")
+
+
+def test_m4_refspec_e_inalcancavel_atras_da_guarda_de_campos():
+    """M4: prova de EQUIVALÊNCIA por INALCANÇABILIDADE, na AST.
+
+    A guarda recusa `refspec` incondicionalmente e vem ANTES da linha que
+    monta o refspec. Nenhuma entrada chega lá com o campo presente — logo
+    `pedido.arg("refspec")` só pode ser None ali, e o mutante que o consultaria
+    seleciona sempre o mesmo valor.
+
+    O teste prende a ORDEM, não a mensagem: se a guarda for movida para depois
+    da montagem, ou deixar de listar `refspec`, o mutante volta a ser REAL e
+    esta prova falha — que é exatamente quando ela deve falhar.
+    """
+    import ast
+
+    import nomos.adapters.git_push as mod
+    fonte = ast.parse(Path(mod.__file__).read_text())
+    executar = next(n for n in ast.walk(fonte)
+                    if isinstance(n, ast.FunctionDef) and n.name == "executar")
+    linha_guarda = linha_refspec = None
+    for no in ast.walk(executar):
+        if isinstance(no, ast.Constant) and no.value == "refspec":
+            linha_guarda = min(linha_guarda or no.lineno, no.lineno)
+        if (isinstance(no, ast.Assign) and no.targets
+                and getattr(no.targets[0], "id", "") == "refspec"):
+            linha_refspec = no.lineno
+    assert linha_guarda is not None, "'refspec' saiu da lista de campos proibidos"
+    assert linha_refspec is not None, "a montagem do refspec sumiu"
+    assert linha_guarda < linha_refspec, (
+        "a guarda de campos deixou de vir ANTES da montagem do refspec — o "
+        "mutante do refspec arbitrário volta a ser alcançável")
