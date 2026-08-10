@@ -431,3 +431,97 @@ def test_c1_resolver_confina_o_repo_por_si_mesmo(tmp_path):
     assert resolver(str(ws / "repo"), (str(ws),))
     with pytest.raises(ErroEscopo):
         resolver(str(fora), (str(ws),))
+
+
+# ============================================ M3 — o adapter, sem o PDP
+
+def _ctx_direto(tmp_path, ws, capacidade):
+    """Contexto montado direto, SEM passar pelo PDP.
+
+    É assim que o mutante "escopo do repo desligado" tem de morrer: o PDP nega
+    antes e mascara a ausência da checagem no adapter. Defesa em profundidade
+    só é defesa se cada camada segurar sozinha.
+    """
+    from nomos.adapters.contrato import CapabilityContext
+    from nomos.adapters.wiring import registrar_git
+    from nomos.kernel.policy import PolicyEngine
+    from nomos.orquestracao.registro import RegistroCapacidades
+    home = tmp_path / "hd"
+    home.mkdir(exist_ok=True)
+    registro = RegistroCapacidades(policy=PolicyEngine(home / "policy.json"),
+                                   approver=_sim)
+    registrar_git(registro, raizes=(str(ws),))
+    return CapabilityContext.de_registro(registro, capacidade,
+                                         "runtime-governado", raizes=(str(ws),))
+
+
+@pytest.mark.parametrize("cap,extra", [
+    ("git-log", {"limite": 3}),
+    ("git-show", {"ref": "HEAD"}),
+    ("git-diff", {"ref_a": "HEAD~1", "ref_b": "HEAD"}),
+])
+def test_m3_adapter_recusa_repo_fora_do_escopo_sem_o_pdp(amb, tmp_path, cap, extra):
+    """ADAPTER_SCOPE_ENFORCEMENT=DENY, exercitado no nível de `_repo`."""
+    from nomos.adapters.caminho import ErroEscopo
+    from nomos.adapters.contrato import CapabilityRequest
+    from nomos.adapters.git import GitAdapter
+    _rt, ws, _repo, _ = amb
+    fora = tmp_path / "repo-fora"
+    fora.mkdir()
+    _git(fora, "init", "-q", "-b", "main")
+    (fora / "x.txt").write_text("segredo\n")
+    _git(fora, "add", "x.txt")
+    _git(fora, "commit", "-qm", "um")
+    _git(fora, "commit", "-qm", "dois", "--allow-empty")
+
+    ctx = _ctx_direto(tmp_path, ws, cap)
+    pedido = CapabilityRequest(capacidade=cap, alvo=str(fora), argumentos=extra)
+    with pytest.raises(ErroEscopo):
+        GitAdapter().executar(pedido, ctx)
+
+
+def test_m3_adapter_aceita_repo_dentro_do_escopo_sem_o_pdp(amb, tmp_path):
+    """Contraparte: sem ela, um adapter que recusa TUDO passaria."""
+    from nomos.adapters.contrato import CapabilityRequest
+    from nomos.adapters.git import GitAdapter
+    _rt, ws, repo, _ = amb
+    ctx = _ctx_direto(tmp_path, ws, "git-log")
+    pedido = CapabilityRequest(capacidade="git-log", alvo=str(repo),
+                               argumentos={"limite": 3})
+    r = GitAdapter().executar(pedido, ctx)
+    assert "primeiro" in (r.valor or "")
+
+
+# ============================================ M1 — ambiente herdado é real
+
+def test_m1_GIT_DIR_do_host_nao_redireciona_o_repositorio(amb, monkeypatch,
+                                                           tmp_path):
+    """O vetor que mata o mutante "ambiente herdado".
+
+    `GIT_DIR` e `GIT_WORK_TREE` dizem ao Git QUAL repositório usar, e vencem o
+    `-C`. Herdados do host, fariam o adapter ler um repositório que o plano não
+    pediu e que o escopo não autorizou — escape de escopo por variável de
+    ambiente, sem tocar em nenhum parâmetro do plano.
+
+    Foi medido: com ambiente herdado + hostil, as três operações mudam de
+    comportamento (rc e saída). Não é equivalente; é defeito.
+    """
+    rt, _ws, repo, _ = amb
+    outro = tmp_path / "outro"
+    outro.mkdir()
+    _git(outro, "init", "-q", "-b", "main")
+    (outro / "SEGREDO.txt").write_text("conteudo do OUTRO repo\n")
+    _git(outro, "add", "SEGREDO.txt")
+    _git(outro, "commit", "-qm", "commit-do-outro-repo")
+
+    monkeypatch.setenv("GIT_DIR", str(outro / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(outro))
+    monkeypatch.setenv("GIT_OBJECT_DIRECTORY", str(outro / ".git" / "objects"))
+
+    res = _plano(rt, "git-log", alvo=str(repo), limite=5)
+    assert res.ok, res.motivo
+    saida = res.missao.nos["p"].resultado
+    assert "primeiro" in saida, saida
+    assert "commit-do-outro-repo" not in saida, (
+        "GIT_DIR do HOST redirecionou o repositório lido — escape de escopo "
+        "por ambiente")
