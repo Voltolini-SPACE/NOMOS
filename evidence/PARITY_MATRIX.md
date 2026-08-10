@@ -1,58 +1,84 @@
-# MATRIZ DE PARIDADE — pós FASE 1+2
+# FASE 9 — PARITY GATE (recalculado do zero)
 
-Regra: **não marcar paridade por nome parecido**. Exige equivalência
-comportamental *governada*. `governado` = atravessa capability registry →
-risco → PDP → PEP → adapter, com evidência.
+Fonte: `evidence/CAPABILITY_MATRIX.json` — censo da FASE 2 com 7 agentes de
+categoria + 6 verificadores adversariais instruídos a REFUTAR alegações de
+paridade sem evidência. 114 capacidades, cada linha com `evidencia`
+(arquivo:linha ou comando) e `production_dependency`.
 
-Legenda de status: `GOVERNADO` (existe e passa pela cadeia) · `PARCIAL`
-(existe, cadeia incompleta) · `AUSENTE` · `FORA_DO_NUCLEO` (decisão de
-arquitetura: nunca entra no kernel).
+**Os valores da ABSORPTION-01 (58 % / 50 %) NÃO foram carregados.** Eles vieram
+de uma matriz de 24 linhas grossas; esta tem 114 linhas com exigência de
+equivalência COMPORTAMENTAL. A diferença não é regressão — é resolução.
 
-| Capability | NOMOS | Hermes | OpenClaw | Status | Risco | Adapter necessário | PDP | PEP | Testes | Production-ready? |
-|---|---|---|---|---|---|---|---|---|---|---|
-| execução de comando governada | 8 ferramentas allowlist | shell/PTY livre | exec-approvals | PARCIAL | A0–A5 | — (as 8 já) | sim | sim | 72 | runtime sim; escopo ≪ Hermes |
-| código (gerar) | `codigo_gerar` | write/patch/exec | — | GOVERNADO | A0 | — | sim | sim | sim | sim |
-| filesystem read | `arquivo_ler` | livre | livre | GOVERNADO | A0 | — | sim | sim | sim | sim |
-| filesystem write | `arquivo_escrever` (confinado) | `/api/fs/write-text` livre | livre | PARCIAL | A1 | fs-amplo | sim | sim | sim | só dentro do NOMOS_HOME |
-| filesystem patch | — | patch tool | — | AUSENTE | A1 | patch | — | — | — | não |
-| Git | — | ~19 rotas incl. push/PR | — | AUSENTE | A2+ | git governado | — | — | — | não |
-| HTTP | só loopback LLM | livre | livre | AUSENTE | A3 | http governado | — | — | — | não |
-| browser | — | disponível | plugin `browser` | AUSENTE | A3 | browser governado | — | — | — | não |
-| PTY/terminal | — | PTY + open-terminal | — | FORA_DO_NUCLEO | A6 | só se provada necessidade | — | — | — | não (decisão) |
-| cron/scheduler | `rotinas` só EXPORTA plist | 8 jobs internos | 4 jobs internos | AUSENTE | A2 | scheduler governado | — | — | — | não |
-| channels (Telegram) | — | — | ATIVO | AUSENTE | A3 | channel adapter | — | — | — | não |
-| WhatsApp | — | — | desabilitado + guard 60s | AUSENTE | A4 | channel adapter | — | — | — | não (e não mexer no guard) |
-| recuperação | `GerenciadorRecuperacao` | retry ad-hoc | supervisor | GOVERNADO | — | — | n/a | n/a | sim | sim |
-| retries | idempotência do REGISTRO | — | — | GOVERNADO | — | — | n/a | n/a | sim | sim |
-| daemon/runtime | **AUSENTE** (CLI só) | launchd KeepAlive | launchd KeepAlive | AUSENTE | — | serviço | — | — | — | **não — bloqueia shadow** |
-| model routing | `motores` + NH-007 | — | primary sem fallback | PARCIAL | — | provider abstraction | — | — | sim | sem motor vivo hoje |
-| tool routing | registro + boundary | toolsets | plugins | GOVERNADO | — | — | sim | sim | sim | sim |
-| orchestration | `RuntimeGovernado` | plan_task/delegate | agent runtime | GOVERNADO | — | — | sim | sim | 72 | sim (escopo das 8) |
-| task DAG | `GrafoTarefas` | kanban | — | GOVERNADO | — | — | sim | sim | sim | sim |
-| secrets | vault Argon2id | token cleartext | cleartext | GOVERNADO | A4 | — | n/a | n/a | sim | NOMOS superior |
-| identity | manifesto + sujeito/audiência | token loopback | pareamento | PARCIAL | — | RBAC multiusuário | sim | sim | sim | single-user |
-| authorization | A0–A6 + PDP de capacidade | Tirith fail-OPEN | scopes | GOVERNADO | — | — | sim | sim | 47 | NOMOS superior |
-| auditing | hash-chain + HMAC anchor | logs | logs | GOVERNADO | — | — | n/a | n/a | sim | NOMOS superior |
-| restart/reconnect | — | KeepAlive + watchdogs | KeepAlive | AUSENTE | — | serviço | — | — | — | não |
-| observability | trilha + `doutor` | observer 30s | health 5s | PARCIAL | — | métricas | n/a | n/a | sim | sem endpoint |
+## Totais
+```
+GOVERNADO       7
+PARCIAL        30
+AUSENTE        53
+FORA_DO_NUCLEO 24     (shell/PTY/subprocess: decisão de arquitetura, não lacuna)
+TOTAL         114
+```
 
-## Contagem
-- Capacidades avaliadas: **24**
-- GOVERNADO: **11** · PARCIAL: **5** · AUSENTE: **7** · FORA_DO_NUCLEO: **1**
-- Paridade governada vs Hermes: **11/19 aplicáveis ≈ 58 %**
-- Paridade governada vs OpenClaw: **8/16 aplicáveis ≈ 50 %**
+## Por categoria
+| Categoria | GOVERNADO | PARCIAL | AUSENTE | FORA_DO_NUCLEO |
+|---|---|---|---|---|
+| FILESYSTEM | 0 | 4 | 5 | 2 |
+| GIT | 0 | 0 | **19** | 1 |
+| HTTP | 4 | 7 | 5 | 0 |
+| SCHEDULER/JOBS | 0 | 7 | 10 | 1 |
+| BROWSER | 1 | 3 | 5 | 2 |
+| CHANNELS | 0 | 5 | 9 | 1 |
+| PROCESSO/TERMINAL | 2 | 4 | 0 | 17 |
 
-## O que mudou nesta missão
-Antes: orquestração e DAG eram AUSENTE-em-produção (biblioteca sem caller);
-autorização era só A0–A6 local; PDP e PEP inexistiam no produto.
-Agora: orchestration, task DAG, tool routing, retries, recuperação e
-authorization passaram a GOVERNADO com PDP/PEP no caminho.
+## Paridade
+```
+HERMES_TOTAL=89        (linhas com Hermes como origem, incl. "ambos")
+HERMES_FULL=4
+HERMES_PARTIAL=24
+HERMES_MISSING=46
+HERMES_FORA_DO_NUCLEO=15
+HERMES_PARITY = 4/74 aplicáveis ≈ 5,4 %      (excluindo FORA_DO_NUCLEO)
 
-## O que continua impedindo substituição
-1. **Sem daemon** — NOMOS não é serviço; sem isso não há shadow nem canary.
-2. **Sem adapters** para Git, HTTP, browser, scheduler, channels — as
-   capacidades que Hermes/OpenClaw efetivamente entregam hoje.
-3. **Sem motor de inferência** (Ollama fora, SSD desmontado) — bloqueia E2E
-   com LLM, mas **não** o runtime (todos os 2153 testes rodaram sem motor).
-4. Duas rotas legadas ainda fora do PDP de capacidade (documentadas, fixadas
-   por teste, agendadas para ABSORPTION-02).
+OPENCLAW_TOTAL=62
+OPENCLAW_FULL=5
+OPENCLAW_PARTIAL=26
+OPENCLAW_MISSING=24
+OPENCLAW_FORA_DO_NUCLEO=7
+OPENCLAW_PARITY = 5/55 aplicáveis ≈ 9,1 %
+```
+
+## Critério de shadow — NÃO atingido
+```
+critical_capability_missing      = 18   (exigido: 0)
+mutating_capability_without_pdp  = 0    ✅
+known_policy_bypass              = 0    ✅
+known_uncontrolled_executor      = 0    ✅
+```
+
+### As 18 capacidades críticas com gap
+| Status | Categoria | Capacidade |
+|---|---|---|
+| AUSENTE | CHANNELS | sendPolicy por sessão · antitamper WhatsApp · pairing/allowlist de canal |
+| PARCIAL | CHANNELS | recebimento Telegram |
+| AUSENTE | FILESYSTEM | edição cirúrgica / patch |
+| PARCIAL | FILESYSTEM | leitura de conteúdo · escrita/criação · **confinamento de caminho** |
+| PARCIAL | HTTP | probe de serviço loopback · canal de mensageria com long-poll |
+| AUSENTE | SCHEDULER | cron recorrente · recorrente por intervalo · exec script sem LLM · daemon ticker · timezone |
+| PARCIAL | SCHEDULER | persistência · dedup/idempotência · delivery e alerta de falha |
+
+## Achados do censo que mudaram o código desta missão
+1. **Escopo por caminho do PDP estava inalcançável.** `decisor.py` sempre soube
+   validar `pedido.recurso` e o contrabando por `argumentos.alvo`, mas
+   `sessao_pdp` nunca preenchia `caminhos` — com tupla vazia o bloco era
+   pulado. Corrigido em `12a5384`, com 3 testes e mutação que restaura a
+   regressão derrubando 2 deles.
+2. **`arquivo_ler` não é confinado.** Só a ESCRITA passa por
+   `_resolver_destino_seguro`; a leitura aceita caminho absoluto arbitrário.
+   Registrado como PARCIAL, não como paridade de leitura.
+3. **`arquivo_ler` não devolve conteúdo** — devolve `(formato · N caracteres)`
+   e bullets heurísticos, e só aceita 7 extensões de texto + PDF até 5 MB.
+   Hermes `read_file` devolve conteúdo numerado com offset/limit. Chamar isso
+   de paridade de leitura seria falso.
+4. **OpenClaw está com filesystem DESCONFINADO na config viva** (`tools.fs`
+   ausente ⇒ `workspaceOnly:false`), com 615 de 1087 chamadas `write`
+   registradas fora do workspace declarado. É contexto de risco do ambiente —
+   nada foi alterado.
