@@ -77,6 +77,19 @@ class GrafoTarefas:
             if not registro.conhecida(no.ferramenta):
                 raise ErroGrafo(
                     f"nó '{no.id}': ferramenta fora do registro: '{no.ferramenta}'")
+            # ABSORPTION-01: idempotência é atributo da CAPACIDADE (registro),
+            # nunca do nó. `planejar()` já deriva do registro, mas um grafo
+            # montado à mão (sem passar pelo planejador) podia declarar
+            # `idempotente=True` numa capacidade mutante e ganhar retry —
+            # transformando 1 aprovação em N efeitos reais. Reivindicar MAIS
+            # do que a capacidade tem é erro estrutural: nada executa.
+            # Reivindicar MENOS (False onde o registro diz True) é
+            # conservador e permitido.
+            if no.idempotente and not registro.idempotente_de(no.ferramenta):
+                raise ErroGrafo(
+                    f"nó '{no.id}': declara idempotente=True, mas a capacidade "
+                    f"'{no.ferramenta}' não é idempotente no registro "
+                    "(plano não define o próprio risco)")
         self.nos = vistos
         self.registro = registro
         self._ordem = self._topologica()
@@ -218,9 +231,17 @@ class Orquestrador:
                                ordem=grafo.ordem_topologica())
 
     def _rodar(self, no: No, executor: Callable, params: dict):
-        """(ok, resultado|motivo, tentativas). Com NH-004 plugado, delega."""
+        """(ok, resultado|motivo, tentativas). Com NH-004 plugado, delega.
+
+        A idempotência entregue à recuperação vem SEMPRE do registro
+        (ABSORPTION-01), nunca de `no.idempotente` — defesa em profundidade:
+        mesmo que um grafo chegasse aqui sem a validação de `GrafoTarefas`,
+        o nó não consegue comprar o próprio direito de retry.
+        """
         if self.recuperacao is not None:
-            return self.recuperacao.executar(no, executor, params)
+            return self.recuperacao.executar(
+                no, executor, params,
+                idempotente=self.registro.idempotente_de(no.ferramenta))
         try:
             return True, executor(**params), 1
         except Exception as exc:

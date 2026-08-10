@@ -1507,6 +1507,70 @@ def cmd_conselho(ctx, args) -> int:
     return route_conselho(list(getattr(args, "resto", []) or []))
 
 
+def _passos_de_json(texto: str):
+    """Lê passos de um JSON. Qualquer anomalia ⇒ None (fail-closed no chamador)."""
+    try:
+        dados = json.loads(texto)
+    except (TypeError, ValueError):
+        return None
+    return dados if isinstance(dados, list) else None
+
+
+def cmd_orquestrar(ctx, args) -> int:
+    """Runtime governado (ABSORPTION-01): intenção → plano → grafo → execução.
+
+    Este é o caller de produção do pacote `orquestracao`. Cada nó passa pelo
+    MESMO gate A0–A6 do kernel; a categoria e a idempotência vêm do registro
+    de capacidades, nunca do plano. `--dry-run` (padrão) só planeja.
+    """
+    from nomos.simple.erros import fmt
+    from nomos.runtime.governado import RuntimeGovernado
+
+    passos = None
+    if getattr(args, "passos", ""):
+        passos = _passos_de_json(args.passos)
+        if passos is None:
+            print(fmt("E010", "--passos precisa ser um JSON de lista de objetos"),
+                  file=sys.stderr)
+            return EXIT_ERROR
+
+    aprovador = _approver_for(ctx, args)
+    rt = RuntimeGovernado(ctx, aprovador,
+                          sem_motor=getattr(args, "sem_motor", False))
+    plano = rt.planejar(args.objetivo, passos=passos)
+
+    print(f"objetivo: {plano.objetivo}")
+    if plano.rejeitados:
+        print(f"passos rejeitados ({len(plano.rejeitados)}):")
+        for r in plano.rejeitados:
+            print(f"  ✗ {r.get('id', '?')}: {r.get('motivo', '')}")
+    if not plano.ok:
+        print(fmt("E003", plano.motivo or "nenhum passo válido"), file=sys.stderr)
+        return EXIT_DENIED
+    print(f"plano: {len(plano.passos)} passo(s) · risco {plano.risco}"
+          f"{' · exige aprovação' if plano.exige_aprovacao else ''}")
+    for p in plano.passos:
+        dep = f" ← {', '.join(p.depende_de)}" if p.depende_de else ""
+        print(f"  · {p.id}: {p.ferramenta} ({p.categoria.value}){dep}")
+
+    if not getattr(args, "executar", False):
+        print("\n(dry-run — nada executado; use --executar para valer)")
+        return EXIT_OK
+
+    resultado = rt.executar(plano)
+    print()
+    for no_id in (resultado.missao.ordem if resultado.missao else ()):
+        r = resultado.missao.nos[no_id]
+        marca = {"OK": "✅", "NEGADO": "⛔", "BLOQUEADO": "⏸", "FALHOU": "❌"}.get(r.status, "·")
+        detalhe = f" — {r.detalhe}" if r.detalhe else ""
+        print(f"  {marca} {no_id}: {r.status}{detalhe}")
+    if not resultado.ok:
+        print(fmt("E003", resultado.motivo or "missão não concluiu"), file=sys.stderr)
+        return EXIT_DENIED
+    print("\nmissão concluída — todos os nós OK")
+    return EXIT_OK
+
+
 def cmd_missao(ctx, args) -> int:
     """Executor de missões (MC32/P1): plano → aprovação explícita → evidência."""
     from nomos.kernel import missao as ms
@@ -2291,6 +2355,21 @@ def build_parser() -> argparse.ArgumentParser:
     losub.add_parser("on").set_defaults(fn=cmd_local)
     losub.add_parser("off").set_defaults(fn=cmd_local)
     lo.set_defaults(fn=cmd_local, local_cmd=None)
+    orq = sub.add_parser("orquestrar",
+                         help="runtime governado: intenção → plano → grafo → "
+                              "execução, com o gate A0–A6 em cada passo")
+    orq.add_argument("objetivo")
+    orq.add_argument("--passos", default="",
+                     help='JSON de passos: [{"id":"a","ferramenta":"arquivo_ler",'
+                          '"params":{"alvo":"..."},"depende_de":[]}]')
+    orq.add_argument("--executar", action="store_true",
+                     help="executa de verdade (sem isto, só planeja)")
+    orq.add_argument("--panel", action="store_true",
+                     help="aprova via painel local em vez de terminal")
+    orq.add_argument("--sem-motor", action="store_true", dest="sem_motor",
+                     help="arquivo_resumir: só heurística local, sem motor de IA")
+    orq.set_defaults(fn=cmd_orquestrar)
+
     mip = sub.add_parser("missao",
                          help="missões que FAZEM: plano → sua aprovação → evidência")
     misub = mip.add_subparsers(dest="missao_cmd")

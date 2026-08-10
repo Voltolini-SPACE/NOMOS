@@ -71,7 +71,8 @@ def test_nao_idempotente_falha_na_primeira():
 def test_idempotente_recupera():
     ger = _ger(politica=PoliticaRecuperacao(max_tentativas=3))
     no = No("n1", "tool", idempotente=True)
-    ok, resultado, tentativas = ger.executar(no, _falha_n_vezes(2), {})
+    ok, resultado, tentativas = ger.executar(no, _falha_n_vezes(2), {},
+                                             idempotente=True)
     assert ok
     assert resultado == "ok"
     assert tentativas == 3
@@ -80,7 +81,8 @@ def test_idempotente_recupera():
 def test_idempotente_esgota_tentativas():
     ger = _ger(politica=PoliticaRecuperacao(max_tentativas=2))
     no = No("n1", "tool", idempotente=True)
-    ok, motivo, tentativas = ger.executar(no, _falha_n_vezes(99), {})
+    ok, motivo, tentativas = ger.executar(no, _falha_n_vezes(99), {},
+                                          idempotente=True)
     assert not ok
     assert tentativas == 2
     assert "esgotad" in str(motivo)
@@ -94,7 +96,7 @@ def test_backoff_exponencial_com_teto():
                                             backoff_teto=4.0, circuito_limite=99),
                dormir=dormir)
     no = No("n1", "tool", idempotente=True)
-    ger.executar(no, _falha_n_vezes(99), {})
+    ger.executar(no, _falha_n_vezes(99), {}, idempotente=True)
     assert dormir.pausas == [1.0, 2.0, 4.0, 4.0]     # 1,2,4,teto
 
 
@@ -142,13 +144,16 @@ def test_orcamento_global_esgotado_falha_fechado():
     ger = _ger(politica=PoliticaRecuperacao(max_tentativas=3, orcamento_missao=4),
                audit=audit)
     no1 = No("n1", "tool", idempotente=True)
-    ger.executar(no1, _falha_n_vezes(99), {})            # consome 3
+    ger.executar(no1, _falha_n_vezes(99), {},
+                 idempotente=True)                       # consome 3
     ok, motivo, tentativas = ger.executar(
-        No("n2", "tool2", idempotente=True), _falha_n_vezes(99), {})
+        No("n2", "tool2", idempotente=True), _falha_n_vezes(99), {},
+        idempotente=True)
     assert not ok
     assert tentativas <= 1                               # só restava 1 do orçamento
     ok3, motivo3, t3 = ger.executar(
-        No("n3", "tool3", idempotente=True), lambda **kw: "ok", {})
+        No("n3", "tool3", idempotente=True), lambda **kw: "ok", {},
+        idempotente=True)
     assert not ok3
     assert t3 == 0
     assert "orçamento" in str(motivo3)
