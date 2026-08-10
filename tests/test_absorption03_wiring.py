@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from nomos.adapters.wiring import CATEGORIAS_FS, IDEMPOTENTES_FS
+from nomos.adapters.wiring import CATEGORIAS_FS, DESTRUTIVAS_FS, IDEMPOTENTES_FS
 from nomos.kernel.audit import AuditLog
 from nomos.kernel.policy import PolicyEngine
 from nomos.runtime.governado import RuntimeGovernado
@@ -51,7 +51,10 @@ def test_sem_adapters_o_registro_nao_os_conhece(tmp_path):
 def test_adapters_entram_como_capacidade_dinamica_governada(tmp_path):
     ctx = _ctx(tmp_path)
     rt = RuntimeGovernado(ctx, _sim, adapters=True, caminhos=(str(tmp_path),))
-    assert set(rt.capacidades_adapter) == set(CATEGORIAS_FS)
+    # `fs-apagar-arvore` (A6) é opt-in: não se registra sem `destrutivas=True`,
+    # porque a política nega A6 e o manifesto declara teto A5 — registrá-la
+    # produziria capacidade anunciada e inalcançável.
+    assert set(rt.capacidades_adapter) == set(CATEGORIAS_FS) - DESTRUTIVAS_FS
     assert rt.registro.conhecida("fs-ler")
     # registrar é ato A5 auditado — não edição de constante
     assert "registro.capacidade.registrada" in _eventos(ctx)
@@ -121,13 +124,19 @@ def test_capacidade_mutante_negada_sem_aprovacao_de_uso(tmp_path):
     ctx = _ctx(tmp_path)
     raiz = tmp_path / "ws"
     raiz.mkdir()
-    aprovacoes = {"n": 0}
+    # Aprova durante o REGISTRO e nega no USO. Antes isto era uma CONTAGEM
+    # (`n <= len(CATEGORIAS_FS)`), que passou a sobrar uma aprovação quando a
+    # constante cresceu sem que o número de registros crescesse junto — e a
+    # sobra aprovou a escrita, fazendo o teste falhar por aritmética em vez de
+    # por segurança. Contar chamadas é frágil; nomear a FASE é o que o teste
+    # quer dizer.
+    fase = {"registrando": True}
 
-    def _so_a_primeira(_d):
-        aprovacoes["n"] += 1
-        return aprovacoes["n"] <= len(CATEGORIAS_FS)   # aprova só os registros
+    def _so_no_registro(_d):
+        return fase["registrando"]
 
-    rt = RuntimeGovernado(ctx, _so_a_primeira, adapters=True, caminhos=(str(raiz),))
+    rt = RuntimeGovernado(ctx, _so_no_registro, adapters=True, caminhos=(str(raiz),))
+    fase["registrando"] = False
     res = rt.rodar("escrever", passos=[
         {"id": "w", "ferramenta": "fs-escrever",
          "params": {"alvo": str(raiz / "x.txt"), "conteudo": "y"}}])

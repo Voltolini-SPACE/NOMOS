@@ -25,6 +25,8 @@ import tempfile
 from pathlib import Path
 
 from nomos.adapters.caminho import resolver
+from nomos.adapters.estrito import (bool_estrito, inteiro_estrito,
+                                    recusar_argumento)
 from nomos.adapters.contrato import (
     Adapter, CapabilityContext, CapabilityRequest, CapabilityResult,
     ErroInvalido, ErroLimite, ErroNaoEncontrado, ErroPermissao,
@@ -40,7 +42,7 @@ LIMITE_ITENS_LISTAGEM = 5000
 # em vez de getattr — mais explícito e sem construir nome de atributo.
 CAPACIDADES = (
     "fs-ler", "fs-escrever", "fs-editar", "fs-criar-dir",
-    "fs-mover", "fs-apagar", "fs-listar", "fs-metadados",
+    "fs-mover", "fs-apagar", "fs-apagar-arvore", "fs-listar", "fs-metadados",
 )
 
 
@@ -98,11 +100,13 @@ class FilesystemAdapter(Adapter):
 
         texto = bruto.decode("utf-8", errors="replace")
         linhas = texto.splitlines()
-        offset = int(pedido.arg("offset", 0) or 0)
-        limite = pedido.arg("limite")
-        if offset < 0:
-            raise ErroInvalido("offset negativo")
-        fatia = linhas[offset:offset + int(limite)] if limite else linhas[offset:]
+        # Estritos: `int("abc")` deixava ValueError CRU escapar do adapter,
+        # violando o contrato de erro TIPADO declarado no cabeçalho — e um
+        # `{"limite": true}` viraria "1 linha", porque bool é int em Python.
+        offset = inteiro_estrito(pedido.arg("offset"), "offset",
+                                 padrao=0, minimo=0)
+        limite = inteiro_estrito(pedido.arg("limite"), "limite", minimo=1)
+        fatia = linhas[offset:offset + limite] if limite else linhas[offset:]
         self._auditar(ctx, "fs.ler", alvo=str(caminho), bytes=len(bruto),
                       linhas=len(fatia))
         return CapabilityResult.sucesso(
@@ -186,22 +190,60 @@ class FilesystemAdapter(Adapter):
         return CapabilityResult.sucesso(str(destino), efeito_aplicado=True)
 
     def _fs_apagar(self, pedido, ctx) -> CapabilityResult:
+        """Apaga UM arquivo, ou um diretório VAZIO. Nunca uma árvore.
+
+        Apagar recursivamente virou capacidade separada (`fs-apagar-arvore`,
+        A6_DESTRUCTIVE) por uma razão de governança, não de estilo: aqui a
+        recursão era um argumento booleano do plano, e o plano é entrada não
+        confiável. `bool("nao")` é `True` — então `{"recursivo": "nao"}`, que
+        um autor de plano escreve querendo dizer **não**, apagava a árvore
+        inteira. E a aprovação que o dono via dizia "A1 · escrever arquivos
+        locais", porque a categoria de risco vem da CAPACIDADE, não do
+        argumento.
+
+        Separando, a autoridade deixa de depender de um campo: quem quer apagar
+        árvore precisa pedir a capacidade destrutiva pelo nome, e o dono aprova
+        vendo "A6 · ação destrutiva". Nenhuma coerção de argumento pode
+        atravessar essa fronteira, porque não há argumento a coagir.
+        """
+        # Recusar em vez de ignorar: um plano que manda `recursivo` aqui
+        # acredita ter apagado a árvore e segue sobre premissa falsa.
+        recusar_argumento(pedido, "recursivo",
+                          "use a capacidade 'fs-apagar-arvore' (A6, destrutiva)")
         caminho = resolver(_texto(pedido.alvo, "alvo"), ctx.raizes,
                            para_escrita=True)
         if not caminho.exists() and not caminho.is_symlink():
             raise ErroNaoEncontrado(f"não encontrado: {caminho}")
-        recursivo = bool(pedido.arg("recursivo", False))
         try:
             if caminho.is_dir() and not caminho.is_symlink():
-                if recursivo:
-                    shutil.rmtree(caminho)
-                else:
-                    caminho.rmdir()             # vazio apenas
+                caminho.rmdir()                 # VAZIO apenas; senão OSError
             else:
                 caminho.unlink()
         except OSError as exc:
             raise ErroInvalido(f"falha ao apagar: {exc}") from None
-        self._auditar(ctx, "fs.apagar", alvo=str(caminho), recursivo=recursivo)
+        self._auditar(ctx, "fs.apagar", alvo=str(caminho), recursivo=False)
+        return CapabilityResult.sucesso(str(caminho), efeito_aplicado=True)
+
+    def _fs_apagar_arvore(self, pedido, ctx) -> CapabilityResult:
+        """Apaga uma árvore inteira. `A6_DESTRUCTIVE`, irreversível.
+
+        A autoridade está no NOME da capacidade, não num campo. É o que faz a
+        mensagem de aprovação descrever o efeito real.
+        """
+        caminho = resolver(_texto(pedido.alvo, "alvo"), ctx.raizes,
+                           para_escrita=True)
+        if not caminho.exists() and not caminho.is_symlink():
+            raise ErroNaoEncontrado(f"não encontrado: {caminho}")
+        if caminho.is_symlink() or not caminho.is_dir():
+            raise ErroInvalido(
+                "'fs-apagar-arvore' só apaga DIRETÓRIO real — para arquivo ou "
+                "symlink use 'fs-apagar' (A1), que não carrega autoridade "
+                "destrutiva")
+        try:
+            shutil.rmtree(caminho)
+        except OSError as exc:
+            raise ErroInvalido(f"falha ao apagar árvore: {exc}") from None
+        self._auditar(ctx, "fs.apagar", alvo=str(caminho), recursivo=True)
         return CapabilityResult.sucesso(str(caminho), efeito_aplicado=True)
 
     # ------------------------------------------------------------- consulta
@@ -221,7 +263,9 @@ class FilesystemAdapter(Adapter):
         if padrao.startswith("/") or padrao.startswith("~"):
             raise ErroInvalido(
                 f"'padrao' precisa ser relativo ao alvo (recebido: {padrao!r})")
-        recursivo = bool(pedido.arg("recursivo", False))
+        # Leitura não muda autoridade, mas a coerção é a mesma: "nao" faria
+        # `rglob` e devolveria a árvore inteira a quem pediu um nível.
+        recursivo = bool_estrito(pedido.arg("recursivo"), "recursivo")
         it = base.rglob(padrao) if recursivo else base.glob(padrao)
         itens, truncado = [], False
         for i, p in enumerate(it):
@@ -255,7 +299,8 @@ class FilesystemAdapter(Adapter):
     _DESPACHO = {
         "fs-ler": _fs_ler, "fs-escrever": _fs_escrever, "fs-editar": _fs_editar,
         "fs-criar-dir": _fs_criar_dir, "fs-mover": _fs_mover,
-        "fs-apagar": _fs_apagar, "fs-listar": _fs_listar,
+        "fs-apagar": _fs_apagar, "fs-apagar-arvore": _fs_apagar_arvore,
+        "fs-listar": _fs_listar,
         "fs-metadados": _fs_metadados,
     }
 

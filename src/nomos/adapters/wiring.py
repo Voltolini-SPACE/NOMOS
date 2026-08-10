@@ -38,6 +38,7 @@ from nomos.adapters.filesystem import FilesystemAdapter
 from pathlib import Path
 
 from nomos.adapters.contrato import ErroInvalido
+from nomos.adapters.estrito import inteiro_estrito
 from nomos.kernel.policy import Category
 
 # Categoria de política de cada capacidade de filesystem. É AQUI que o risco é
@@ -50,8 +51,20 @@ CATEGORIAS_FS: dict[str, Category] = {
     "fs-editar": Category.WRITE_LOCAL,
     "fs-criar-dir": Category.WRITE_LOCAL,
     "fs-mover": Category.WRITE_LOCAL,
+    # A6, não A1: apagar árvore é irreversível e a mensagem de aprovação
+    # precisa dizer isso. Antes `fs-apagar` recursivo pedia autorização como
+    # "A1 · escrever arquivos locais" para um `shutil.rmtree`.
     "fs-apagar": Category.WRITE_LOCAL,
+    "fs-apagar-arvore": Category.DESTRUCTIVE,
 }
+
+# `fs-apagar-arvore` NÃO entra no registro por padrão. A política do kernel
+# nega A6 e o manifesto do runtime declara teto A5 — registrá-la sempre
+# produziria uma capacidade ANUNCIADA e INALCANÇÁVEL, que é exatamente o
+# defeito que o censo achou no scheduler ("preparar() anunciava sete
+# capacidades mortas"). Quem quer autoridade destrutiva pede por ela na
+# construção, como já acontece com `executaveis=` para `script-rodar`.
+DESTRUTIVAS_FS = frozenset({"fs-apagar-arvore"})
 
 # Repetir é seguro? Só para leitura. Escrita/edição/move/delete NÃO são
 # idempotentes — repetir uma remoção às cegas é o tipo de "recuperação" que
@@ -80,7 +93,8 @@ def _ponte(adapter, nome: str, registro, *, raizes=(), audit=None,
 
 def registrar_filesystem(registro, *, raizes=(), audit=None,
                          timeout_s: float | None = 30.0,
-                         apenas_leitura: bool = False) -> list[str]:
+                         apenas_leitura: bool = False,
+                         destrutivas: bool = False) -> list[str]:
     """Registra as capacidades de filesystem. Devolve os nomes registrados.
 
     `apenas_leitura=True` registra só as três de leitura — atenuação legítima
@@ -107,7 +121,11 @@ def registrar_filesystem(registro, *, raizes=(), audit=None,
             "para registrar só leitura)")
 
     adapter = FilesystemAdapter()
-    nomes = sorted(IDEMPOTENTES_FS) if apenas_leitura else sorted(CATEGORIAS_FS)
+    if apenas_leitura:
+        nomes = sorted(IDEMPOTENTES_FS)
+    else:
+        nomes = sorted(set(CATEGORIAS_FS) -
+                       (frozenset() if destrutivas else DESTRUTIVAS_FS))
     registrados = []
     for nome in nomes:
         try:
@@ -226,8 +244,11 @@ def _ponte_sched(scheduler, nome: str, registro):
                 schedule = ScheduleSpec(kind=TipoAgenda.CRON,
                                         expression=str(expressao), timezone=tz)
             elif intervalo is not None:
-                schedule = ScheduleSpec(kind=TipoAgenda.INTERVAL,
-                                        intervalo_s=int(intervalo), timezone=tz)
+                schedule = ScheduleSpec(
+                    kind=TipoAgenda.INTERVAL,
+                    intervalo_s=inteiro_estrito(intervalo, "intervalo_s",
+                                                minimo=1),
+                    timezone=tz)
             else:
                 # ONE_SHOT explícito: assim a tz é validada aqui também, em vez
                 # de só quando `Scheduler.criar` monta o spec padrão.

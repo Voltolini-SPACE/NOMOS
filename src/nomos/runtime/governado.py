@@ -78,7 +78,7 @@ class ResultadoExecucao:
         }
 
 
-def manifesto_do_runtime(ferramentas=None) -> "AgentManifest":
+def manifesto_do_runtime(ferramentas=None, *, risco_max=None) -> "AgentManifest":
     """Identidade do runtime como agente — para o boundary ter o que checar.
 
     O runtime não é um "super-usuário sem manifesto": ele opera sob um
@@ -93,7 +93,7 @@ def manifesto_do_runtime(ferramentas=None) -> "AgentManifest":
         name="runtime-governado",
         objetivo="orquestração governada de tarefas (ABSORPTION-01)",
         ferramentas=ferramentas,
-        risco_max=risco_exigido(ferramentas),
+        risco_max=risco_max or risco_exigido(ferramentas),
         pode_executar_skill="skill_rodar" in ferramentas,
         exige_aprovacao=True)
     problemas = validar(mf)
@@ -310,14 +310,21 @@ class RuntimeGovernado:
                  autorizacao=None, decisor=None, ttl_s: int = 3600,
                  caminhos: tuple[str, ...] = (), adapters: bool = False,
                  adapters_apenas_leitura: bool = False,
-                 executaveis: tuple[str, ...] = (), scheduler=None):
+                 executaveis: tuple[str, ...] = (), scheduler=None,
+                 destrutivas: bool = False):
         if ctx is None or "policy" not in ctx:
             raise ErroRuntime("contexto sem política carregada — fail-closed")
         self.ctx = ctx
         self.policy = ctx["policy"]
         self.audit = ctx.get("audit")
         self.aprovador = aprovador
-        self.manifesto = manifesto if manifesto is not None else manifesto_do_runtime()
+        # Teto de risco A6 só quando o dono pede autoridade destrutiva na
+        # construção. Sem isto, `fs-apagar-arvore` seria negada pelo PDP com
+        # `risco_acima_do_autorizado` mesmo depois de o dono liberar A6 na
+        # política — duas travas independentes, e só uma visível.
+        self.manifesto = (manifesto if manifesto is not None
+                          else manifesto_do_runtime(risco_max="A6" if destrutivas
+                                                    else None))
         self.registro = RegistroCapacidades(policy=self.policy,
                                             approver=aprovador,
                                             audit=self.audit)
@@ -329,7 +336,8 @@ class RuntimeGovernado:
             from nomos.adapters.wiring import registrar_filesystem
             self.capacidades_adapter = registrar_filesystem(
                 self.registro, raizes=tuple(caminhos), audit=self.audit,
-                apenas_leitura=adapters_apenas_leitura)
+                apenas_leitura=adapters_apenas_leitura,
+                destrutivas=destrutivas)
             if executaveis:
                 # `script-rodar` só entra com allowlist de binário explícita —
                 # A5 sem fronteira é shell com outro nome.

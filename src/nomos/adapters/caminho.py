@@ -69,18 +69,31 @@ def resolver(alvo: str, raizes: tuple[str, ...], *, para_escrita: bool = False) 
     if not raizes_reais:
         raise ErroEscopo("nenhuma raiz utilizável no escopo")
 
-    if not any(_sob(destino, r) for r in raizes_reais):
+    sob = [r for r in raizes_reais if _sob(destino, r)]
+    if not sob:
         raise ErroEscopo(
             f"caminho fora do escopo autorizado: {alvo!r} "
             f"(resolve para {destino!r})")
 
     if para_escrita:
-        _recusar_escrita_via_symlink(alvo)
+        # a raiz sob a qual o destino caiu ancora a caminhada de ancestrais
+        _recusar_escrita_via_symlink(alvo, sob[0])
     return Path(destino)
 
 
-def _recusar_escrita_via_symlink(alvo: str) -> None:
+def _recusar_escrita_via_symlink(alvo: str, raiz_real: str = "") -> None:
     """Escrita NÃO passa por link — nem por link que fica dentro da raiz.
+
+    A caminhada de ancestrais para na RAIZ AUTORIZADA, não em `/`. Ir acima da
+    raiz checa uma escolha que o operador já fez: no macOS, `/tmp` e `/var` são
+    symlinks, então uma raiz em `/tmp/projeto` fazia TODA mutação falhar com
+    "componente do caminho é symlink: '/var'" — enquanto a leitura funcionava
+    normalmente. O operador recebia um sistema pela metade sem entender por
+    quê, e a recusa não protegia nada: o caminho até a raiz foi decidido por
+    ele, e a raiz já foi canonicalizada quando o escopo foi validado.
+
+    O que este guard protege continua igual: symlink DENTRO da área
+    autorizada, entre a raiz e o alvo.
 
     Nota honesta sobre o que este guard NÃO é: ele não existe para pegar
     symlink que sai do escopo. Esse caso já é pego pela checagem principal,
@@ -103,6 +116,10 @@ def _recusar_escrita_via_symlink(alvo: str) -> None:
             f"escrita através de symlink recusada: {alvo!r} — "
             "nomeie o arquivo real (o efeito recairia sobre outro alvo)")
     for ancestral in p.parents:
+        # para NA raiz autorizada: acima dela é escolha do operador, já
+        # canonicalizada quando o escopo foi validado
+        if raiz_real and os.path.realpath(str(ancestral)) == raiz_real:
+            break
         if ancestral.is_symlink():
             raise ErroEscopo(
                 f"componente do caminho é symlink: {str(ancestral)!r} — "
