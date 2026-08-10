@@ -1,49 +1,65 @@
-# MUTATION EVIDENCE — as defesas foram removidas, uma a uma
+# FASE 7 — MUTATION EVIDENCE
 
-Suíte de segurança usada (baseline **113 passed**):
-`test_pdp_adversarial.py` · `test_runtime_governado.py` ·
-`test_absorption02_rotas_legadas.py` · `test_absorption02_provider_security.py` ·
-`test_absorption02_e2e_runtime.py`
+Formato exigido: `DEFENSE_MUTATED / EXPECTED_TESTS_RED / OBSERVED_RED / PASS`.
 
-| # | Defesa mutada | Alvo | Resultado |
+## Baterias
+
+### Filesystem (baseline 34→36 passed)
+| Defesa mutada | Esperado | Observado | PASS |
 |---|---|---|---|
-| M1 | validação de idempotência do nó no grafo | `orquestracao/grafo.py` | **3 failed** |
-| M2 | PEP ignora a decisão do PDP | `pdp/pep.py` | **6 failed** |
-| M3 | assinatura HMAC não verificada | `pdp/decisor.py` | **3 failed** |
-| M4 | capacidade concedida não conferida | `pdp/decisor.py` | **2 failed** |
-| M5 | expiração ignorada | `pdp/decisor.py` | **4 failed** |
-| M6 | nonce/anti-replay ignorado | `pdp/decisor.py` | **5 failed** |
-| M7 | audiência ignorada | `pdp/decisor.py` | **2 failed** |
-| M8 | escopo de recurso ignorado | `pdp/decisor.py` | **2 failed** |
-| M9 | teto de risco ignorado | `pdp/decisor.py` | **1 failed** |
-| M10 | default-deny → default-allow | `pdp/decisor.py` | **12 failed** |
-| M11 | limpeza de autoridade do provider removida | `runtime/inferencia.py` | **2 failed** |
-| M12 | boundary removido do adapter | `runtime/governado.py` | **2 failed** |
-| M13 | `sessao_pdp` volta a ignorar `caminhos` | `runtime/governado.py` | **2 failed** |
-| M14 | contrabando por argumento não checado | `pdp/decisor.py` | **1 failed** |
+| canonicalização (`realpath`→`abspath`) | ≥1 | 3 | ✅ |
+| contenção por componente → prefixo de string | ≥1 | 1 | ✅ |
+| escopo não verificado | ≥1 | 8 | ✅ |
+| guard de symlink na escrita | ≥1 | 1 | ✅ |
+| coerência pedido/contexto | ≥1 | 2 | ✅ |
+| deadline não exigido | ≥1 | 1 | ✅ |
 
-**14/14 mutações detectadas.** Todas revertidas após a medição (verificado:
-suíte volta a 2197 passed e `git status` limpo).
+### Scheduler (baseline 23 passed)
+| Defesa mutada | Esperado | Observado | PASS |
+|---|---|---|---|
+| dedup: reserva sempre concede | ≥1 | 3 | ✅ |
+| guard DISABLED/CANCELLED | ≥1 | 2 | ✅ |
+| transição inválida aceita | ≥1 | 2 | ✅ |
+| reserva DEPOIS do efeito (`INSERT OR REPLACE`) | ≥1 | 3 | ✅ |
+| `devidos()` ignora estado | ≥1 | 3 | ✅ |
 
-## O harness também precisou ser provado
+### Registry race / timeout (baseline 49 passed)
+| Defesa mutada | Esperado | Observado | PASS |
+|---|---|---|---|
+| checagem de versão removida | ≥1 | 3 | ✅ |
+| versões não carimbadas na emissão | ≥1 | 1 | ✅ |
+| versão ignora idempotência | ≥1 | 1 | ✅ |
+| versão ignora executor | ≥1 | 1 | ✅ |
+| `exigir_prazo` desligado | ≥1 | 2 | ✅ |
 
-A primeira execução da bateria reportou "0 failed (NÃO PEGOU!)" nas quatro
-primeiras mutações. **Não eram as defesas — era o harness.** Duas causas, nesta
-ordem:
+### Correções do recenso (baseline 81 passed)
+| Defesa mutada | Esperado | Observado | PASS |
+|---|---|---|---|
+| PDP volta ao prefixo de string | ≥1 | 2 | ✅ |
+| mutante sem raiz volta a ser permitido | ≥1 | 1 | ✅ |
+| padrão absoluto volta a passar | ≥1 | 1 | ✅ |
 
-1. passei `--timeout=120` sem `pytest-timeout` instalado ⇒ pytest saía com erro
-   de uso e nenhuma linha "N failed" era produzida;
-2. corrigido isso, veio "no tests ran": em **zsh não há word-split** de variável
-   não citada, então `$SUITES` chegava ao pytest como UM argumento só. Resolvido
+**19 defesas mutadas, 19 detectadas.** Todas revertidas após a medição.
+
+## Falso verde — duas vezes, e como foi pego
+
+A primeira execução da bateria reportou "0 failed (NÃO PEGOU!)" em quatro
+defesas. **Não eram as defesas — era o harness**, por duas causas em sequência:
+
+1. `--timeout=120` sem `pytest-timeout` instalado ⇒ pytest sai com erro de USO
+   e nenhuma linha "N failed" é produzida;
+2. corrigido isso, veio "no tests ran": em **zsh não há word-split** de
+   variável não citada, então `$SUITES` chegava como UM argumento. Resolvido
    com array (`"${SUITES[@]}"`).
 
-Registrado porque é o tipo de erro que produz um falso "tudo seguro": um
-resultado verde vindo de comando que nem rodou. Toda a tabela acima foi medida
-depois da correção, com baseline explícito (113 passed) para comparação.
+Toda a tabela acima foi medida depois da correção, sempre com baseline
+explícito impresso antes — sem o baseline, "0 failed" é indistinguível de
+"nada rodou".
 
-## Testes que passavam pelo motivo errado (corrigidos na ABSORPTION-01)
+## Defesa que era código morto
 
-Dois testes chegavam ao resultado certo por OUTRA defesa (`DestinoInseguroError`
-do guard de destino), não pela que alegavam provar. Foram reescritos para
-asseverar o MOTIVO (`missao is None` + `"grafo inválido"`; `Motivo.EXPIRADA` no
-detalhe do nó). Depois da correção, a mutação correspondente os derruba.
+`_exigir_cadeia_limpa()` (filesystem) sobreviveu à mutação: removê-la deixou
+34/34 verdes. `os.path.realpath` já resolve links intermediários mesmo com
+componente final inexistente, então a checagem principal sempre chegava antes.
+Removida e substituída por um guard mais estrito (recusa de mutação através de
+symlink) que **é** exercitado.
