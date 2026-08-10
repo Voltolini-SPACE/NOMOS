@@ -320,3 +320,22 @@ def test_fs_criar_dir_funciona_e_e_confinado(tmp_path):
     with pytest.raises(ErroEscopo):
         ad.executar(CapabilityRequest(capacidade="fs-criar-dir",
                                       alvo=str(tmp_path / "fora")), ctx)
+
+
+def test_cli_adapters_exige_raiz(tmp_path, monkeypatch, capsys):
+    """Caller de PRODUÇÃO: `nomos orquestrar --adapters` sem `--raiz` recusa."""
+    from nomos import cli
+    monkeypatch.setenv("NOMOS_HOME", str(tmp_path / "h"))
+    rc = cli.main(["orquestrar", "x", "--adapters"])
+    assert rc == cli.EXIT_ERROR
+    assert "--raiz" in capsys.readouterr().err
+
+
+def test_cli_expoe_as_flags_de_adapter():
+    """As capacidades de arquivo têm caller de produção — não são só camada."""
+    import inspect
+
+    from nomos import cli
+    fonte = inspect.getsource(cli.cmd_orquestrar)
+    assert "adapters=usar_adapters" in fonte
+    assert "caminhos=raizes" in fonte

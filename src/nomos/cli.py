@@ -1538,8 +1538,26 @@ def cmd_orquestrar(ctx, args) -> int:
             return EXIT_ERROR
 
     aprovador = _approver_for(ctx, args)
-    rt = RuntimeGovernado(ctx, aprovador,
-                          sem_motor=getattr(args, "sem_motor", False))
+    raizes = tuple(getattr(args, "raiz", None) or ())
+    usar_adapters = bool(getattr(args, "adapters", False))
+    if usar_adapters and not raizes:
+        # fail-closed: capacidade mutante de filesystem sem escopo seria MENOS
+        # confinada que a ferramenta nativa que substitui
+        print(fmt("E010", "--adapters exige pelo menos um --raiz "
+                          "(escopo de caminho das capacidades de arquivo)"),
+              file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        rt = RuntimeGovernado(ctx, aprovador,
+                              sem_motor=getattr(args, "sem_motor", False),
+                              caminhos=raizes, adapters=usar_adapters)
+    except ValueError as exc:
+        print(fmt("E010", str(exc)), file=sys.stderr)
+        return EXIT_ERROR
+    if usar_adapters and rt.capacidades_adapter:
+        print(f"capacidades de arquivo ligadas: "
+              f"{', '.join(rt.capacidades_adapter)}")
+        print(f"escopo: {', '.join(raizes)}")
     plano = rt.planejar(args.objetivo, passos=passos)
 
     print(f"objetivo: {plano.objetivo}")
@@ -2371,6 +2389,12 @@ def build_parser() -> argparse.ArgumentParser:
                      help="aprova via painel local em vez de terminal")
     orq.add_argument("--sem-motor", action="store_true", dest="sem_motor",
                      help="arquivo_resumir: só heurística local, sem motor de IA")
+    orq.add_argument("--raiz", action="append", default=[],
+                     help="raiz autorizada para as capacidades de arquivo "
+                          "(pode repetir); ativa o escopo de caminho do PDP")
+    orq.add_argument("--adapters", action="store_true",
+                     help="registra as capacidades de arquivo (fs-ler, "
+                          "fs-escrever, fs-editar, …) — exige --raiz")
     orq.set_defaults(fn=cmd_orquestrar)
 
     mip = sub.add_parser("missao",

@@ -1,0 +1,316 @@
+{
+  "gerado_em": "2026-08-10",
+  "fonte": "recenso ABSORPTION-03 FASE 6 — 2 agentes de censo + verificacao adversarial",
+  "aviso": "censo estatico, sem executar a suite; avaliou um SNAPSHOT anterior aos commits 6122814/68308ff/72b6489",
+  "totais": {
+    "PARCIAL": 18,
+    "AUSENTE": 8,
+    "FORA_DO_NUCLEO": 3
+  },
+  "por_categoria": {
+    "FILESYSTEM": {
+      "PARCIAL": 8,
+      "AUSENTE": 1,
+      "FORA_DO_NUCLEO": 2
+    },
+    "SCHEDULER/JOBS": {
+      "PARCIAL": 10,
+      "AUSENTE": 7,
+      "FORA_DO_NUCLEO": 1
+    }
+  },
+  "criticas": 14,
+  "criticas_com_gap": 13,
+  "capacidades": [
+    {
+      "capability_id": "FS-READ-TEXT (ler conteudo de arquivo)",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A0",
+      "idempotent": true,
+      "evidencia": "(a) SIM: src/nomos/adapters/filesystem.py:65 `_fs_ler` le bytes, checa teto LIMITE_LEITURA_BYTES=8MB (:33) com ErroLimite, detecta binario por \\x00 nos primeiros 8192 bytes, decodifica utf-8 errors='replace', fatia por LINHAS com `offset`/`limite` — mesma unidade do read_file do Hermes — e devolve valor=texto + metadados{bytes, linhas_totais, offset, binario}. Erros tipados (ErroNaoEncontrado, ErroInvalido para diretorio, ErroPermissao, ErroLimite). Audita o alvo CANONICO. (b) NAO FECHA: a cadeia existe via src/nomos/adapters/wiring.py (registro dinamico A5+gate+audit -> extras na autorizacao do PDP -> PEP -> ponte com de_registro() -> adapter), e governado.py foi alterado para dar PEP tambem as capacidades dinamicas ('sem isto o Orquestrador cai em registro.executor_de e chama a ponte CRUA'), MAS: wiring.py esta UNTRACKED no git e o unico caller de producao, src/nomos/cli.py:1541, chama RuntimeGovernado(ctx, aprovador, sem_motor=...) SEM adapters=True e SEM caminhos=. Em producao fs-ler nao existe. Alem disso o 'OR' do criterio (b) — contexto so construivel por de_registro() — e convencao, nao coercao: CapabilityContext (contrato.py:98) e uma dataclass frozen de construtor publico, sem __post_init__ nem token; um caller pode montar CapabilityContext(capacidade='fs-ler', sujeito='x', risco='A0', idempotente=True) com raizes=() default e ler qualquer coisa. Nenhum teste tenta isso. (c) SIM: tests/test_absorption03_filesystem.py cobre N1 dotdot, N2 absoluto fora (incl. /etc/passwd), N3 symlink para fora, N4 symlink trocado apos validacao, N9 inexistente, N10 permissao, N11 deadline, N12 escopo de outra raiz, N13 replay, N8 teto, mais test_leitura_devolve_conteudo_de_verdade e test_leitura_com_offset_e_limite.",
+      "critico": true,
+      "mudou_desde_02": "PARCIAL -> PARCIAL, mas o gap FUNCIONAL fechou: antes devolvia so metadado ('(formato: X, N caractere(s) lidos)'), agora devolve o conteudo com paginacao por linha e passa por confinamento. O que trava e o critério (b), nao mais o (a).",
+      "categoria": "FILESYSTEM"
+    },
+    {
+      "capability_id": "FS-READ-BINARY (imagem/base64/download)",
+      "nomos_status": "AUSENTE",
+      "risk_class": "A0",
+      "idempotent": true,
+      "evidencia": "src/nomos/adapters/filesystem.py:65 `_fs_ler` detecta binario (`b\"\\x00\" in bruto[:8192]`) e retorna CapabilityResult.sucesso(None, bytes=N, binario=True, detalhe='conteudo binario nao e devolvido como texto') — ok=True com valor None. Nao existe fs-ler-bytes, nem base64/data-URI, nem download. Hermes tem GET /api/fs/read-data-url (teto 16MB) e GET /api/files/download; NOMOS nao absorveu nem declarou formalmente como nao-absorvido em doc — a declaracao vive so no codigo e no teste test_leitura_de_binario_nao_finge_texto. Nota de contrato: `valor=None` combinado com a ponte de wiring.py:72 (`return resultado.valor if resultado.valor is not None else resultado.detalhe`) faz a leitura de binario chegar ao orquestrador como a STRING de detalhe, indistinguivel de um conteudo de texto para quem so olha o retorno — nao ha teste dessa borda no caminho wired.",
+      "critico": false,
+      "mudou_desde_02": "AUSENTE -> AUSENTE. Delta: deixou de ser ausencia silenciosa e virou RECUSA EXPLICITA e testada. A capacidade em si (bytes/base64/download) continua nao existindo.",
+      "categoria": "FILESYSTEM"
+    },
+    {
+      "capability_id": "FS-WRITE-CREATE (gravar/criar arquivo)",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A1",
+      "idempotent": false,
+      "evidencia": "(a) QUASE: src/nomos/adapters/filesystem.py:114 `_fs_escrever` valida conteudo como texto, aplica LIMITE_ESCRITA_BYTES=8MB, resolve com para_escrita=True e chama `_escrever_atomico` (:257): tempfile.mkstemp no MESMO diretorio (prefixo .nomos-tmp-), write+flush+os.fsync, os.chmod(0600), os.replace, e unlink do temp em qualquer BaseException. Isso e atomicidade de verdade. Falta vs Hermes: nao escreve BYTES (so str utf-8) e nao tem append. (b) NAO FECHA: mesma cadeia so-em-teste do FS-READ-TEXT (cli.py:1541 nao liga adapters). E ha regressao de seguranca concreta: src/nomos/adapters/wiring.py:78 `registrar_filesystem` registra fs-escrever mesmo com raizes=(), e caminho.py:65 devolve o caminho sem restricao quando raizes esta vazio — enquanto o legado src/nomos/agents/execucao.py:97-133 `_resolver_destino_seguro` SEMPRE confina em NOMOS_HOME/workspace. Nao existe guarda fail-closed do tipo 'capacidade mutante exige raiz'. (c) SIM: test_escrita_e_atomica_e_nao_deixa_temp (verifica que nao sobra .nomos-tmp-), test_n3b_diretorio_symlinkado_para_fora_nao_recebe_escrita, test_escrita_atraves_de_symlink_interno_e_recusada, test_caller_nao_consegue_pedir_unsafe (unsafe=/skip_scope=/follow_symlink=/raizes= como argumento nao afrouxam nada), N5/N6/N12.",
+      "critico": true,
+      "mudou_desde_02": "PARCIAL -> PARCIAL. Ganhou escrita atomica real (era o pedido explicito da 02) e escopo declarado. Mas ATENCAO: em confinamento e um RETROCESSO frente ao legado — arquivo_escrever sempre confina no workspace, fs-escrever com raizes=() nao confina nada.",
+      "categoria": "FILESYSTEM"
+    },
+    {
+      "capability_id": "FS-EDIT-PATCH (edicao cirurgica / patch)",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A1",
+      "idempotent": false,
+      "evidencia": "(a) PARCIAL: src/nomos/adapters/filesystem.py:125 `_fs_editar` exige `de` nao vazio, resolve com para_escrita=True, le como utf-8 (UnicodeDecodeError vira ErroInvalido 'nao e texto editavel'), conta ocorrencias e recusa n==0 ('trecho de nao encontrado') e n>1 ('aparece N vezes — edicao ambigua, recusada'); so com n==1 aplica `replace(de, para, 1)` via `_escrever_atomico`. Falta vs tools/file_tools.py patch_tool do Hermes: sem replace_all, sem mode='patch' (V4A multi-arquivo) e sem devolver DIFF auditavel — a 02 pediu 'diff auditavel' e o audit (`fs.editar`) grava so o alvo. Divergencia de comportamento: `_escrever_atomico` faz chmod 0600 no temp, entao editar um arquivo 0644 rebaixa o modo silenciosamente. (b) NAO FECHA: idem — wiring untracked, zero caller de producao; a allowlist nativa segue com 8 ferramentas e sem nenhuma de edicao (agents/manifest.py:15), o que a 02 apontava como 'exige decisao humana' e continua nao tomada. (c) SIM: test_edicao_cirurgica_funciona, test_edicao_ambigua_e_recusada (assere arquivo INTACTO apos a recusa), test_edicao_sem_ocorrencia_falha_fechada.",
+      "critico": true,
+      "mudou_desde_02": "AUSENTE -> PARCIAL. E o maior delta da categoria: a capacidade critica que simplesmente nao existia agora existe, e existe na versao segura (ocorrencia unica, fail-closed nos dois lados).",
+      "categoria": "FILESYSTEM"
+    },
+    {
+      "capability_id": "FS-DELETE (apagar arquivo/diretorio)",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A1 (registrado) — a ABSORPTION-02 recomendou A6",
+      "idempotent": false,
+      "evidencia": "(a) SIM, e com folga: src/nomos/adapters/filesystem.py:188 `_fs_apagar` aceita `recursivo=True` -> shutil.rmtree; sem ele, rmdir (so vazio) ou unlink. (b) NAO FECHA e piora: src/nomos/adapters/wiring.py:50 declara fs-apagar como Category.WRITE_LOCAL, ou seja risco A1 — enquanto a evidencia da 02 dizia 'a politica viva ja diz DENY para A6, entao absorver sem decisao humana seria afrouxar politica'. Somando ao achado C do resumo (registrar_filesystem aceita raizes=()), um RuntimeGovernado(ctx, aprovador, adapters=True) sem `caminhos` habilita rmtree recursivo de caminho ARBITRARIO sob gate A1. Nao ha caller de producao hoje (cli.py:1541 nao liga adapters), o que e a unica razao de isto nao estar valendo agora. (c) PARCIAL: test_n6_delete_fora prova que apagar fora do escopo e negado e o arquivo sobrevive; test_mover_e_apagar_dentro_do_escopo_funcionam cobre o caso feliz de arquivo. NAO ha teste de `recursivo=True` (rmtree), nem de apagar diretorio nao vazio sem recursivo, nem de symlink. Observacao: apagar symlink e IMPOSSIVEL — `resolver(..., para_escrita=True)` recusa qualquer link no caminho (caminho.py:82) — o que torna as checagens `caminho.is_symlink()` de filesystem.py:191 e :195 codigo morto (o `caminho` ja e realpath, nunca e link).",
+      "critico": true,
+      "mudou_desde_02": "AUSENTE -> PARCIAL em existencia, mas com AUMENTO DE AUTORIDADE nao decidido: a 02 recomendou NAO absorver, ou absorver como A6 com aprovacao humana explicita; foi absorvido como A1_WRITE_LOCAL. Eu elevo `critico` de false para true por causa disso.",
+      "categoria": "FILESYSTEM"
+    },
+    {
+      "capability_id": "FS-MOVE-RENAME (mover/renomear)",
+      "nomos_status": "FORA_DO_NUCLEO",
+      "risk_class": "A1 (registrado) — a 02 classificou o item como A5",
+      "idempotent": false,
+      "evidencia": "Mantenho FORA_DO_NUCLEO porque a 02 provou que nem Hermes nem OpenClaw expoem move/rename (grep por rota e por os.rename/shutil.move nao acha nada relevante) — 'declarar move/rename como coberto por FS seria paridade fabricada'. Agora src/nomos/adapters/filesystem.py:170 `_fs_mover` existe e e o item mais bem-feito da categoria em escopo: resolve ORIGEM e DESTINO, os dois com para_escrita=True, recusa destino ja existente (nao sobrescreve), cria o diretorio pai e usa os.replace. Coberto por test_n5_rename_para_fora (mover para fora do escopo e negado E o arquivo nao aparece no destino) e test_mover_e_apagar_dentro_do_escopo_funcionam. O PDP tambem cobre o argumento `destino` no anti-contrabando (src/nomos/pdp/decisor.py:268). Registrado como WRITE_LOCAL/A1 em wiring.py:49. Nota: por ser adicao de superficie que as fontes nao possuem, deveria constar como decisao deliberada em doc — nao encontrei essa decisao escrita.",
+      "critico": false,
+      "mudou_desde_02": "FORA_DO_NUCLEO -> FORA_DO_NUCLEO. Delta: a capacidade passou a EXISTIR no NOMOS, governada por contrato e com ataque coberto. Mas continua fora do nucleo de absorcao — e agora o NOMOS tem superficie que as fontes NAO tem.",
+      "categoria": "FILESYSTEM"
+    },
+    {
+      "capability_id": "FS-MKDIR (criar diretorio)",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A1",
+      "idempotent": true,
+      "evidencia": "(a) SIM: src/nomos/adapters/filesystem.py:156 `_fs_criar_dir` resolve com para_escrita=True, faz mkdir(parents=True, exist_ok=True), converte PermissionError em ErroPermissao e OSError em ErroInvalido, e — detalhe correto — devolve `efeito_aplicado=not ja_existia`, ou seja nao mente sobre efeito quando o diretorio ja existia. Paridade com POST /api/files/mkdir do Hermes, e mais estrito (o Hermes nao tem raiz efetiva neste host). (b) NAO FECHA: mesma ausencia de caller de producao; e o mkdir herda o mesmo default aberto (raizes=() = mkdir de caminho arbitrario, precisamente o que a 02 proibiu). (c) NAO: `fs-criar-dir` NAO tem nenhum teste proprio na suite — grep em tests/ so encontra o nome na tabela do fixture _RegistroFS (test_absorption03_filesystem.py:37) e em wiring.py:49. Nenhum caso feliz, nenhum ataque. E a unica das 8 capacidades sem cobertura direta.",
+      "critico": false,
+      "mudou_desde_02": "PARCIAL -> PARCIAL. Deixou de ser implicito-no-write e virou capacidade EXPLICITA e escopada (era exatamente a condicao que a 02 pos: 'se virar capacidade explicita, herdar o mesmo escopo; nunca mkdir de caminho arbitrario'). Nao subiu porque falha em (b) e em (c).",
+      "categoria": "FILESYSTEM"
+    },
+    {
+      "capability_id": "FS-GLOB-SEARCH (busca por conteudo e por nome/glob)",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A0",
+      "idempotent": true,
+      "evidencia": "(a) METADE: src/nomos/adapters/filesystem.py:209 `_fs_listar` faz base.glob(padrao) ou base.rglob(padrao) com recursivo=True, teto LIMITE_ITENS_LISTAGEM=5000 com flag `truncado`, e — o ponto forte — RE-RESOLVE cada resultado contra ctx.raizes e descarta o que escapa, entao padrao de escape nao vaza (test_n7_glob_escapando_root com padrao='../*' prova que fora.txt nao aparece). NAO existe equivalente do search_tool do Hermes (tools/file_tools.py:1693, ripgrep, target='content'|'files', file_glob, output_mode content|files_only|count, context, limit/offset): nao ha busca por conteudo, nem paginacao (so teto), nem contagem. (b) NAO FECHA: idem, sem caller de producao. (c) PARCIAL, e com DEFEITO DE CONTRATO descoberto neste censo: `padrao` absoluto (ex.: '/etc/*') faz pathlib levantar NotImplementedError('Non-relative patterns are unsupported') — verificado em Python 3.14.5 — exceção NAO TIPADA escapando do adapter, violando contrato.py:33 ('todo adapter falha com uma subclasse'). Nao ha teste para padrao absoluto; a validacao de :216 so checa se `padrao` e texto. Tambem sem teste para padrao com '**' em rglob (custo/explosao).",
+      "critico": false,
+      "mudou_desde_02": "AUSENTE -> PARCIAL. Metade da capacidade chegou (busca por NOME/glob, escopada e com teto). A outra metade — busca por CONTEUDO — continua inexistente, e era o ponto da 02: sem ela o agente empurra grep para o shell, que e A5.",
+      "categoria": "FILESYSTEM"
+    },
+    {
+      "capability_id": "FS-LIST-METADATA (listar diretorio, stat, mime, mtime)",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A0",
+      "idempotent": true,
+      "evidencia": "(a) PARCIAL: src/nomos/adapters/filesystem.py:233 `_fs_metadados` usa lstat (nao stat — correto para nao seguir link na medicao) e devolve {caminho, bytes, dir, symlink, modo (oct 0o777), mtime}; aceita alvo que exista OU seja symlink. `_fs_listar` (:209) devolve por item apenas {caminho, dir}. Falta vs Hermes: a LISTAGEM nao traz size/mtime por entrada (GET /api/fs/list e GET /api/files trazem size/mtime/mime_type), entao obter isso custa N chamadas de fs-metadados; nao ha mime_type em lugar nenhum; nao ha ocultacao de nomes sensiveis (o Hermes esconde 13 nomes via _FS_READDIR_HIDDEN). (b) NAO FECHA: sem caller de producao. (c) PARCIAL: o escopo da listagem tem ataque dedicado (test_n7_glob_escapando_root) e a leitura de metadados e exercitada indiretamente; NAO ha teste proprio de fs-metadados (ex.: metadados de symlink apontando para fora, ou de alvo fora do escopo).",
+      "critico": false,
+      "mudou_desde_02": "AUSENTE -> PARCIAL. Passou a existir em duas capacidades (fs-listar + fs-metadados), ambas escopadas. Fica em PARCIAL por (b) e por paridade incompleta do payload.",
+      "categoria": "FILESYSTEM"
+    },
+    {
+      "capability_id": "FS-PERMISSIONS (chmod / modo de arquivo)",
+      "nomos_status": "FORA_DO_NUCLEO",
+      "risk_class": "A1",
+      "idempotent": true,
+      "evidencia": "Continua nao existindo capacidade de chmod, e isso e correto: a 02 provou que nem Hermes nem OpenClaw expoem chmod (a unica ocorrencia no Hermes e interna, no arquivo de OAuth; a rota .../permissions/grant e TCC do macOS, nao permissao de arquivo). O comportamento NOMOS e ESTRITAMENTE mais restritivo: src/nomos/adapters/filesystem.py:257 `_escrever_atomico` faz os.chmod(tmp, 0o600) antes do os.replace, entao todo arquivo escrito nasce 0600 — mesma postura do legado (execucao.py usa chmod_privado 0o600). Novidade a registrar: como fs-editar tambem passa por `_escrever_atomico`, EDITAR um arquivo existente com modo 0644/0755 rebaixa o modo para 0600 silenciosamente, sem preservar o original — divergencia de comportamento frente ao patch_tool do Hermes (que preserva). Ninguem testa isso. Leitura do modo: `_fs_metadados` (:233) expoe `modo` em octal — util para auditoria, sem conceder escrita.",
+      "critico": false,
+      "mudou_desde_02": "FORA_DO_NUCLEO -> FORA_DO_NUCLEO. Segue decisao deliberada, nao lacuna. Delta: o MODO virou observavel (fs-metadados devolve `modo`), e o 0600-sempre passou a valer tambem para a EDICAO, o que e um efeito colateral novo.",
+      "categoria": "FILESYSTEM"
+    },
+    {
+      "capability_id": "FS-CONFINAMENTO-DE-CAMINHO (controle transversal de escopo)",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A1",
+      "idempotent": true,
+      "evidencia": "O QUE FICOU BOM: src/nomos/adapters/caminho.py e fonte unica ('duas implementacoes de e-seguro? acabam divergindo, e a divergencia e o furo'). `_real()` = os.path.realpath(os.path.abspath(...)); `_sob()` (:37) usa os.path.commonpath — CONTENCAO POR COMPONENTE, nao por prefixo de string, com ValueError tratado para volumes diferentes; `resolver()` recusa alvo vazio/so-espaco e byte nulo (ErroInvalido); nao existe unsafe=/skip_scope=/follow_symlink= na assinatura; `para_escrita=True` acrescenta `_recusar_escrita_via_symlink` (:82), que recusa mutacao atraves de link MESMO DENTRO da raiz (escrever em atalho.txt mudaria real.txt, alvo que o chamador nao nomeou). Todas as 8 capacidades chamam resolver() — inclusive as tres de leitura, que era o gap. Docstring honesta: a checagem de cadeia original foi REMOVIDA porque a bateria de mutacao provou que era codigo morto (o realpath ja resolve link intermediario com componente final inexistente) — e test_n3b assere o MOTIVO da recusa, nao so a recusa. Ataques: N1, N2, N3, N3b, N4 (symlink trocado apos validacao — prova que nao ha cache de decisao), N7, N12, test_prefixo_parecido_nao_e_contencao, test_caller_nao_consegue_pedir_unsafe, test_resolver_recusa_alvo_vazio_ou_nulo. O QUE IMPEDE GOVERNADO: (1) raizes=() significa SEM RESTRICAO (caminho.py:65) e wiring.py:78 registra as capacidades MUTANTES mesmo assim — confinamento opt-in, default aberto, sem guarda fail-closed; (2) o PDP, que e a camada transversal de verdade, ainda compara por PREFIXO DE STRING: src/nomos/pdp/decisor.py:229 e :275 usam `recurso.startswith(p.rstrip('/') + '/')`, entao '/ws/../etc/passwd' PASSA no PDP. Para fs-* o realpath do adapter barra depois (defesa em profundidade real), mas para as NATIVAS arquivo_ler/arquivo_resumir nao existe resolver nenhum (agents/execucao.py:59 le Path(alvo) direto), logo o prefixo e o UNICO confinamento e um '..' o derrota. tests/test_pdp_adversarial.py cobre fora-do-escopo e prefixo-parecido, mas NAO cobre '..'; (3) producao nao liga escopo: cli.py:1541 nao passa `caminhos`, entao o bloco inteiro de escopo do decisor continua pulado — exatamente o achado da 02, ainda aberto no CLI.",
+      "critico": true,
+      "mudou_desde_02": "PARCIAL -> PARCIAL, mas com o maior avanco tecnico da missao: nasceu um modulo unico de confinamento, por COMPONENTE, aplicado a LEITURA tambem (o furo nº1 da 02). Continua PARCIAL porque e opt-in, porque o PDP ainda confina por PREFIXO DE STRING, e porque a producao nunca preenche `caminhos`.",
+      "categoria": "FILESYSTEM"
+    },
+    {
+      "capability_id": "SCHED-01-ONESHOT",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A5",
+      "idempotent": true,
+      "evidencia": "scheduler.py:251-269 criar(intervalo_s=None) => JobDefinition.recorrente()=False (:95-96); _reagendar retorna cedo para nao-recorrente (:375-376), entao o job fica no estado terminal SUCCEEDED. Testes: test_absorption03_scheduler.py:53 test_cria_one_shot_e_recorrente e :223 test_one_shot_nao_reagenda (assert devidos(T0+1d)==[]). NAO e equivalente ao Hermes: `primeiro_em` exige um objeto datetime — nao existe parser de '30m'/'2h'/ISO (Hermes cron/jobs.py:316-410) em lugar nenhum, porque nao ha superficie de usuario. NAO WIRED: Scheduler nao e subclasse de Adapter, nao usa CapabilityContext (scheduler.py:44 importa do contrato APENAS os erros), nao esta no RegistroCapacidades e nao tem comando de CLI (grep 'scheduler|jobs|adapters' em cli.py = 0 hits). Criterio (b) nao satisfeito.",
+      "critico": false,
+      "mudou_desde_02": "AUSENTE -> PARCIAL. Passou a existir one-shot de verdade na camada nova.",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-02-RECORRENTE-CRON",
+      "nomos_status": "AUSENTE",
+      "risk_class": "A5",
+      "idempotent": true,
+      "evidencia": "Nao existe parser de expressao cron: `rtk proxy grep -rni cron --include=*.py src/` devolve so comentarios (rotinas.py:11,684,688,707) e o help do CLI (cli.py:2329) — ambos falando do crontab do USUARIO, nao de um parser proprio. A unica recorrencia nova e intervalo fixo: scheduler.py:89 `intervalo_s: int | None` e :371-383 _reagendar faz `base + timedelta(seconds=d.intervalo_s)`. Um intervalo fixo nao expressa dia-da-semana nem dia-do-mes: os jobs vivos '0 9 * * 1' (CALIOPE, segundas), '0 8 1 * *' (THEMIS, dia 1) e '0 10 15 * *' (METIS, dia 15) sao estruturalmente inexprimiveis — o mes tem 28..31 dias, nenhum multiplo de N segundos cai sempre no dia 1. rotinas.py:31 HORA_RE continua so HH:MM diario. 5/8 jobs Hermes e 4/4 OpenClaw dependem disto.",
+      "critico": true,
+      "mudou_desde_02": "Nada mudou. Intervalo em segundos NAO e cron.",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-03-RECORRENTE-INTERVALO",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A5",
+      "idempotent": true,
+      "evidencia": "scheduler.py:89 intervalo_s + :258-259 recusa intervalo <=0 + :371-383 _reagendar. Testes: test_absorption03_scheduler.py:203 test_recorrente_reagenda_para_o_futuro (proximo_em == T0+60s), :212 test_recorrente_nao_acumula_ocorrencias_vencidas, :231 test_recorrente_ocorrencias_distintas_executam (2 ocorrencias distintas = 2 efeitos), :69 test_intervalo_invalido_e_recusado. MAS nao absorve ARGOS/HESTIA/EPIDAURO: (i) nada dispara sozinho (ver SCHED-12); (ii) o job so reagenda DENTRO de executar_job (:365) — job vencido que ninguem executa fica vencido; (iii) nao registrado no RegistroCapacidades nem exposto por CLI. Criterio (b) nao satisfeito.",
+      "critico": true,
+      "mudou_desde_02": "AUSENTE -> PARCIAL. A aritmetica de intervalo existe e esta testada; falta o caminho governado e quem dispare.",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-04-ENABLE-DISABLE",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A6",
+      "idempotent": true,
+      "evidencia": "scheduler.py:289-293 desabilitar/habilitar via _mudar_estado (:271-287), que valida contra a allowlist TRANSICOES (:61-74), audita a mudanca (scheduler.job.estado) E audita a NEGACAO (scheduler.transicao.negada, :278-279). devidos() exclui DISABLED (:315-320). Testes: :102 test_disable_e_enable, :176 test_job_desabilitado_nao_produz_efeito (0 chamadas ao executor), :109 test_transicao_invalida_e_auditada (le o audit.jsonl). MAS _mudar_estado nao chama policy.decide nem gate() — nenhum approver, nenhuma classificacao A6, exatamente o que 02 pediu. E o caminho REAL continua sendo rotinas.py:143 `def pausar(home, rid, ativa)` — sem policy, sem approver, sem audit — chamado direto por cli.py:757; rotinas.py nao foi tocado em nenhum commit da 03 (git show --stat 34645e8, 822efd6).",
+      "critico": false,
+      "mudou_desde_02": "PARCIAL -> PARCIAL. Ganhou maquina de estados auditada na camada nova; o achado de 02 (falta gate/approver, risco A6) continua aberto, e o caminho de producao esta intocado.",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-05-STATUS-OBSERVABILIDADE",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A0",
+      "idempotent": true,
+      "evidencia": "scheduler.py:301-305 status() devolve estado/proximo_em/intervalo_s/criado_em/tz; :147-151 tabela `ocorrencias` grava por OCORRENCIA estado, detalhe (truncado em 500, :209) e efeito 0/1; :211-215 ocorrencia_estado() responde o resultado de uma ocorrencia especifica. Testes: :76 test_status_de_job_inexistente (ErroNaoEncontrado), :158 test_reserva_acontece_antes_do_efeito (assert ocorrencia_estado == FAILED). Faltas vs Hermes/OpenClaw: nao ha duracao (grava iniciada_em, :198, e nunca um concluida_em), nao ha last_error nem next_run_at no proprio job, nao ha API para LISTAR ocorrencias (so consulta por chave) e nao ha nenhuma superficie de leitura — sem CLI, sem HTTP, o operador nao ve nada disso.",
+      "critico": false,
+      "mudou_desde_02": "PARCIAL -> PARCIAL, melhorou: agora da para responder 'a ocorrencia de ontem falhou?' — antes nao dava.",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-06-CANCELAMENTO",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A6",
+      "idempotent": true,
+      "evidencia": "scheduler.py:295-296 cancelar() leva a CANCELLED, que e TERMINAL — TRANSICOES[CANCELLED]=frozenset() (:73), entao nao ressuscita; :307-311 apagar() exige existencia (ErroNaoEncontrado) e audita scheduler.job.apagado; executar_job recusa CANCELLED/DISABLED antes de qualquer efeito (:336-339) e _reagendar nao ressuscita cancelado (:373). Testes: :92 test_cancelado_e_terminal (habilitar/desabilitar apos cancelar levantam ErroScheduler), :185 test_job_cancelado_nao_produz_efeito, :280 test_apagar_job. MAS nem cancelar() nem apagar() chamam policy/gate/approver — e rotinas.py:132 remover(), o caminho real chamado por cli.py:753, segue sem policy e sem approver.",
+      "critico": false,
+      "mudou_desde_02": "PARCIAL -> PARCIAL. Cancel e delete viraram operacoes distintas e auditadas; o achado de 02 (gate A6 obrigatorio) continua aberto.",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-07-PERSISTENCIA",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A1",
+      "idempotent": true,
+      "evidencia": "scheduler.py:131-135 _conn(): sqlite3 com PRAGMA journal_mode=WAL + PRAGMA synchronous=FULL + timeout=10; :137-155 schema com jobs.job_id PRIMARY KEY e ocorrencias.chave PRIMARY KEY; :153 os.chmod 0600. Testes: :270 test_persistencia_sobrevive_a_nova_instancia (capacidade/intervalo/alvo sobrevivem a nova instancia sobre o MESMO arquivo), :140 test_dedup_sobrevive_a_restart. Garantias REAIS e limites honestos: (i) o `threading.Lock` (:128) e por INSTANCIA de ArmazemJobs, nao por arquivo — duas instancias no mesmo processo sobre o mesmo path nao compartilham lock; a serializacao entre processos fica por conta do lock do proprio SQLite + timeout=10, e `sqlite3.OperationalError: database is locked` nao e capturado nem tipado em lugar nenhum; (ii) nao ha NENHUM teste de escritor concorrente (os 13 testes de test_absorption03_race_timeout.py sao registry-race do PDP e deadline de no — nenhum toca o Scheduler); (iii) rotinas.py:42-50 continua com `except Exception: return []`, isto e, rotinas.json corrompido faz TODAS as rotinas sumirem em silencio — o achado de 02, intacto.",
+      "critico": true,
+      "mudou_desde_02": "PARCIAL -> PARCIAL, melhorou muito na camada nova: SQLite substitui o JSON sem lock. O armazem de PRODUCAO (rotinas.json) continua exatamente como estava.",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-08-DEDUP-IDEMPOTENCIA",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A5",
+      "idempotent": true,
+      "evidencia": "CHAVE E POR OCORRENCIA, SIM: scheduler.py:100-107 JobInstance.chave = f'{job_id}@{ocorrencia}', e :333-334 a ocorrencia e o instante PLANEJADO (d.proximo_em), NAO o relogio — comentario explicito em :329-332. RESERVA ANTES DO EFEITO, SIM: :186-202 reservar() faz INSERT cru contra `chave TEXT PRIMARY KEY` (:148) e devolve False em sqlite3.IntegrityError; :341-346 executar_job so segue se reservar() venceu — o efeito (:354) vem DEPOIS. SOBREVIVE A RESTART, SIM, porque a marca esta no disco. Testes que provam: test_absorption03_scheduler.py:130 test_mesma_ocorrencia_no_maximo_um_efeito (3 executar_job -> len(chamadas)==1); :140 test_dedup_sobrevive_a_restart (Scheduler novo + executor novo + MESMO arquivo .db -> 0 chamadas, com assert 'restart repetiu a ocorrencia'); :158 test_reserva_acontece_antes_do_efeito (executor levanta -> ocorrencia fica FAILED reservada -> segundo Scheduler nao repete). LACUNAS REAIS: (i) a reserva e PERMANENTE — Hermes usa claim_ttl_seconds=300 (cron/jobs.py:1349) justamente para que claim de processo MORTO expire; aqui um crash entre reservar() e concluir() queima a ocorrencia para sempre; (ii) pior, o job fica preso em RUNNING (:347) e TRANSICOES[RUNNING] (:66-67) nao permite voltar a SCHEDULED — entao um job RECORRENTE morre em silencio apos um unico crash, e nao existe nenhuma funcao de recovery (grep recuperar|recovery|orfa em adapters/ = 0 hits); (iii) nenhum teste cobre crash-entre-reserva-e-conclusao nem RUNNING preso; (iv) nenhum teste de dois schedulers disputando a mesma ocorrencia. Alem disso nao passa por PDP/PEP e nao tem caller de producao.",
+      "critico": true,
+      "mudou_desde_02": "PARCIAL -> PARCIAL, mas e a entrega mais forte da 03: o achado central de 02 ('claim ANTES da execucao') foi fechado e esta provado por teste.",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-09-CATCHUP-MISSED",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A5",
+      "idempotent": true,
+      "evidencia": "scheduler.py:379-380 `while proximo <= agora: proximo += timedelta(seconds=intervalo_s)` — colapsa as ocorrencias vencidas, dispara UMA vez e avanca, que e a semantica do Hermes (cron/jobs.py:1397-1409). Teste: test_absorption03_scheduler.py:212 test_recorrente_nao_acumula_ocorrencias_vencidas (maquina desligada 5h -> proximo > agora e <= agora+60s, isto e, uma unica execucao, sem rajada). Faltas: nao ha grace window (Hermes _compute_grace_seconds), nao ha stagger nem teto por restart (OpenClaw DEFAULT_MISSED_JOB_STAGGER_MS=5e3, DEFAULT_MAX_MISSED_JOBS_PER_RESTART=5), e o colapso so acontece se alguem executar o job — sem ticker, o vencido apenas continua vencido.",
+      "critico": false,
+      "mudou_desde_02": "PARCIAL -> PARCIAL, melhorou: a politica de perdido deixou de ser acidente da granularidade diaria e virou decisao declarada e testada.",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-10-TRIGGER-MANUAL",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A5",
+      "idempotent": false,
+      "evidencia": "scheduler.py:326-369 executar_job(d, agora) executa UM job especifico e nao checa se ele esta vencido — da para disparar job futuro. MAS nao e o `run` do Hermes (cron/jobs.py:1187 trigger_job, que roda agora e reporta succeeded/failed): por causa do dedup por ocorrencia (:341), disparar o mesmo job duas vezes vira no-op silencioso devolvendo SUCCEEDED com detalhe 'ocorrencia ja executada (dedup)' (:344-345) — nao da para forcar uma execucao extra; e disparar um job FUTURO queima a ocorrencia futura dele, que depois nao roda na hora certa. Nao ha teste adversarial dedicado a trigger manual, nao ha gate proprio (02 pediu gate explicito por ser escalada de privilegio) e nao ha CLI.",
+      "critico": false,
+      "mudou_desde_02": "AUSENTE -> PARCIAL. Existe um ponto de entrada por job (antes so havia 'executar TODAS'), mas nao e equivalente ao trigger do Hermes.",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-11-EXEC-SCRIPT-SEM-LLM",
+      "nomos_status": "AUSENTE",
+      "risk_class": "A5",
+      "idempotent": true,
+      "evidencia": "Nao existe execucao de script agendada sem LLM. `rtk proxy grep -rn subprocess --include=*.py src/nomos/` so acha mcp_client.py:105 (server MCP por stdio), mcp_server.py e declaracoes de PUREZA do council ('nunca chama subprocess'). O FilesystemAdapter tem exatamente 8 capacidades (filesystem.py:37-40: fs_ler, fs_escrever, fs_editar, fs_criar_dir, fs_mover, fs_apagar, fs_listar, fs_metadados) — nenhuma executa nada. Nao existe A5_CODE_EXEC, nao existe allowlist de scripts confinada a NOMOS_HOME/scripts, e o novo Scheduler nao executa por conta propria: sem executor injetado ele FALHA fechado (scheduler.py:350-351 'scheduler sem executor governado ligado', provado em test_absorption03_scheduler.py:260). O unico caminho que roda algo e rotinas.py:559-571 acao 'skill:<nome>' via skill_registry.executar (que usa sandbox _sb.run, skill_registry.py:305/321) — inalterado, e por design so passa A0. Os 4 watchdogs (ARGOS, EPIDAURO, HESTIA, GLOSSA) continuam sem qualquer equivalente.",
+      "critico": true,
+      "mudou_desde_02": "Nada mudou. Zero linhas nesta direcao na 03.",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-12-DAEMON-TICKER",
+      "nomos_status": "AUSENTE",
+      "risk_class": "A5",
+      "idempotent": false,
+      "evidencia": "NADA dispara sozinho: alguem precisa chamar scheduler.py:322-324 executar_devidos(). `rtk proxy grep -rn 'while True|ticker|daemon|Thread\\(|heartbeat' --include=*.py src/nomos/adapters/ src/nomos/runtime/` = 0 hits. Nenhum caller: grep de 'adapters.scheduler|ArmazemJobs|executar_devidos|Scheduler\\(' em src/ so bate dentro do proprio scheduler.py; em cli.py, grep de 'scheduler|jobs|adapters' = 0 hits. O unico agendamento continua sendo humano e aponta para OUTRO codigo: rotinas.py:597-677 exportar() gera plist (StartInterval=900) / systemd / schtasks e :680-712 linha_agendador() gera a linha de crontab — todos rodando `nomos.cli rotinas executar`, que executa rotinas.executar_devidas (rotinas.py:575) e NAO toca o Scheduler novo. rotinas.py:11 mantem a regra: 'o NOMOS nao instala cron/agendador sozinho'. Enquanto isso valer, SCHED-02/03/11 nao podem ser assumidos de producao — exatamente o que a 02 registrou.",
+      "critico": true,
+      "mudou_desde_02": "Continua AUSENTE. Apareceu executar_devidos(), que e o metodo que um ticker CHAMARIA — mas nao ha ticker, e nao ha nem CLI que o alcance.",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-13-MUTACAO-AGENDA-POR-AGENTE",
+      "nomos_status": "AUSENTE",
+      "risk_class": "A6",
+      "idempotent": false,
+      "evidencia": "Nenhuma capacidade de scheduler foi registrada: existe registrar_filesystem (adapters/wiring.py:78) e NAO existe nenhum registrar_scheduler (grep = 0 hits). Como o planejador/grafo so enxergam o RegistroCapacidades, o LLM nao tem como criar/editar/remover agendamento. A allowlist nativa de 8 ferramentas segue intocada, por decisao documentada em wiring.py:15-27 ('dobrar essa lista mudaria um contrato congelado'), e a entrada de capacidade nova e ela propria governada (registrar = ato A5 com gate + approver + audit, wiring.py:86-89). Contraste com Hermes tools/cronjob_tools.py:569, onde a tool `cronjob` e exposta ao agente sem gate de aprovacao.",
+      "critico": false,
+      "mudou_desde_02": "Continua AUSENTE — e a 03 REFORCOU a ausencia, que aqui e o controle correto (02 concluiu 'NAO absorver').",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-14-SUPERFICIE-HTTP",
+      "nomos_status": "AUSENTE",
+      "risk_class": "A2",
+      "idempotent": false,
+      "evidencia": "Nenhuma rota HTTP de scheduler foi criada. src/nomos/interface/painel_web.py nao foi tocado por nenhum commit da 03 (git show --stat 34645e8 e 822efd6 listam apenas adapters/*, pdp/*, runtime/governado.py e tests/*), e grep de scheduler/jobs em src/ nao acha nada fora de adapters/scheduler.py. O NOMOS continua sem o equivalente das ~11 rotas /api/cron/* do Hermes.",
+      "critico": false,
+      "mudou_desde_02": "Nada mudou, e nada deveria (02: 'nada a absorver').",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-15-DELIVERY-E-ALERTA-DE-FALHA",
+      "nomos_status": "PARCIAL",
+      "risk_class": "A3",
+      "idempotent": false,
+      "evidencia": "O que existe: scheduler.py:359-362 captura a excecao, grava concluir(inst, FAILED, detalhe) na tabela de ocorrencias e :366-368 audita scheduler.execucao.fim com estado=FAILED. Isso e REGISTRO, nao ALERTA. `rtk proxy grep -rni 'alerta|alert|notific|falhou' --include=*.py src/nomos/simple/rotinas.py src/nomos/adapters/` = 0 hits. Nenhum canal e acionado em falha: entregar_briefing (rotinas.py:282) so e alcancavel pela acao 'briefing-<canal>:' (rotinas.py:538-545, canais telegram/whatsapp/email/slack, entrega A3 com aprovacao) e entrega o BRIEFING, nunca um aviso de falha. rotinas.executar_devidas (rotinas.py:575-591) segue apenas devolvendo ok=False e auditando. Continua valendo o achado de 02: uma rotina/job NOMOS pode falhar todo dia em silencio absoluto — enquanto GLOSSA/ARGOS/EPIDAURO/HESTIA dependem do contrato stdout-nao-vazio = entrega.",
+      "critico": true,
+      "mudou_desde_02": "PARCIAL -> PARCIAL. A falha agora e PERSISTIDA por ocorrencia com detalhe (antes so um audit ok=False); o gatilho de alerta — o achado de 02 — continua inexistente.",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-16-REPEAT-LIMITADO",
+      "nomos_status": "AUSENTE",
+      "risk_class": "A1",
+      "idempotent": true,
+      "evidencia": "Nao ha repeat.times nem contador `completed`: dataclasses.fields(JobDefinition) (scheduler.py:81-96) = job_id, sujeito, capacidade, argumentos, alvo, intervalo_s, proximo_em, estado, criado_em, tz — nenhum contador; e a tabela jobs (:139-144) tem as mesmas 10 colunas. Nao ha auto-delete ao atingir limite (equivalente a Hermes cron/jobs.py:1253-1262 jobs.pop + save_jobs). A tabela `ocorrencias` (:147-151) permitiria um COUNT por job_id, mas nao ha nenhum metodo que exponha isso — ArmazemJobs so oferece reservar/concluir/ocorrencia_estado (:186-215), consulta por chave unica.",
+      "critico": false,
+      "mudou_desde_02": "Continua AUSENTE. So melhorou de lado: a contagem de execucoes passou a ser DERIVAVEL do armazem, mas nao existe campo, API nem limite.",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-17-TIMEZONE",
+      "nomos_status": "AUSENTE",
+      "risk_class": "A1",
+      "idempotent": true,
+      "evidencia": "O que existe: scheduler.py:93 `tz: str = 'UTC'`, coluna tz na tabela (:144), gravada em :168, lida de volta em :224, e auditada na criacao (:268 tz=tz). O QUE NAO EXISTE — o uso: `rtk proxy grep -rn 'zoneinfo|ZoneInfo|pytz|astimezone|\\.tz' --include=*.py src/nomos/adapters/` retorna UM unico hit, `d.tz` na tupla do INSERT (linha 168). Nenhum import de zoneinfo em lugar nenhum. O calculo ignora o campo: devidos() (:315-320) compara d.proximo_em <= agora em UTC e _reagendar (:371-383) faz `base + timedelta(seconds=intervalo_s)` — aritmetica de duracao absoluta. ZERO teste referencia tz: grep 'tz' em test_absorption03_scheduler.py so bate `tzinfo=timezone.utc` na constante T0 (linha 23). Pior, com recorrencia SO por intervalo o fuso e estruturalmente inexprimivel: '23:40 todo dia em America/Sao_Paulo' nao e um intervalo de 86400s atravessando o horario de verao — que e exatamente o caso dos 4 jobs OpenClaw financeiros/SE7EN PAY pinados em America/Sao_Paulo (fechamento diario 23:40). Deriva real ja gravada em producao: PROMETEU '-03:00', THEMIS '+02:00', METIS — tres offsets diferentes no mesmo jobs.json.",
+      "critico": true,
+      "mudou_desde_02": "O campo `tz` apareceu (armazenado e auditado), mas o calculo do proximo disparo continua sem fuso nenhum. Guardar a string NAO e suporte a timezone — mantenho AUSENTE.",
+      "categoria": "SCHEDULER/JOBS"
+    },
+    {
+      "capability_id": "SCHED-18-LAUNCHD-DO-HOST",
+      "nomos_status": "FORA_DO_NUCLEO",
+      "risk_class": "A6",
+      "idempotent": true,
+      "evidencia": "rotinas.py:597-677 exportar() GERA plist/systemd/schtasks em NOMOS_HOME/agendadores e devolve a instrucao 'instale VOCE MESMO'; a docstring (:598) e explicita: 'O NOMOS NUNCA os instala'. Nenhuma chamada a launchctl existe no codigo. A 03 nao tocou rotinas.py. Segue valendo a dependencia de host registrada em 02: derrubar ai.hermes.gateway (PID 1036) mata os 8 cron jobs Hermes e derrubar ai.openclaw.gateway (PID 996) mata os 4 OpenClaw.",
+      "critico": true,
+      "mudou_desde_02": "Nada mudou, e por design.",
+      "categoria": "SCHEDULER/JOBS"
+    }
+  ]
+}
