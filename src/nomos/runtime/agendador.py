@@ -92,17 +92,37 @@ class AgendadorGovernado:
     # ------------------------------------------------------------- preparação
 
     def preparar(self) -> list[str]:
-        """Registra as capacidades de scheduler no registro AUTORITATIVO.
+        """Confirma que as capacidades de scheduler estão ALCANÇÁVEIS.
 
-        Usa um `RuntimeGovernado` para obter o registro — o mesmo que o planner
-        e o PDP consultam. Registrar é `A5_SKILL_INSTALL`: passa pelo gate,
-        exige aprovador e é auditado.
+        Antes este método chamava `registrar_scheduler(rt.registro, …)` num
+        `RuntimeGovernado` que ele descartava na linha seguinte. O registro
+        acontecia mesmo — num registro que ninguém mais consultava. O operador
+        via as sete capacidades anunciadas na saída da CLI e nenhuma delas era
+        executável: `_runtime()` construía um runtime NOVO, sem scheduler, e
+        `sched-criar` caía em `CAPACIDADE_DESCONHECIDA`. Falhava fechado, o que
+        evitou o pior, mas o efeito prático era um scheduler que só podia ser
+        operado por chamada CRUA ao adapter — precisamente o desvio que esta
+        cadeia existe para impedir.
+
+        Agora quem registra é o construtor do `RuntimeGovernado` (junto com os
+        demais adapters, dentro do mapa protegido por PEP e da autorização
+        assinada), e este método apenas CONFERE — e recusa se a conferência
+        falhar. Anunciar capacidade inalcançável é pior que não ter nenhuma.
         """
-        from nomos.adapters.wiring import registrar_scheduler
-
         rt = self._runtime()
-        self.capacidades = registrar_scheduler(rt.registro, self.scheduler)
-        self._registro_ativo = rt.registro
+        nomes = sorted(n for n in rt.capacidades_adapter if n.startswith("sched-"))
+        if not nomes:
+            raise RuntimeError(
+                "nenhuma capacidade de scheduler registrada no runtime — "
+                "fail-closed em vez de anunciar um scheduler que não opera")
+        inalcancaveis = [n for n in nomes
+                         if n not in rt.executores
+                         or n not in rt.autorizacao.capacidades]
+        if inalcancaveis:
+            raise RuntimeError(
+                f"capacidades registradas mas INALCANÇÁVEIS: {inalcancaveis} — "
+                "fora do mapa protegido por PEP ou fora da autorização")
+        self.capacidades = nomes
         self._preparado = True
         if self.audit is not None:
             self.audit.append("agendador.preparado",
@@ -115,13 +135,45 @@ class AgendadorGovernado:
 
         Construir de novo a cada ocorrência é o que faz política, registro e
         escopo valerem no instante da EXECUÇÃO, não no da criação do job.
+
+        `scheduler=` entra AQUI, no construtor, para que as capacidades
+        `sched-*` nasçam dentro de `executores` (mapa protegido por PEP) e
+        dentro da autorização assinada. Registrar depois da construção foi o
+        bypass da ABSORPTION-05; registrar num runtime descartado foi o buraco
+        que o sucedeu.
         """
         from nomos.runtime.governado import RuntimeGovernado
         return RuntimeGovernado(
             self.ctx, self.aprovador,
             caminhos=self.config.raizes,
             adapters=bool(self.config.raizes),
-            executaveis=self.config.executaveis)
+            executaveis=self.config.executaveis,
+            scheduler=self.scheduler)
+
+    # ------------------------------------------------------------- operação
+
+    def operar(self, operacao: str, /, **params):
+        """Executa UMA operação de scheduler pela cadeia governada completa.
+
+        É o que a CLI usa. Sem este método, todo chamador que quisesse criar ou
+        listar job teria de falar com `self.scheduler` direto — sem PDP, sem
+        PEP, sem trilha. Devolve `(ok, valor, motivo)`.
+
+        `operacao` é POSICIONAL-ONLY: os jobs têm um parâmetro chamado
+        `capacidade`, e um argumento nomeado aqui roubaria o do outro calado.
+        """
+        rt = self._runtime()
+        if operacao not in rt.executores:
+            return False, None, f"capacidade indisponível: {operacao}"
+        res = rt.rodar(f"scheduler:{operacao}",
+                       passos=[{"id": "op", "ferramenta": operacao,
+                                "params": dict(params)}])
+        no = (res.missao.nos.get("op") if res.missao is not None else None)
+        if not res.ok:
+            motivo = (no.detalhe if no is not None and no.detalhe
+                      else (res.motivo or "sem detalhe"))
+            return False, None, motivo
+        return True, (no.resultado if no is not None else None), ""
 
     # ------------------------------------------------------------- execução
 

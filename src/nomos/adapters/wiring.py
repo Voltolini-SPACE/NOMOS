@@ -151,7 +151,7 @@ CATEGORIAS_SCHED: dict[str, Category] = {
 IDEMPOTENTES_SCHED = {"sched-listar", "sched-status"}
 
 
-def _ponte_sched(scheduler, nome: str):
+def _ponte_sched(scheduler, nome: str, registro):
     """Executor registrado para uma operação de scheduler.
 
     Cada operação é uma capacidade separada de propósito: assim o gate A0–A6
@@ -160,7 +160,21 @@ def _ponte_sched(scheduler, nome: str):
     def _executar(**params):
         job_id = str(params.get("job_id", "") or params.get("alvo", "") or "")
         if nome == "sched-listar":
-            return [d.job_id for d in scheduler.listar()]
+            # Devolve o registro DESCRITO, não só o id. Devolver id opaco
+            # obrigava quem lista a ou fazer N chamadas extras ou ler o
+            # armazém direto — e ler direto é exatamente o desvio que tirou a
+            # CLI da cadeia governada. A leitura é A0: descrever não amplia
+            # autoridade nenhuma, só remove o incentivo de contornar.
+            saida = []
+            for d in scheduler.listar():
+                a = d.agenda()
+                saida.append({"job_id": d.job_id, "capacidade": d.capacidade,
+                              "estado": d.estado.value, "kind": a.kind.value,
+                              "expression": a.expression, "tz": a.timezone,
+                              "intervalo_s": a.intervalo_s,
+                              "proximo_em": (d.proximo_em.isoformat()
+                                             if d.proximo_em else "")})
+            return saida
         if nome == "sched-status":
             return scheduler.status(job_id).estado.value
         if nome == "sched-criar":
@@ -171,18 +185,53 @@ def _ponte_sched(scheduler, nome: str):
             # silencioso CRON→ONE_SHOT que a 04 corrigiu na persistência,
             # reintroduzido na camada do caller.
             from nomos.adapters.agenda import ScheduleSpec, TipoAgenda
+            alvo_capacidade = str(params.get("capacidade", ""))
+            # Agendar capacidade que o registro não conhece é agendar nada: o
+            # job fica SCHEDULED, o operador lê "criado", e a descoberta vem
+            # ocorrência a ocorrência, quando o autorizador recusa. Job morto
+            # que se anuncia vivo é pior que job recusado.
+            if not registro.conhecida(alvo_capacidade):
+                raise ErroInvalido(
+                    f"capacidade desconhecida: {alvo_capacidade!r} — o job "
+                    "nunca executaria; registre a capacidade (as mesmas flags "
+                    "que o ticker usará) antes de agendá-la")
+            # Scheduler que se opera sozinho no relógio é laço de controle sem
+            # operador dentro. Gerir jobs é ato do operador, não de um job.
+            if alvo_capacidade.startswith("sched-"):
+                raise ErroInvalido(
+                    f"job não pode ter capacidade de scheduler ({alvo_capacidade}): "
+                    "agendar a própria gestão de agendamentos tira o operador "
+                    "do laço")
             tz = str(params.get("tz", "UTC"))
             expressao = params.get("cron") or params.get("expression")
             intervalo = params.get("intervalo_s")
+            # Duas agendas no mesmo pedido é intenção AMBÍGUA, não uma com
+            # precedência sobre a outra. Antes a ponte escolhia cron e ainda
+            # repassava `intervalo_s`, gravando um registro que dizia CRON num
+            # campo e 60s no outro — e cada leitor (`recorrente()`, `proximo()`,
+            # a linha do `listar`) consultava um campo diferente. Quem pediu
+            # duas coisas incompatíveis recebe recusa, não sorteio.
+            # `is not None`, não truthiness: `intervalo_s=0` é entrada inválida
+            # e precisa CHEGAR à validação que a recusa. Testar por verdade
+            # faria o zero desaparecer no caminho e o job virar ONE_SHOT em
+            # silêncio — o mesmo defeito que o censo achou em `--intervalo 0`.
+            if expressao and intervalo is not None:
+                raise ErroInvalido(
+                    "agenda ambígua: `cron` e `intervalo_s` juntos — escolha "
+                    "uma; agendar não pode depender de qual campo o leitor olha")
             schedule = None
             if expressao:
                 # `kind` continua EXPLÍCITO: só vira cron porque veio `cron=`,
                 # nunca por adivinhação sobre o formato da string.
                 schedule = ScheduleSpec(kind=TipoAgenda.CRON,
                                         expression=str(expressao), timezone=tz)
-            elif intervalo:
+            elif intervalo is not None:
                 schedule = ScheduleSpec(kind=TipoAgenda.INTERVAL,
                                         intervalo_s=int(intervalo), timezone=tz)
+            else:
+                # ONE_SHOT explícito: assim a tz é validada aqui também, em vez
+                # de só quando `Scheduler.criar` monta o spec padrão.
+                schedule = ScheduleSpec(kind=TipoAgenda.ONE_SHOT, timezone=tz)
             d = scheduler.criar(
                 job_id, str(params.get("sujeito", "runtime-governado")),
                 str(params.get("capacidade", "")),
@@ -214,7 +263,7 @@ def registrar_scheduler(registro, scheduler, *, apenas_leitura: bool = False) ->
     for nome in nomes:
         try:
             registro.registrar(nome, CATEGORIAS_SCHED[nome],
-                               _ponte_sched(scheduler, nome),
+                               _ponte_sched(scheduler, nome, registro),
                                origem="adapters.scheduler",
                                idempotente=nome in IDEMPOTENTES_SCHED)
             registrados.append(nome)

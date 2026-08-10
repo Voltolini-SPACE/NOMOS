@@ -1631,6 +1631,23 @@ def _intervalo_valido(bruto) -> float:
     return valor
 
 
+def _catchup_valido(bruto):
+    """`--catch-up` do operador → política do ticker, sem fallback calado.
+
+    Um valor desconhecido não pode virar o padrão: quem escreveu `--catch-up
+    todas` (em vez de `all`) receberia SKIP e descobriria pelas ocorrências que
+    não rodaram. Recusa explícita.
+    """
+    from nomos.adapters.ticker import CatchUp
+    tabela = {"skip": CatchUp.SKIP, "once": CatchUp.RUN_ONCE,
+              "all": CatchUp.RUN_ALL_BOUNDED}
+    chave = str(bruto or "once").strip().lower()
+    if chave not in tabela:
+        raise ValueError(f"--catch-up inválido: {bruto!r} "
+                         f"(use {', '.join(sorted(tabela))})")
+    return tabela[chave]
+
+
 def cmd_scheduler(ctx, args) -> int:
     """CALLER DE PRODUÇÃO do Ticker (ABSORPTION-05 / FASE 3).
 
@@ -1652,8 +1669,11 @@ def cmd_scheduler(ctx, args) -> int:
 
     aprovador = _approver_for(ctx, args)
     try:
+        catchup = _catchup_valido(getattr(args, "catch_up", "once"))
         ag = AgendadorGovernado(ctx, aprovador, ConfigAgendador(
             raizes=raizes, executaveis=executaveis,
+            catchup=catchup,
+            catchup_max=max(1, int(getattr(args, "catch_up_max", 10) or 10)),
             intervalo_s=_intervalo_valido(getattr(args, "intervalo", 1.0))))
         nomes = ag.preparar()
     except ValueError as exc:
@@ -1665,18 +1685,61 @@ def cmd_scheduler(ctx, args) -> int:
         return EXIT_DENIED
 
     if sub == "listar":
-        jobs = ag.scheduler.listar()
+        # Passa pela capacidade governada, não por `ag.scheduler.listar()`.
+        # Ler o armazém direto era o atalho que mantinha a CLI fora da cadeia
+        # — e um caminho fora da cadeia não deixa de existir só porque hoje é
+        # leitura: ele é o precedente que a próxima operação copia.
+        ok, jobs, motivo = ag.operar("sched-listar")
+        if not ok:
+            print(fmt("E010", f"listar recusado: {motivo}"), file=sys.stderr)
+            return EXIT_DENIED
         if not jobs:
             print("nenhum job agendado.")
             return EXIT_OK
-        for d in jobs:
-            ag_spec = d.agenda()
-            quando = (ag_spec.expression if ag_spec.expression
-                      else (f"{ag_spec.intervalo_s}s" if ag_spec.intervalo_s
-                            else "uma vez"))
-            print(f"  {d.job_id}: {d.capacidade} · {ag_spec.kind.value} "
-                  f"({quando}, {ag_spec.timezone}) · {d.estado.value} · "
-                  f"próximo {d.proximo_em}")
+        for j in jobs:
+            quando = (j["expression"] or (f"{j['intervalo_s']}s"
+                                          if j["intervalo_s"] else "uma vez"))
+            print(f"  {j['job_id']}: {j['capacidade']} · {j['kind']} "
+                  f"({quando}, {j['tz']}) · {j['estado']} · "
+                  f"próximo {j['proximo_em']}")
+        return EXIT_OK
+
+    if sub in ("criar", "cancelar", "apagar"):
+        job_id = str(getattr(args, "job_id", "") or "")
+        if not job_id:
+            print(fmt("E010", f"scheduler {sub} exige --job-id"), file=sys.stderr)
+            return EXIT_ERROR
+        if sub != "criar":
+            ok, valor, motivo = ag.operar(f"sched-{sub}", job_id=job_id)
+        else:
+            capacidade = str(getattr(args, "capacidade", "") or "")
+            if not capacidade:
+                print(fmt("E010", "scheduler criar exige --capacidade (o que o "
+                                  "job executa)"), file=sys.stderr)
+                return EXIT_ERROR
+            params = {"job_id": job_id, "capacidade": capacidade,
+                      "tz": str(getattr(args, "tz", "UTC") or "UTC")}
+            alvo_job = str(getattr(args, "alvo_job", "") or "")
+            if alvo_job:
+                params["alvo_job"] = alvo_job
+            # A agenda vai EXPLÍCITA. Sem `--cron` e sem `--intervalo-job` o
+            # job é ONE_SHOT porque foi isso que se pediu — não porque a flag
+            # se perdeu no caminho. Rebaixamento silencioso CRON→ONE_SHOT foi
+            # exatamente o defeito que a 04 corrigiu na persistência e a 06
+            # encontrou de volta na camada do caller.
+            if getattr(args, "cron", ""):
+                params["cron"] = str(args.cron)
+            elif getattr(args, "intervalo_job", None) is not None:
+                # `is not None`: `--intervalo-job 0` tem de CHEGAR à validação
+                # que o recusa. Com teste de verdade, o zero sumia aqui e o
+                # operador recebia um ONE_SHOT sem nunca saber.
+                params["intervalo_s"] = int(args.intervalo_job)
+            ok, valor, motivo = ag.operar("sched-criar", **params)
+        if not ok:
+            print(fmt("E010", f"scheduler {sub} recusado: {motivo}"),
+                  file=sys.stderr)
+            return EXIT_DENIED
+        print(f"{sub}: {valor}")
         return EXIT_OK
 
     if sub == "rodar":
@@ -1707,8 +1770,16 @@ def cmd_scheduler(ctx, args) -> int:
               f"falhas: {falhas}")
         return EXIT_OK if falhas == 0 else EXIT_DENIED
 
-    print("uso: nomos scheduler listar --raiz <dir>\n"
-          "     nomos scheduler rodar  --raiz <dir> [--intervalo N] [--max-ticks N]")
+    print("uso: nomos scheduler listar   --raiz <dir>\n"
+          "     nomos scheduler criar    --raiz <dir> --job-id ID --capacidade C\n"
+          "                              [--alvo-job P] [--cron 'M H D M W' |\n"
+          "                               --intervalo-job N] [--tz IANA]\n"
+          "     nomos scheduler cancelar --raiz <dir> --job-id ID\n"
+          "     nomos scheduler apagar   --raiz <dir> --job-id ID\n"
+          "     nomos scheduler rodar    --raiz <dir> [--intervalo N] "
+          "[--max-ticks N]\n"
+          "                              [--catch-up skip|once|all] "
+          "[--catch-up-max N]")
     return EXIT_OK
 
 
@@ -2527,7 +2598,7 @@ def build_parser() -> argparse.ArgumentParser:
                          help="agendador governado: lista jobs e roda o ticker "
                               "em foreground (não instala serviço)")
     schsub = sch.add_subparsers(dest="scheduler_cmd")
-    for nome_s in ("listar", "rodar"):
+    for nome_s in ("listar", "rodar", "criar", "cancelar", "apagar"):
         sc = schsub.add_parser(nome_s)
         sc.add_argument("--raiz", action="append", default=[],
                         help="raiz autorizada (pode repetir) — obrigatório")
@@ -2539,6 +2610,38 @@ def build_parser() -> argparse.ArgumentParser:
                         help="para após N passadas (útil para operação pontual)")
         sc.add_argument("--panel", action="store_true",
                         help="aprova via painel local em vez de terminal")
+        if nome_s in ("criar", "cancelar", "apagar"):
+            sc.add_argument("--job-id", dest="job_id", default="",
+                            help="identificador do job — obrigatório")
+        if nome_s == "criar":
+            sc.add_argument("--capacidade", default="",
+                            help="capacidade governada que o job executa")
+            sc.add_argument("--alvo-job", dest="alvo_job", default="",
+                            help="alvo passado à capacidade (dentro de --raiz)")
+            # As três agendas são MUTUAMENTE EXCLUSIVAS na própria CLI: sem
+            # nenhuma ⇒ ONE_SHOT explícito. Deixar o argparse recusar a
+            # combinação evita que o operador descubra o conflito só depois,
+            # pelo DENY do adapter.
+            ag_grp = sc.add_mutually_exclusive_group()
+            ag_grp.add_argument("--cron", default="",
+                                help="expressão cron de 5 campos (agenda CRON)")
+            ag_grp.add_argument("--intervalo-job", dest="intervalo_job",
+                                type=int, default=None,
+                                help="segundos entre execuções (agenda INTERVAL)")
+            sc.add_argument("--tz", default="UTC",
+                            help="timezone IANA aplicada à agenda (padrão UTC)")
+        if nome_s == "rodar":
+            # Catch-up é política do TICKER, não do job: descreve o que fazer
+            # com ocorrências vencidas quando o processo volta. Ficava só no
+            # `ConfigAgendador`, inalcançável por operador.
+            sc.add_argument("--catch-up", dest="catch_up", default="once",
+                            choices=("skip", "once", "all"),
+                            help="ocorrências vencidas: pular, rodar uma, "
+                                 "ou rodar todas até o teto")
+            sc.add_argument("--catch-up-max", dest="catch_up_max", type=int,
+                            default=10,
+                            help="teto de ocorrências recuperadas por passada "
+                                 "(limita a tempestade após uma parada longa)")
         sc.set_defaults(fn=cmd_scheduler)
     sch.set_defaults(fn=cmd_scheduler, scheduler_cmd=None, raiz=[],
                      executavel=[], intervalo=1.0, max_ticks=None)

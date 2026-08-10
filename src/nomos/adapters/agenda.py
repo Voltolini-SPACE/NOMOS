@@ -255,11 +255,19 @@ class ScheduleSpec:
     intervalo_s: int | None = None  # só INTERVAL
 
     def __post_init__(self):
+        # A timezone é validada em TODOS os tipos, não só em CRON. Antes só o
+        # ramo CRON chamava `resolver_tz`, então um ONE_SHOT ou INTERVAL com
+        # `tz="Mars/Olympus"` era aceito, persistido e exibido pelo `listar`
+        # como se fosse uma zona real. INTERVAL não usa a tz para calcular o
+        # próximo disparo — e é justamente por isso que o erro sobrevivia
+        # calado até alguém converter o job para CRON ou ler o registro
+        # acreditando nele. Identificador que não existe não é metadado: é
+        # mentira persistida.
+        resolver_tz(self.timezone)
         if self.kind is TipoAgenda.CRON:
             if not self.expression:
                 raise ErroCron("agenda CRON exige `expression`")
             compilar_cron(self.expression)         # valida na construção
-            resolver_tz(self.timezone)
         elif self.kind is TipoAgenda.INTERVAL:
             if not isinstance(self.intervalo_s, int) or self.intervalo_s <= 0:
                 raise ErroInvalido("agenda INTERVAL exige intervalo_s > 0")
