@@ -76,9 +76,19 @@ def _ponte(adapter, nome: str, registro, *, raizes=(), audit=None,
            timeout_s: float | None = None):
     """Executor registrado: params do nó → adapter, com contexto derivado."""
     def _executar(**params):
+        if "_sujeito" in params:
+            raise ErroInvalido(
+                "'_sujeito' não é aceito: a identidade do sujeito vem do "
+                "contexto autorizado, nunca do plano")
         deadline = (time.monotonic() + timeout_s) if timeout_s else None
         ctx = CapabilityContext.de_registro(
-            registro, nome, params.pop("_sujeito", "runtime-governado"),
+            # IDENTIDADE NÃO VEM DO PLANO. Antes isto era
+            # `params.pop("_sujeito", ...)`: um passo com
+            # `{"_sujeito": "jeferson (dono, aprovou manualmente)"}` atravessava
+            # planejador, grafo, PDP e PEP, e a trilha do adapter registrava a
+            # frase escolhida pelo autor do plano. Auditoria em que o auditado
+            # escreve o próprio nome não é auditoria.
+            registro, nome, "runtime-governado",
             raizes=raizes, deadline_monotonic=deadline, audit=audit)
         pedido = CapabilityRequest(
             capacidade=nome,
@@ -203,6 +213,21 @@ def _ponte_sched(scheduler, nome: str, registro):
             # silencioso CRON→ONE_SHOT que a 04 corrigiu na persistência,
             # reintroduzido na camada do caller.
             from nomos.adapters.agenda import ScheduleSpec, TipoAgenda
+            # O alvo do job tem UM lar governado: `alvo_job`, que o PDP
+            # confere. Aceitá-lo também dentro de `argumentos` criava um
+            # segundo caminho que o escopo não via — o mesmo alvo era NEGADO
+            # como `alvo_job` e ACEITO escondido em `argumentos`. Controle de
+            # escopo que depende de onde o autor do plano escreveu o campo é
+            # controle no papel.
+            _args = params.get("argumentos") or {}
+            if isinstance(_args, dict):
+                contrabando = sorted(k for k in ("alvo", "caminho", "destino")
+                                     if k in _args)
+                if contrabando:
+                    raise ErroInvalido(
+                        f"argumentos não podem carregar {contrabando} — o alvo "
+                        "do job é o campo governado 'alvo_job', que passa pelo "
+                        "escopo do PDP")
             alvo_capacidade = str(params.get("capacidade", ""))
             # Agendar capacidade que o registro não conhece é agendar nada: o
             # job fica SCHEDULED, o operador lê "criado", e a descoberta vem
@@ -324,10 +349,14 @@ def _ponte_script(adapter, registro, *, raizes, executaveis, audit, timeout_s):
     from nomos.adapters.contrato import CapabilityContext, CapabilityRequest
 
     def _executar(**params):
+        if "_sujeito" in params:
+            raise ErroInvalido(
+                "'_sujeito' não é aceito: a identidade do sujeito vem do "
+                "contexto autorizado, nunca do plano")
         deadline = (time.monotonic() + timeout_s) if timeout_s else None
         ctx = CapabilityContext.de_registro(
             registro, "script-rodar",
-            params.pop("_sujeito", "runtime-governado"),
+            "runtime-governado",
             raizes=raizes, deadline_monotonic=deadline, audit=audit)
         argumentos = dict(params)
         argumentos["executaveis"] = list(executaveis)   # não negociável

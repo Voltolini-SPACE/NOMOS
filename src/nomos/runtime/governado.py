@@ -173,7 +173,8 @@ def _versoes_de(registro, capacidades) -> tuple[tuple[str, str], ...]:
 
 
 def sessao_pdp(registro, manifesto, audit=None, ttl_s: int = 3600,
-               caminhos: tuple[str, ...] = (), extras: tuple[str, ...] = ()):
+               caminhos: tuple[str, ...] = (), extras: tuple[str, ...] = (),
+               caminhos_controle: tuple[str, ...] = ()):
     """(decisor, autorização) de SESSÃO para um manifesto. **Fonte única.**
 
     Usada tanto pelo `RuntimeGovernado` quanto pelo caminho de ferramenta
@@ -217,6 +218,7 @@ def sessao_pdp(registro, manifesto, audit=None, ttl_s: int = 3600,
         expira_em=agora + timedelta(seconds=ttl_s),
         risco_max=manifesto.risco_max,
         caminhos=tuple(caminhos),
+        caminhos_controle=tuple(caminhos_controle),
         versoes=_versoes_de(registro,
                             tuple(manifesto.ferramentas) + tuple(extras)),
         jti=secrets.token_hex(8)), "sessao")
@@ -332,6 +334,7 @@ class RuntimeGovernado:
         # caminho governado (registrar é A5 + gate + audit). A allowlist
         # nativa de 8 ferramentas continua intocada.
         self.capacidades_adapter: list[str] = []
+        caminhos_controle: tuple[str, ...] = ()
         if adapters:
             from nomos.adapters.wiring import registrar_filesystem
             self.capacidades_adapter = registrar_filesystem(
@@ -339,12 +342,40 @@ class RuntimeGovernado:
                 apenas_leitura=adapters_apenas_leitura,
                 destrutivas=destrutivas)
             if executaveis:
-                # `script-rodar` só entra com allowlist de binário explícita —
-                # A5 sem fronteira é shell com outro nome.
-                from nomos.adapters.wiring import registrar_script
-                self.capacidades_adapter += registrar_script(
-                    self.registro, raizes=tuple(caminhos),
-                    executaveis=tuple(executaveis), audit=self.audit)
+                # `script-rodar` GENÉRICO SAIU DO RUNTIME DE PRODUÇÃO.
+                #
+                # O censo adversarial provou o que o comentário anterior negava.
+                # A allowlist confinava `argv[0]`; `raizes` confinava apenas o
+                # `cwd`; e `argv[1:]` seguia CRU até o `subprocess`. Com
+                # `/bin/cp` na allowlist — binário banal, não-interpretador,
+                # exatamente o que um dono libera sem hesitar — um passo de
+                # plano leu, escreveu e SOBRESCREVEU fora do escopo. E a
+                # amplificação era terminal: o plano reescrevia
+                # `NOMOS_HOME/policy.json` deixando A1/A5/A6 em ALLOW, ou seja,
+                # obtinha autoridade que humano nenhum poderia conceder, porque
+                # A6 era DENY sem caminho de aprovação.
+                #
+                # A saída tentadora era inferir quais argumentos "parecem
+                # caminho" e resolvê-los contra as raízes. Isso é uma fronteira
+                # impossível de provar: opções que embutem caminho, arquivos de
+                # configuração que apontam para outros arquivos, `@response
+                # files`, e cada programa interpretando o próprio argv de um
+                # jeito. Heurística sobre entrada arbitrária não é fronteira de
+                # segurança — é a aparência de uma.
+                #
+                # O contrato correto é o inverso: executor por CAPACIDADE, com
+                # schema tipado e recursos DECLARADOS, cada um passando pelo
+                # mesmo confinamento do filesystem. `fs-copiar(origem, destino)`
+                # em vez de "libere /bin/cp e confie no argv". Enquanto esse
+                # executor não existir, a capacidade não existe — paridade
+                # insegura com o Hermes não conta como capacidade absorvida.
+                raise ErroRuntime(
+                    "`script-rodar` (execução de binário arbitrário) está "
+                    "INDISPONÍVEL: a allowlist confina argv[0], mas argv[1:] "
+                    "escapa do escopo de caminho e permite sobrescrever a "
+                    "própria política de segurança. Aguarda executor com "
+                    "contrato tipado por capacidade. Módulo e testes "
+                    "preservados em adapters/script.py.")
 
         # ABSORPTION-05: o scheduler tem de ser registrado AQUI, junto com os
         # demais adapters, e não depois pelo chamador. Registrar depois foi o
@@ -356,10 +387,20 @@ class RuntimeGovernado:
             from nomos.adapters.wiring import registrar_scheduler
             self.capacidades_adapter += registrar_scheduler(
                 self.registro, scheduler)
-            # capacidades de CONTROLE tocam o armazém dentro do NOMOS_HOME, não
-            # dado do usuário — o escopo precisa incluí-lo explicitamente, e só
-            # quando o scheduler é ligado.
-            caminhos = tuple(caminhos) + (str(ctx["home"]),)
+            # As capacidades de CONTROLE tocam o armazém de jobs dentro do
+            # NOMOS_HOME. Antes isso era resolvido acrescentando o home a
+            # `caminhos` — e `caminhos` é campo ÚNICO da autorização, então a
+            # ampliação valia para TODAS as capacidades, inclusive as NATIVAS,
+            # que não têm resolver próprio. Ligar o scheduler concedia leitura
+            # de `keys/`, `consent.json`, `audit.jsonl` e `policy.json` em A0,
+            # sem aprovação — elevação acidental e silenciosa.
+            #
+            # Agora o armazém entra no escopo de CONTROLE, que só as
+            # capacidades `sched-*` enxergam. E é o DIRETÓRIO DO ARMAZÉM, não
+            # o NOMOS_HOME inteiro: controle sobre agendamento não é controle
+            # sobre a política de segurança.
+            from nomos.runtime.agendador import caminho_do_armazem
+            caminhos_controle = (str(caminho_do_armazem(ctx["home"]).parent),)
 
         brutos = dict(executores if executores is not None
                       else executores_nativos(ctx, aprovador=aprovador,
@@ -369,9 +410,11 @@ class RuntimeGovernado:
         # a própria autorização de SESSÃO — escopo = manifesto, teto de risco =
         # o do manifesto, prazo = ttl_s. A raiz de confiança é o dono que
         # abriu o CLI; o gate humano continua acontecendo no boundary.
+        self._caminhos_controle = caminhos_controle
         self.decisor, self.autorizacao = self._preparar_pdp(
             decisor, autorizacao, ttl_s, tuple(caminhos),
-            extras=tuple(self.capacidades_adapter))
+            extras=tuple(self.capacidades_adapter),
+            caminhos_controle=caminhos_controle)
         # ABSORPTION-03: capacidades DINÂMICAS também precisam do PEP.
         # Sem isto o `Orquestrador._executor_para` cai em
         # `registro.executor_de()` e chama a ponte CRUA — um bypass do PDP
@@ -397,12 +440,13 @@ class RuntimeGovernado:
     # ---------------- PDP/PEP ----------------
 
     def _preparar_pdp(self, decisor, autorizacao, ttl_s: int, caminhos=(),
-                      extras=()):
+                      extras=(), caminhos_controle=()):
         """Decisor + autorização de sessão. Ambos obrigatórios para executar."""
         if decisor is not None and autorizacao is not None:
             return decisor, autorizacao
         d, a = sessao_pdp(self.registro, self.manifesto, audit=self.audit,
-                          ttl_s=ttl_s, caminhos=caminhos, extras=extras)
+                          ttl_s=ttl_s, caminhos=caminhos, extras=extras,
+                          caminhos_controle=caminhos_controle)
         return (decisor or d), (autorizacao or a)
 
     def _adaptar(self, nome: str, pep) -> Callable:
@@ -422,9 +466,20 @@ class RuntimeGovernado:
             # processo → `cwd`; operação de scheduler → o alvo do JOB que ela
             # agenda (`alvo_job`), ou o próprio armazém para as de controle
             # puro (listar/status/cancelar), que não tocam dado do usuário.
-            recurso = str(params.get("alvo", "") or params.get("cwd", "")
-                          or params.get("alvo_job", "") or self._recurso_padrao
-                          or "")
+            # SEPARAÇÃO DADOS × CONTROLE. Uma capacidade de CONTROLE age sobre
+            # o armazém de jobs — esse é o recurso dela, e é contra o escopo
+            # de controle que o PDP o confere. O `alvo_job` que ela carrega NÃO
+            # é o recurso dela: é uma referência de DADOS, onde o job vai agir
+            # em T2, e é conferida à parte contra o escopo de dados (ver
+            # `_argumento_fora_do_escopo`). Misturar os dois foi o que fez
+            # `--scheduler` ampliar o escopo de tudo.
+            from nomos.pdp.autorizacao import CAPACIDADES_DE_CONTROLE
+            if nome in CAPACIDADES_DE_CONTROLE:
+                recurso = (self._caminhos_controle[0]
+                           if self._caminhos_controle else "")
+            else:
+                recurso = str(params.get("alvo", "") or params.get("cwd", "")
+                              or self._recurso_padrao or "")
             pedido = Pedido(capacidade=nome, sujeito=self.manifesto.name,
                             recurso=recurso,
                             argumentos=dict(params),

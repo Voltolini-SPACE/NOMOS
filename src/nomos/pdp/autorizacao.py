@@ -27,6 +27,24 @@ from datetime import datetime, timedelta, timezone
 
 RISCOS = ("A0", "A1", "A2", "A3", "A4", "A5", "A6")
 
+# Quais capacidades operam sobre o CONTROLE do próprio NOMOS. É uma allowlist
+# POSITIVA de propósito: "capacidade X pode agir sobre recurso Y". O inverso —
+# "tudo, exceto esta lista de arquivos perigosos" — falha na primeira coisa que
+# esquecermos de listar, e a lista nunca está completa.
+#
+# Tudo que NÃO está aqui é capacidade de DADOS e só enxerga o escopo de dados.
+CAPACIDADES_DE_CONTROLE = frozenset({
+    "sched-listar", "sched-status", "sched-criar", "sched-habilitar",
+    "sched-desabilitar", "sched-cancelar", "sched-apagar",
+})
+
+
+def escopo_de(capacidade: str, auth: "Autorizacao") -> tuple[str, ...]:
+    """O escopo que vale para ESTA capacidade. Nunca a união dos dois."""
+    if capacidade in CAPACIDADES_DE_CONTROLE:
+        return auth.caminhos_controle
+    return auth.caminhos
+
 
 def _ordem_risco(r: str) -> int:
     return RISCOS.index(r) if r in RISCOS else 99
@@ -45,7 +63,20 @@ class Autorizacao:
     emitida_em: datetime
     expira_em: datetime
     risco_max: str = "A0"
+    # ESCOPO DE DADOS: onde as capacidades do USUÁRIO podem agir. É o que o
+    # operador declara com `--raiz`.
     caminhos: tuple[str, ...] = ()      # prefixos de recurso permitidos ("" = nenhum)
+    # ESCOPO DE CONTROLE: onde as capacidades de CONTROLE do próprio NOMOS
+    # podem agir (hoje, o armazém de jobs). Separado do escopo de dados por
+    # um achado do censo adversarial: ligar o scheduler acrescentava
+    # `NOMOS_HOME` a `caminhos`, e como `caminhos` é campo ÚNICO, isso valia
+    # para TODAS as capacidades — inclusive as NATIVAS (`arquivo_ler`), que
+    # não têm resolver próprio e para as quais o escopo do PDP é o único
+    # confinamento. "Preciso agendar" virava "posso ler keys/, consent.json,
+    # audit.jsonl e policy.json", em A0, sem aprovação nenhuma.
+    #
+    # Autoridade sobre DADOS não é autoridade sobre CONTROLE.
+    caminhos_controle: tuple[str, ...] = ()
     nonce: str = ""
     id_chave: str = ""
     assinatura: str = ""
@@ -69,6 +100,7 @@ class Autorizacao:
             "expira_em": self.expira_em.astimezone(timezone.utc).isoformat(),
             "risco_max": self.risco_max,
             "caminhos": sorted(self.caminhos),
+            "caminhos_controle": sorted(self.caminhos_controle),
             "nonce": self.nonce,
             "id_chave": self.id_chave,
             "emissor": self.emissor,
@@ -196,14 +228,17 @@ def e_atenuacao(filho: Autorizacao, pai: Autorizacao) -> bool:
             return False
         if filho.emitida_em < pai.emitida_em:
             return False
-        return _caminhos_subconjunto(filho.caminhos, pai.caminhos)
+        return (_caminhos_subconjunto(filho.caminhos, pai.caminhos)
+                and _caminhos_subconjunto(filho.caminhos_controle,
+                                          pai.caminhos_controle))
     except Exception:
         return False
 
 
 def atenuar(pai: Autorizacao, chaveiro: Chaveiro, id_chave: str, *,
-            capacidades=None, caminhos=None, expira_em=None,
-            risco_max=None, nonce: str = "", jti: str = "") -> Autorizacao:
+            capacidades=None, caminhos=None, caminhos_controle=None,
+            expira_em=None, risco_max=None, nonce: str = "",
+            jti: str = "") -> Autorizacao:
     """Deriva um filho comprovadamente ⊆ pai, reassinado.
 
     Qualquer tentativa de ALARGAR é intersectada de volta ao pai — nunca para
@@ -218,6 +253,12 @@ def atenuar(pai: Autorizacao, chaveiro: Chaveiro, id_chave: str, *,
     else:
         novos_caminhos = tuple(c for c in caminhos
                                if _caminhos_subconjunto((c,), pai.caminhos))
+    if caminhos_controle is None:
+        novos_controle = pai.caminhos_controle
+    else:
+        novos_controle = tuple(
+            c for c in caminhos_controle
+            if _caminhos_subconjunto((c,), pai.caminhos_controle))
     exp = min(expira_em, pai.expira_em) if expira_em is not None else pai.expira_em
     risco = risco_max if risco_max is not None else pai.risco_max
     if _ordem_risco(risco) > _ordem_risco(pai.risco_max):
@@ -225,6 +266,7 @@ def atenuar(pai: Autorizacao, chaveiro: Chaveiro, id_chave: str, *,
     filho = Autorizacao(
         capacidades=caps, sujeito=pai.sujeito, audiencia=pai.audiencia,
         emitida_em=pai.emitida_em, expira_em=exp, risco_max=risco,
-        caminhos=novos_caminhos, nonce=nonce, emissor=pai.emissor, jti=jti,
+        caminhos=novos_caminhos, caminhos_controle=novos_controle,
+        nonce=nonce, emissor=pai.emissor, jti=jti,
         versoes=pai.versoes)
     return chaveiro.assinar(filho, id_chave)

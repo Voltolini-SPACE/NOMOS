@@ -23,7 +23,6 @@ adapter direto responderia "a função se comporta?"; a pergunta que importa é
 from __future__ import annotations
 
 import json
-import sys
 
 import pytest
 
@@ -49,8 +48,7 @@ def amb(tmp_path):
     ws.mkdir()
     ctx = {"home": home, "policy": PolicyEngine(home / "policy.json"),
            "audit": AuditLog(home / "logs" / "audit.jsonl")}
-    rt = RuntimeGovernado(ctx, _sim, caminhos=(str(ws),), adapters=True,
-                          executaveis=(sys.executable,))
+    rt = RuntimeGovernado(ctx, _sim, caminhos=(str(ws),), adapters=True)
     return rt, ws, ctx
 
 

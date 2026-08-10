@@ -492,6 +492,12 @@ def test_script_registrado_exige_raizes_e_executaveis(tmp_path):
         registrar_script(reg, raizes=(str(home),), executaveis=())
 
 
+@pytest.mark.skip(reason=
+    "`script-rodar` genérico foi RETIRADO do runtime de produção "
+    "(G1: argv[1:] escapava do escopo e permitia sobrescrever "
+    "policy.json). O adapter e estes testes ficam preservados para o "
+    "executor tipado por capacidade que vier depois; a integração com "
+    "o runtime não existe mais.")
 def test_script_alcancavel_pelo_runtime_governado(tmp_path):
     """Caminho de PRODUÇÃO: efeito real atravessando registry→PDP→PEP→adapter."""
     import json
@@ -519,6 +525,12 @@ def test_script_alcancavel_pelo_runtime_governado(tmp_path):
     assert "pdp.decisao" in ev and "pep.aplicacao" in ev and "script.fim" in ev
 
 
+@pytest.mark.skip(reason=
+    "`script-rodar` genérico foi RETIRADO do runtime de produção "
+    "(G1: argv[1:] escapava do escopo e permitia sobrescrever "
+    "policy.json). O adapter e estes testes ficam preservados para o "
+    "executor tipado por capacidade que vier depois; a integração com "
+    "o runtime não existe mais.")
 def test_allowlist_de_executaveis_nao_vem_do_plano(tmp_path):
     """Um passo hostil não amplia a allowlist fixada no registro."""
     from nomos.kernel.audit import AuditLog

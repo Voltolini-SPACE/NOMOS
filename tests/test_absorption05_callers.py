@@ -276,6 +276,12 @@ def test_validar_executaveis_resolve_symlink(tmp_path):
     assert real != str(link)
 
 
+@pytest.mark.skip(reason=
+    "`script-rodar` genérico foi RETIRADO do runtime de produção "
+    "(G1: argv[1:] escapava do escopo e permitia sobrescrever "
+    "policy.json). O adapter e estes testes ficam preservados para o "
+    "executor tipado por capacidade que vier depois; a integração com "
+    "o runtime não existe mais.")
 def test_script_registrado_pelo_runtime_com_executavel(amb):
     from nomos.runtime.governado import RuntimeGovernado
     ctx, ws, _rel = amb
@@ -291,6 +297,12 @@ def test_script_nao_registra_sem_executavel(amb):
     assert "script-rodar" not in rt.capacidades_adapter
 
 
+@pytest.mark.skip(reason=
+    "`script-rodar` genérico foi RETIRADO do runtime de produção "
+    "(G1: argv[1:] escapava do escopo e permitia sobrescrever "
+    "policy.json). O adapter e estes testes ficam preservados para o "
+    "executor tipado por capacidade que vier depois; a integração com "
+    "o runtime não existe mais.")
 def test_script_efeito_real_pela_cadeia(amb):
     from nomos.runtime.governado import RuntimeGovernado
     ctx, ws, _rel = amb
@@ -306,6 +318,12 @@ def test_script_efeito_real_pela_cadeia(amb):
     assert "pdp.decisao" in ev and "pep.aplicacao" in ev and "script.fim" in ev
 
 
+@pytest.mark.skip(reason=
+    "`script-rodar` genérico foi RETIRADO do runtime de produção "
+    "(G1: argv[1:] escapava do escopo e permitia sobrescrever "
+    "policy.json). O adapter e estes testes ficam preservados para o "
+    "executor tipado por capacidade que vier depois; a integração com "
+    "o runtime não existe mais.")
 def test_script_executavel_nao_permitido_e_negado(amb):
     from nomos.runtime.governado import RuntimeGovernado
     ctx, ws, _rel = amb
@@ -320,6 +338,12 @@ def test_script_executavel_nao_permitido_e_negado(amb):
     assert "allowlist" in res.missao.nos["s"].detalhe
 
 
+@pytest.mark.skip(reason=
+    "`script-rodar` genérico foi RETIRADO do runtime de produção "
+    "(G1: argv[1:] escapava do escopo e permitia sobrescrever "
+    "policy.json). O adapter e estes testes ficam preservados para o "
+    "executor tipado por capacidade que vier depois; a integração com "
+    "o runtime não existe mais.")
 def test_script_cwd_fora_do_escopo_e_negado(amb, tmp_path):
     from nomos.runtime.governado import RuntimeGovernado
     ctx, ws, _rel = amb
@@ -331,6 +355,12 @@ def test_script_cwd_fora_do_escopo_e_negado(amb, tmp_path):
     assert not res.ok
 
 
+@pytest.mark.skip(reason=
+    "`script-rodar` genérico foi RETIRADO do runtime de produção "
+    "(G1: argv[1:] escapava do escopo e permitia sobrescrever "
+    "policy.json). O adapter e estes testes ficam preservados para o "
+    "executor tipado por capacidade que vier depois; a integração com "
+    "o runtime não existe mais.")
 def test_script_timeout_pela_cadeia(amb):
     from nomos.runtime.governado import RuntimeGovernado
     ctx, ws, _rel = amb
@@ -344,6 +374,12 @@ def test_script_timeout_pela_cadeia(amb):
     assert "desconhecido" in res.missao.nos["s"].detalhe
 
 
+@pytest.mark.skip(reason=
+    "`script-rodar` genérico foi RETIRADO do runtime de produção "
+    "(G1: argv[1:] escapava do escopo e permitia sobrescrever "
+    "policy.json). O adapter e estes testes ficam preservados para o "
+    "executor tipado por capacidade que vier depois; a integração com "
+    "o runtime não existe mais.")
 def test_script_saida_limitada_pela_cadeia(amb):
     from nomos.runtime.governado import RuntimeGovernado
     ctx, ws, _rel = amb
@@ -415,6 +451,12 @@ def test_catchup_skip_do_agendador_roda_a_mais_recente(amb):
 
 # ==================================================== FASE 11 — adversarial
 
+@pytest.mark.skip(reason=
+    "`script-rodar` genérico foi RETIRADO do runtime de produção "
+    "(G1: argv[1:] escapava do escopo e permitia sobrescrever "
+    "policy.json). O adapter e estes testes ficam preservados para o "
+    "executor tipado por capacidade que vier depois; a integração com "
+    "o runtime não existe mais.")
 def test_caller_nao_alcanca_adapter_bruto(amb):
     """Todo executor do agendador é PEP; nenhum callable cru exposto."""
     from nomos.pdp.pep import PontoDeAplicacao
@@ -474,6 +516,12 @@ def test_id_de_capacidade_colidido_e_recusado(amb):
                               lambda **k: "x", origem="colisao")
 
 
+@pytest.mark.skip(reason=
+    "`script-rodar` genérico foi RETIRADO do runtime de produção "
+    "(G1: argv[1:] escapava do escopo e permitia sobrescrever "
+    "policy.json). O adapter e estes testes ficam preservados para o "
+    "executor tipado por capacidade que vier depois; a integração com "
+    "o runtime não existe mais.")
 def test_executavel_trocado_depois_do_registro_nao_e_aceito(amb, tmp_path):
     """A allowlist guarda o realpath; trocar o symlink depois não autoriza."""
     from nomos.runtime.governado import RuntimeGovernado

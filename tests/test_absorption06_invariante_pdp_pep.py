@@ -17,7 +17,6 @@ mapa protegido por PEP** — inclusive as que ainda não foram escritas.
 from __future__ import annotations
 
 import json
-import sys
 
 import pytest
 
@@ -66,7 +65,7 @@ def _runtime_completo(ctx, ws, com_scheduler=True):
         scheduler = AgendadorGovernado(
             ctx, _sim, ConfigAgendador(raizes=(str(ws),))).scheduler
     return RuntimeGovernado(ctx, _sim, caminhos=(str(ws),), adapters=True,
-                            executaveis=(sys.executable,), scheduler=scheduler)
+                            scheduler=scheduler)
 
 
 # ============================================ O INVARIANTE
@@ -138,7 +137,9 @@ def test_o_fallback_cru_do_orquestrador_nao_tem_mutante(amb):
 @pytest.mark.parametrize("familia,prefixo", [
     ("filesystem", "fs-"),
     ("scheduler", "sched-"),
-    ("script", "script-"),
+    # família "script" removida: `script-rodar` genérico saiu do runtime de
+    # produção no G1 (argv[1:] escapava do escopo). Não existe capacidade
+    # `script-*` registrada — o invariante não tem o que verificar aqui.
 ])
 def test_cada_familia_de_capacidade_respeita_o_invariante(amb, familia, prefixo):
     ctx, ws = amb

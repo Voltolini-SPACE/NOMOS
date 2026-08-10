@@ -251,14 +251,20 @@ class Decisor:
                                f"{risco} > {autorizacao.risco_max}",
                                capacidade=pedido.capacidade, risco=risco, hash_auth=chash)
 
-        # 7. recurso dentro do escopo de caminhos
-        if autorizacao.caminhos:
+        # 7. recurso dentro do escopo QUE VALE PARA ESTA CAPACIDADE.
+        # Capacidade de dados vê o escopo de dados; capacidade de controle vê
+        # o de controle. Nenhuma vê os dois, e nenhuma vê o da outra — era
+        # essa união que fazia `--scheduler` conceder leitura de `keys/`,
+        # `consent.json` e `policy.json` em A0, sem aprovação.
+        from nomos.pdp.autorizacao import escopo_de
+        escopo = escopo_de(pedido.capacidade, autorizacao)
+        if escopo:
             recurso = pedido.recurso or ""
             if not recurso:
                 return self._negar(Motivo.RECURSO_FORA_DO_ESCOPO, "recurso vazio",
                                    capacidade=pedido.capacidade, risco=risco,
                                    hash_auth=chash)
-            if not _no_escopo(recurso, autorizacao.caminhos):
+            if not _no_escopo(recurso, escopo):
                 return self._negar(Motivo.RECURSO_FORA_DO_ESCOPO, recurso,
                                    capacidade=pedido.capacidade, risco=risco,
                                    hash_auth=chash)
@@ -295,7 +301,20 @@ class Decisor:
         `argumentos={"alvo": "/outro/lugar"}` e o adapter agiria fora do que
         foi autorizado — escopo que só vale no papel não é escopo.
         """
-        if not autorizacao.caminhos:
+        from nomos.pdp.autorizacao import escopo_de
+
+        # `alvo_job` é o alvo de DADOS que uma capacidade de CONTROLE agenda:
+        # o job vai agir ali em T2. Ele é conferido contra o escopo de DADOS
+        # mesmo quando a capacidade que o carrega é de controle — separar as
+        # autoridades não pode significar que agendar escapa do escopo.
+        if autorizacao.caminhos:
+            alvo_job = pedido.argumentos.get("alvo_job")
+            if isinstance(alvo_job, str) and alvo_job:
+                if not _no_escopo(alvo_job, autorizacao.caminhos):
+                    return f"alvo_job {alvo_job}"
+
+        escopo = escopo_de(pedido.capacidade, autorizacao)
+        if not escopo:
             return ""
         for chave in ("alvo", "caminho", "destino"):
             valor = pedido.argumentos.get(chave)
@@ -303,7 +322,7 @@ class Decisor:
                 continue
             if not isinstance(valor, str):
                 return f"{chave} não é texto"
-            if not _no_escopo(valor, autorizacao.caminhos):
+            if not _no_escopo(valor, escopo):
                 return f"{chave}={valor}"
         return ""
 

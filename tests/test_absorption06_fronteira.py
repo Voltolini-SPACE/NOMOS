@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path as pathlib_Path
 
 import pytest
@@ -60,8 +59,7 @@ def amb(tmp_path):
     (fora / "isca.txt").write_text("ISCA-QUE-NAO-PODE-SER-TOCADA")
     ctx = {"home": home, "policy": PolicyEngine(home / "policy.json"),
            "audit": AuditLog(home / "logs" / "audit.jsonl")}
-    rt = RuntimeGovernado(ctx, _sim, caminhos=(str(ws),), adapters=True,
-                          executaveis=(sys.executable,))
+    rt = RuntimeGovernado(ctx, _sim, caminhos=(str(ws),), adapters=True)
     return rt, ws, fora, ctx
 
 
