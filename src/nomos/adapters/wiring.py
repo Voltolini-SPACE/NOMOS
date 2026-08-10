@@ -246,7 +246,13 @@ def _ponte_sched(scheduler, nome: str, registro):
             elif intervalo is not None:
                 schedule = ScheduleSpec(
                     kind=TipoAgenda.INTERVAL,
-                    intervalo_s=inteiro_estrito(intervalo, "intervalo_s",
+                    # o nome do campo inclui a AGENDA de propósito: sem isso,
+                    # a recusa vinda da validação genérica de `Scheduler.criar`
+                    # produz uma mensagem que também cita `intervalo_s`, e o
+                    # teste deixa de distinguir "recusado como INTERVAL" de
+                    # "virou ONE_SHOT e falhou por acidente adiante".
+                    intervalo_s=inteiro_estrito(intervalo,
+                                                "intervalo_s (agenda INTERVAL)",
                                                 minimo=1),
                     timezone=tz)
             else:

@@ -166,8 +166,12 @@ def test_intervalo_zero_e_recusado_e_nao_vira_one_shot(ag):
     # ONE_SHOT e quem recusa é a validação genérica de `Scheduler.criar`, com
     # outra mensagem. Recusar pelo motivo errado ensina o operador a procurar
     # no lugar errado — e deixa a regressão passar por "também deu erro".
-    assert "intervalo_s" in motivo, (
-        f"recusado, mas não POR CAUSA do intervalo: {motivo!r} — o pedido "
+    # "INTERVAL" E o nome do campo. Asseverar só `intervalo_s` foi um
+    # enfraquecimento que eu mesmo introduzi ao fechar o GATE C: a mensagem
+    # do caminho ERRADO também contém `intervalo_s`, então o teste ficou
+    # verde e perdeu os dentes — a mutação pegou.
+    assert "INTERVAL" in motivo and "intervalo_s" in motivo, (
+        f"recusado, mas não COMO INTERVAL inválido: {motivo!r} — o pedido "
         "virou ONE_SHOT e a recusa veio por acidente de outra camada")
 
 
