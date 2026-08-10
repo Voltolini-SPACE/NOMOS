@@ -1,16 +1,14 @@
-# FASE 12 — FULL REGRESSION
+# FASE 13 — FULL REGRESSION
 
 ```
-FULL_TEST_SUITE = 2377 passed / 2390 coletados
+FULL_TEST_SUITE = 2424 passed / 2437 coletados
 FAILED  = 0
 SKIPPED = 14
 LINT    = PASS (ruff, src/ + tests/)
-TYPECHECK = NOT_RUN — mypy não é dependência do projeto; o próprio repo marca
-            os testes de mypy como skip. Não introduzi a dependência só para
-            marcar um campo.
+TYPECHECK = NOT_RUN — mypy não é dependência do projeto
 STRUCTURAL_GUARDS = PASS
 ADVERSARIAL = PASS
-MUTATION = PASS (11/11 nesta missão; 19/19 herdadas revalidadas)
+MUTATION = PASS (11/11)
 ```
 
 ## Evolução
@@ -18,20 +16,20 @@ MUTATION = PASS (11/11 nesta missão; 19/19 herdadas revalidadas)
 |---|---|---|
 | ABSORPTION-02 | 2197 | 14 |
 | ABSORPTION-03 | 2292 | 14 |
-| **ABSORPTION-04** | **2377** | **14** |
+| ABSORPTION-04 | 2382 | 14 |
+| **ABSORPTION-05** | **2424** | **14** |
 
-+85 testes nesta missão: 38 agenda (cron/timezone) · 47 ticker/script/alertas.
++42 testes: `test_absorption05_callers.py`.
 
-## Classificação dos 14 skips — nenhum novo
+## Skips — nenhum novo
 ```
 PRE_EXISTING_ENVIRONMENTAL = 14
 NEW_ENVIRONMENTAL          = 0
 UNEXPECTED                 = 0
 ```
-Número **idêntico** ao das três missões anteriores. Motivos: namespaces do
-Linux (unshare/rootless) ×7, mypy não é dependência ×2, PyYAML não é
-dependência ×2, SMTP fake frágil no macOS ×1, Ollama ativo torna sem sentido um
-teste de fail-closed-sem-motor ×1, outro ambiental ×1.
+Número idêntico nas quatro missões. Nenhum xfail, nenhum teste enfraquecido.
 
-Nenhum skip silencioso foi introduzido, nenhum teste marcado xfail, nenhum
-teste enfraquecido para ficar verde.
+## Gate de consistência docs/site
+Adicionar `nomos scheduler` como comando de usuário fez o gate `mc33` reprovar
+até o site documentá-lo — 9 testes vermelhos. É o guard do repo funcionando, e
+foi atendido documentando o comando, não silenciando o teste.
