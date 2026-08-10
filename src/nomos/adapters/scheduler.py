@@ -37,10 +37,11 @@ import os
 import sqlite3
 import threading
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 
+from nomos.adapters.agenda import ScheduleSpec, TipoAgenda
 from nomos.adapters.contrato import ErroConflito, ErroInvalido, ErroNaoEncontrado
 
 _ID_MAX = 64
@@ -86,14 +87,27 @@ class JobDefinition:
     capacidade: str
     argumentos: dict = field(default_factory=dict)
     alvo: str = ""
-    intervalo_s: int | None = None            # None ⇒ one-shot
+    intervalo_s: int | None = None            # compat: INTERVAL legado
     proximo_em: datetime | None = None
     estado: JobState = JobState.CREATED
     criado_em: datetime | None = None
     tz: str = "UTC"
+    # ABSORPTION-04: a agenda vira EXPLÍCITA (ONE_SHOT/INTERVAL/CRON). O
+    # `intervalo_s` continua no dataclass só para não quebrar quem já grava
+    # nesse formato — `agenda()` normaliza os dois.
+    schedule: ScheduleSpec | None = None
+
+    def agenda(self) -> ScheduleSpec:
+        """A agenda efetiva. Nunca INFERE cron de string arbitrária."""
+        if self.schedule is not None:
+            return self.schedule
+        if self.intervalo_s:
+            return ScheduleSpec(kind=TipoAgenda.INTERVAL,
+                                intervalo_s=self.intervalo_s, timezone=self.tz)
+        return ScheduleSpec(kind=TipoAgenda.ONE_SHOT, timezone=self.tz)
 
     def recorrente(self) -> bool:
-        return self.intervalo_s is not None
+        return self.agenda().recorrente()
 
 
 @dataclass(frozen=True)
@@ -141,7 +155,12 @@ class ArmazemJobs:
                 capacidade TEXT NOT NULL, argumentos TEXT NOT NULL,
                 alvo TEXT NOT NULL, intervalo_s INTEGER,
                 proximo_em TEXT, estado TEXT NOT NULL,
-                criado_em TEXT NOT NULL, tz TEXT NOT NULL)""")
+                criado_em TEXT NOT NULL, tz TEXT NOT NULL,
+                schedule TEXT)""")
+            # migração aditiva para bancos criados antes da ABSORPTION-04
+            cols = [r[1] for r in c.execute("PRAGMA table_info(jobs)")]
+            if "schedule" not in cols:
+                c.execute("ALTER TABLE jobs ADD COLUMN schedule TEXT")
             # PRIMARY KEY na chave da ocorrência: o INSERT duplicado FALHA.
             # É o dedup — e ele acontece ANTES do efeito, não depois.
             c.execute("""CREATE TABLE IF NOT EXISTS ocorrencias (
@@ -158,14 +177,15 @@ class ArmazemJobs:
 
     def salvar(self, d: JobDefinition) -> None:
         with self._lock, self._conn() as c:
-            c.execute("""INSERT OR REPLACE INTO jobs VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            c.execute("""INSERT OR REPLACE INTO jobs VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                       (d.job_id, d.sujeito, d.capacidade,
                        json.dumps(d.argumentos, ensure_ascii=False), d.alvo,
                        d.intervalo_s,
                        d.proximo_em.isoformat() if d.proximo_em else None,
                        d.estado.value,
                        (d.criado_em or datetime.now(timezone.utc)).isoformat(),
-                       d.tz))
+                       d.tz,
+                       json.dumps(d.agenda().dict(), ensure_ascii=False)))
 
     def obter(self, job_id: str) -> JobDefinition | None:
         with self._lock, self._conn() as c:
@@ -216,12 +236,19 @@ class ArmazemJobs:
 
 
 def _linha_para_def(r) -> JobDefinition:
+    schedule = None
+    if len(r) > 10 and r[10]:
+        try:
+            schedule = ScheduleSpec.de_dict(json.loads(r[10]))
+        except Exception:
+            schedule = None            # linha legada/ilegível ⇒ cai no compat
     return JobDefinition(
         job_id=r[0], sujeito=r[1], capacidade=r[2],
         argumentos=json.loads(r[3]), alvo=r[4], intervalo_s=r[5],
         proximo_em=datetime.fromisoformat(r[6]) if r[6] else None,
         estado=JobState(r[7]),
-        criado_em=datetime.fromisoformat(r[8]) if r[8] else None, tz=r[9])
+        criado_em=datetime.fromisoformat(r[8]) if r[8] else None, tz=r[9],
+        schedule=schedule)
 
 
 class ErroScheduler(ErroConflito):
@@ -250,7 +277,8 @@ class Scheduler:
 
     def criar(self, job_id: str, sujeito: str, capacidade: str, *,
               argumentos=None, alvo: str = "", intervalo_s: int | None = None,
-              primeiro_em: datetime | None = None, tz: str = "UTC") -> JobDefinition:
+              primeiro_em: datetime | None = None, tz: str = "UTC",
+              schedule: ScheduleSpec | None = None) -> JobDefinition:
         if not job_id or not isinstance(job_id, str) or len(job_id) > _ID_MAX:
             raise ErroInvalido(f"job_id inválido: {job_id!r}")
         if self.armazem.obter(job_id) is not None:
@@ -258,11 +286,22 @@ class Scheduler:
         if intervalo_s is not None and intervalo_s <= 0:
             raise ErroInvalido("intervalo_s precisa ser positivo")
         agora = self._agora()
+        if schedule is None and intervalo_s:
+            schedule = ScheduleSpec(kind=TipoAgenda.INTERVAL,
+                                    intervalo_s=intervalo_s, timezone=tz)
+        elif schedule is None:
+            schedule = ScheduleSpec(kind=TipoAgenda.ONE_SHOT, timezone=tz)
+        # Fail-closed: uma agenda CRON inválida levanta na CONSTRUÇÃO do
+        # ScheduleSpec, antes de qualquer persistência — job não fica armado
+        # pela metade.
+        if schedule.kind is TipoAgenda.CRON:
+            primeiro_em = primeiro_em or schedule.proximo(agora)
         d = JobDefinition(
             job_id=job_id, sujeito=sujeito, capacidade=capacidade,
             argumentos=dict(argumentos or {}), alvo=alvo,
             intervalo_s=intervalo_s, proximo_em=primeiro_em or agora,
-            estado=JobState.SCHEDULED, criado_em=agora, tz=tz)
+            estado=JobState.SCHEDULED, criado_em=agora, tz=tz,
+            schedule=schedule)
         self.armazem.salvar(d)
         self._auditar("scheduler.job.criado", job=job_id, capacidade=capacidade,
                       recorrente=d.recorrente(), tz=tz)
@@ -323,6 +362,15 @@ class Scheduler:
         agora = agora or self._agora()
         return [self.executar_job(d, agora) for d in self.devidos(agora)]
 
+    def executar_ocorrencia(self, d: JobDefinition, inst: JobInstance,
+                            agora: datetime, credencial=None) -> JobExecution:
+        """Executa UMA ocorrência já identificada, com autoridade FRESCA.
+
+        É a entrada usada pelo ticker: ele resolve a autorização por ocorrência
+        e a entrega aqui. O scheduler não guarda nem reaproveita credencial.
+        """
+        return self._executar(d, inst, agora, credencial)
+
     def executar_job(self, d: JobDefinition, agora: datetime) -> JobExecution:
         """Executa UMA ocorrência, com dedup e reagendamento.
 
@@ -332,7 +380,10 @@ class Scheduler:
         """
         inst = JobInstance(job_id=d.job_id,
                            ocorrencia=(d.proximo_em or agora).isoformat())
+        return self._executar(d, inst, agora, None)
 
+    def _executar(self, d: JobDefinition, inst: JobInstance, agora: datetime,
+                  credencial) -> JobExecution:
         if d.estado in (JobState.DISABLED, JobState.CANCELLED):
             self._auditar("scheduler.execucao.recusada", job=d.job_id,
                           motivo=d.estado.value)
@@ -351,7 +402,8 @@ class Scheduler:
                 raise ErroScheduler("scheduler sem executor governado ligado")
             # a AUTORIDADE é obtida agora, no instante da execução — nunca
             # persistida junto com o job
-            resultado = self._executor(d, inst)
+            resultado = (self._executor(d, inst, credencial)
+                         if credencial is not None else self._executor(d, inst))
             efeito = bool(getattr(resultado, "efeito_aplicado", False))
             self.armazem.concluir(inst, JobState.SUCCEEDED, efeito=efeito)
             final = JobState.SUCCEEDED
@@ -368,6 +420,10 @@ class Scheduler:
                       efeito=efeito)
         return JobExecution(inst, final, detalhe, efeito_aplicado=efeito)
 
+    def proximo_apos(self, d: JobDefinition, base: datetime) -> datetime | None:
+        """Próximo disparo depois de `base`, pela agenda do job (cron ou intervalo)."""
+        return d.agenda().proximo(base)
+
     def _reagendar(self, d: JobDefinition, agora: datetime, final: JobState) -> None:
         atual = self.armazem.obter(d.job_id)
         if atual is None or atual.estado is JobState.CANCELLED:
@@ -375,9 +431,14 @@ class Scheduler:
         if not d.recorrente():
             return                    # one-shot fica no estado final
         base = d.proximo_em or agora
-        proximo = base + timedelta(seconds=d.intervalo_s)
-        while proximo <= agora:       # não acumular ocorrências vencidas
-            proximo += timedelta(seconds=d.intervalo_s)
+        proximo = self.proximo_apos(d, base)
+        # não acumular ocorrências vencidas: avança até o futuro
+        limite = 0
+        while proximo is not None and proximo <= agora and limite < 100000:
+            proximo = self.proximo_apos(d, proximo)
+            limite += 1
+        if proximo is None:
+            return
         if transicao_valida(atual.estado, JobState.SCHEDULED):
             self.armazem.salvar(replace(atual, estado=JobState.SCHEDULED,
                                         proximo_em=proximo))
