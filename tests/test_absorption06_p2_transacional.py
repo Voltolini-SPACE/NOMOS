@@ -355,3 +355,53 @@ def test_p2_mesma_ocorrencia_negada_duas_vezes_conta_uma(tmp_path):
     assert eventos.count("scheduler.ocorrencia.negada") == 1, (
         f"a mesma ocorrência gerou {eventos.count('scheduler.ocorrencia.negada')} "
         "eventos de negação")
+
+
+def test_p2_negacao_e_idempotente_ATRAVES_de_restart(tmp_path):
+    """SAME_OCCURRENCE_DOUBLE_DENY=IDEMPOTENT, com processo NOVO no meio.
+
+    O teste irmão nega duas vezes no mesmo processo. Este separa as duas
+    tentativas por um restart real: `Scheduler` e `ArmazemJobs` novos sobre o
+    mesmo arquivo, sem nenhum estado em memória sobrevivendo. É o cenário que
+    importa — dois tickers subindo depois de uma queda, ou o operador
+    reiniciando o daemon entre as tentativas.
+
+    A chamada é DIRETA ao mecanismo persistente, não pelo ticker: a agenda
+    impediria naturalmente a segunda visita e mascararia a propriedade.
+    """
+    import json
+
+    from nomos.kernel.audit import AuditLog
+    db = tmp_path / "jobs.db"
+    trilha = tmp_path / "audit.jsonl"
+
+    s1 = Scheduler(ArmazemJobs(db), executor=lambda d, i, credencial=None: None,
+                   audit=AuditLog(trilha), agora_fn=lambda: T0)
+    s1.criar("j", "sujeito", "fs-listar", intervalo_s=60)
+    d1 = s1.armazem.obter("j")
+    inst = JobInstance(job_id="j", ocorrencia=d1.proximo_em.isoformat())
+    primeira = s1.negar_ocorrencia(d1, inst, T0, "recusado")
+    assert primeira.estado_final is JobState.DENIED
+    del s1
+
+    # RESTART: nada em memória atravessa; só o disco
+    s2 = Scheduler(ArmazemJobs(db), executor=lambda d, i, credencial=None: None,
+                   audit=AuditLog(trilha), agora_fn=lambda: T0)
+    segunda = s2.negar_ocorrencia(s2.armazem.obter("j"), inst, T0, "recusado")
+    assert segunda.estado_final is JobState.DENIED
+    assert "dedup" in segunda.detalhe, (
+        "após restart, a mesma ocorrência foi negada de novo como se fosse nova")
+
+    eventos = [json.loads(x).get("event") for x in
+               trilha.read_text().splitlines() if x.strip()]
+    assert eventos.count("scheduler.ocorrencia.negada") == 1, (
+        "DUPLICATE_DENIAL_AUDIT_EFFECT: a mesma ocorrência gerou "
+        f"{eventos.count('scheduler.ocorrencia.negada')} eventos através do restart")
+
+    con = sqlite3.connect(db)
+    try:
+        n = con.execute("SELECT COUNT(*) FROM ocorrencias WHERE chave=?",
+                        (inst.chave,)).fetchone()[0]
+    finally:
+        con.close()
+    assert n == 1, f"DENIAL_RECORDS_FOR_SAME_OCCURRENCE={n}, esperado 1"
