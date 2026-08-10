@@ -22,8 +22,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from nomos.adapters.contrato import ErroConflito
 from nomos.adapters.scheduler import (ArmazemJobs, JobInstance, JobState,
-                                       Scheduler)
+                                      Scheduler)
 from nomos.kernel.audit import AuditLog
 from nomos.kernel.policy import PolicyEngine
 from nomos.runtime.agendador import AgendadorGovernado, ConfigAgendador
@@ -121,8 +122,12 @@ def test_dois_tickers_no_mesmo_armazem_nao_executam_a_mesma_ocorrencia(tmp_path)
             except Exception as exc:
                 resultados.append(exc)
 
-    t1, t2 = threading.Thread(target=roda, args=(sa,)), threading.Thread(target=roda, args=(sb,))
-    t1.start(); t2.start(); t1.join(); t2.join()
+    t1 = threading.Thread(target=roda, args=(sa,))
+    t2 = threading.Thread(target=roda, args=(sb,))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
     assert len(execucoes) == len(set(execucoes)), (
         f"ocorrência executada mais de uma vez por tickers concorrentes: {execucoes}")
 
@@ -186,7 +191,8 @@ def test_registro_corrompido_nao_derruba_a_listagem_inteira(tmp_path):
         s.criar(f"j{i}", "sujeito", "fs-listar", intervalo_s=60)
     con = sqlite3.connect(armazem.caminho)
     con.execute("UPDATE jobs SET schedule='{lixo' WHERE job_id='j1'")
-    con.commit(); con.close()
+    con.commit()
+    con.close()
     try:
         vivos = [d.job_id for d in armazem.listar()]
     except Exception as exc:
@@ -212,7 +218,10 @@ def test_armazem_corrompido_falha_fechado_nao_relata_zero_jobs(tmp_path):
         if p.name.startswith("jobs.db"):
             p.unlink()
     caminho.write_bytes(b"isto nao e um banco sqlite")
-    with pytest.raises(Exception) as exc:
+    # Tipo EXATO, não `Exception`: asserir exceção cega é o mesmo defeito que
+    # o censo achou no test_n10 — passa com qualquer erro, inclusive um bug do
+    # próprio teste.
+    with pytest.raises(sqlite3.DatabaseError) as exc:
         ArmazemJobs(caminho).listar()
     assert "not a database" in str(exc.value).lower(), (
         f"levantou por outro motivo: {exc.value!r}")
@@ -284,7 +293,8 @@ for d in s.devidos():
     p2 = subprocess.Popen([sys.executable, "-c", programa],
                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     time.sleep(2)
-    p2.kill(); p2.wait(timeout=10)
+    p2.kill()
+    p2.wait(timeout=10)
     depois = marcador.read_text().strip().splitlines()
     assert depois == primeira, (
         f"após {nome} e reinício, a ocorrência executou de novo: "
@@ -311,6 +321,29 @@ def test_mesma_ocorrencia_despachada_duas_vezes_executa_uma(tmp_path):
     assert len(feitas) == 1, f"despacho repetido executou {len(feitas)}×"
 
 
+# ============================================ 6b. permissão dos sidecars
+
+def test_sidecars_do_wal_nao_ficam_legiveis_por_terceiros(tmp_path):
+    """0600 no `.db` só protege o `.db`.
+
+    O `PRAGMA journal_mode=WAL` roda antes do chmod e já cria `-wal`/`-shm`
+    com o padrão 0644 — e o `-wal` carrega a coluna `argumentos` dos jobs em
+    texto claro. Proteger só o arquivo principal é trancar a porta e deixar a
+    janela aberta. Este teste existe porque a correção original foi escrita
+    sem ele e sobreviveu à mutação: defesa sem teste é defesa que a próxima
+    refatoração remove sem ninguém perceber.
+    """
+    caminho = tmp_path / "jobs.db"
+    s = Scheduler(ArmazemJobs(caminho), executor=lambda *a, **k: None)
+    s.criar("j", "sujeito", "fs-listar", intervalo_s=60,
+            argumentos={"segredo": "CANARIO-QUE-NAO-PODE-VAZAR"})
+    sidecars = [p for p in tmp_path.iterdir() if p.name.startswith("jobs.db-")]
+    assert sidecars, "sem sidecars de WAL — teste inócuo"
+    frouxos = {p.name: oct(p.stat().st_mode & 0o777)
+               for p in [caminho, *sidecars] if p.stat().st_mode & 0o077}
+    assert not frouxos, f"legível por terceiros: {frouxos}"
+
+
 # ============================================ 7. estado inconsistente
 
 def test_transicao_fora_da_allowlist_e_recusada(tmp_path):
@@ -318,6 +351,9 @@ def test_transicao_fora_da_allowlist_e_recusada(tmp_path):
     s = Scheduler(armazem, executor=lambda *a, **k: None)
     s.criar("j", "sujeito", "fs-listar", intervalo_s=60)
     s.cancelar("j")
-    with pytest.raises(Exception):
+    # Tipo EXATO: `Exception` passaria também se `habilitar` explodisse por
+    # um bug do teste, e o veredito seria o mesmo. A allowlist recusa com
+    # ErroConflito — é isso que precisa ser provado.
+    with pytest.raises(ErroConflito):
         s.habilitar("j")            # CANCELLED → SCHEDULED não é permitido
     assert armazem.obter("j").estado is JobState.CANCELLED

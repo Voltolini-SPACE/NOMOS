@@ -245,8 +245,8 @@ def test_d6_ocorrencias_descartadas_pelo_teto_deixam_rastro(tmp_path):
     t.rodar_ate(max_ticks=1)
 
     assert len(efeitos) <= 10, f"teto furado: {len(efeitos)} execuções"
-    eventos = [json.loads(l) for l in
-               (home / "audit.jsonl").read_text().splitlines() if l.strip()]
+    eventos = [json.loads(linha) for linha in
+               (home / "audit.jsonl").read_text().splitlines() if linha.strip()]
     rastro = [e for e in eventos
               if "descart" in e.get("event", "") or "pulou" in e.get("event", "")
               or "missed" in e.get("event", "").lower()]
