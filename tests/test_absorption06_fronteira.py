@@ -358,7 +358,15 @@ def test_c8_raiz_sob_symlink_do_sistema_permite_mutacao(tmp_path):
         home.mkdir()
         ws = base / "ws"
         ws.mkdir()
-        assert str(base).startswith("/var/"), f"esperava /var, veio {base}"
+        # A PROPRIEDADE é "a raiz está sob um ancestral que é symlink" — não
+        # "o caminho começa com /var". A primeira versão fixava a forma do
+        # caminho do macOS com TMPDIR definido; num ambiente sem TMPDIR o
+        # `mkdtemp` devolve `/tmp/...` e o teste reprovava por causa do
+        # AMBIENTE, não do código. Uma bateria de race o marcaria como
+        # divergência 50 vezes seguidas.
+        assert os.path.realpath(base) != str(base), (
+            f"{base} não está sob symlink — o teste perdeu o cenário que "
+            "existe para cobrir")
         ctx = {"home": home, "policy": PolicyEngine(home / "policy.json"),
                "audit": AuditLog(home / "logs" / "audit.jsonl")}
         rt = RuntimeGovernado(ctx, _sim, caminhos=(str(ws),), adapters=True)
