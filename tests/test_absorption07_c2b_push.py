@@ -19,6 +19,7 @@ Os testes usam bare repos LOCAIS: push real, efeito real, sem rede externa.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -260,33 +261,53 @@ def test_c2b_plano_nao_carrega_segredo(amb):
     assert "senha" not in d.canonico() and "token" not in d.canonico()
 
 
-def test_c2b_credential_helper_do_repo_nao_executa(amb, tmp_path):
-    """CREDENTIAL_HELPER_EXECUTION=FALSE, ASKPASS_EXECUTION=FALSE."""
+def test_c2b_CONTROLE_POSITIVO_espiao_e_canario_funcionam(amb, tmp_path, espiao_nativo):
+    """Sem este teste, as duas asserções de ausência abaixo são VÁCUO.
+
+    A versão anterior punha o canário em `tmp_path` — fora da raiz de escrita
+    concedida ao sandbox — e usava espião `#!/bin/sh`, que não executa sob a
+    allowlist de exec (o kernel precisa do interpretador, e `/bin/sh` ainda
+    reexecuta `/bin/bash` como variante). As duas escolhas juntas faziam
+    `not canario.exists()` ser verdade por construção.
+    """
+    _rt, _ws, repo, _p, _h, _c, _d = amb
+    canario = Path(repo) / ".git" / "CANARIO-CP"
+    espiao = espiao_nativo(tmp_path, canario)
+    assert subprocess.run([str(espiao)], capture_output=True).returncode == 0
+    assert canario.exists(), (
+        "o canário não é gravável onde mora — a ausência não provaria nada")
+
+
+def test_c2b_credential_helper_do_repo_nao_executa(amb, tmp_path, espiao_nativo):
+    """CREDENTIAL_HELPER_EXECUTION=FALSE, ASKPASS_EXECUTION=FALSE.
+
+    Canário no GIT DIR (área gravável) e espião NATIVO — ver o controle
+    positivo acima. Só com os dois a ausência do arquivo prova ausência de
+    EXECUÇÃO, e não ausência de permissão de escrita.
+    """
     rt, _ws, repo, permitido, _h, _c, _d = amb
-    canario = tmp_path / "CANARIO"
-    espiao = tmp_path / "espiao.sh"
-    espiao.write_text(f"#!/bin/sh\ntouch {canario}\nexit 0\n")
-    espiao.chmod(0o755)
+    canario = Path(repo) / ".git" / "CANARIO"
+    espiao = espiao_nativo(tmp_path, canario)
     for k in ("credential.helper", "core.sshCommand", "core.askPass"):
         _git(repo, "config", k, str(espiao))
     hooks = tmp_path / "hooks"
     hooks.mkdir()
-    (hooks / "pre-push").write_text(f"#!/bin/sh\ntouch {canario}\n")
+    shutil.copy2(espiao, hooks / "pre-push")
     (hooks / "pre-push").chmod(0o755)
     _git(repo, "config", "core.hooksPath", str(hooks))
+    canario.unlink(missing_ok=True)
     assert _plano(rt, alvo=str(repo), remote_id="producao",
                   source_branch="main").ok
     assert not canario.exists(), "helper/hook do repositório executou"
 
 
-def test_c2b_env_hostil_do_host_nao_executa(amb, monkeypatch, tmp_path):
-    canario = tmp_path / "CANARIO-ENV"
-    espiao = tmp_path / "e.sh"
-    espiao.write_text(f"#!/bin/sh\ntouch {canario}\nexit 0\n")
-    espiao.chmod(0o755)
+def test_c2b_env_hostil_do_host_nao_executa(amb, monkeypatch, tmp_path, espiao_nativo):
+    rt, _ws, repo, _p, _h, _c, _d = amb
+    canario = Path(repo) / ".git" / "CANARIO-ENV"
+    espiao = espiao_nativo(tmp_path, canario)
     for var in ("GIT_ASKPASS", "SSH_ASKPASS", "GIT_SSH", "GIT_SSH_COMMAND"):
         monkeypatch.setenv(var, str(espiao))
-    rt, _ws, repo, _p, _h, _c, _d = amb
+    canario.unlink(missing_ok=True)
     assert _plano(rt, alvo=str(repo), remote_id="producao",
                   source_branch="main").ok
     assert not canario.exists()

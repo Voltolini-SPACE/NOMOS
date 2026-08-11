@@ -261,14 +261,34 @@ CATEGORIAS_GIT_TREE: dict[str, Category] = {
 
 
 def registrar_git_tree(registro, *, raizes=(), audit=None,
-                       binario: str | None = None, identidade=None) -> list[str]:
+                       binario: str | None = None, identidade=None,
+                       filtros_governados=None) -> list[str]:
     """Registra `git-add`/`git-commit`. A identidade do commit vem daqui —
-    do runtime — e nunca do plano."""
+    do runtime — e nunca do plano.
+
+    `filtros_governados` é o `RegistroDeFiltros` de A5.7, e é o ÚNICO caminho
+    pelo qual a capacidade de filtro governado passa a existir. Quatro
+    propriedades sustentam o desenho, e cada uma responde a uma forma conhecida
+    de perder a titularidade que A5 custou a estabelecer:
+
+        INJETADO EXPLICITAMENTE  parâmetro do composition root, e nada mais
+        NÃO É SINGLETON GLOBAL   não há instância de módulo mutável em runtime;
+                                 dois runtimes têm registries independentes
+        NÃO VEM DO REPOSITÓRIO   o repo PEDE por id no `.gitattributes`; quem
+                                 responde é este objeto
+        NÃO VEM DO AMBIENTE      nada de `NOMOS_FILTERS=...`: ambiente é
+                                 herdado, e herdar é o oposto de declarar
+
+    `None` (o default) mantém o comportamento histórico: sem registry, o
+    `.gitattributes` é ignorado por completo e o filtro do repositório segue
+    negado pela allowlist de exec. Ausência de política nunca vira permissão.
+    """
     from nomos.adapters.git_tree import GitTreeAdapter
     from nomos.orquestracao.registro import ErroRegistro
     if not raizes:
         raise ValueError("registrar_git_tree exige `raizes`")
-    adapter = GitTreeAdapter(binario=binario, identidade=identidade)
+    adapter = GitTreeAdapter(binario=binario, identidade=identidade,
+                             registro=filtros_governados)
     registrados = []
     for nome in sorted(CATEGORIAS_GIT_TREE):
         try:

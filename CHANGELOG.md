@@ -4,6 +4,76 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (P0.2 — `git-add`/`git-commit` eram INALCANÇÁVEIS pelo runtime)
+Medição que reabriu A5. `RuntimeGovernado` registrava `fs-*`, `git-diff`,
+`git-log`, `git-show` e `git-tag` — e mais nada. **Nenhum caminho do runtime
+chamava `registrar_git_tree`.** Toda a maquinaria de A0.1 (índice transacional),
+A0.3 (quarentena) e A5.2–A5.9 (filtro governado) existia como BIBLIOTECA com
+testes verdes, e era inalcançável pelo produto: os testes instanciavam o adapter
+diretamente.
+
+É a forma mais silenciosa de falso fechamento desta série — nada quebra, nada
+avisa, e o gate parece fechado. O achado original (`registrar_git_tree` não
+propagava o `RegistroDeFiltros`) era a ponta menor do mesmo problema.
+
+Correção: `git_tree=` e `filtros_governados=` no composition root, propagados
+até `GitTreeAdapter(registro=...)`. A classificação passa a distinguir
+`A5.7_IMPLEMENTATION` de `A5.7_RUNTIME_REACHABILITY`.
+
+O registry obedece a quatro propriedades, cada uma com teste próprio porque cada
+uma é uma forma diferente de o repositório ou o host recuperarem a decisão que
+A5.2 tirou deles: **injetado explicitamente** (parâmetro do composition root, e
+nada mais), **não singleton global** (dois runtimes têm registries
+independentes, e há teste estrutural contra instância de módulo), **não vem do
+repositório** (o repo PEDE por id; registrar é do NOMOS), **não vem do
+ambiente** — este último por AST, não por substring: `environment_allowlist` é
+campo legítimo, e `PoliticaDeFiltro.ambiente()` lê `os.environ` de propósito
+para materializar a allowlist que a política nomeou. O teste fixa a lista de
+funções autorizadas a ler o ambiente, então qualquer função nova aparece e exige
+decisão.
+
+Prova em `tests/test_absorption07_a57_runtime.py` (10 casos), com os três
+caminhos exercidos pelo RUNTIME real: id aprovado → alcançável e transforma
+(`SENHA=hunter2` → `SENHA=REDIGIDO`, com o segredo ausente de todo objeto do
+store); id desconhecido → DENY; `filter.<id>.clean` do repositório → DENY, com
+canário provando que o programa do repo não executou.
+
+### Fixed (P0.1 — a evidência de contenção de hook era VÁCUA)
+As asserções de hook em C2a/C2b não provavam nada, por duas razões medidas que
+se somavam: o canário morava em `tmp_path`, **fora da raiz de escrita do
+sandbox**, e o espião era `#!/bin/sh`, que **não executa** sob a allowlist de
+exec (o kernel precisa do interpretador, e `/bin/sh` ainda reexecuta `/bin/bash`
+como variante). Com as duas juntas, `not canario.exists()` era verdade por
+construção.
+
+Correção do ARNÊS, não do produto: canário no GIT DIR (a raiz de escrita
+concedida) e espião BINÁRIO NATIVO, com controle positivo provando que o hook
+executa e que o canário é gravável ali. A fábrica do espião vive em
+`conftest.py` como fixture — importar um teste a partir de outro depende de o
+rootdir estar em `sys.path`, frágil demais para a suíte de segurança.
+
+**E o que a medição revelou sobre qual defesa realmente segura** (registrado em
+`tests/test_absorption07_hooks_contencao.py`, 10 casos): não é a que o nome
+sugere. Em `add`/`commit`/`tag` a allowlist de exec impede o hook de ser
+exec'ed, e `-c core.hooksPath=/dev/null` é REDUNDANTE — removê-lo não muda o
+comportamento. Em `push` a allowlist é AMPLA (`(allow process-exec
+process-fork)`, achado C13), e a contenção vem do par `--no-verify` +
+`core.hooksPath`, que se mascaram mutuamente. Tabela medida com hook nativo e
+canário gravável:
+
+    hooksPath   --no-verify   HOOK EXECUTOU
+    SIM         SIM           não
+    NÃO         SIM           não
+    SIM         NÃO           não
+    NÃO         NÃO           SIM      <- prova que nenhum dos dois é decorativo
+
+Isso é MASCARAMENTO (A8): nenhum dos dois flags tem prova comportamental
+possível enquanto o outro segurar. A regressão de cada um fica presa
+ESTRUTURALMENTE, com o teste dizendo por quê — em vez de um teste comportamental
+que alegasse medir o que na verdade mede o vizinho. Os três mutantes
+(`hooksPath` fora de `git.py`, fora de `git_tree.py`, `--no-verify` fora do
+push) MORREM.
+
 ### Fixed (A2-REPO — o repositório escolhia onde o NOMOS grava)
 Três vetores de EXPANSÃO DE AUTORIDADE, medidos e fechados. A propriedade
 `REPOSITORY_CANNOT_EXPAND_NOMOS_AUTHORITY` estava **falsa**.

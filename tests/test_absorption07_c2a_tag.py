@@ -14,6 +14,7 @@ mensagem não há o que editar nem o que assinar.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -191,16 +192,22 @@ def test_c2a_adapter_recusa_repo_fora_do_escopo_sem_o_pdp(amb, tmp_path):
 # ============================================ repositório hostil
 
 @pytest.fixture()
-def hostil(amb, tmp_path):
+def hostil(amb, tmp_path, espiao_nativo):
     rt, _ws, repo, _ = amb
-    canario = tmp_path / "CANARIO"
-    espiao = tmp_path / "espiao.sh"
-    espiao.write_text(f"#!/bin/sh\ntouch {canario}\nexit 0\n")
-    espiao.chmod(0o755)
+    # O CANÁRIO MORA NO GIT DIR, e não em `tmp_path`.
+    #
+    # MEDIDO: com o canário fora da área de escrita concedida ao sandbox,
+    # `not canario.exists()` NÃO distingue "o programa do repositório não
+    # executou" de "executou e não conseguiu escrever". As duas produzem o mesmo
+    # silêncio, e a asserção era VÁCUO. O git dir é a raiz de escrita desta
+    # capacidade — provado pelo controle positivo, que grava aqui com git cru —,
+    # então a ausência do arquivo passa a significar ausência de EXECUÇÃO.
+    canario = Path(repo) / ".git" / "CANARIO"
+    espiao = espiao_nativo(tmp_path, canario)
     hooks = tmp_path / "hooks"
     hooks.mkdir()
     for h in ("pre-push", "reference-transaction", "post-checkout", "pre-commit"):
-        (hooks / h).write_text(f"#!/bin/sh\ntouch {canario}\n")
+        shutil.copy2(espiao, hooks / h)
         (hooks / h).chmod(0o755)
     for k, v in (("core.hooksPath", str(hooks)), ("core.pager", str(espiao)),
                  ("core.editor", str(espiao)), ("gpg.program", str(espiao)),
@@ -216,9 +223,40 @@ def hostil(amb, tmp_path):
     return rt, repo, canario
 
 
+def test_c2a_CONTROLE_POSITIVO_o_espiao_e_o_canario_funcionam(hostil, tmp_path):
+    """Sem este teste, TODAS as asserções `not canario.exists()` são vácuo.
+
+    Prova as duas metades que a versão anterior deste arquivo não provava:
+
+      1. o espião EXECUTA (é binário nativo, não script que o kernel recusa);
+      2. o canário é GRAVÁVEL no lugar onde ele mora (dentro do git dir, que é
+         a raiz de escrita concedida a esta capacidade).
+
+    A versão anterior punha o canário em `tmp_path`, fora da área de escrita do
+    sandbox. Ali `not canario.exists()` era verdade mesmo se o programa do
+    repositório tivesse executado — porque ele não conseguiria escrever de
+    qualquer forma. A ausência do arquivo não distinguia contenção de
+    impossibilidade de gravar, e um mutante que removesse a neutralização
+    sobrevivia.
+    """
+    _rt, repo, canario = hostil
+    assert not canario.exists()
+    r = subprocess.run([str(tmp_path / "espiao")], capture_output=True)
+    assert r.returncode == 0, "o espião nativo não executa nem fora do sandbox"
+    assert canario.exists(), (
+        "o canário não é gravável no lugar onde mora — as asserções de ausência "
+        "seriam vácuo")
+    canario.unlink()
+
+
 def test_c2a_repo_hostil_nao_executa_nada(hostil):
     """HOSTILE_REPO_CODE_EXECUTION=FALSE, GPG_EXECUTION=FALSE,
-    EDITOR_EXECUTION=FALSE, HOOK_EXECUTION=FALSE."""
+    EDITOR_EXECUTION=FALSE, HOOK_EXECUTION=FALSE.
+
+    Agora com significado: o canário mora na área gravável e o espião é nativo
+    (ver o controle positivo acima), então a ausência dele prova ausência de
+    EXECUÇÃO — e não apenas ausência de permissão de escrita.
+    """
     rt, repo, canario = hostil
     res = _plano(rt, alvo=str(repo), tag="v9", objeto="HEAD")
     assert res.ok, res.motivo

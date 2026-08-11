@@ -314,7 +314,8 @@ class RuntimeGovernado:
                  adapters_apenas_leitura: bool = False,
                  executaveis: tuple[str, ...] = (), scheduler=None,
                  destrutivas: bool = False, git: bool = False,
-                 git_write: bool = False, git_push_destinos=None):
+                 git_write: bool = False, git_push_destinos=None,
+                 git_tree: bool = False, filtros_governados=None):
         if ctx is None or "policy" not in ctx:
             raise ErroRuntime("contexto sem política carregada — fail-closed")
         self.ctx = ctx
@@ -390,6 +391,21 @@ class RuntimeGovernado:
                 from nomos.adapters.wiring import registrar_git_write
                 self.capacidades_adapter += registrar_git_write(
                     self.registro, raizes=tuple(caminhos), audit=self.audit)
+            if git_tree:
+                # C2c: `git-add` e `git-commit`. Opt-in próprio, separado do
+                # `git_write=` — indexar e commitar tocam working tree, índice
+                # e object store, que `git-tag` não toca.
+                #
+                # MEDIDO: até aqui NENHUM caminho do runtime registrava estas
+                # duas capacidades. Toda a maquinaria de A0.1 (índice
+                # transacional), A0.3 (quarentena) e A5 (filtro governado)
+                # existia como biblioteca com testes e era INALCANÇÁVEL pelo
+                # runtime real — a forma mais silenciosa de falso fechamento
+                # desta série, porque a suíte ficava verde o tempo todo.
+                from nomos.adapters.wiring import registrar_git_tree
+                self.capacidades_adapter += registrar_git_tree(
+                    self.registro, raizes=tuple(caminhos), audit=self.audit,
+                    filtros_governados=filtros_governados)
             if git_push_destinos:
                 # C2b: só existe com DESTINOS governados vindos da política.
                 from nomos.adapters.wiring import registrar_git_push

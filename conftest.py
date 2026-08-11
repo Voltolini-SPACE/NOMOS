@@ -5,5 +5,59 @@ que contêm cópias dos testes com os mesmos nomes de módulo e causariam
 "import file mismatch" no pytest. Esses diretórios são artefatos de build untracked
 (também ignorados no .gitignore) e não fazem parte da suíte real.
 """
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+import pytest
 
 collect_ignore_glob = ["nomos-[0-9]*"]
+
+
+_FONTE_ESPIAO = r"""
+#include <stdio.h>
+int main(void) {
+    FILE *f = fopen("%s", "w");
+    if (f) { fputs("EXECUTOU\n", f); fclose(f); }
+    return 0;
+}
+"""
+
+
+@pytest.fixture
+def espiao_nativo():
+    """Fábrica de espião BINÁRIO para provar execução de programa do repositório.
+
+    Vive aqui, e não num módulo de teste, porque duas baterias precisam dele e
+    importar um teste a partir de outro depende de o rootdir estar em
+    `sys.path` — frágil demais para a suíte de segurança.
+
+    ## Por que binário e não script
+
+    Um espião `#!/bin/sh` NÃO executa sob a allowlist de exec desta série: o
+    kernel precisa do interpretador, e `/bin/sh` ainda reexecuta `/bin/bash`
+    como variante. Um teste com espião em shell mede a ausência do
+    INTERPRETADOR na allowlist — não a contenção do programa do repositório — e
+    continuaria verde mesmo com a neutralização removida. Binário nativo tira o
+    interpretador da equação: se não rodou, foi porque a execução foi negada.
+
+    ## Por que o canário precisa morar na área gravável
+
+    Quem usa esta fábrica tem de pôr o canário DENTRO da raiz de escrita da
+    capacidade (o git dir). Fora dela, `not canario.exists()` é verdade mesmo
+    quando o programa executou — porque ele não conseguiria gravar de qualquer
+    jeito — e a asserção deixa de distinguir contenção de impossibilidade.
+    Foi exatamente esse o defeito medido em C2a/C2b.
+    """
+    def fabricar(destino: Path, canario: Path) -> Path:
+        fonte = Path(destino) / "espiao.c"
+        fonte.write_text(_FONTE_ESPIAO % canario)
+        binario = Path(destino) / "espiao"
+        r = subprocess.run(["cc", "-O2", "-o", str(binario), str(fonte)],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            pytest.skip(f"sem toolchain C neste host: {r.stderr[:200]}")
+        binario.chmod(0o755)
+        return binario
+    return fabricar
