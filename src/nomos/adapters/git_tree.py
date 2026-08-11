@@ -42,6 +42,7 @@ import fnmatch
 import os
 import re
 import shutil
+import stat
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -61,8 +62,10 @@ from nomos.adapters.git import (
     _NEUTRALIZAR,
     ambiente_minimo,
     confinamento_de_repo,
+    conferir_git_dir,
     diretorio_git,
 )
+from nomos.adapters.supervisor import ErroSeguranca
 
 CAPACIDADES = ("git-add", "git-commit")
 
@@ -125,6 +128,72 @@ _NEUTRALIZAR_TREE = [
     "-c", "core.hooksPath=/dev/null",
     "-c", "advice.addIgnoredFile=false",
 ]
+
+
+def _ler_alvo_do_filtro(repo: Path, caminho: str) -> bytes:
+    """Lê o conteúdo que vai para o filtro governado, SEM seguir link.
+
+    MEDIDO, e era defeito próprio de A5.7: a leitura era `Path.read_bytes()`,
+    que segue symlink. Um repositório com
+
+        vaza.txt -> /etc/passwd
+        .gitattributes:  *.txt filter=redator
+
+    fazia o NOMOS LER `/etc/passwd` e indexar o conteúdo dele — no processo PAI,
+    fora do sandbox, portanto sem nenhuma das fronteiras que A5.5 construiu. O
+    confinamento do filtro é irrelevante quando quem lê é o supervisor.
+
+    Havia um segundo erro junto, mais silencioso: o modo gravado saía `100644`,
+    isto é, o link virava ARQUIVO REGULAR com o conteúdo do alvo. `git add` de
+    um symlink grava o LINK (`120000`), não o destino. O caminho governado
+    mudava a semântica do Git sem ninguém pedir.
+
+    A recusa é deliberadamente ESTREITA — só arquivo regular, sem componente
+    intermediário que seja link. Symlink não é caso de erro do usuário aqui: é o
+    vetor. Quem quiser versionar um link usa o caminho normal, onde o Git grava
+    o link como link.
+    """
+    alvo = repo / caminho
+    try:
+        st = os.lstat(alvo)
+    except OSError as e:
+        raise ErroInvalido(f"não consegui inspecionar {caminho}: {e}") from None
+    if stat.S_ISLNK(st.st_mode):
+        raise ErroSeguranca(
+            f"{caminho} é um symlink, e filtro governado não segue link: o "
+            "conteúdo lido seria o do DESTINO, escolhido pelo repositório, e a "
+            "leitura acontece no processo do supervisor — fora do sandbox do "
+            "filtro. Um link para segredo do host viraria conteúdo indexado")
+    if not stat.S_ISREG(st.st_mode):
+        raise ErroSeguranca(
+            f"{caminho} não é arquivo regular (modo {st.st_mode:o}) — FIFO e "
+            "device penduram a leitura do supervisor sem prazo nenhum")
+    if st.st_size > MAX_CONTEUDO:
+        raise ErroLimite(
+            f"{caminho} tem {st.st_size} bytes (limite {MAX_CONTEUDO})")
+
+    # `O_NOFOLLOW` fecha a corrida entre o `lstat` e o `open`: sem ele, trocar o
+    # arquivo por link entre as duas chamadas devolveria o destino do link.
+    try:
+        fd = os.open(alvo, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as e:
+        raise ErroInvalido(f"não consegui ler {caminho}: {e}") from None
+    try:
+        # Reconfere pelo DESCRITOR já aberto: é o mesmo objeto que vai ser lido,
+        # e não um caminho que pode ter mudado de significado no meio.
+        st2 = os.fstat(fd)
+        if not stat.S_ISREG(st2.st_mode):
+            raise ErroSeguranca(f"{caminho} deixou de ser arquivo regular")
+        dados = b""
+        while len(dados) <= MAX_CONTEUDO:
+            bloco = os.read(fd, 1024 * 1024)
+            if not bloco:
+                return dados
+            dados += bloco
+        raise ErroLimite(
+            f"{caminho} passou de {MAX_CONTEUDO} bytes durante a leitura")
+    finally:
+        os.close(fd)
 
 
 @dataclass(frozen=True)
@@ -277,6 +346,11 @@ class GitTreeAdapter(Adapter):
                         ctx.raizes)
         if not (repo / ".git").exists():
             raise ErroInvalido(f"não é repositório git: {repo}")
+        # A2-REPO: o `.git` do repositorio pode ser um ARQUIVO apontando o git
+        # dir para fora das raizes aprovadas, e o git dir vira RAIZ DE ESCRITA
+        # do sandbox. Conferir aqui, junto do `resolver`, porque e aqui que as
+        # raizes existem — e antes de qualquer I/O que use o caminho.
+        conferir_git_dir(repo, ctx.raizes)
 
         # `governados` viaja como ARGUMENTO até `_confirmar`, e não guardado no
         # adapter. Estado de operação em `self` faria duas operações
@@ -374,14 +448,7 @@ class GitTreeAdapter(Adapter):
         """
         politica = self._registro.resolver(filter_id)   # id desconhecido = DENY
 
-        alvo = repo / caminho
-        try:
-            bruto = alvo.read_bytes()
-        except OSError as e:
-            raise ErroInvalido(f"não consegui ler {caminho}: {e}") from None
-        if len(bruto) > MAX_CONTEUDO:
-            raise ErroLimite(
-                f"{caminho} tem {len(bruto)} bytes (limite {MAX_CONTEUDO})")
+        bruto = _ler_alvo_do_filtro(repo, caminho)
 
         p = supervisor.executar(
             politica.comando(), cwd=repo, env=politica.ambiente(),
@@ -407,7 +474,7 @@ class GitTreeAdapter(Adapter):
             self._base(repo) + ["hash-object", "-w", "--no-filters", "--stdin"],
             cwd=repo, env=self.ambiente(), prazo=prazo,
             confinamento=confinamento_de_repo(repo), quarentena=quarentena,
-            entrada=p.stdout)
+            entrada=p.stdout, arvore_de_trabalho=str(repo))
         if h.returncode != 0:
             erro = h.stderr.decode("utf-8", "replace")[:400]
             raise ErroInvalido(f"hash-object falhou em {caminho}: {erro}")
@@ -427,7 +494,8 @@ class GitTreeAdapter(Adapter):
             self._base(repo) + ["update-index", "--add", "--cacheinfo",
                                 f"{modo},{sha},{caminho}"],
             cwd=repo, env=self.ambiente(), prazo=prazo,
-            confinamento=confinamento_de_repo(repo), quarentena=quarentena)
+            confinamento=confinamento_de_repo(repo), quarentena=quarentena,
+            arvore_de_trabalho=str(repo))
         if u.returncode != 0:
             erro = u.stderr.decode("utf-8", "replace")[:400]
             raise ErroInvalido(f"update-index falhou em {caminho}: {erro}")
@@ -464,7 +532,8 @@ class GitTreeAdapter(Adapter):
         p = supervisor.executar(argv, cwd=repo, env=self.ambiente(),
                                 prazo=prazo,
                                 confinamento=confinamento_de_repo(repo),
-                                quarentena=quarentena)
+                                quarentena=quarentena,
+                                arvore_de_trabalho=str(repo))
         if p.morto_por_timeout:
             # O filtro do repositório pendura o processo — medido, não suposto.
             # A árvore inteira já morreu; o que resta é recusar.
@@ -499,6 +568,11 @@ class GitTreeAdapter(Adapter):
     # ---------------------------------------------------------------- argvs
 
     def _base(self, repo: Path) -> list[str]:
+        # A working tree é PINADA, mas por `GIT_WORK_TREE` e não por `-c` — ver
+        # `ambiente()`. MEDIDO: `-c core.worktree=<repo>` NÃO vence a chave do
+        # `.git/config` (o Git segue reportando `/private/etc`), então a
+        # neutralização por linha de comando, que funciona para todas as outras
+        # chaves desta lista, aqui seria um no-op silencioso.
         return [self._git, "-C", str(repo), "--no-pager",
                 *_NEUTRALIZAR, *_NEUTRALIZAR_TREE]
 

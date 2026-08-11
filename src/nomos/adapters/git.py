@@ -235,6 +235,68 @@ def diretorio_git(repo: Path | str) -> tuple[str, str]:
     return git_dir, common
 
 
+def conferir_git_dir(repo: Path | str, raizes: tuple[str, ...]) -> tuple[str, str]:
+    """`(git_dir, common)` resolvidos E CONFRONTADOS com as raízes aprovadas.
+
+    MEDIDO, e é o defeito de maior alavancagem que a bateria A2-REPO encontrou:
+    `resolver()` valida o DIRETÓRIO DE TRABALHO contra as raízes, e mais nada.
+    `diretorio_git()` então segue duas indireções que o REPOSITÓRIO escreve —
+    `.git` como arquivo (`gitdir: <caminho>`) e `<git_dir>/commondir` — e devolve
+    o destino sem ninguém conferir onde ele foi parar.
+
+    A consequência não é teórica. `confinamento_de_repo()` usa esse git dir como
+    RAIZ DE ESCRITA do sandbox. Logo:
+
+        .git (arquivo) -> gitdir: /fora/das/raizes
+        => o repositório ESCOLHEU uma raiz de escrita do NOMOS
+
+    Reproduzido ponta a ponta: `git-add` devolveu `efeito_aplicado=True` e gravou
+    o índice em `/fora/das/raizes`. É exatamente a negação da propriedade que
+    A2-REPO existe para provar — `REPOSITORY_CANNOT_EXPAND_NOMOS_AUTHORITY`.
+
+    A indireção continua SUPORTADA: worktree ligada e submódulo são legítimos e
+    usam `.git` como arquivo. O que muda é que o destino passa a precisar estar
+    dentro das mesmas raízes que o diretório de trabalho — quem aprovou a raiz
+    aprovou o que mora nela, e nada além.
+
+    Resolver UMA vez e passar a tupla adiante também fecha o TOCTOU: enquanto
+    cada chamada relia `.git` do disco, um escritor concorrente podia trocar o
+    destino entre a validação e o uso.
+    """
+    git_dir, common = diretorio_git(repo)
+    if not raizes:
+        # Sem raízes declaradas não há o que conferir, e inventar uma seria pior
+        # que não ter: o chamador que não delimita escopo tem de ser corrigido,
+        # não silenciosamente contido por um palpite deste módulo.
+        return git_dir, common
+    reais = tuple(supervisor.canonicalizar(r) for r in raizes)
+    for rotulo, caminho in (("git dir", git_dir), ("common dir", common)):
+        if not _dentro(caminho, reais):
+            raise supervisor.ErroSeguranca(
+                f"{rotulo} do repositório resolve para {caminho!r}, FORA das "
+                f"raízes aprovadas {reais}. O caminho vem de `.git`/`commondir`, "
+                "que o repositório escreve — aceitá-lo deixaria o repositório "
+                "escolher onde o NOMOS grava")
+    return git_dir, common
+
+
+def _dentro(caminho: str, raizes: tuple[str, ...]) -> bool:
+    """Contenção por COMPONENTE, nunca por prefixo de string.
+
+    `str.startswith` aceitaria `/raiz-do-atacante` como se estivesse dentro de
+    `/raiz`. `os.path.commonpath` compara componente a componente, que é a
+    pergunta que se quer fazer.
+    """
+    real = supervisor.canonicalizar(caminho)
+    for raiz in raizes:
+        try:
+            if os.path.commonpath([real, raiz]) == raiz:
+                return True
+        except ValueError:
+            continue          # drives/volumes diferentes: não está dentro
+    return False
+
+
 def confinamento_de_leitura(repo: Path | str) -> supervisor.Confinamento:
     """Capacidades object-only: NENHUMA escrita no repositório.
 
@@ -334,6 +396,11 @@ class GitAdapter(Adapter):
             raise ErroNaoEncontrado(f"não é diretório: {repo}")
         if not (repo / ".git").exists():
             raise ErroInvalido(f"não é repositório git: {repo}")
+        # A2-REPO: o `.git` do repositorio pode ser um ARQUIVO apontando o git
+        # dir para fora das raizes aprovadas, e o git dir vira RAIZ DE ESCRITA
+        # do sandbox. Conferir aqui, junto do `resolver`, porque e aqui que as
+        # raizes existem — e antes de qualquer I/O que use o caminho.
+        conferir_git_dir(repo, ctx.raizes)
         return repo
 
     def _argv(self, pedido, repo: Path) -> list[str]:

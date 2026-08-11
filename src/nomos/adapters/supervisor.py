@@ -779,7 +779,8 @@ def executar(argv: list[str], *, cwd: str | Path, env: dict[str, str],
              binario_sandbox: str = SANDBOX,
              quarentena: "Quarentena | None" = None,
              tipo: TipoDeProcesso = TipoDeProcesso.GIT,
-             entrada: bytes | None = None) -> Resultado:
+             entrada: bytes | None = None,
+             arvore_de_trabalho: str | None = None) -> Resultado:
     """Executa `argv` confinado. Qualquer falha de preparo é RECUSA.
 
     `entrada` alimenta o STDIN do processo supervisionado. Existe porque a
@@ -827,6 +828,20 @@ def executar(argv: list[str], *, cwd: str | Path, env: dict[str, str],
         env["GIT_OBJECT_DIRECTORY"] = existente(quarentena.diretorio)
         env["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = existente(
             quarentena.alternativos)
+    if arvore_de_trabalho is not None:
+        # Mesmo princípio, mesma ordem, e pela mesma razão de sempre: herdar
+        # `GIT_WORK_TREE` do host segue PROIBIDO; escolhê-lo aqui é decisão
+        # tipada de quem já validou o caminho.
+        #
+        # MEDIDO, e é o motivo de isto não ser um `-c`: `core.worktree` no
+        # `.git/config` do repositório move a working tree para onde o
+        # repositório quiser, e `-c core.worktree=<repo>` NÃO a traz de volta —
+        # o Git continua reportando o valor do repo. Com `core.worktree=/etc`,
+        # `git-add -- hosts` indexou `/etc/hosts` com sucesso. `GIT_WORK_TREE`
+        # vence, e é compatível com repo comum e com worktree ligada (medido
+        # nos três casos).
+        env = dict(env)
+        env["GIT_WORK_TREE"] = existente(arvore_de_trabalho)
     cwd_real = existente(cwd)
     # A marca é criada e AUTO-VALIDADA antes de existir processo algum: se o
     # discriminante não estiver funcionando neste sistema, não há execução.

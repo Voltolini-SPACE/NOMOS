@@ -4,6 +4,61 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (A2-REPO — o repositório escolhia onde o NOMOS grava)
+Três vetores de EXPANSÃO DE AUTORIDADE, medidos e fechados. A propriedade
+`REPOSITORY_CANNOT_EXPAND_NOMOS_AUTHORITY` estava **falsa**.
+
+**1. Git dir escolhido pelo repositório.** `resolver()` valida o diretório de
+TRABALHO contra as raízes aprovadas — e mais nada. `diretorio_git()` então segue
+duas indireções que o repositório escreve (`.git` como arquivo `gitdir: …` e
+`<git_dir>/commondir`) e devolvia o destino sem confrontá-lo com as raízes. Como
+`confinamento_de_repo()` usa esse git dir como RAIZ DE ESCRITA do sandbox, o
+repositório escolhia onde o NOMOS grava. Reproduzido ponta a ponta: `git-add`
+devolveu `efeito_aplicado=True` e escreveu o índice fora de toda raiz aprovada.
+Correção: `conferir_git_dir(repo, raizes)`, chamado pelos quatro adapters junto
+do `resolver`. Contenção por `os.path.commonpath` — comparação por COMPONENTE,
+nunca por prefixo de string, que aceitaria `/raiz-do-atacante` dentro de `/raiz`.
+
+**2. Working tree escolhida pelo repositório.** Escape INDEPENDENTE do anterior,
+e por isso a correção acima não o alcança: com `core.worktree=/etc` no
+`.git/config`, o git dir continua dentro das raízes e é a working tree que sai.
+`git-add -- hosts` indexou `/etc/hosts`. Correção: `GIT_WORK_TREE` pinado no repo
+já validado, injetado pelo supervisor como parâmetro tipado — o mesmo padrão da
+`Quarentena`, DEPOIS de `conferir_ambiente`, porque herdar do host segue proibido.
+MEDIDO e decisivo para o mecanismo: `-c core.worktree=<repo>` **não vence** a
+chave do `.git/config` (o Git segue reportando `/private/etc`), então a
+neutralização por linha de comando — que funciona para todas as outras chaves —
+aqui seria um no-op silencioso. Um teste prende essa medição.
+
+**3. Leitura do processo PAI seguindo symlink (defeito do próprio A5.7).** O
+caminho governado lia o alvo com `Path.read_bytes()`, no processo do supervisor,
+fora do sandbox. Um repositório com `vaza.txt -> /etc/passwd` mais
+`.gitattributes` pedindo filtro fez o NOMOS ler e indexar `/etc/passwd` — todo o
+confinamento de A5.5 é irrelevante quando quem lê é o pai. Junto vinha um erro
+mais silencioso: o modo saía `100644`, isto é, o link virava arquivo regular com
+o conteúdo do destino, mudando a semântica do Git sem ninguém pedir. Correção:
+`_ler_alvo_do_filtro` com `lstat` + `O_NOFOLLOW` + `fstat` pelo descritor já
+aberto (fecha a corrida entre checar e abrir), só arquivo regular, leitura
+incremental limitada. FIFO e device passam a ser recusados — penduravam a
+leitura do supervisor sem prazo nenhum.
+
+Bateria: `tests/test_absorption07_a2repo_escopo.py`, 14 casos. Quatro controles
+existem para impedir que a bateria vire "negue tudo": `.git` como arquivo é o
+mecanismo NORMAL de worktree ligada e submódulo (o próprio repositório desta
+missão usa isso), e os testes 05, 10, 11 e 13 exigem que o caminho legítimo
+continue funcionando — inclusive que symlink pelo caminho NÃO governado continue
+sendo gravado como link (`120000`).
+
+**A2-REPO NÃO está PASS.** Estes são 3 de 64 achados materiais medidos em 230
+vetores por 11 áreas de ataque. O catálogo completo está em
+`A2REPO_ACHADOS.md`; entre os que seguem ABERTOS: `confinamento_de_repo` não
+declara raízes de leitura (o perfil emite `(allow file-read*)` global),
+`_promover_quarentena` não é tudo-ou-nada, `_pedidos_de_filtro` lê só o
+`.gitattributes` da raiz enquanto o Git lê três fontes com precedência
+diferente, `refs/replace` do repo falsifica a leitura governada, e as asserções
+de hook em `c2a`/`c2b` são VÁCUAS (o canário mora fora da área de escrita, então
+não distingue "hook bloqueado" de "hook rodou e não conseguiu escrever").
+
 ### Added (A5.8 + A5.9 — a transação com o filtro dentro, e os ataques COMBINADOS)
 **A5.8** liga as peças que já tinham sido medidas sozinhas — índice transacional
 (A0.1), quarentena de objetos (A0.3), registry (A5.2), artefato (A5.3), argv
