@@ -285,21 +285,119 @@ def _abrir_quarentena(repo: Path) -> tuple[supervisor.Quarentena, Path]:
                                  alternativos=str(reais)), reais
 
 
-def _promover_quarentena(raiz: Path, reais: Path) -> int:
-    """Move os objetos aceitos para o store permanente. Devolve quantos."""
-    movidos = 0
+# Nomes que a quarentena do Git legitimamente produz. MEDIDO num `add` + `commit`
+# reais: só objetos soltos `<2hex>/<38hex>`. `pack/` entra porque o Git pode
+# empacotar sob outras condições, e recusar isso quebraria a operação legítima.
+_OBJETO_SOLTO = re.compile(r"^[0-9a-f]{2}/[0-9a-f]{38,62}$")
+_OBJETO_PACK = re.compile(r"^pack/pack-[0-9a-f]{40,64}\.(pack|idx|rev)$")
+
+
+def _promover_quarentena(raiz: Path, reais: Path, git_dir: str = "") -> int:
+    """Promove os objetos aceitos para o store permanente. TUDO OU NADA.
+
+    A versão anterior movia objeto a objeto com `os.replace`. Cada movimento é
+    atômico sozinho, e o CONJUNTO não era — uma falha no meio deixava os
+    primeiros já promovidos. MEDIDO, com `ENOSPC` injetado no sexto de doze
+    objetos:
+
+        operação RECUSADA (OSError), índice restaurado byte a byte
+        e 5 blobs com `AWS_SECRET_ACCESS_KEY=...` LEGÍVEIS no store permanente,
+        confirmados como `dangling blob` pelo `git fsck`
+
+    Objeto inalcançável não é objeto ausente: ele continua legível por
+    `git cat-file` até um `gc`, e é exatamente o resíduo que A0.3 existe para
+    impedir. O rollback do índice funcionava e mascarava o vazamento.
+
+    ## Por que COPIAR e não mover, e por que não `os.link`
+
+    A promoção CRIA o destino sem destruir a origem: assim desfazer é apagar os
+    destinos criados, e a quarentena segue intacta para o `rmtree` do chamador.
+    Mover exigiria mover de volta no desfazer, e um segundo erro no meio disso
+    deixaria o estado pior que o inicial.
+
+    `os.link` faria isso de graça, e foi a primeira implementação — mas viola um
+    invariante congelado: `test_c6_nenhuma_capacidade_governada_cria_hardlink`
+    varre `adapters/` por `os.link` e falha. O invariante não é decorativo: ele
+    é a PREMISSA que torna aceitável a leitura por hardlink dentro da raiz
+    (documentada em `test_c6_hardlink_dentro_da_raiz_e_lido`). Enfraquecê-lo
+    para economizar uma cópia trocaria uma garantia de fronteira por I/O de
+    objeto solto. A cópia fica.
+
+    A publicação de cada objeto é atômica: copia para um temporário no MESMO
+    diretório e só então `os.replace` para o nome final. Sem isso, um destino
+    parcialmente escrito ficaria visível com nome de objeto válido — e objeto
+    truncado é corrupção silenciosa do store.
+
+    Atomicidade real entre N arquivos não existe no POSIX. O que se garante é
+    que nenhum objeto fica VISÍVEL no store permanente quando a promoção não
+    completa.
+    """
+    if git_dir:
+        # O destino não pode ser escolhido pelo repositório. `.git/objects` como
+        # SYMLINK apontando para fora fazia a promoção escrever fora do
+        # confinamento declarado — o sandbox não vê esta escrita, porque ela
+        # acontece no processo do supervisor.
+        real = supervisor.canonicalizar(str(reais))
+        raiz_git = supervisor.canonicalizar(git_dir)
+        if os.path.commonpath([real, raiz_git]) != raiz_git:
+            raise ErroSeguranca(
+                f"o store de objetos resolve para {real!r}, fora do git dir "
+                f"{raiz_git!r} — o repositório não escolhe onde o objeto é "
+                "promovido")
+
+    pendentes: list[tuple[Path, Path]] = []
     for origem in sorted(raiz.rglob("*")):
-        if not origem.is_file():
+        st = os.lstat(origem)
+        if stat.S_ISDIR(st.st_mode):
             continue
-        destino = reais / origem.relative_to(raiz)
-        if destino.exists():
-            # Objeto endereçado por conteúdo: mesmo SHA, mesmos bytes. Já
-            # existir é deduplicação, não conflito.
-            continue
-        destino.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(origem, destino)
-        movidos += 1
-    return movidos
+        if not stat.S_ISREG(st.st_mode):
+            # `lstat`, e não `is_file()`: este último SEGUE o link, e um symlink
+            # na quarentena promoveria o DESTINO dele para dentro do store.
+            raise ErroSeguranca(
+                f"quarentena contém {origem.name!r}, que não é arquivo regular "
+                f"(modo {st.st_mode:o}) — objeto de Git nunca é link")
+        relativo = origem.relative_to(raiz).as_posix()
+        if not (_OBJETO_SOLTO.match(relativo) or _OBJETO_PACK.match(relativo)):
+            raise ErroSeguranca(
+                f"quarentena contém {relativo!r}, que não tem forma de objeto "
+                "de Git — promover nome arbitrário deixaria o repositório "
+                "escrever caminho escolhido por ele dentro do store")
+        pendentes.append((origem, reais / relativo))
+
+    criados: list[Path] = []
+    try:
+        for origem, destino in pendentes:
+            if destino.exists():
+                # Endereçado por conteúdo: mesmo sha, mesmos bytes. Já existir é
+                # deduplicação, não conflito — e NÃO entra em `criados`, porque
+                # desfazer não pode apagar objeto que já era do store. Sem esta
+                # distinção, uma falha posterior removeria do store um objeto
+                # legítimo que não veio desta operação: corrupção causada pelo
+                # próprio rollback.
+                continue
+            destino.parent.mkdir(parents=True, exist_ok=True)
+            fd, temporario = tempfile.mkstemp(dir=destino.parent,
+                                              prefix=".promovendo-")
+            try:
+                with os.fdopen(fd, "wb") as saida, open(origem, "rb") as ent:
+                    shutil.copyfileobj(ent, saida)
+                    saida.flush()
+                    os.fsync(saida.fileno())
+                os.chmod(temporario, 0o444)      # objeto de Git é imutável
+                os.replace(temporario, destino)  # publicação ATÔMICA
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    os.unlink(temporario)
+                raise
+            criados.append(destino)
+    except BaseException:
+        # Desfaz na ordem inversa, e best-effort: um erro aqui não pode
+        # sobrepor a exceção que trouxe o fluxo até este ponto.
+        for feito in reversed(criados):
+            with contextlib.suppress(OSError):
+                feito.unlink()
+        raise
+    return len(criados)
 
 
 class GitTreeAdapter(Adapter):
@@ -526,7 +624,8 @@ class GitTreeAdapter(Adapter):
                           detalhe=descricao, sandbox=True, rede=False,
                           classificacao="EXIT_OK", morto_por_timeout=False)
             _promover_quarentena(Path(quarentena.diretorio),
-                                 Path(quarentena.alternativos))
+                                 Path(quarentena.alternativos),
+                                 git_dir=diretorio_git(repo)[0])
             return CapabilityResult.sucesso(descricao, efeito_aplicado=True)
 
         p = supervisor.executar(argv, cwd=repo, env=self.ambiente(),
@@ -562,7 +661,8 @@ class GitTreeAdapter(Adapter):
         # falhar precisa vir ANTES daqui; depois desta linha a operação está
         # aceita e nada mais pode recusá-la.
         _promover_quarentena(Path(quarentena.diretorio),
-                             Path(quarentena.alternativos))
+                             Path(quarentena.alternativos),
+                             git_dir=diretorio_git(repo)[0])
         return CapabilityResult.sucesso(descricao, efeito_aplicado=True)
 
     # ---------------------------------------------------------------- argvs

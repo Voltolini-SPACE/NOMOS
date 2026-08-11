@@ -4,6 +4,50 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (C8 — promoção PARCIAL deixava segredo legível numa operação RECUSADA)
+A0.3 põe os objetos em quarentena e só os promove ao store permanente no ponto
+de commit. A promoção em si era um laço de `os.replace`: cada movimento atômico
+sozinho, o CONJUNTO não.
+
+MEDIDO, com `ENOSPC` injetado no sexto de doze objetos:
+
+    operação RECUSADA (OSError), índice restaurado byte a byte
+    5 blobs com `AWS_SECRET_ACCESS_KEY=...` LEGÍVEIS no store permanente,
+    confirmados como `dangling blob` pelo `git fsck`
+
+O rollback do índice funcionava — e mascarava o vazamento. Objeto inalcançável
+não é objeto ausente: continua legível por `git cat-file` até um `gc`, que é
+exatamente o resíduo que A0.3 existe para impedir. A bateria A5.8 não pegava
+porque injetava a falha ANTES da promoção inteira, e esse caminho nunca produz
+estado parcial.
+
+Correção — a promoção CRIA o destino sem destruir a origem, então desfazer é
+apagar os destinos criados e a quarentena segue intacta para o `rmtree` do
+chamador. Cada objeto é publicado atomicamente (cópia para temporário no MESMO
+diretório, depois `os.replace`): sem isso um destino parcialmente escrito ficaria
+visível com nome de objeto válido, e objeto truncado é corrupção silenciosa.
+
+**A primeira implementação usava `os.link`, e um invariante congelado a
+reprovou.** `test_c6_nenhuma_capacidade_governada_cria_hardlink` varre
+`adapters/` por `os.link` — e está certo: aquele invariante é a PREMISSA que
+torna aceitável a leitura por hardlink dentro da raiz. Enfraquecê-lo para
+economizar uma cópia trocaria garantia de fronteira por I/O de objeto solto. O
+mecanismo mudou; o invariante ficou.
+
+Três validações novas no mesmo ponto, porque o destino também não é escolhido
+pelo repositório: `reais` canonicalizado e recusado fora do git dir
+(`.git/objects` como symlink escrevia FORA do confinamento — e essa escrita
+acontece no processo do supervisor, que o sandbox não vê); nomes aceitos só na
+forma de objeto (`<2hex>/<38+hex>` ou `pack/*.{pack,idx,rev}`); e `lstat` em vez
+de `is_file()`, que SEGUE o link e promoveria o destino dele para dentro do
+store.
+
+Prova em `tests/test_absorption07_c8_promocao_atomica.py` (9 casos), com falha
+injetada no 1º, no 6º e no penúltimo objeto de doze — doze porque com um só
+"parcial" não existe como estado. A dedup é tratada separadamente de "criado":
+sem essa distinção, um rollback apagaria do store um objeto legítimo que não veio
+desta operação — corrupção causada pelo próprio desfazer.
+
 ### Fixed (P0.2 — `git-add`/`git-commit` eram INALCANÇÁVEIS pelo runtime)
 Medição que reabriu A5. `RuntimeGovernado` registrava `fs-*`, `git-diff`,
 `git-log`, `git-show` e `git-tag` — e mais nada. **Nenhum caminho do runtime
