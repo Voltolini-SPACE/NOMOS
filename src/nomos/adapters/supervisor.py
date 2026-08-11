@@ -420,9 +420,35 @@ def _classificar(rc: int, morto: bool) -> str:
     return "EXIT_ERRO"
 
 
+@dataclass(frozen=True)
+class Quarentena:
+    """Object store TEMPORÁRIO desta execução (A0.3).
+
+    `GIT_OBJECT_DIRECTORY` desvia toda ESCRITA de objeto para um diretório
+    descartável; `GIT_ALTERNATE_OBJECT_DIRECTORIES` mantém a LEITURA do store
+    real, para o Git continuar enxergando o histórico. É o mesmo mecanismo que
+    o próprio Git usa em `receive-pack` para não sujar o repositório com um
+    push que ainda não foi aceito.
+
+    Por que isto e não apagar depois: sem quarentena, o blob do `filter.clean`
+    é gravado no store PERMANENTE antes de o filtro falhar — restaurar o índice
+    tira a referência, não o objeto, e o segredo fica legível por
+    `git cat-file` até um `gc`. Com quarentena, o segredo NUNCA chega ao store
+    permanente; a falha só precisa apagar um diretório inteiro.
+
+    As duas variáveis estão em `PROIBIDAS_NO_AMBIENTE` de propósito, e
+    continuam proibidas: o guard roda sobre o ambiente do CHAMADOR, e só o
+    supervisor injeta estes valores, DEPOIS da conferência. Herdar do host
+    segue sendo recusa; escolher deliberadamente é uma decisão tipada.
+    """
+    diretorio: str          # GIT_OBJECT_DIRECTORY — escrita vai para cá
+    alternativos: str       # GIT_ALTERNATE_OBJECT_DIRECTORIES — leitura de lá
+
+
 def executar(argv: list[str], *, cwd: str | Path, env: dict[str, str],
              prazo: float, confinamento: Confinamento,
-             binario_sandbox: str = SANDBOX) -> Resultado:
+             binario_sandbox: str = SANDBOX,
+             quarentena: "Quarentena | None" = None) -> Resultado:
     """Executa `argv` confinado. Qualquer falha de preparo é RECUSA."""
     if prazo <= 0:
         raise ErroLimite("prazo esgotado antes de iniciar o processo")
@@ -438,6 +464,14 @@ def executar(argv: list[str], *, cwd: str | Path, env: dict[str, str],
             "ambiguidade: ou a capacidade não escreve (e declara isso), ou "
             "alguém esqueceu de delimitar")
     conferir_ambiente(env)
+    if quarentena is not None:
+        # DEPOIS da conferência, e nunca antes: o guard existe para denunciar
+        # ambiente HERDADO, e continua fazendo isso. Aqui é o supervisor
+        # escolhendo, por parâmetro tipado, para onde a escrita de objeto vai.
+        env = dict(env)
+        env["GIT_OBJECT_DIRECTORY"] = existente(quarentena.diretorio)
+        env["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = existente(
+            quarentena.alternativos)
     cwd_real = existente(cwd)
     # A marca é criada e AUTO-VALIDADA antes de existir processo algum: se o
     # discriminante não estiver funcionando neste sistema, não há execução.

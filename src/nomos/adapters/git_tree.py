@@ -40,6 +40,8 @@ from __future__ import annotations
 import contextlib
 import os
 import re
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -158,6 +160,38 @@ def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> None:
             tmp.unlink()
 
 
+def _abrir_quarentena(repo: Path) -> tuple[supervisor.Quarentena, Path]:
+    """Object store descartável desta operação, dentro do próprio git dir.
+
+    Fica no git dir porque essa área JÁ é a autoridade de escrita concedida
+    (`confinamento_de_repo`), então a quarentena não amplia nada. Um diretório
+    em `/tmp` exigiria abrir mais uma raiz de escrita no sandbox — autoridade
+    nova para resolver um problema de contenção seria o caminho errado.
+    """
+    git_dir, comum = diretorio_git(repo)
+    reais = Path(comum) / "objects"
+    raiz = Path(tempfile.mkdtemp(prefix="nomos-quarentena-", dir=git_dir))
+    return supervisor.Quarentena(diretorio=str(raiz),
+                                 alternativos=str(reais)), reais
+
+
+def _promover_quarentena(raiz: Path, reais: Path) -> int:
+    """Move os objetos aceitos para o store permanente. Devolve quantos."""
+    movidos = 0
+    for origem in sorted(raiz.rglob("*")):
+        if not origem.is_file():
+            continue
+        destino = reais / origem.relative_to(raiz)
+        if destino.exists():
+            # Objeto endereçado por conteúdo: mesmo SHA, mesmos bytes. Já
+            # existir é deduplicação, não conflito.
+            continue
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(origem, destino)
+        movidos += 1
+    return movidos
+
+
 class GitTreeAdapter(Adapter):
     """`git add` e `git commit`, confinados pelo supervisor."""
 
@@ -210,20 +244,39 @@ class GitTreeAdapter(Adapter):
         # cru, e um `git commit` posterior persistiria o segredo mesmo com o
         # `add` tendo sido RECUSADO. O instantâneo é tirado ANTES do exec.
         instantaneo = _instantaneo_do_indice(repo)
+        quarentena, reais = _abrir_quarentena(repo)
+        raiz_q = Path(quarentena.diretorio)
         try:
-            return self._confirmar(pedido, ctx, repo, argv, descricao, prazo)
+            r = self._confirmar(pedido, ctx, repo, argv, descricao, prazo,
+                                quarentena)
         except BaseException:
             # BaseException, não Exception: KeyboardInterrupt e SystemExit
-            # também não podem deixar segredo estagiado para trás.
+            # também não podem deixar segredo estagiado nem objeto no store.
             _restaurar_indice(instantaneo)
             raise
+        finally:
+            # A quarentena some nos DOIS caminhos. No sucesso ela já foi
+            # esvaziada pela promoção (dentro de `_confirmar`, depois de TODAS
+            # as verificações); na falha ela some cheia, levando junto o objeto
+            # que o filtro gravou. Nunca `git gc`: isto apaga um diretório que
+            # só esta execução escreveu, e nada mais.
+            shutil.rmtree(raiz_q, ignore_errors=True)
+        return r
 
     def _confirmar(self, pedido, ctx, repo: Path, argv: list[str],
-                   descricao: str, prazo: float) -> CapabilityResult:
-        """Executa e valida. Qualquer saída por exceção desfaz o índice."""
+                   descricao: str, prazo: float,
+                   quarentena: supervisor.Quarentena) -> CapabilityResult:
+        """Executa e valida. Qualquer saída por exceção desfaz o índice.
+
+        A promoção dos objetos acontece DEPOIS de todas as verificações: um
+        objeto só chega ao store permanente quando a operação inteira foi
+        aceita. É isso que impede o segredo de um filtro quebrado de existir
+        fora da quarentena, em vez de apagá-lo depois de gravado.
+        """
         p = supervisor.executar(argv, cwd=repo, env=self.ambiente(),
                                 prazo=prazo,
-                                confinamento=confinamento_de_repo(repo))
+                                confinamento=confinamento_de_repo(repo),
+                                quarentena=quarentena)
         if p.morto_por_timeout:
             # O filtro do repositório pendura o processo — medido, não suposto.
             # A árvore inteira já morreu; o que resta é recusar.
@@ -243,6 +296,16 @@ class GitTreeAdapter(Adapter):
                       sandbox=True, rede=False,
                       classificacao=p.classificacao,
                       morto_por_timeout=p.morto_por_timeout)
+        # PONTO DE COMMIT — a ÚLTIMA coisa que acontece, e por medição.
+        #
+        # A promoção estava antes da auditoria, e a bateria pegou: com o
+        # `_auditar` levantando, o blob do segredo JÁ tinha ido para o store
+        # permanente, o índice voltava atrás, e sobrava exatamente o objeto
+        # inalcançável que A0.3 existe para eliminar. Qualquer passo que possa
+        # falhar precisa vir ANTES daqui; depois desta linha a operação está
+        # aceita e nada mais pode recusá-la.
+        _promover_quarentena(Path(quarentena.diretorio),
+                             Path(quarentena.alternativos))
         return CapabilityResult.sucesso(descricao, efeito_aplicado=True)
 
     # ---------------------------------------------------------------- argvs
