@@ -48,9 +48,9 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 from pathlib import Path
 
+from nomos.adapters import supervisor
 from nomos.adapters.caminho import resolver
 from nomos.adapters.contrato import (
     Adapter, CapabilityContext, CapabilityRequest, CapabilityResult,
@@ -171,6 +171,25 @@ def ambiente_minimo() -> dict[str, str]:
     }
 
 
+def confinamento_de_repo(repo: Path | str,
+                         rede: bool = False) -> supervisor.Confinamento:
+    """Autoridade de filesystem de UMA execução Git: o repositório e mais nada.
+
+    O caminho é canonicalizado ANTES de virar política — não depois, não pelo
+    caller. `/tmp/x` e `/private/tmp/x` são o mesmo diretório, mas só o segundo
+    casa com o que o Git usa; um perfil escrito com o primeiro nega a operação
+    legítima e parece falta de permissão.
+
+    Esta versão concede escrita ao repositório INTEIRO. É a baseline medida no
+    C2c, integrada primeiro sem regressão; a redução por operação (`add` toca
+    índice e objects, `commit` toca refs e logs) é o gate seguinte, e cada
+    corte precisa provar de novo que a operação funciona E que a fronteira
+    continua fechada.
+    """
+    return supervisor.Confinamento(
+        escrita=(supervisor.existente(repo),), rede=rede)
+
+
 class GitAdapter(Adapter):
     """Quatro operações de LEITURA. Nenhuma delas muta, nenhuma usa rede."""
 
@@ -186,9 +205,12 @@ class GitAdapter(Adapter):
         self._coerente(pedido, ctx)
         repo = self._repo(pedido, ctx)
         argv = self._argv(pedido, repo)
-        saida = self._rodar(argv, repo, ctx)
-        self._auditar(ctx, f"git.{pedido.capacidade[4:]}", alvo=str(repo),
-                      bytes=len(saida))
+        saida, r = self._rodar(argv, repo, ctx)
+        self._auditar(ctx, f"git.{pedido.capacidade[4:]}",
+                      alvo=supervisor.canonicalizar(repo), bytes=len(saida),
+                      sandbox=True, rede=False,
+                      classificacao=r.classificacao,
+                      morto_por_timeout=r.morto_por_timeout)
         return CapabilityResult.sucesso(saida, efeito_aplicado=False)
 
     # ------------------------------------------------------------- entradas
@@ -235,24 +257,17 @@ class GitAdapter(Adapter):
 
     # ------------------------------------------------------------- execução
 
-    def _rodar(self, argv: list[str], repo: Path, ctx) -> str:
+    def _rodar(self, argv: list[str], repo: Path,
+               ctx) -> tuple[str, supervisor.Resultado]:
         prazo = min(TIMEOUT_S, ctx.restante() or TIMEOUT_S)
-        if prazo <= 0:
-            raise ErroLimite("prazo do nó esgotado antes de chamar o git")
-        try:
-            p = subprocess.run(
-                argv, cwd=str(repo), env=ambiente_minimo(),
-                capture_output=True, timeout=prazo, text=False,
-                stdin=subprocess.DEVNULL,    # nunca lê do terminal
-                start_new_session=True,      # não herda o grupo de processo
-                shell=False)                 # explícito: nunca shell
-        except subprocess.TimeoutExpired:
-            raise ErroLimite(f"git excedeu {prazo:.1f}s") from None
-        except OSError as exc:
-            raise ErroInvalido(f"não consegui executar o git: {exc}") from None
+        p = supervisor.executar(
+            argv, cwd=repo, env=ambiente_minimo(), prazo=prazo,
+            confinamento=confinamento_de_repo(repo))
+        if p.morto_por_timeout:
+            raise ErroLimite(f"git excedeu {prazo:.1f}s")
         if len(p.stdout) > LIMITE_SAIDA:
             raise ErroLimite(f"saída do git acima de {LIMITE_SAIDA} bytes")
         if p.returncode != 0:
             erro = p.stderr.decode("utf-8", "replace")[:400]
             raise ErroInvalido(f"git falhou (rc={p.returncode}): {erro}")
-        return p.stdout.decode("utf-8", "replace")
+        return p.stdout.decode("utf-8", "replace"), p

@@ -247,6 +247,44 @@ def registrar_git_write(registro, *, raizes=(), audit=None,
     return registrados
 
 
+# ------------------------------------------------------------ git tree (C2c)
+
+# `git-add` e `git-commit` são WRITE_LOCAL como `git-tag`, mas com uma diferença
+# que NÃO aparece na categoria: elas executam código escolhido pelo repositório
+# (`filter.<driver>.clean` via `.gitattributes`). A categoria descreve o efeito
+# pretendido; a contenção desse efeito colateral é do `supervisor`, que confina
+# filesystem, nega rede, isola o process group e mata a árvore no timeout.
+CATEGORIAS_GIT_TREE: dict[str, Category] = {
+    "git-add": Category.WRITE_LOCAL,
+    "git-commit": Category.WRITE_LOCAL,
+}
+
+
+def registrar_git_tree(registro, *, raizes=(), audit=None,
+                       binario: str | None = None, identidade=None) -> list[str]:
+    """Registra `git-add`/`git-commit`. A identidade do commit vem daqui —
+    do runtime — e nunca do plano."""
+    from nomos.adapters.git_tree import GitTreeAdapter
+    from nomos.orquestracao.registro import ErroRegistro
+    if not raizes:
+        raise ValueError("registrar_git_tree exige `raizes`")
+    adapter = GitTreeAdapter(binario=binario, identidade=identidade)
+    registrados = []
+    for nome in sorted(CATEGORIAS_GIT_TREE):
+        try:
+            registro.registrar(nome, CATEGORIAS_GIT_TREE[nome],
+                               _ponte_git(adapter, nome, registro,
+                                          raizes=raizes, audit=audit),
+                               origem="adapters.git_tree", idempotente=False)
+            registrados.append(nome)
+        except ErroRegistro as exc:
+            if "já registrada" in str(exc):
+                registrados.append(nome)
+                continue
+            raise
+    return registrados
+
+
 # ------------------------------------------------------------ git push (C2b)
 
 # `git-push` é NET_EGRESS, não WRITE_LOCAL: atravessa fronteira de confiança,

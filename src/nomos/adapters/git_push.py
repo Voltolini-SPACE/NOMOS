@@ -40,7 +40,6 @@ cada um uma autoridade diferente da que foi aprovada.
 from __future__ import annotations
 
 import re
-import subprocess
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
@@ -50,7 +49,8 @@ from nomos.adapters.contrato import (
     ErroInvalido, ErroLimite,
 )
 from nomos.adapters.estrito import texto_estrito
-from nomos.adapters.git import _NEUTRALIZAR, ambiente_minimo
+from nomos.adapters import supervisor
+from nomos.adapters.git import _NEUTRALIZAR, ambiente_minimo, confinamento_de_repo
 
 CAPACIDADES = ("git-push",)
 TIMEOUT_S = 60.0
@@ -148,10 +148,9 @@ class GitPushAdapter(Adapter):
         argv = [self._git, "-C", str(repo), "--no-pager",
                 *_NEUTRALIZAR, *_NEUTRALIZAR_PUSH,
                 "ls-remote", "--get-url", url_autorizada]
-        p = subprocess.run(argv, cwd=str(repo), env=ambiente_minimo(),
-                           capture_output=True, timeout=15,
-                           stdin=subprocess.DEVNULL, start_new_session=True,
-                           shell=False)
+        p = supervisor.executar(argv, cwd=repo, env=ambiente_minimo(),
+                                prazo=15.0,
+                                confinamento=confinamento_de_repo(repo))
         if p.returncode != 0:
             raise ErroRemoto("não consegui resolver a URL efetiva do destino")
         return p.stdout.decode("utf-8", "replace").strip()
@@ -169,10 +168,9 @@ class GitPushAdapter(Adapter):
         argv = [self._git, "-C", str(repo), "--no-pager", *_NEUTRALIZAR,
                 "config", "--get-regexp",
                 r"^url\..*\.(insteadof|pushinsteadof)$"]
-        p = subprocess.run(argv, cwd=str(repo), env=ambiente_minimo(),
-                           capture_output=True, timeout=15,
-                           stdin=subprocess.DEVNULL, start_new_session=True,
-                           shell=False)
+        p = supervisor.executar(argv, cwd=repo, env=ambiente_minimo(),
+                                prazo=15.0,
+                                confinamento=confinamento_de_repo(repo))
         if p.returncode not in (0, 1):     # 1 = nenhuma chave, normal
             raise ErroRemoto("não consegui inspecionar regras de reescrita")
         return [linha for linha in p.stdout.decode("utf-8", "replace").splitlines()
@@ -195,6 +193,35 @@ class GitPushAdapter(Adapter):
                 "`url.*.insteadOf` no .git/config — a publicação iria para "
                 "outro servidor")
         return efetiva
+
+    # --------------------------------------------------------- confinamento
+
+    @staticmethod
+    def _local(destino: DestinoGovernado) -> str:
+        """Caminho local do destino, ou `""` se ele estiver na rede."""
+        p = urlsplit(destino.url)
+        if p.scheme in ("", "file") and not p.hostname:
+            return p.path or destino.url
+        return ""
+
+    def confinamento(self, repo, destino: DestinoGovernado):
+        """A autoridade de `push` é derivada do DESTINO GOVERNADO, nunca do plano.
+
+        Rede não é concedida por padrão nem sequer aqui: um destino `file://`
+        publica sem tocar a rede, e conceder `allow network*` a ele seria
+        entregar egresso que a operação não usa. Um destino remoto recebe rede
+        porque o egresso É o efeito autorizado — já filtrado antes por
+        `A2_NET_EGRESS` e por `localidade.json`.
+
+        O caminho local do destino entra na escrita porque publicar num bare
+        repo é escrevê-lo. Ele vem da POLÍTICA, então isso não amplia o que o
+        plano alcança: quem escolhe o destino é quem escreveu a política.
+        """
+        local = self._local(destino)
+        raizes = [supervisor.existente(repo)]
+        if local:
+            raizes.append(supervisor.existente(local))
+        return supervisor.Confinamento(escrita=tuple(raizes), rede=not local)
 
     # ------------------------------------------------------------- execução
 
@@ -233,24 +260,23 @@ class GitPushAdapter(Adapter):
         prazo = min(TIMEOUT_S, ctx.restante() or TIMEOUT_S)
         if prazo <= 0:
             raise ErroLimite("prazo do nó esgotado antes do push")
-        try:
-            p = subprocess.run(argv, cwd=str(repo), env=ambiente_minimo(),
-                               capture_output=True, timeout=prazo,
-                               stdin=subprocess.DEVNULL,
-                               start_new_session=True, shell=False)
-        except subprocess.TimeoutExpired:
+        p = supervisor.executar(argv, cwd=repo, env=ambiente_minimo(),
+                                prazo=prazo,
+                                confinamento=self.confinamento(repo, destino))
+        if p.morto_por_timeout:
             raise ErroLimite(
                 f"push excedeu {prazo:.1f}s — remoto que não responde não "
-                "pendura o NOMOS") from None
-        except OSError as exc:
-            raise ErroInvalido(f"não consegui executar o git: {exc}") from None
+                "pendura o NOMOS")
         if p.returncode != 0:
             raise ErroRemoto(
                 f"push falhou (rc={p.returncode}): "
                 f"{p.stderr.decode('utf-8', 'replace')[:400]}")
-        self._auditar(ctx, "git.push", alvo=str(repo),
+        self._auditar(ctx, "git.push", alvo=supervisor.canonicalizar(repo),
                       remote_id=destino.remote_id, url=destino.url,
-                      origem=origem, destino=alvo_branch)
+                      origem=origem, destino=alvo_branch, sandbox=True,
+                      rede=not self._local(destino),
+                      classificacao=p.classificacao,
+                      morto_por_timeout=p.morto_por_timeout)
         return CapabilityResult.sucesso(
             f"{origem} -> {destino.remote_id}/{alvo_branch}",
             efeito_aplicado=True)

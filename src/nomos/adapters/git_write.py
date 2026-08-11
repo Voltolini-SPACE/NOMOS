@@ -31,15 +31,17 @@ mesmo escrutínio — não um parâmetro opcional aqui.
 from __future__ import annotations
 
 import re
-import subprocess
 
+from nomos.adapters import supervisor
 from nomos.adapters.caminho import resolver
 from nomos.adapters.contrato import (
     Adapter, CapabilityContext, CapabilityRequest, CapabilityResult,
     ErroInvalido, ErroLimite, ErroNaoEncontrado,
 )
 from nomos.adapters.estrito import texto_estrito
-from nomos.adapters.git import _NEUTRALIZAR, ambiente_minimo, ref_valida
+from nomos.adapters.git import (
+    _NEUTRALIZAR, ambiente_minimo, confinamento_de_repo, ref_valida,
+)
 
 CAPACIDADES = ("git-tag",)
 
@@ -117,23 +119,19 @@ class GitTagAdapter(Adapter):
                 *_NEUTRALIZAR, *_NEUTRALIZAR_TAG,
                 "tag", nome, alvo_ref]
         prazo = min(TIMEOUT_S, ctx.restante() or TIMEOUT_S)
-        if prazo <= 0:
-            raise ErroLimite("prazo do nó esgotado antes de chamar o git")
-        try:
-            p = subprocess.run(argv, cwd=str(repo), env=ambiente_minimo(),
-                               capture_output=True, timeout=prazo,
-                               stdin=subprocess.DEVNULL,
-                               start_new_session=True, shell=False)
-        except subprocess.TimeoutExpired:
-            raise ErroLimite(f"git tag excedeu {prazo:.1f}s") from None
-        except OSError as exc:
-            raise ErroInvalido(f"não consegui executar o git: {exc}") from None
+        p = supervisor.executar(argv, cwd=repo, env=ambiente_minimo(),
+                                prazo=prazo,
+                                confinamento=confinamento_de_repo(repo))
+        if p.morto_por_timeout:
+            raise ErroLimite(f"git tag excedeu {prazo:.1f}s")
         if p.returncode != 0:
             erro = p.stderr.decode("utf-8", "replace")[:400]
             if "not a valid object name" in erro or "Failed to resolve" in erro:
                 raise ErroNaoEncontrado(f"target não existe: {alvo_ref}")
             raise ErroInvalido(f"git tag falhou (rc={p.returncode}): {erro}")
-        self._auditar(ctx, "git.tag", alvo=str(repo), tag=nome,
-                      target=alvo_ref)
+        self._auditar(ctx, "git.tag", alvo=supervisor.canonicalizar(repo),
+                      tag=nome, target=alvo_ref, sandbox=True, rede=False,
+                      classificacao=p.classificacao,
+                      morto_por_timeout=p.morto_por_timeout)
         return CapabilityResult.sucesso(f"{nome} -> {alvo_ref}",
                                         efeito_aplicado=True)
