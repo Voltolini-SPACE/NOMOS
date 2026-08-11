@@ -57,10 +57,23 @@ int main(int argc, char **argv) {
         return v ? 0 : 1;
     }
     if (argc > 1 && strcmp(argv[1], "--sonda-exec") == 0) {
-        /* execv substitui a imagem: se voltar, foi NEGADO. */
+        /* `execv` SUBSTITUI a imagem do processo. Em caso de SUCESSO este
+         * código deixa de existir — então é impossível ele imprimir um
+         * "consegui". A primeira versão desta sonda tentava isso e o controle
+         * positivo saía invertido: exec bem-sucedido parecia falha.
+         *
+         * A leitura correta é pela AUSÊNCIA: imprimo a marca ANTES (com flush,
+         * senão o buffer morre junto com a imagem) e só imprimo EXEC=NEGADO se
+         * o execv RETORNAR. Logo:
+         *     sucesso -> TENTEI_EXEC          (sem NEGADO)
+         *     negado  -> TENTEI_EXEC + NEGADO
+         */
+        printf("TENTEI_EXEC\n");
+        fflush(stdout);
         char *a[] = { argv[2], NULL };
         execv(argv[2], a);
-        return prova("EXEC", 0) ? 0 : 1;
+        printf("EXEC=NEGADO\n");
+        return 1;
     }
     /* Modo normal: o redator. */
     char linha[4096];

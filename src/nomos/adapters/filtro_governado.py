@@ -146,6 +146,52 @@ class PoliticaDeFiltro:
         """
         return [self.executavel(), *self.argv_policy]
 
+    def ambiente(self) -> dict[str, str]:
+        """Ambiente CONSTRUÍDO por allowlist, nunca herdado e nunca filtrado.
+
+        Blocklist erra por omissão: bastaria um `SSH_AUTH_SOCK` esquecido, ou
+        uma variável de provider que ainda não existe hoje, para o filtro
+        herdar autoridade sem ninguém decidir isso. Aqui o ambiente nasce
+        VAZIO e só recebe o que a política nomeou.
+
+        `HOME` fica de fora de propósito: com HOME o filtro alcança
+        `~/.gitconfig`, `~/.ssh` e material de credencial pelo caminho mais
+        curto que existe. `PATH` também: quem resolve executável é a política
+        (A5.2/A5.3), não a busca por PATH.
+        """
+        base = {"LANG": "C", "LC_ALL": "C"}
+        for chave in self.environment_allowlist:
+            valor = os.environ.get(chave)
+            if valor is not None:
+                base[chave] = valor
+        return base
+
+    def confinamento(self):
+        """A autoridade do filtro EM EXECUÇÃO — mínima, e derivada da política.
+
+        A5.2/A5.3/A5.4 decidiram QUEM executa, QUAL objeto e COM QUE
+        argumentos. Nada disso limita o que o processo faz depois de nascer:
+        um `sed` aprovado, íntegro e com argv fixo ainda leria `~/.ssh` se o
+        confinamento não dissesse o contrário. Aprovado não é ilimitado.
+
+        Reusa as primitivas que A2 (leitura), A3 (escrita), A5 (exec) e A6
+        (negação) já construíram e provaram — um mecanismo paralelo só para
+        filtros teria de reprovar tudo de novo, e divergiria na primeira
+        correção aplicada a um lado só.
+        """
+        from nomos.adapters import supervisor
+        if self.managed_artifact is None:
+            raise ErroFiltro(
+                f"filtro {self.filter_id!r} sem artefato — sem confinamento")
+        leitura = tuple(self.read_roots) + (self.managed_artifact.managed_path,)
+        return supervisor.Confinamento(
+            escrita=tuple(self.write_roots),
+            declara_sem_escrita=not self.write_roots,
+            leitura=leitura,
+            rede=self.network_policy,          # DENY por padrão
+            exec_permitido=(self.managed_artifact.managed_path,),
+        )
+
     def proveniencia(self) -> str:
         """De onde o binário veio. Auditoria — nunca execução."""
         return self.canonical_executable
