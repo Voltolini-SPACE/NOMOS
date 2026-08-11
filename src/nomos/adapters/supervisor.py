@@ -419,15 +419,30 @@ def _bloco_de_leitura(conf: Confinamento) -> list[str]:
     if not conf.leitura:
         return ["(allow file-read*)"]
     linhas = _toolchain_legivel()
-    vistos: set[str] = set()
+    # DOIS conjuntos, e a separação é o conserto de um defeito medido. Com um
+    # `vistos` único, um caminho já emitido como ANCESTRAL (só
+    # `file-read-metadata`) bloqueava o `file-read*` completo dele mais adiante.
+    #
+    # MEDIDO em WORKTREE LIGADA: `leitura` traz (worktree, git_dir, common), e
+    # `common` (`main/.git`) é ancestral de `git_dir`
+    # (`main/.git/worktrees/wt`). O ancestral entrava primeiro, e quando a vez
+    # do `common` chegava ele era pulado — o perfil concedia METADADO onde
+    # precisava conceder LEITURA, e todo `git add` em worktree ligada morria em
+    # `unable to access '…/main/.git/config': Operation not permitted`.
+    #
+    # Falha por SUB-concessão é traiçoeira: parece contenção correta e é
+    # produto quebrado. Emitir os dois é seguro — ambos são `allow`, e a regra
+    # de "último que casa vence" do SBPL só decide entre allow e deny.
+    completos: set[str] = set()
+    metadados: set[str] = set()
     for bruto in conf.leitura:
         real = canonicalizar(bruto)
-        if real not in vistos:
-            vistos.add(real)
+        if real not in completos:
+            completos.add(real)
             linhas.append(f'(allow file-read* (subpath "{real}"))')
         for pai in _ancestrais(real):
-            if pai not in vistos:
-                vistos.add(pai)
+            if pai not in metadados and pai not in completos:
+                metadados.add(pai)
                 linhas.append(f'(allow file-read-metadata (literal "{pai}"))')
     return linhas
 

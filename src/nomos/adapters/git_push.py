@@ -52,7 +52,7 @@ from nomos.adapters.estrito import texto_estrito
 from nomos.adapters import supervisor
 from nomos.adapters.git import (
     _NEUTRALIZAR, ambiente_minimo, confinamento_de_repo, conferir_alternates,
-    conferir_git_dir,
+    conferir_git_dir, executaveis_de_git,
 )
 
 CAPACIDADES = ("git-push",)
@@ -219,12 +219,38 @@ class GitPushAdapter(Adapter):
         O caminho local do destino entra na escrita porque publicar num bare
         repo é escrevê-lo. Ele vem da POLÍTICA, então isso não amplia o que o
         plano alcança: quem escolhe o destino é quem escreveu a política.
+
+        ## A allowlist de exec, e por que ela precisa do shell
+
+        MEDIDO: sem `exec_permitido` o perfil emitia `(allow process-exec
+        process-fork)` — e sob o confinamento de `push`, `/usr/bin/id` e
+        `/bin/sh -c 'id'` rodaram com rc=0. Era a capacidade MENOS contida da
+        série, justamente a única com egresso de rede.
+
+        A allowlist não é só o Git, e isso é medição e não conveniência: o
+        transporte local do Git executa `git-receive-pack '<destino>'` **através
+        de um shell** — com só os dois binários de git, o push legítimo morre em
+        `fatal: cannot exec 'git-receive-pack …': Operation not permitted`.
+
+        Incluir o shell parece devolver tudo, e NÃO devolve: a allowlist vale
+        para a ÁRVORE INTEIRA de processos, então o shell só consegue executar o
+        que também está nela. Medido depois da correção:
+
+            /usr/bin/id            rc=71   execvp() … Operation not permitted
+            /bin/sh -c 'id'        rc=126  /usr/bin/id: Operation not permitted
+            /bin/sh -c 'curl …'    rc=126  /usr/bin/curl: Operation not permitted
+            push file:// legítimo  rc=0    [new branch] main -> main
+
+        `/bin/bash` entra junto porque `/bin/sh` reexecuta o bash como variante
+        — sem ele a contenção falharia por um caminho que ninguém veria.
         """
         local = self._local(destino)
         raizes = [supervisor.existente(repo)]
         if local:
             raizes.append(supervisor.existente(local))
-        return supervisor.Confinamento(escrita=tuple(raizes), rede=not local)
+        return supervisor.Confinamento(
+            escrita=tuple(raizes), rede=not local,
+            exec_permitido=executaveis_de_git() + ("/bin/sh", "/bin/bash"))
 
     # ------------------------------------------------------------- execução
 

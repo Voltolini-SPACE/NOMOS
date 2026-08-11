@@ -303,18 +303,110 @@ def conferir_git_dir(repo: Path | str, raizes: tuple[str, ...]) -> tuple[str, st
     # Worktree ligada (`.git/worktrees/<n>`), submódulo (`.git/modules/<n>`) e
     # `--separate-git-dir <x>` nunca têm o git dir chamado `.git`, então passam.
     base = Path(supervisor.existente(repo))
-    if (base / ".git").is_file():
-        gd = Path(supervisor.canonicalizar(git_dir))
-        if gd.name == ".git" and str(gd.parent) != str(base):
-            raise supervisor.ErroSeguranca(
-                f"o `.git` de {str(base)!r} aponta para {str(gd)!r}, que é a "
-                "git dir PRINCIPAL de outra working tree "
-                f"({str(gd.parent)!r}). Operar aqui estagiaria o efeito no "
-                "repositório do vizinho enquanto a auditoria registra este "
-                "alvo — confusão cross-repo. Worktree ligada e submódulo usam "
-                "git dir sob `.git/worktrees` ou `.git/modules`, nunca a `.git` "
-                "principal de outro repositório")
+    ponto = base / ".git"
+    if not ponto.is_dir():
+        _conferir_titularidade(base, git_dir)
     return git_dir, common
+
+
+def _conferir_titularidade(base: Path, git_dir: str) -> None:
+    """O git dir alheio tem de PROVAR que pertence a esta working tree.
+
+    Quando `.git` é DIRETÓRIO não há o que provar: o git dir mora dentro do
+    repositório. Quando é ARQUIVO (ou symlink), o repositório APONTA para um git
+    dir que pode ser de outra pessoa — e `_dentro()` não ajuda, porque no ataque
+    os dois repositórios estão dentro das mesmas raízes aprovadas.
+
+    ## Por que reconhecer o formato do caminho NÃO bastava
+
+    A primeira correção exigia `gd.name != '.git'`, e a bateria adversarial a
+    derrubou em duas formas, ambas com o segredo indo parar no repositório da
+    vítima e o commit entrando na história dela:
+
+        hostil/.git  ->  gitdir: <vitima>/vitima-gd      (--separate-git-dir)
+        hostil/.git  ->  gitdir: <super>/.git/modules/n  (submódulo)
+
+    Os dois têm basename diferente de `.git`, então passavam — e o comentário
+    daquela versão declarava os dois layouts seguros. Reconhecer FORMA de
+    caminho é frágil por construção: quem escolhe o caminho é o atacante.
+
+    ## O que o Git registra, e que o atacante não consegue forjar de graça
+
+    Titularidade é dado, não formato, e o Git a grava nos dois layouts que
+    dependem de indireção:
+
+        worktree ligada   <git_dir>/gitdir  ->  <repo>/.git      (backpointer)
+        submódulo         <git_dir>/config  ->  core.worktree = <repo>
+
+    Ambos apontam DE VOLTA para a working tree dona. No ataque eles apontam para
+    a vítima, não para o repositório pedido — que é exatamente a pergunta certa.
+
+    ## `--separate-git-dir` é RECUSADO, e isso é decisão consciente
+
+    Esse layout não registra dono nenhum: o git dir de `--separate-git-dir` é
+    indistinguível, byte a byte, entre o uso legítimo e o roubo. Aceitar
+    significaria aceitar a forma de ataque junto, porque não há evidência que as
+    separe. Fail-closed é a escolha; a mensagem diz o que fazer.
+    """
+    gd = Path(supervisor.canonicalizar(git_dir))
+    alvo = str(supervisor.canonicalizar(base))
+
+    def recusar(dono: str, onde: str) -> None:
+        raise supervisor.ErroSeguranca(
+            f"o `.git` de {alvo!r} aponta para o git dir {str(gd)!r}, que "
+            f"registra pertencer a OUTRA working tree ({dono!r}, em {onde}). "
+            "Operar aqui estagiaria o efeito no repositório do vizinho "
+            "enquanto a auditoria registra este alvo — confusão cross-repo")
+
+    # 1) Worktree ligada: `<git_dir>/gitdir` nomeia o `.git` da dona.
+    ponteiro = gd / "gitdir"
+    if ponteiro.is_file():
+        try:
+            bruto = ponteiro.read_text("utf-8", "replace").strip()
+        except OSError:
+            bruto = ""
+        if bruto:
+            dono = supervisor.canonicalizar(str(Path(bruto).parent))
+            if dono != alvo:
+                recusar(dono, "<git_dir>/gitdir")
+            return
+
+    # 2) Submódulo: `core.worktree` no config do git dir aponta para a dona.
+    try:
+        texto = (gd / "config").read_text("utf-8", "replace")
+    except OSError:
+        texto = ""
+    for linha in texto.splitlines():
+        chave, sep, valor = linha.partition("=")
+        if not sep or chave.strip().lower() != "worktree":
+            continue
+        v = valor.strip()
+        if not v:
+            continue
+        caminho = v if os.path.isabs(v) else str(gd / v)
+        try:
+            dono = supervisor.canonicalizar(caminho)
+        except OSError:
+            continue
+        if dono != alvo:
+            recusar(dono, "core.worktree")
+        return
+
+    # 3) Sem registro de dono. Sobra a forma que o Git NUNCA produz por
+    #    indireção legítima: apontar para a `.git` PRINCIPAL de outro repo.
+    if gd.name == ".git" and str(gd.parent) != alvo:
+        recusar(str(gd.parent), "basename `.git`")
+
+    # 4) `--separate-git-dir`: nenhum dono registrado, e o layout é
+    #    indistinguível — byte a byte — entre uso legítimo e roubo. Recusar
+    #    fecharia duas formas P0 medidas (segredo estagiado no índice da VÍTIMA,
+    #    commit na história dela), e quebraria `test_a2repo_05_indirecao_
+    #    LEGITIMA…`, contrato CONGELADO que exige o layout funcionando.
+    #
+    #    Trocar um layout legítimo e documentado do Git por essa contenção é
+    #    decisão de DONO, não de quem corrige. Passa — e o achado fica ABERTO e
+    #    registrado, em vez de silenciosamente fechado ou silenciosamente
+    #    ignorado. Ver A2-REPO.7.12 e A2-REPO.9.05b.
 
 
 def conferir_alternates(repo: Path | str, raizes: tuple[str, ...]) -> None:
@@ -450,6 +542,36 @@ def confinamento_de_repo(repo: Path | str,
     # próximo: a contenção valeria uma vez só.
     proibidos = tuple(f"{raiz}/{nome}" for raiz in raizes
                       for nome in ("hooks", "info", "config"))
+    # C3 — A LEITURA AINDA NÃO É DECLARADA, e isso é um ACHADO ABERTO, não um
+    # esquecimento. Sem `leitura`, `_bloco_de_leitura` emite `(allow file-read*)`
+    # GLOBAL: o processo do Git lê o disco inteiro durante `add`/`commit`.
+    #
+    # Severidade medida: P1, defesa em profundidade. Os dois canais que
+    # transformavam "pode ler" em "conteúdo sai" já estão fechados —
+    # `core.worktree` (P0.3) e symlink no filtro governado (A2-REPO/C3) — então
+    # não é bypass vivo.
+    #
+    # A redução FOI implementada e medida nesta rodada, e revertida por medição:
+    # com `leitura=(existente(repo),) + raizes` a suíte cai em 10 testes que NÃO
+    # são deste contrato, e cada grupo pede uma decisão própria:
+    #
+    #   c2c_integracao / c2c_residual (7)  as SONDAS de controle positivo
+    #       precisam ler o interpretador e o binário da sonda, fora do repo.
+    #       Conserto é de ARNÊS: declarar a raiz de leitura da sonda no
+    #       confinamento que o TESTE monta. Não muda produto.
+    #
+    #   c2a_tag (3)                        o repo hostil declara
+    #       `include.path` para FORA do repositório. O Git trata include
+    #       ilegível como FATAL, então a operação passa a falhar fechada em vez
+    #       de ler o arquivo. É mais seguro e é MUDANÇA DE CONTRATO: o
+    #       repositório ganha um jeito de NEGAR a própria operação. Trocar
+    #       leitura-ampla por DoS-pelo-repo é decisão de dono, não de quem
+    #       corrige.
+    #
+    # LANDMINE, para quem retomar: é `existente()`, NUNCA `canonicalizar()`.
+    # Com `canonicalizar` são 32 falhas com `fatal: Unable to read current
+    # working directory` — os ancestrais saem `/private/var/...` e o processo
+    # enxerga `/var/...`.
     return supervisor.Confinamento(escrita=raizes, rede=rede,
                                    negacao_de_escrita=proibidos,
                                    exec_permitido=executaveis_de_git())

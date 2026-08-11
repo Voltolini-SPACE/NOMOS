@@ -205,15 +205,22 @@ def test_hooks_06_add_commit_tag_tem_exec_allowlist_restrita(bancada):
     assert not any("hooks" in ln for ln in execs)
 
 
-def test_hooks_07_push_tem_exec_AMPLO_e_isso_esta_registrado(bancada):
-    """Achado C13, preso em teste para não sumir.
+def test_hooks_07_push_tem_exec_POR_LITERAL_C13_corrigido(bancada):
+    """C13 FECHADO — este teste mudou de lado, e era para mudar mesmo.
 
-    O push roda com `(allow process-exec process-fork)` — exec AMPLO. Não é
-    defeito latente teórico: é o motivo de a contenção de hook no push depender
-    inteiramente de `--no-verify` + `core.hooksPath`, e não do sandbox.
+    A versão anterior prendia o DEFEITO: exigia
+    `(allow process-exec process-fork)` e dizia "quando C13 for corrigido, este
+    teste falha — e é assim que se descobre que a correção chegou". Chegou.
 
-    Quando C13 for corrigido, este teste falha — e é assim que se descobre que
-    a correção chegou, em vez de deixar a documentação envelhecer sozinha.
+    O push agora declara allowlist por LITERAL. A allowlist inclui o shell, e
+    isso é medição e não conveniência: o transporte local do Git executa
+    `git-receive-pack '<destino>'` ATRAVÉS de um shell, e só com os dois
+    binários de git o push legítimo morre em `cannot exec 'git-receive-pack …':
+    Operation not permitted`.
+
+    Incluir o shell parece devolver tudo, e não devolve — a allowlist vale para
+    a árvore INTEIRA de processos, então o shell só executa o que também está
+    nela. É o que `test_hooks_07b` mede.
     """
     bare = bancada.tmp / "bare.git"
     subprocess.run([GIT, "init", "-q", "--bare", str(bare)], check=True,
@@ -224,10 +231,37 @@ def test_hooks_07_push_tem_exec_AMPLO_e_isso_esta_registrado(bancada):
         bancada.repo, d)
     execs = [ln for ln in supervisor.perfil(conf).splitlines()
              if "process-exec" in ln]
-    assert execs == ["(allow process-exec process-fork)"], (
-        f"o exec do push mudou: {execs}. Se ele foi RESTRINGIDO, C13 está "
-        "corrigido — atualize este teste e o docstring do módulo, porque a "
-        "contenção de hook no push deixou de depender só dos flags")
+    assert execs, "o push ficou SEM allowlist de exec"
+    assert "(allow process-exec process-fork)" not in execs, (
+        "REGRESSÃO de C13: o push voltou ao exec AMPLO, e com ele a contenção "
+        "de hook no push volta a depender só de --no-verify + core.hooksPath")
+    assert all("literal" in ln for ln in execs), (
+        f"exec do push deixou de ser por literal: {execs}")
+
+
+def test_hooks_07b_a_allowlist_do_push_CONTEM_de_verdade(bancada):
+    """O shell na allowlist não devolve a execução — medido, não argumentado.
+
+    Sem este teste, `test_hooks_07` prova só que a lista existe; um `/bin/sh`
+    ali dentro poderia significar contenção nenhuma. O que separa as duas
+    hipóteses é rodar um binário que NÃO está na lista, a partir do shell que
+    está.
+    """
+    bare = bancada.tmp / "bare.git"
+    subprocess.run([GIT, "init", "-q", "--bare", str(bare)], check=True,
+                   capture_output=True)
+    d = git_push.DestinoGovernado(remote_id="o", url=f"file://{bare}",
+                                  branch_destino="main")
+    conf = git_push.GitPushAdapter(destinos={"o": d}).confinamento(
+        bancada.repo, d)
+
+    p = supervisor.executar(["/bin/sh", "-c", "/usr/bin/id"],
+                            cwd=bancada.repo, env=git.ambiente_minimo(),
+                            prazo=15.0, confinamento=conf)
+    assert p.returncode != 0, (
+        "o shell da allowlist executou /usr/bin/id — a allowlist não contém a "
+        "ÁRVORE de processos, e o push voltou a poder rodar programa arbitrário")
+    assert b"not permitted" in p.stderr.lower() or not p.stdout.strip()
 
 
 def test_hooks_08_a_neutralizacao_sozinha_NAO_muda_add_commit(bancada,
