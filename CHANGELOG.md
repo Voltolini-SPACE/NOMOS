@@ -4,6 +4,79 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Changed (S1+S2 — o supervisor vira fronteira de execução, e não wrapper de Git)
+O supervisor é a fronteira ÚNICA por onde processo externo executa, mas duas
+coisas ainda tinham a forma de quando ele existia só para o Git. As duas foram
+MEDIDAS como bloqueio de A5.6 antes de qualquer linha ser escrita:
+
+- **`supervisor.executar()` não alimentava stdin** (`stdin=DEVNULL` fixo). Um
+  `filter.clean` do Git RECEBE o conteúdo do arquivo por STDIN e devolve o
+  transformado por STDOUT — é a interface, não uma conveniência. Sem isso, um
+  filtro governado não funciona por mais aprovado (A5.2), íntegro (A5.3), com
+  argv fixo (A5.4) e confinado (A5.5) que esteja. Agora existe `entrada:
+  bytes | None`, alimentada por thread própria. `entrada=None` mantém
+  `DEVNULL` byte a byte — nenhum caller do Git muda de semântica.
+  A escrita é em THREAD, e não inline, por medição: um processo que não lê
+  stdin enche o buffer do pipe (64 KiB) e a escrita inline bloquearia ANTES do
+  `proc.wait(timeout=prazo)` — o prazo deixaria de existir exatamente no caso
+  em que ele é mais necessário. `str` é RECUSADO: aceitar texto obrigaria o
+  supervisor a escolher um encoding, e essa escolha mudaria os bytes que o
+  filtro recebe.
+- **`conferir_ambiente` exigia as 4 neutralizações de Git de TODO processo.**
+  Correto quando supervisor = Git; errado para um filtro, cujo ambiente mínimo
+  é `{LANG, LC_ALL}` (A5.5). As duas regras estão certas isoladamente e são
+  incompatíveis se aplicadas globalmente. A exigência virou **por tipo de
+  processo** (`TipoDeProcesso.GIT` / `FILTRO_GOVERNADO`), sem afrouxar nada: as
+  4 variáveis do Git seguem idênticas em conteúdo e em efeito, e as proibições
+  universais (`HOME`, `DYLD_*`, `LD_*`) valem para os dois tipos. O filtro
+  ganhou uma proibição a mais — nenhuma variável `GIT_*` —, porque autoridade
+  não atravessa fronteira de tipo.
+  O tipo é **enum explícito**, nunca deduzido do argv ou do nome do binário;
+  há teste estrutural contra heurística de string. O default é `GIT` porque é a
+  regra mais ESTRITA: quem esquecer de declarar o tipo recebe RECUSA
+  (`neutralização obrigatória ausente`), nunca autoridade a mais.
+
+Prova: `tests/test_absorption07_s1s2_supervisor_generalizado.py` (42 casos),
+com controle NEGATIVO pareado — `test_s2_11` mostra que o mesmo filtro sem
+`entrada` devolve vazio, então o verde de `test_s2_10`
+(`SENHA=hunter2` → `SENHA=REDIGIDO`) não é vácuo. Mutação dirigida: 9 mutantes
+plausíveis (tipo ignorado, env de Git opcional, filtro herdando env de Git,
+fronteira de tipo decorativa, DEVNULL apesar da entrada, entrada nunca
+alimentada, stdin nunca fechado, pós-condição de resíduo pulada, `str` aceito)
+— **9 mortos, 0 sobreviventes**.
+
+### Fixed (A5.3 — teste intermitente trocado por três deterministas)
+`test_20_tamper_concorrente_nunca_executa_codigo_nao_aprovado` falhava **2 em
+10** execuções sob carga, com o produto intacto. A causa foi medida: o tamper
+eram 80 reescritas de arquivo (microssegundos) contra 60 execuções de processo
+(~45 ms), então a thread atacante terminava INTEIRA antes de a primeira
+execução sair do lugar, e o próprio guard de vácuo do teste (`detectou > 0`)
+disparava. Teste intermitente é pior que teste ausente: ensina a ignorar
+vermelho e envenena tudo que classifica por resultado — mutação, corrida e caos
+atribuiriam a flutuação ao mutante.
+
+Amarrar o tamper à mesma condição de parada trocou a intermitência por uma
+falha DETERMINÍSTICA e mais informativa. Medido com contadores, 5 rodadas de 60
+execuções: com tamper contínuo no ARTEFATO, `HOSTIL=2..10/60` e canário
+presente em **5/5**. Ou seja, o verificar-e-depois-executar é vencido por quem
+reescreve o artefato em laço — que é exatamente a conclusão de A5.3.1, a razão
+de a corrida ter sido tirada do caminho de execução em vez de disputada.
+
+O que decide se isso é brecha ou fronteira é uma pergunta de alcançabilidade
+que os 22 testes de A5.5 não faziam: **o atacante do modelo — o repositório,
+agindo pelo processo do filtro — alcança o armazém?** Medido com controle
+positivo por alvo: **não**. O artefato próprio e o armazém são NEGADOS sob
+sandbox e ALCANÇADOS sem ele; o escopo legítimo do filtro segue acessível (é o
+controle que impede as duas primeiras linhas de serem vácuo). Só um processo de
+mesmo uid FORA do sandbox alcança — o lado confiável, onde o dono da máquina já
+pode trocar o próprio NOMOS.
+
+O bloco virou três testes que afirmam o que é verdade e provável:
+`test_20a` (o atacante do modelo, a origem externa, nunca executa — canário),
+`test_20b` (o filtro confinado não alcança o armazém — a razão), e
+`test_20c` (artefato divergente é DETECTADO, com corrida real e sem vácuo).
+Determinismo medido: **12/12** execuções verdes, contra 8/10 antes.
+
 ### Fixed (números desatualizados nas superfícies públicas)
 - **Hero do site** anunciava `1.800+` testes e o **README** "mais de 1.800",
   números de antes das últimas missões. Corrigidos para `1.900+`, que é o

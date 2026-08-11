@@ -56,6 +56,21 @@ int main(int argc, char **argv) {
         printf("ENV_%s=%s\n", argv[2], v ? v : "(ausente)");
         return v ? 0 : 1;
     }
+    if (argc > 1 && strcmp(argv[1], "--sonda-dorme") == 0) {
+        /* Lê stdin ATÉ O FIM e só então dorme. Existe para medir o prazo com
+         * stdin ligado. Um shell script não serve como sonda aqui: exigiria o
+         * interpretador na allowlist de exec, que é exatamente o que A5.5
+         * fechou — o sandbox recusa a troca de imagem para a variante do shell.
+         * A sonda de prazo tem de ser nativa pelo mesmo motivo que o filtro
+         * tem de ser nativo. */
+        char buf[4096];
+        while (fread(buf, 1, sizeof buf, stdin) > 0) { }
+        printf("LI_TUDO\n");
+        fflush(stdout);
+        sleep(argc > 2 ? atoi(argv[2]) : 30);
+        printf("ACORDEI\n");
+        return 0;
+    }
     if (argc > 1 && strcmp(argv[1], "--sonda-exec") == 0) {
         /* `execv` SUBSTITUI a imagem do processo. Em caso de SUCESSO este
          * código deixa de existir — então é impossível ele imprimir um

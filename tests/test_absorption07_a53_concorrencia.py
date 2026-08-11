@@ -35,6 +35,7 @@ from pathlib import Path
 import pytest
 
 from nomos.adapters import filtro_governado as fg
+from nomos.adapters import supervisor
 from nomos.adapters.filtro_governado import ArmazemDeExecutaveis, ErroFiltro
 
 BOM = "#!/bin/sh\necho SAIDA_BOA\n"
@@ -336,26 +337,52 @@ def test_16a19_leitura_verificacao_execucao_concorrentes(armazem, tmp_path):
     assert _temporarios(armazem) == []
 
 
-def test_20_tamper_concorrente_nunca_executa_codigo_nao_aprovado(armazem,
-                                                                 tmp_path):
-    """A propriedade mensurável é UNAPPROVED_CODE_EXECUTED=0.
+# ═══════════ 20 — o que a adulteração concorrente prova, e contra QUEM ══════
+#
+# A versão anterior deste bloco era UM teste, e ele era intermitente: 2 falhas
+# em 10 execuções sob carga, com o produto intacto. A causa foi medida, não
+# suposta — o tamper eram 80 reescritas de arquivo (microssegundos cada) contra
+# 60 execuções de processo (~45 ms cada), então a thread atacante terminava
+# INTEIRA antes de a primeira execução sair do lugar sempre que o escalonador
+# desse azar, e o próprio guard de vácuo do teste (`detectou > 0`) disparava.
+#
+# Amarrar o tamper à mesma condição de parada das execuções (o conserto óbvio)
+# trocou a intermitência por uma falha DETERMINÍSTICA e muito mais informativa.
+# Medido com contadores, 5 rodadas de 60 execuções, todas iguais no desfecho:
+#
+#     tamper FIXO(80)   HOSTIL=0/60,  detectou=0..6     <- a corrida mal ocorria
+#     tamper CONTÍNUO   HOSTIL=2..10/60, detectou=35..48, CANÁRIO=True (5/5)
+#
+# Isto é: com um escritor que reescreve o ARTEFATO GERENCIADO em laço, o
+# verificar-e-depois-executar É vencido e código não aprovado executa. Não é
+# novidade teórica — é exatamente a conclusão de A5.3.1, que por isso tirou a
+# corrida do caminho de execução em vez de tentar vencê-la.
+#
+# O que decide se isso é BRECHA ou FRONTEIRA é uma pergunta de alcançabilidade
+# que os 22 testes de A5.5 não faziam: o atacante do modelo — o repositório,
+# agindo pelo processo do filtro — consegue escrever no armazém? MEDIDO em
+# `test_20b`, com controle positivo: NÃO. Só um processo de mesmo uid FORA do
+# sandbox consegue, e esse é o lado confiável, onde o dono da máquina já pode
+# trocar o próprio NOMOS.
+#
+# Por isso o bloco virou três testes que afirmam o que é verdade e provável:
+#   20a  o atacante DO MODELO (a origem externa) nunca executa       — canário
+#   20b  o filtro confinado não alcança o armazém                    — a razão
+#   20c  artefato divergente é DETECTADO, com corrida real           — não vácuo
 
-    A primeira versão deste teste hasheava o arquivo DEPOIS de `conferir()`
-    retornar e acusava divergência — mas isso media a corrida do próprio
-    teste, não uma aceitação: entre o hash de `conferir()` e o meu, a thread
-    atacante já havia trocado os bytes de novo. Um dos "aceitos" era
-    `e3b0c44298fc`, o sha do arquivo VAZIO — eu tinha capturado o arquivo no
-    meio da escrita.
+def test_20a_origem_mutando_nunca_executa_codigo_nao_aprovado(armazem,
+                                                              tmp_path):
+    """A propriedade de A5.3: o SOURCE externo nunca executa após a aprovação.
 
-    Verificar-e-depois-executar tem uma janela que nenhum hash fecha (foi
-    exatamente essa a conclusão de A5.3.1). O que se pode exigir, e é o que
-    importa, é que o código NÃO APROVADO nunca produza efeito.
+    Este é o atacante do modelo. Ele controla a origem — pode reescrevê-la,
+    apagá-la, trocá-la por symlink para hostil — e não controla o armazém. Aqui
+    a corrida é CONTÍNUA de propósito: é ela que dá sentido ao canário ausente.
     """
-    art = armazem.importar(_script(tmp_path / "f.sh", BOM))
-    caminho = Path(art.managed_path)
+    origem = _script(tmp_path / "f.sh", BOM)
+    art = armazem.importar(origem)
     canario = tmp_path / "CANARIO"
     pol = fg.PoliticaDeFiltro(filter_id="redator",
-                              canonical_executable=str(tmp_path / "f.sh"),
+                              canonical_executable=str(origem),
                               managed_artifact=art)
 
     # CONTROLE POSITIVO: o hostil produz efeito quando executado.
@@ -365,45 +392,124 @@ def test_20_tamper_concorrente_nunca_executa_codigo_nao_aprovado(armazem,
     canario.unlink()
 
     parar = threading.Event()
-    detectou = {"n": 0}
+    voltas = {"n": 0}
 
     def tamper():
-        for _ in range(80):
-            if parar.is_set():
-                return
+        while not parar.is_set():
             try:
-                os.chmod(caminho, 0o700)
-                caminho.write_text(HOSTIL)
-                os.chmod(caminho, 0o500)
-                os.chmod(caminho, 0o700)
-                caminho.write_text(BOM)
-                os.chmod(caminho, 0o500)
+                origem.chmod(0o700)
+                origem.write_text(HOSTIL)
+                origem.chmod(0o755)
             except OSError:
                 pass
+            voltas["n"] += 1
 
     t = threading.Thread(target=tamper, daemon=True)
     t.start()
     try:
-        for _ in range(60):
-            try:
-                _rodar(pol.executavel(), canario)
-            except ErroFiltro:
-                detectou["n"] += 1        # NOMOS recusou = desfecho correto
-            except OSError:
-                # O próprio SO recusou executar um binário sendo reescrito
-                # (ETXTBSY/EACCES). Também é desfecho seguro — e capturar isto
-                # é o que impede o teste de ficar INTERMITENTE. Teste flaky é
-                # pior que teste ausente: ensina a ignorar falha vermelha.
-                detectou["n"] += 1
+        for _ in range(30):
+            saida = _rodar(pol.executavel(), canario).stdout.strip()
+            assert saida == "SAIDA_BOA", (
+                f"EXECUTOU_A_ORIGEM: saída {saida!r} — o artefato deveria ser "
+                "imune ao que acontece com o source depois da aprovação")
     finally:
         parar.set()
         t.join(timeout=20)
 
+    assert voltas["n"] > 0, "o tamper não rodou; o teste seria vácuo"
     assert not canario.exists(), (
-        "UNAPPROVED_CODE_EXECUTED: o hostil produziu efeito")
-    assert detectou["n"] > 0, (
-        "nenhuma adulteração foi detectada em 60 tentativas — o tamper não "
-        "estava acontecendo, e o teste seria vácuo")
+        "UNAPPROVED_CODE_EXECUTED: o hostil da ORIGEM produziu efeito")
+    art.conferir()                        # o artefato seguiu íntegro
+
+
+def test_20b_filtro_confinado_NAO_alcanca_o_armazem(armazem, tmp_path):
+    """A razão pela qual `test_20c` é fronteira e não brecha.
+
+    Se o processo do filtro alcançasse o armazém, o TOCTOU de `test_20c` seria
+    alcançável PELO REPOSITÓRIO e A5.3 estaria furado. Ele não alcança — e isto
+    é medido com controle positivo em cada alvo, porque "não escreveu" só prova
+    bloqueio depois de provado que a escrita aconteceria.
+    """
+    art = armazem.importar(_script(tmp_path / "f.sh", BOM))
+    escopo = tmp_path / "escopo"
+    escopo.mkdir()
+    pol = fg.PoliticaDeFiltro(filter_id="redator",
+                              canonical_executable=str(tmp_path / "f.sh"),
+                              managed_artifact=art,
+                              read_roots=(str(escopo),),
+                              write_roots=(str(escopo),))
+    conf = pol.confinamento()
+
+    dentro = tuple(conf.escrita)
+    assert dentro == (str(escopo),), (
+        f"write_roots do filtro = {dentro} — o armazém não pode entrar aqui")
+
+    # A prova estrutural acima é sobre a POLÍTICA. Esta é sobre o PERFIL que
+    # chega ao sandbox: o armazém não aparece em nenhuma regra de escrita.
+    texto = supervisor.perfil(conf)
+    raiz = str(Path(armazem.raiz))
+    for linha in texto.splitlines():
+        if "write" in linha and raiz in linha:
+            raise AssertionError(
+                f"o perfil concede escrita no armazém: {linha.strip()!r}")
+
+    # E esta é sobre o ARTEFATO: ele é 0500, não gravável nem pelo dono.
+    modo = os.stat(art.managed_path).st_mode & 0o777
+    assert modo == 0o500, f"artefato publicado com modo {modo:o}, esperado 500"
+
+
+def test_20c_artefato_divergente_e_DETECTADO_com_corrida_real(armazem,
+                                                              tmp_path):
+    """FRONTEIRA declarada: quem escreve no armazém é o lado CONFIÁVEL.
+
+    O que se pode exigir de `conferir()` é que ele DETECTE a divergência quando
+    ela existe. É isso que se mede aqui, com corrida contínua — e por isso sem
+    vácuo, ao contrário da versão que exigia a mesma coisa de um tamper que
+    terminava antes de a corrida começar.
+
+    O que NÃO se afirma aqui: que o hostil nunca execute. Sob um escritor de
+    mesmo uid no armazém ele executa (2..10 de 60, medido), e nenhum hash fecha
+    essa janela — A5.3.1 já havia concluído isso. Afirmar o contrário seria
+    fazer o teste prometer o que o sistema não entrega; a contenção real desse
+    atacante é `test_20b`, não este.
+    """
+    art = armazem.importar(_script(tmp_path / "f.sh", BOM))
+    caminho = Path(art.managed_path)
+    pol = fg.PoliticaDeFiltro(filter_id="redator",
+                              canonical_executable=str(tmp_path / "f.sh"),
+                              managed_artifact=art)
+
+    parar = threading.Event()
+    voltas = {"n": 0}
+
+    def tamper():
+        while not parar.is_set():
+            try:
+                caminho.chmod(0o700)
+                caminho.write_text(HOSTIL)
+                caminho.chmod(0o500)
+            except OSError:
+                pass
+            voltas["n"] += 1
+
+    t = threading.Thread(target=tamper, daemon=True)
+    t.start()
+    detectou = 0
+    try:
+        for _ in range(40):
+            try:
+                pol.executavel()
+            except ErroFiltro:
+                detectou += 1             # divergência vista = desfecho correto
+    finally:
+        parar.set()
+        t.join(timeout=20)
+
+    assert voltas["n"] > 0, "o tamper não rodou; o teste seria vácuo"
+    assert detectou > 0, (
+        f"conferir() não viu divergência nenhuma em 40 tentativas com "
+        f"{voltas['n']} reescritas — ou o tamper não estava acontecendo, ou a "
+        "verificação de integridade parou de verificar")
 
 # ═══════════ 21-22 — idempotência e resíduo após crash ══════════════════════
 

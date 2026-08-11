@@ -92,6 +92,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field, replace
+from enum import Enum
 from pathlib import Path
 
 from nomos.adapters import processos
@@ -151,6 +152,56 @@ EXIGIDAS_NO_AMBIENTE = {
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_SYSTEM": os.devnull,
     "GIT_TERMINAL_PROMPT": "0",
+}
+
+
+class TipoDeProcesso(Enum):
+    """A CLASSE do processo supervisionado. Explícita, nunca inferida.
+
+    O supervisor nasceu como fronteira do Git e virou a fronteira ÚNICA de
+    execução. A exigência de ambiente seguiu sendo a do Git para TODO mundo — o
+    que estava certo enquanto só havia Git, e passou a ser errado no instante em
+    que um filtro governado precisou rodar por aqui:
+
+        Git             exige a NEUTRALIZAÇÃO de Git (as 4 de EXIGIDAS_NO_AMBIENTE)
+        filtro governado exige o MÍNIMO dele ({LANG, LC_ALL}) e nada de Git
+
+    As duas regras estão certas isoladamente e são incompatíveis se aplicadas
+    globalmente. Por isso a exigência passa a ser POR TIPO — e não por
+    relaxamento da regra do Git, que continua idêntica byte a byte.
+
+    O tipo é um ENUM, e é passado explicitamente por quem chama. NÃO se deduz do
+    argv, do nome do binário nem de `"git" in comando`: heurística sobre string
+    é adivinhação, e adivinhação erra do lado de conceder. Um adapter novo que
+    esqueça de declarar o tipo cai no default GIT — que EXIGE MAIS, então o erro
+    sai como recusa (`neutralização obrigatória ausente`), nunca como permissão
+    a mais. Essa direção do erro é deliberada.
+    """
+
+    GIT = "git"
+    FILTRO_GOVERNADO = "filtro-governado"
+
+
+# O mínimo do filtro governado, espelhando `PoliticaDeFiltro.ambiente()`, que
+# nasce vazio e recebe {LANG, LC_ALL} + a allowlist nomeada pela política.
+# Exigi-las prende a regressão inversa: um ambiente de filtro que perca a
+# localidade C passa a depender da locale do host, e o resultado da
+# transformação deixaria de ser reprodutível.
+EXIGIDAS_NO_FILTRO = {"LANG": "C", "LC_ALL": "C"}
+
+EXIGIDAS_POR_TIPO: dict[TipoDeProcesso, dict[str, str]] = {
+    TipoDeProcesso.GIT: EXIGIDAS_NO_AMBIENTE,
+    TipoDeProcesso.FILTRO_GOVERNADO: EXIGIDAS_NO_FILTRO,
+}
+
+# O filtro governado não é Git e não tem por que carregar NADA de Git. Proibir o
+# prefixo inteiro é mais forte do que proibir nomes conhecidos: uma variável
+# `GIT_*` que ainda não existe hoje já nasce recusada aqui. Não é conveniência —
+# é a fronteira de tipo sendo afirmada nas duas direções (o Git exige a
+# neutralização dele; o filtro recusa até a neutralização, porque não é dele).
+PROIBIDOS_PREFIXO_POR_TIPO: dict[TipoDeProcesso, tuple[str, ...]] = {
+    TipoDeProcesso.GIT: (),
+    TipoDeProcesso.FILTRO_GOVERNADO: ("GIT_",),
 }
 
 
@@ -437,14 +488,28 @@ def criar_marca() -> "processos.Marca":
 
 # ------------------------------------------------------------------- ambiente
 
-def conferir_ambiente(env: dict[str, str]) -> None:
+def conferir_ambiente(env: dict[str, str],
+                      tipo: TipoDeProcesso = TipoDeProcesso.GIT) -> None:
     """Recusa se o ambiente construído carregar autoridade indevida.
 
     A lista de PASSO 5 não substitui o teste adversarial, mas prende a
     regressão: se alguém acrescentar `GIT_SSH_COMMAND` ao ambiente mínimo por
     conveniência, a execução para aqui em vez de rodar um binário escolhido
     por variável.
+
+    As PROIBIÇÕES de `PROIBIDAS_NO_AMBIENTE`/`PROIBIDOS_PREFIXO` valem para
+    TODO tipo, sem exceção: `HOME`, `DYLD_*` e `LD_*` concedem autoridade a
+    qualquer processo, não só ao Git. O que varia por tipo é o que cada classe
+    EXIGE (e, no caso do filtro, o prefixo extra que ela recusa).
+
+    O default é `GIT` por uma razão de direção do erro, não de conveniência:
+    a exigência do Git é a mais ESTRITA das duas, então quem esquecer de
+    declarar o tipo recebe RECUSA, nunca autoridade a mais.
     """
+    if not isinstance(tipo, TipoDeProcesso):
+        raise ErroSeguranca(
+            f"tipo de processo {tipo!r} não é TipoDeProcesso — a classe do "
+            "processo é decisão tipada, não string vinda do chamador")
     for chave in env:
         if chave in PROIBIDAS_NO_AMBIENTE:
             raise ErroSeguranca(
@@ -453,11 +518,16 @@ def conferir_ambiente(env: dict[str, str]) -> None:
         if chave.startswith(PROIBIDOS_PREFIXO):
             raise ErroSeguranca(
                 f"ambiente carrega {chave!r} — injeção de configuração/biblioteca")
-    for chave, valor in EXIGIDAS_NO_AMBIENTE.items():
+        if chave.startswith(PROIBIDOS_PREFIXO_POR_TIPO[tipo]):
+            raise ErroSeguranca(
+                f"ambiente de {tipo.value} carrega {chave!r} — variável de OUTRO "
+                "tipo de processo: autoridade não atravessa a fronteira de tipo")
+    for chave, valor in EXIGIDAS_POR_TIPO[tipo].items():
         if env.get(chave) != valor:
             raise ErroSeguranca(
-                f"neutralização obrigatória ausente: {chave}={valor!r} "
-                f"(veio {env.get(chave)!r}) — sem ela o Git lê config do host")
+                f"neutralização obrigatória ausente para {tipo.value}: "
+                f"{chave}={valor!r} (veio {env.get(chave)!r}) — sem ela o "
+                "processo lê config/locale do host")
 
 
 # ------------------------------------------------------------------- execução
@@ -534,6 +604,37 @@ def _drenar(fh, destino: list) -> None:
             pass
 
 
+def _alimentar(fh, dados: bytes) -> None:
+    """Escreve `dados` no stdin do filho, numa thread própria, e FECHA.
+
+    Thread, e não escrita inline, por duas razões medidas:
+
+    1. Um processo que NÃO LÊ o stdin enche o buffer do pipe (64 KiB neste
+       host) e a escrita inline bloquearia ANTES do `proc.wait(timeout=prazo)`
+       — o timeout deixaria de existir para exatamente o caso em que ele é
+       mais necessário. Na thread, o `wait` continua sendo quem manda.
+    2. Um processo que lê TUDO e só depois escreve precisa que o supervisor
+       esteja drenando stdout ao mesmo tempo. Escrita inline serializaria as
+       duas pontas e travaria em qualquer entrada maior que o buffer.
+
+    O `close()` no `finally` é a parte que faz o filtro funcionar: sem EOF, um
+    clean filter espera mais conteúdo para sempre e o prazo estoura sem que
+    ninguém tenha errado. `BrokenPipeError` é saída NORMAL — o filho pode
+    encerrar antes de consumir tudo (`head`-like), e isso não é falha do
+    supervisor.
+    """
+    try:
+        fh.write(dados)
+        fh.flush()
+    except (BrokenPipeError, OSError, ValueError):
+        pass
+    finally:
+        try:
+            fh.close()
+        except (BrokenPipeError, OSError):
+            pass
+
+
 def _classificar(rc: int, morto: bool) -> str:
     if morto:
         return "KILLED_BY_TIMEOUT"
@@ -575,12 +676,38 @@ class Quarentena:
 def executar(argv: list[str], *, cwd: str | Path, env: dict[str, str],
              prazo: float, confinamento: Confinamento,
              binario_sandbox: str = SANDBOX,
-             quarentena: "Quarentena | None" = None) -> Resultado:
-    """Executa `argv` confinado. Qualquer falha de preparo é RECUSA."""
+             quarentena: "Quarentena | None" = None,
+             tipo: TipoDeProcesso = TipoDeProcesso.GIT,
+             entrada: bytes | None = None) -> Resultado:
+    """Executa `argv` confinado. Qualquer falha de preparo é RECUSA.
+
+    `entrada` alimenta o STDIN do processo supervisionado. Existe porque a
+    interface de um `filter.clean` do Git É stdin/stdout — o conteúdo do arquivo
+    entra por stdin e o transformado sai por stdout —, não uma conveniência que
+    se possa contornar. Sem isto, um filtro governado NÃO FUNCIONA por mais
+    aprovado (A5.2), íntegro (A5.3), com argv fixo (A5.4) e confinado (A5.5) que
+    esteja.
+
+    A alternativa — abrir um `subprocess` paralelo só para alimentar stdin —
+    contornaria de uma vez timeout, kill de árvore, perfil de sandbox, auditoria
+    e pós-condição de resíduo. Seria trocar a fronteira única por duas.
+
+    `entrada=None` (o default) mantém `stdin=DEVNULL`, byte a byte o
+    comportamento histórico: nenhum caller do Git muda de semântica. `b""` NÃO é
+    o mesmo que `None` — vai por PIPE e fecha, o que o filho vê como EOF imediato
+    vindo de um pipe real, e é essa a diferença que um clean filter enxerga.
+    """
     if prazo <= 0:
         raise ErroLimite("prazo esgotado antes de iniciar o processo")
     if not argv:
         raise ErroSeguranca("argv vazio")
+    if entrada is not None and not isinstance(entrada, (bytes, bytearray)):
+        # `str` é recusado de propósito: aceitar texto obrigaria o supervisor a
+        # escolher um encoding, e essa escolha alteraria os bytes que o filtro
+        # recebe. Quem sabe o encoding é quem tem o conteúdo, não a fronteira.
+        raise ErroSeguranca(
+            f"entrada de stdin é {type(entrada).__name__}, não bytes — o "
+            "supervisor não escolhe encoding por ninguém")
     if not os.path.exists(binario_sandbox):
         raise ErroSeguranca(
             f"{binario_sandbox} ausente: sem sandbox não há execução de Git. "
@@ -590,7 +717,7 @@ def executar(argv: list[str], *, cwd: str | Path, env: dict[str, str],
             "confinamento sem nenhuma raiz de escrita declarada — recuso por "
             "ambiguidade: ou a capacidade não escreve (e declara isso), ou "
             "alguém esqueceu de delimitar")
-    conferir_ambiente(env)
+    conferir_ambiente(env, tipo)
     if quarentena is not None:
         # DEPOIS da conferência, e nunca antes: o guard existe para denunciar
         # ambiente HERDADO, e continua fazendo isso. Aqui é o supervisor
@@ -623,7 +750,9 @@ def executar(argv: list[str], *, cwd: str | Path, env: dict[str, str],
         try:
             proc = subprocess.Popen(
                 completo, cwd=cwd_real, env=dict(env),
-                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                stdin=(subprocess.DEVNULL if entrada is None
+                       else subprocess.PIPE),
+                stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, close_fds=True, shell=False,
                 preexec_fn=_preexec(confinamento))       # noqa: PLW1509
         except OSError as exc:
@@ -641,6 +770,14 @@ def executar(argv: list[str], *, cwd: str | Path, env: dict[str, str],
             threading.Thread(target=_drenar, args=(proc.stderr, buf_err),
                              daemon=True),
         ]
+        # A alimentação entra na MESMA lista das drenagens de propósito: as três
+        # pontas do processo têm o mesmo dono, o mesmo ciclo de vida e o mesmo
+        # `join` — e nenhuma delas pode segurar o supervisor além do prazo.
+        if entrada is not None and proc.stdin is not None:
+            threads.append(
+                threading.Thread(target=_alimentar,
+                                 args=(proc.stdin, bytes(entrada)),
+                                 daemon=True))
         for t in threads:
             t.start()
 
