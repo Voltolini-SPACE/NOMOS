@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -24,6 +25,39 @@
 static int prova(const char *rot, int ok) {
     printf("%s=%s\n", rot, ok ? "ALCANCEI" : "NEGADO");
     return ok;
+}
+
+/* ─────────────────── sondas de CICLO DE VIDA (A5.6) ──────────────────────
+ *
+ * Descendente aqui é sempre por `fork`, nunca por exec de outro programa: a
+ * allowlist de exec do filtro tem UM literal só (o próprio artefato), e é isso
+ * que A5.5 congelou. Fork continua permitido de propósito — removê-lo foi
+ * medido e faz `git commit` devolver rc=0 com "cannot fork() for maintenance",
+ * degradação silenciosa.
+ *
+ * Cada processo criado GRAVA UM MARCADOR com o próprio pid antes de dormir.
+ * O marcador é o controle positivo do teste de kill: sem ele, "não sobrou
+ * processo" não se distingue de "nunca houve processo", e a bateria inteira
+ * seria vácuo. O teste lê os pids do disco e exige que TENHAM EXISTIDO e
+ * estejam mortos depois. */
+static void marcar(const char *dir, const char *papel, pid_t pid) {
+    char caminho[4096];
+    snprintf(caminho, sizeof caminho, "%s/%s.%d", dir, papel, (int)pid);
+    FILE *f = fopen(caminho, "w");
+    if (f) { fprintf(f, "%d\n", (int)pid); fclose(f); }
+}
+
+/* Marca, avisa no stdout e dorme. O flush é obrigatório: sem ele o buffer
+ * morre junto com a imagem quando o SIGKILL chega, e o teste perderia a prova
+ * de que o processo chegou a existir. */
+static int marcar_e_dormir(const char *dir, const char *papel, int seg) {
+    marcar(dir, papel, getpid());
+    printf("%s_VIVO=%d\n", papel, (int)getpid());
+    fflush(stdout);
+    sleep(seg);
+    printf("%s_ACORDOU=%d\n", papel, (int)getpid());
+    fflush(stdout);
+    return 0;
 }
 
 int main(int argc, char **argv) {
@@ -70,6 +104,63 @@ int main(int argc, char **argv) {
         sleep(argc > 2 ? atoi(argv[2]) : 30);
         printf("ACORDEI\n");
         return 0;
+    }
+    /* --sonda-filho <seg> <dir> : o PAI sai JÁ; o filho fica. Caso "parent
+     * exits, child remains": o `wait` do supervisor vê sucesso imediato, e a
+     * pós-condição de resíduo é a única coisa entre isso e um descendente
+     * vivo com a autoridade de uma operação que já terminou. */
+    if (argc > 3 && strcmp(argv[1], "--sonda-filho") == 0) {
+        pid_t p = fork();
+        if (p == 0) { _exit(marcar_e_dormir(argv[3], "filho", atoi(argv[2]))); }
+        printf("PAI_SAI=%d FILHO=%d\n", (int)getpid(), (int)p);
+        fflush(stdout);
+        return 0;
+    }
+    /* --sonda-neto <seg> <dir> : três gerações vivas ao mesmo tempo. */
+    if (argc > 3 && strcmp(argv[1], "--sonda-neto") == 0) {
+        int seg = atoi(argv[2]);
+        pid_t p = fork();
+        if (p == 0) {
+            pid_t n = fork();
+            if (n == 0) { _exit(marcar_e_dormir(argv[3], "neto", seg)); }
+            _exit(marcar_e_dormir(argv[3], "filho", seg));
+        }
+        return marcar_e_dormir(argv[3], "pai", seg);
+    }
+    /* --sonda-solta <seg> <dir> : o filho TROCA DE GRUPO (setsid) e some do
+     * killpg. É a assinatura do escape: grupo original vazio, que
+     * `_matar_arvore` lê como "nada sobreviveu". Quem prova ausência aqui é a
+     * marca de sandbox, não o grupo. */
+    if (argc > 3 && strcmp(argv[1], "--sonda-solta") == 0) {
+        int seg = atoi(argv[2]);
+        pid_t p = fork();
+        if (p == 0) { setsid(); _exit(marcar_e_dormir(argv[3], "solto", seg)); }
+        return marcar_e_dormir(argv[3], "pai", seg);
+    }
+    /* --sonda-forks <n> <seg> <dir> : muitos descendentes de uma vez. */
+    if (argc > 4 && strcmp(argv[1], "--sonda-forks") == 0) {
+        int n = atoi(argv[2]), seg = atoi(argv[3]);
+        for (int i = 0; i < n; i++) {
+            pid_t p = fork();
+            if (p == 0) { _exit(marcar_e_dormir(argv[4], "cria", seg)); }
+        }
+        return marcar_e_dormir(argv[4], "pai", seg);
+    }
+    /* --sonda-teimosa <seg> : IGNORA SIGTERM e SIGINT. O encerramento
+     * educado não basta; só o SIGKILL fecha. */
+    if (argc > 2 && strcmp(argv[1], "--sonda-teimosa") == 0) {
+        signal(SIGTERM, SIG_IGN);
+        signal(SIGINT, SIG_IGN);
+        printf("TEIMOSA_VIVA=%d\n", (int)getpid());
+        fflush(stdout);
+        for (int i = 0; i < atoi(argv[2]); i++) sleep(1);
+        printf("TEIMOSA_ACORDOU\n");
+        return 0;
+    }
+    /* --sonda-rc <n> : saída não-zero deliberada. */
+    if (argc > 2 && strcmp(argv[1], "--sonda-rc") == 0) {
+        printf("SAINDO_COM=%s\n", argv[2]);
+        return atoi(argv[2]);
     }
     if (argc > 1 && strcmp(argv[1], "--sonda-exec") == 0) {
         /* `execv` SUBSTITUI a imagem do processo. Em caso de SUCESSO este

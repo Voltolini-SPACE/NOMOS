@@ -673,6 +673,107 @@ class Quarentena:
     alternativos: str       # GIT_ALTERNATE_OBJECT_DIRECTORIES — leitura de lá
 
 
+def _acompanhar(proc, pgid: int, marca, prazo: float, entrada: bytes | None,
+                completo: list[str], texto_perfil: str) -> Resultado:
+    """Do processo nascido até o Resultado: drenar, alimentar, esperar, encerrar.
+
+    Extraído de `executar` para que exista UM ponto onde o caminho feliz
+    termina e um `except BaseException` possa cercá-lo inteiro. Enquanto isto
+    era corpo inline, "encerrar a árvore" só acontecia se a espera terminasse
+    normalmente — e uma exceção no meio pulava a pós-condição toda.
+    """
+    buf_out: list[bytes] = []
+    buf_err: list[bytes] = []
+    threads = [
+        threading.Thread(target=_drenar, args=(proc.stdout, buf_out),
+                         daemon=True),
+        threading.Thread(target=_drenar, args=(proc.stderr, buf_err),
+                         daemon=True),
+    ]
+    # A alimentação entra na MESMA lista das drenagens de propósito: as três
+    # pontas do processo têm o mesmo dono, o mesmo ciclo de vida e o mesmo
+    # `join` — e nenhuma delas pode segurar o supervisor além do prazo.
+    if entrada is not None and proc.stdin is not None:
+        threads.append(
+            threading.Thread(target=_alimentar,
+                             args=(proc.stdin, bytes(entrada)), daemon=True))
+    for t in threads:
+        t.start()
+
+    morto = False
+    try:
+        proc.wait(timeout=prazo)
+    except subprocess.TimeoutExpired:
+        morto = True
+
+    # SEMPRE, não só no timeout. A autoridade era executar ESTA operação;
+    # o que o processo deixou rodando não foi autorizado por ninguém.
+    grupo_resistiu = _matar_arvore(pgid)
+    for t in threads:
+        t.join(REAP_S)
+    try:
+        proc.wait(timeout=REAP_S)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        raise ErroSeguranca(
+            "UNKNOWN_SECURITY_STATE: processo principal não morreu após "
+            f"SIGKILL no grupo (pgid={pgid})") from None
+    # A PROVA de ausência. `_matar_arvore` só sabe do grupo ORIGINAL, e
+    # quem trocou de grupo o esvazia — o que aquela função lê como sucesso.
+    mortos, sobreviventes = processos.exterminar(marca)
+    if sobreviventes or grupo_resistiu:
+        raise ErroSeguranca(
+            "PROCESS_CONFINEMENT=FAIL: sobraram "
+            f"{len(sobreviventes)} processo(s) desta execução após o "
+            f"SIGKILL (grupo_resistiu={grupo_resistiu}). Processo residual "
+            "NUNCA vira PASS só porque a resposta ao caller foi negada")
+
+    return Resultado(
+        returncode=proc.returncode, stdout=b"".join(buf_out),
+        stderr=b"".join(buf_err),
+        classificacao=_classificar(proc.returncode, morto),
+        morto_por_timeout=morto, sandbox_aplicado=True,
+        argv_efetivo=tuple(completo), perfil_usado=texto_perfil,
+        residuais_mortos=len(mortos), grupo_resistiu=grupo_resistiu)
+
+
+def _encerrar_a_forca(pgid: int, marca, causa: BaseException) -> None:
+    """Encerra a árvore quando a saída é por EXCEÇÃO, e não pelo caminho feliz.
+
+    Melhor-esforço em tudo, MENOS na conclusão: se sobrar processo, isto vira
+    `ErroSeguranca` encadeada na causa original. Encadear e não substituir
+    porque as duas informações importam — o que interrompeu, e o que ficou
+    vivo. Engolir a segunda transformaria vazamento de processo em "o operador
+    cancelou", que é o tipo de silêncio que esta série existe para eliminar.
+
+    O `Ctrl-C` do operador continua sendo `KeyboardInterrupt` para quem chamou
+    — a troca por `ErroSeguranca` só acontece quando há resíduo REAL, isto é,
+    quando o estado deixou de ser o que o cancelamento prometia.
+    """
+    falha_ao_matar: BaseException | None = None
+    try:
+        _matar_arvore(pgid)
+    except BaseException as e:      # noqa: BLE001 - a prova é `exterminar`
+        # NÃO é silêncio: se nada sobreviver, o caminho rápido ter falhado é
+        # irrelevante — quem prova ausência é `exterminar`, pela marca. Se algo
+        # sobreviver, esta causa entra na mensagem, que é onde ela importa.
+        falha_ao_matar = e
+    try:
+        _, sobreviventes = processos.exterminar(marca)
+    except BaseException:           # noqa: BLE001
+        # Sem prova de ausência, não invento uma — e não troco a exceção
+        # original por um veredito meu. A falha que trouxe o fluxo até aqui já
+        # é ruidosa; sobrepô-la esconderia a causa raiz do incidente.
+        return
+    if sobreviventes:
+        raise ErroSeguranca(
+            f"PROCESS_CONFINEMENT=FAIL: {len(sobreviventes)} processo(s) "
+            f"sobreviveram ao encerramento forçado após {type(causa).__name__}"
+            f"{f' (killpg falhou: {falha_ao_matar!r})' if falha_ao_matar else ''}"
+            ". Sair por exceção não pode ser um caminho mais permissivo que o "
+            "prazo") from causa
+
+
 def executar(argv: list[str], *, cwd: str | Path, env: dict[str, str],
              prazo: float, confinamento: Confinamento,
              binario_sandbox: str = SANDBOX,
@@ -762,61 +863,18 @@ def executar(argv: list[str], *, cwd: str | Path, env: dict[str, str],
                 f"preparo do processo confinado falhou: {exc}") from None
 
         pgid = proc.pid          # setsid no filho ⇒ pgid == pid
-        buf_out: list[bytes] = []
-        buf_err: list[bytes] = []
-        threads = [
-            threading.Thread(target=_drenar, args=(proc.stdout, buf_out),
-                             daemon=True),
-            threading.Thread(target=_drenar, args=(proc.stderr, buf_err),
-                             daemon=True),
-        ]
-        # A alimentação entra na MESMA lista das drenagens de propósito: as três
-        # pontas do processo têm o mesmo dono, o mesmo ciclo de vida e o mesmo
-        # `join` — e nenhuma delas pode segurar o supervisor além do prazo.
-        if entrada is not None and proc.stdin is not None:
-            threads.append(
-                threading.Thread(target=_alimentar,
-                                 args=(proc.stdin, bytes(entrada)),
-                                 daemon=True))
-        for t in threads:
-            t.start()
-
-        morto = False
         try:
-            proc.wait(timeout=prazo)
-        except subprocess.TimeoutExpired:
-            morto = True
-
-        # SEMPRE, não só no timeout. A autoridade era executar ESTA operação;
-        # o que o processo deixou rodando não foi autorizado por ninguém.
-        grupo_resistiu = _matar_arvore(pgid)
-        for t in threads:
-            t.join(REAP_S)
-        try:
-            proc.wait(timeout=REAP_S)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            raise ErroSeguranca(
-                "UNKNOWN_SECURITY_STATE: processo principal não morreu após "
-                f"SIGKILL no grupo (pgid={pgid})") from None
-        # A PROVA de ausência. `_matar_arvore` só sabe do grupo ORIGINAL, e
-        # quem trocou de grupo o esvazia — o que aquela função lê como sucesso.
-        mortos, sobreviventes = processos.exterminar(marca)
-        if sobreviventes or grupo_resistiu:
-            raise ErroSeguranca(
-                "PROCESS_CONFINEMENT=FAIL: sobraram "
-                f"{len(sobreviventes)} processo(s) desta execução após o "
-                f"SIGKILL (grupo_resistiu={grupo_resistiu}). Processo residual "
-                "NUNCA vira PASS só porque a resposta ao caller foi negada")
-
-        saida = b"".join(buf_out)
-        erro = b"".join(buf_err)
-        return Resultado(
-            returncode=proc.returncode, stdout=saida, stderr=erro,
-            classificacao=_classificar(proc.returncode, morto),
-            morto_por_timeout=morto, sandbox_aplicado=True,
-            argv_efetivo=tuple(completo), perfil_usado=texto_perfil,
-            residuais_mortos=len(mortos), grupo_resistiu=grupo_resistiu)
+            return _acompanhar(proc, pgid, marca, prazo, entrada,
+                               completo, texto_perfil)
+        except BaseException as exc:
+            # A saída por EXCEÇÃO não pode ser mais permissiva que a saída pelo
+            # prazo. MEDIDO: sem este bloco, um `KeyboardInterrupt` durante o
+            # `wait` pulava o encerramento da árvore INTEIRO e deixava 4
+            # descendentes vivos — e o `finally` abaixo ainda apagava o
+            # diretório-nonce, destruindo o único jeito de reencontrá-los
+            # depois. Bastava cancelar para transformar contenção em vazamento.
+            _encerrar_a_forca(pgid, marca, exc)
+            raise
     finally:
         try:
             os.unlink(caminho_perfil)

@@ -4,6 +4,47 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (A5.6 — sair por EXCEÇÃO era um caminho mais permissivo que o prazo)
+Achado da bateria de ciclo de vida, e não de inspeção: `_matar_arvore` e a
+pós-condição de resíduo ficavam DEPOIS do `proc.wait()`, no corpo, e não num
+`finally`. Qualquer exceção que atravessasse a espera — um `KeyboardInterrupt`
+de operador é o caso óbvio — pulava o encerramento da árvore INTEIRO. E o
+`finally` que existia ainda apagava o diretório-nonce, destruindo a marca de
+sandbox que é o único jeito de reencontrar os sobreviventes depois.
+
+MEDIDO, com controle positivo: cancelando a espera de um filtro que havia
+forkado, **4 descendentes** ficaram vivos (pids lidos do disco, confirmados
+respondendo a `kill(pid, 0)`); no caso de três gerações, **3**. Pelo prazo, os
+mesmos cenários deixavam zero. Bastava cancelar para transformar contenção em
+vazamento.
+
+Correção: o trecho do processo nascido até o `Resultado` virou `_acompanhar()`,
+cercado por `except BaseException` que chama `_encerrar_a_forca()` — mata a
+árvore e roda `processos.exterminar` também no caminho de exceção. Se sobrar
+processo, vira `ErroSeguranca` **encadeada na causa original**: as duas
+informações importam, o que interrompeu e o que ficou vivo. O `Ctrl-C` continua
+chegando ao chamador como `KeyboardInterrupt` — a troca só acontece quando há
+resíduo REAL, isto é, quando o estado deixou de ser o que o cancelamento
+prometia.
+
+Bateria: `tests/test_absorption07_a56_ciclo_de_vida.py`, 16 casos, **16 verdes**
+— saída normal; prazo no pai, no filho e no neto; descendente que faz `setsid()`
+e some do `killpg`; SIGTERM e SIGINT ignorados por `SIG_IGN`; cancelamento antes
+de ler, com stdin em voo, depois de forkar, e junto com o prazo; pai que sai com
+SUCESSO deixando filho; 8 forks de uma vez; saída não-zero; kill externo do
+processo principal; e exceção injetada no próprio reaping.
+
+Todo descendente GRAVA UM MARCADOR com o próprio pid antes de dormir, e cada
+teste de kill exige `PROCESS_ACTUALLY_EXISTED=TRUE` antes de aceitar
+`ORPHAN_PROCESS=0` — "não sobrou processo" é indistinguível de "nunca houve
+processo". O guard não é decorativo: ele reprovou a PRIMEIRA versão dos testes
+de cancelamento, que interrompiam a espera antes de os filhos existirem.
+
+Sondas nativas novas em `tests/fixtures_nativas/redator.c` (`--sonda-filho`,
+`--sonda-neto`, `--sonda-solta`, `--sonda-forks`, `--sonda-teimosa`,
+`--sonda-rc`, `--sonda-dorme`). Descendente é sempre por `fork`, nunca por exec:
+a allowlist de exec do filtro tem UM literal, o próprio artefato.
+
 ### Changed (S1+S2 — o supervisor vira fronteira de execução, e não wrapper de Git)
 O supervisor é a fronteira ÚNICA por onde processo externo executa, mas duas
 coisas ainda tinham a forma de quando ele existia só para o Git. As duas foram
