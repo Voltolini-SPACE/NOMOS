@@ -258,7 +258,20 @@ def confinamento_de_repo(repo: Path | str,
     """
     git_dir, common = diretorio_git(repo)
     raizes = (git_dir,) if common == git_dir else (git_dir, common)
-    return supervisor.Confinamento(escrita=raizes, rede=rede)
+    # A6: o git dir é gravável, MENOS os três lugares de onde o repositório
+    # consegue fazer código sobreviver à operação. `git add`/`commit` não
+    # precisam escrever em nenhum deles — medido, `quebras=[]`.
+    #
+    #   hooks/   programa que o Git executa em eventos futuros
+    #   config   `filter.*.clean`, `core.fsmonitor`, aliases `!`
+    #   info/    `info/attributes` liga arquivo a filtro, como .gitattributes
+    #
+    # Sem isto, um filtro contido nesta execução ainda podia INSTALAR o
+    # próximo: a contenção valeria uma vez só.
+    proibidos = tuple(f"{raiz}/{nome}" for raiz in raizes
+                      for nome in ("hooks", "info", "config"))
+    return supervisor.Confinamento(escrita=raizes, rede=rede,
+                                   negacao_de_escrita=proibidos)
 
 
 class GitAdapter(Adapter):

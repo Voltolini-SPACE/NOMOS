@@ -200,6 +200,10 @@ class Confinamento:
     # raízes liga o piso medido de `_bloco_de_leitura` — adesão explícita,
     # capacidade a capacidade, em vez de uma troca global que quebraria tudo.
     leitura: tuple[str, ...] = ()
+    # Subcaminhos NEGADOS dentro de uma raiz já concedida. Emitidos DEPOIS dos
+    # allows: em SBPL a última regra que casa vence, então o deny mais
+    # específico sobrepõe o allow do diretório que o contém.
+    negacao_de_escrita: tuple[str, ...] = ()
     rede: bool = False
     marca: object | None = None      # processos.Marca desta execução
     # As capacidades de LEITURA não escrevem nada — medido: `git log`, `git show`
@@ -370,6 +374,12 @@ def perfil(conf: Confinamento) -> str:
     for bruto in conf.escrita:
         real = canonicalizar(bruto)
         linhas.append(f'(allow file-write* (subpath "{real}"))')
+    for bruto in conf.negacao_de_escrita:
+        # Sem `existente()`: o alvo pode legitimamente não existir ainda (um
+        # repositório sem `hooks/` é normal), e a negação tem de valer para o
+        # caminho que VIER a existir durante a operação — que é exatamente o
+        # caso do filtro que tenta se instalar.
+        linhas.append(f'(deny file-write* (subpath "{canonicalizar(bruto)}"))')
     if conf.marca is not None:
         # POR ÚLTIMO: em SBPL a regra que casa por último vence, e o `deny` do
         # subdiretório precisa sobrepor o `allow` do diretório.
