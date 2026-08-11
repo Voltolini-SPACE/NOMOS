@@ -38,14 +38,13 @@ NOMOS usa para auditar a si mesmo. A identidade vem do runtime.
 from __future__ import annotations
 
 import contextlib
-import fnmatch
 import os
 import re
 import shutil
 import stat
 import tempfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:                    # só para o tipo — em runtime o import do
@@ -61,6 +60,7 @@ from nomos.adapters.estrito import texto_estrito
 from nomos.adapters.git import (
     _NEUTRALIZAR,
     ambiente_minimo,
+    confinamento_de_leitura,
     confinamento_de_repo,
     conferir_git_dir,
     diretorio_git,
@@ -100,8 +100,11 @@ CAPACIDADES = ("git-add", "git-commit")
 # `filter=<id>` no `.gitattributes` é entrada NÃO CONFIÁVEL: passa por
 # `conferir_id` antes de qualquer uso, e id fora da gramática nem chega a virar
 # consulta ao registry.
-_ATRIBUTO_FILTRO = re.compile(r"^\s*(?P<padrao>\S+)\s+(?P<resto>.*)$")
-_FILTRO_NO_ATRIBUTO = re.compile(r"(?:^|\s)filter=(?P<id>[^\s]+)")
+# Não há mais regex de `.gitattributes` aqui, e a ausência é o conserto: quem
+# responde "este caminho pede filtro?" é o `git check-attr`, em
+# `_pedidos_de_filtro`. Oito formas idiomáticas que o Git honra passavam pelo
+# parser próprio sem serem vistas — e cada uma indexava o segredo EM CLARO com
+# `ok=True`.
 MAX_ATRIBUTOS = 500
 MAX_CONTEUDO = 64 * 1024 * 1024
 
@@ -127,6 +130,19 @@ _NEUTRALIZAR_TREE = [
     "-c", "commit.template=",
     "-c", "core.hooksPath=/dev/null",
     "-c", "advice.addIgnoredFile=false",
+    # A fonte de atributo tem de morar DENTRO do repositório. Sem esta linha o
+    # repositório aponta `core.attributesFile` para fora das raízes e o
+    # desfecho é o pior dos dois mundos: dentro do sandbox nem o `check-attr`
+    # nem o `add` conseguem LER o destino, então ninguém vê pedido de filtro e
+    # o conteúdo é indexado CRU com rc=0. Neutralizar faz os dois concordarem
+    # em NÃO honrar — e honrar era impossível de qualquer forma.
+    #
+    # MEDIDO, e é o contraste que sustenta o desenho de `_pedidos_de_filtro`:
+    # esta chave o `-c` desliga de verdade; `attr.tree` NÃO (o Git segue lendo
+    # a árvore mesmo com `-c attr.tree=`), igualzinho a `core.worktree`. Uma
+    # defesa feita só de neutralização ficaria furada exatamente ali — por isso
+    # a autoridade sobre atributos é o `check-attr`, não esta lista.
+    "-c", "core.attributesFile=",
 ]
 
 
@@ -454,15 +470,18 @@ class GitTreeAdapter(Adapter):
         # adapter. Estado de operação em `self` faria duas operações
         # simultâneas no mesmo adapter trocarem de plano no meio — a `add` de um
         # repositório aplicando o filtro escolhido para outro.
+        # O prazo é calculado ANTES do despacho porque `_add` agora PERGUNTA ao
+        # Git quais caminhos pedem filtro (`check-attr`), e toda execução de
+        # programa nesta série roda com prazo — inclusive a que só lê.
+        prazo = min(TIMEOUT_S, ctx.restante() or TIMEOUT_S)
         if pedido.capacidade == "git-add":
-            argv, descricao, governados = self._add(pedido, repo)
+            argv, descricao, governados = self._add(pedido, repo, prazo)
         elif pedido.capacidade == "git-commit":
             argv, descricao = self._commit(pedido, repo)
             governados = {}
         else:
             raise ErroInvalido(f"operação desconhecida: {pedido.capacidade}")
 
-        prazo = min(TIMEOUT_S, ctx.restante() or TIMEOUT_S)
         # A partir daqui a operação é TRANSACIONAL: ou confirma, ou o índice
         # volta ao byte anterior. Detectar a falha e deixar o índice sujo era
         # detecção sem contenção — o `git add` já tinha estagiado o conteúdo
@@ -490,49 +509,164 @@ class GitTreeAdapter(Adapter):
 
     # ------------------------------------------------- A5.7 filtro governado
 
-    def _pedidos_de_filtro(self, repo: Path,
-                           caminhos: list[str]) -> dict[str, str]:
-        """Lê o `.gitattributes` e devolve `{caminho: filter_id PEDIDO}`.
+    def _recusar_fonte_de_atributo_por_link(self, repo: Path,
+                                            caminhos: list[str]) -> None:
+        """Nenhuma fonte de atributo do repositório pode ser SYMLINK.
 
-        É a única coisa que o repositório contribui, e é tratada como entrada
-        hostil: o id passa por `conferir_id` aqui, ANTES de virar consulta ao
-        registry, para que um id que pareça caminho (`../`, `/etc/x`) nem chegue
-        perto de algo que resolva caminho.
+        MEDIDO (C2.11): com `.gitattributes` apontando para fora das raízes, a
+        política que decide se o segredo é redigido passa a morar num arquivo
+        que ninguém aprovou. E o desfecho é o pior possível: dentro do sandbox o
+        Git não CONSEGUE ler o destino, então não vê pedido de filtro nenhum,
+        indexa o conteúdo CRU e devolve rc=0. O atacante que quer o segredo em
+        claro só precisa trocar o arquivo de regras por um link.
 
-        Sem `.gitattributes`, sem pedido — e sem pedido, o caminho é o normal.
+        Recusar é estreito e correto: symlink não é forma legítima de declarar
+        atributo, e a mensagem diz o que fazer (arquivo regular).
+        """
+        fontes = [Path(".git") / "info" / "attributes"]
+        for caminho in caminhos:
+            pai = PurePosixPath(caminho).parent
+            partes = [] if str(pai) == "." else list(pai.parts)
+            for i in range(len(partes) + 1):
+                fontes.append(Path(*partes[:i]) / ".gitattributes")
+        vistos: set[str] = set()
+        for rel in fontes:
+            if str(rel) in vistos:
+                continue
+            vistos.add(str(rel))
+            try:
+                st = os.lstat(repo / rel)
+            except OSError:
+                continue
+            if stat.S_ISLNK(st.st_mode):
+                raise ErroSeguranca(
+                    f"{rel} é um symlink, e fonte de atributo não pode ser "
+                    "link: quem escolhe o destino escolhe a política de filtro, "
+                    "e um destino fora das raízes o Git nem consegue ler dentro "
+                    "do sandbox — o pedido de filtro sumiria e o conteúdo seria "
+                    "indexado EM CLARO com rc=0")
+
+    def _recusar_fonte_de_atributo_externa(self, repo: Path,
+                                           prazo: float) -> None:
+        """`core.attributesFile` declarado pelo repositório é RECUSA, não no-op.
+
+        A chave aponta a fonte de atributos para fora do repositório, e dentro
+        do sandbox esse destino não é legível — nem pelo `check-attr`, nem pelo
+        `add`. Os dois concordam em não ver pedido de filtro, e o conteúdo é
+        indexado CRU com `rc=0`.
+
+        `_NEUTRALIZAR_TREE` já desliga a chave, então os dois nunca divergem. Só
+        que "desligar em silêncio" é o modo de falha que esta série elimina: se
+        alguém pôs ali uma regra de REDAÇÃO, ignorá-la caladamente publica o
+        segredo que a regra existia para esconder. A neutralização garante
+        CONSISTÊNCIA; esta recusa garante que a consistência não seja silenciosa.
+        """
+        argv = self._base(repo) + ["config", "--get-all", "core.attributesFile"]
+        p = supervisor.executar(
+            argv, cwd=repo, env=self.ambiente(), prazo=prazo,
+            confinamento=confinamento_de_leitura(repo),
+            arvore_de_trabalho=str(repo))
+        # rc=1 é "chave ausente", o caso normal. rc>1 é erro de verdade.
+        if p.returncode not in (0, 1):
+            erro = p.stderr.decode("utf-8", "replace")[:400]
+            raise ErroInvalido(f"git config falhou (rc={p.returncode}): {erro}")
+        if p.returncode == 0 and p.stdout.strip():
+            raise ErroSeguranca(
+                "o repositório declara `core.attributesFile`, que põe a fonte "
+                "de atributos FORA do repositório. Dentro do sandbox esse "
+                "arquivo não é legível, então o pedido de filtro desapareceria "
+                "e o conteúdo seria indexado EM CLARO com rc=0 — recuso em vez "
+                "de ignorar em silêncio. Declare os atributos no próprio "
+                "repositório (`.gitattributes` ou `.git/info/attributes`)")
+
+    def _pedidos_de_filtro(self, repo: Path, caminhos: list[str],
+                           prazo: float) -> dict[str, str]:
+        """`{caminho: filter_id PEDIDO}` — decidido pelo GIT, não por nós.
+
+        ## Por que não um parser próprio
+
+        A versão anterior lia `repo/.gitattributes` e casava padrão com
+        `fnmatch`. A bateria A2-REPO mediu OITO formas idiomáticas em que o Git
+        aplica um filtro e esse parser não via nada — e a consequência não é
+        "filtro não aplicado", é **segredo indexado EM CLARO com `ok=True`**,
+        que é exatamente o modo de falha que esta série existe para eliminar:
+
+            .gitattributes em SUBDIRETÓRIO          (o Git usa o mais próximo)
+            padrão ancorado `/SEGREDO.txt`
+            macro `[attr]zz filter=…` + `SEGREDO.txt zz`
+            padrão entre aspas `"SEGREDO.txt"`
+            `.git/info/attributes`                  (precedência MAIOR)
+            `core.attributesFile` fora do repositório
+            `attr.tree=HEAD`                        (atributos de uma ÁRVORE)
+            divergência de CAIXA sob `core.ignorecase`
+
+        Cada uma dessas é um bug de parser diferente, e a lista não fecha: a
+        semântica de atributos é do Git e muda com ele. Corrigir oito casos
+        deixaria o nono aberto.
+
+        Quem sabe responder "este caminho pede filtro?" é o próprio Git.
+        `check-attr` roda com o MESMO argv base (`_base`), o MESMO ambiente e a
+        MESMA working tree pinada do `add` que vem depois — então os dois
+        enxergam as mesmas fontes de atributo por construção, e não por uma
+        tabela que alguém precisa manter sincronizada.
+
+        MEDIDO e decisivo para a escolha: `-c attr.tree=` NÃO desliga
+        `attr.tree` (o Git segue lendo a árvore). É a mesma armadilha de
+        `core.worktree` — neutralização por linha de comando que parece
+        funcionar e é no-op. Uma defesa baseada em neutralizar chaves ficaria
+        silenciosamente furada; perguntar ao Git não depende de nenhuma delas.
+
+        O `filter_id` continua sendo entrada NÃO CONFIÁVEL: passa por
+        `conferir_id` antes de virar consulta ao registry, e id desconhecido é
+        DENY. O que o repositório ganha é escolher ENTRE os filtros já
+        aprovados — nunca introduzir um.
         """
         from nomos.adapters import filtro_governado as fg
 
-        arquivo = repo / ".gitattributes"
-        if not arquivo.is_file():
-            return {}
-        try:
-            linhas = arquivo.read_text("utf-8", "replace").splitlines()
-        except OSError:
-            return {}
-        if len(linhas) > MAX_ATRIBUTOS:
-            raise ErroLimite(
-                f".gitattributes com {len(linhas)} linhas (limite "
-                f"{MAX_ATRIBUTOS}) — recuso em vez de varrer entrada ilimitada "
-                "vinda do repositório")
-        regras: list[tuple[str, str]] = []
-        for linha in linhas:
-            if not linha.strip() or linha.lstrip().startswith("#"):
-                continue
-            m = _ATRIBUTO_FILTRO.match(linha)
-            if not m:
-                continue
-            f = _FILTRO_NO_ATRIBUTO.search(m.group("resto"))
-            if f:
-                regras.append((m.group("padrao"), f.group("id")))
+        self._recusar_fonte_de_atributo_por_link(repo, caminhos)
+        self._recusar_fonte_de_atributo_externa(repo, prazo)
 
+        argv = self._base(repo) + ["check-attr", "-z", "filter", "--", *caminhos]
+        p = supervisor.executar(
+            argv, cwd=repo, env=self.ambiente(), prazo=prazo,
+            confinamento=confinamento_de_leitura(repo),
+            arvore_de_trabalho=str(repo))
+        if p.morto_por_timeout:
+            raise ErroLimite(
+                "check-attr excedeu o prazo — sem a resposta do Git não dá "
+                "para saber se um caminho pede filtro, e seguir seria indexar "
+                "conteúdo cru sem saber")
+        if p.returncode != 0:
+            erro = p.stderr.decode("utf-8", "replace")[:400]
+            raise ErroInvalido(f"check-attr falhou (rc={p.returncode}): {erro}")
+        supervisor.conferir_saida(p.stderr, "git-add")
+
+        campos = p.stdout.decode("utf-8", "replace").split("\0")
+        # `-z` emite trincas <caminho>\0<atributo>\0<valor>\0; a cauda depois do
+        # último NUL é vazia e não é registro.
+        if len(campos) % 3 == 1 and campos[-1] == "":
+            campos = campos[:-1]
+        if len(campos) % 3:
+            raise ErroInvalido(
+                f"check-attr devolveu {len(campos)} campos, que não formam "
+                "trincas <caminho, atributo, valor> — recuso em vez de adivinhar")
+        if len(campos) // 3 > MAX_ATRIBUTOS:
+            raise ErroLimite(
+                f"check-attr devolveu {len(campos) // 3} registros (limite "
+                f"{MAX_ATRIBUTOS})")
 
         pedidos: dict[str, str] = {}
-        for caminho in caminhos:
-            for padrao, bruto in regras:          # última regra vence, como no Git
-                alvo = caminho if "/" in padrao else os.path.basename(caminho)
-                if fnmatch.fnmatch(alvo, padrao):
-                    pedidos[caminho] = fg.conferir_id(bruto)
+        for i in range(0, len(campos), 3):
+            caminho, _atributo, valor = campos[i], campos[i + 1], campos[i + 2]
+            # `unspecified` = sem regra; `unset`/`set` = o atributo existe mas
+            # não nomeia driver. Nenhum dos três é pedido de filtro.
+            if valor in ("unspecified", "unset", "set"):
+                continue
+            if caminho not in caminhos:
+                raise ErroSeguranca(
+                    f"check-attr respondeu sobre {caminho!r}, que não está "
+                    "entre os caminhos pedidos")
+            pedidos[caminho] = fg.conferir_id(valor)
         return pedidos
 
     def _aplicar_filtro_governado(self, repo: Path, caminho: str,
@@ -676,7 +810,7 @@ class GitTreeAdapter(Adapter):
         return [self._git, "-C", str(repo), "--no-pager",
                 *_NEUTRALIZAR, *_NEUTRALIZAR_TREE]
 
-    def _add(self, pedido, repo: Path) -> tuple[list[str], str]:
+    def _add(self, pedido, repo: Path, prazo: float) -> tuple[list[str], str]:
         brutos = pedido.arg("caminhos")
         if not isinstance(brutos, (list, tuple)):
             raise ErroInvalido(
@@ -693,7 +827,7 @@ class GitTreeAdapter(Adapter):
         # exatamente como antes. Sem registry, não há separação nenhuma.
         governados: dict[str, str] = {}
         if self._registro is not None:
-            governados = self._pedidos_de_filtro(repo, caminhos)
+            governados = self._pedidos_de_filtro(repo, caminhos, prazo)
 
         restantes = [c for c in caminhos if c not in governados]
         argv = (self._base(repo) + ["add", "--no-all", "--"] + restantes
