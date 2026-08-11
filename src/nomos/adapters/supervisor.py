@@ -255,6 +255,15 @@ class Confinamento:
     # allows: em SBPL a última regra que casa vence, então o deny mais
     # específico sobrepõe o allow do diretório que o contém.
     negacao_de_escrita: tuple[str, ...] = ()
+    # Nomes de arquivo negados em QUALQUER profundidade, como regex de SBPL.
+    # Existe porque `subpath` responde a pergunta errada para `.gitattributes`:
+    # ele é criável em todo diretório da working tree, inclusive em diretórios
+    # que o próprio filtro criar durante a operação. MEDIDO: um filtro governado
+    # com `write_roots=(repo,)` gravou `.gitattributes` na raiz do working tree
+    # — e `.gitattributes` é FONTE DE ATRIBUTO, então o filtro contido escolhia
+    # a política da PRÓXIMA operação. É a mesma propriedade de A6, num lugar que
+    # a negação por caminho não alcança.
+    negacao_por_nome: tuple[str, ...] = ()
     # Executáveis permitidos, POR CAPACIDADE. Vazio = `process-exec` amplo (o
     # estado histórico). Uma allowlist GLOBAL foi medida e REFUTADA: para o
     # push local funcionar seria preciso admitir /bin/sh, e isso reabre a
@@ -474,6 +483,12 @@ def perfil(conf: Confinamento) -> str:
         # caminho que VIER a existir durante a operação — que é exatamente o
         # caso do filtro que tenta se instalar.
         linhas.append(f'(deny file-write* (subpath "{canonicalizar(bruto)}"))')
+    for padrao in conf.negacao_por_nome:
+        # Negação por NOME, em qualquer profundidade. `subpath` não alcança isto:
+        # `.gitattributes` é criável em TODO diretório da working tree, e
+        # enumerar os diretórios que existem hoje deixaria de fora os que o
+        # próprio filtro criar durante a operação.
+        linhas.append(f'(deny file-write* (regex #"/{padrao}$"))')
     if conf.marca is not None:
         # POR ÚLTIMO: em SBPL a regra que casa por último vence, e o `deny` do
         # subdiretório precisa sobrepor o `allow` do diretório.

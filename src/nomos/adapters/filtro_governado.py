@@ -211,11 +211,18 @@ class PoliticaDeFiltro:
             # aí não existe `.git` dentro dele para negar.
             proibidos += (f"{base}/.git",
                           f"{base}/hooks", f"{base}/config", f"{base}/info")
+        # `.gitattributes` é FONTE DE ATRIBUTO, e mora em qualquer diretório da
+        # working tree — inclusive num que o próprio filtro crie durante a
+        # operação. MEDIDO: com `write_roots=(repo,)` o filtro gravou o arquivo
+        # da raiz, e com ele escolheria qual filtro roda na PRÓXIMA operação.
+        # Negar por caminho não alcança: por isso a negação é por NOME.
+        por_nome = (r"\.gitattributes",) if self.write_roots else ()
         return supervisor.Confinamento(
             escrita=tuple(self.write_roots),
             declara_sem_escrita=not self.write_roots,
             leitura=leitura,
             negacao_de_escrita=proibidos,
+            negacao_por_nome=por_nome,
             rede=self.network_policy,          # DENY por padrão
             exec_permitido=(self.managed_artifact.managed_path,),
         )

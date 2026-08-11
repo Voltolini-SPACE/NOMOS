@@ -86,6 +86,10 @@ ALVOS = [
     (".git/info/attributes", "liga arquivo a filtro, como .gitattributes"),
     (".git/config", "filter.*.clean, core.fsmonitor, aliases com !"),
     (".git/index", "o índice não é conteúdo, e o filtro só transforma conteúdo"),
+    (".gitattributes", "FONTE DE ATRIBUTO na working tree: escolhe qual filtro "
+                       "roda na PRÓXIMA operação"),
+    ("sub/.gitattributes", "e vale em QUALQUER profundidade, inclusive num "
+                           "diretório que o próprio filtro criar"),
 ]
 
 
