@@ -196,6 +196,10 @@ class Confinamento:
     """A autoridade concedida a UMA execução. Montado pelo adapter, nunca pelo
     plano."""
     escrita: tuple[str, ...] = ()
+    # Raízes de LEITURA. Vazio = leitura ampla (o estado histórico). Declarar
+    # raízes liga o piso medido de `_bloco_de_leitura` — adesão explícita,
+    # capacidade a capacidade, em vez de uma troca global que quebraria tudo.
+    leitura: tuple[str, ...] = ()
     rede: bool = False
     marca: object | None = None      # processos.Marca desta execução
     # As capacidades de LEITURA não escrevem nada — medido: `git log`, `git show`
@@ -260,6 +264,91 @@ def existente(caminho: str | Path) -> str:
 
 # ---------------------------------------------------------------------- perfil
 
+def _toolchain_legivel() -> list[str]:
+    """Mínimo de leitura que o Git deste host exige, derivado em RUNTIME.
+
+    Nada aqui é caminho fixo por escolha: `/usr/bin/git` neste Mac é o shim do
+    xcrun, que delega ao Git dentro do Xcode. Fixar o caminho faria a política
+    apontar para o lugar errado assim que alguém rodasse `xcode-select -s`.
+
+    Medido por bissecção leave-one-out — tracing NÃO existe utilizável neste
+    host: `(trace ...)` roda sem criar arquivo, `(debug deny)` não loga, e
+    negação de perfil `-f` não aparece no unified log.
+
+    Duas descobertas que a medição impôs e que não são óbvias:
+
+    - `(literal "/")` com `file-read*` é OBRIGATÓRIO. Sem ele o dyld aborta
+      TUDO com rc=134 e sem mensagem — falha muda, o pior modo possível.
+      Ele permite LISTAR `/`, e nada além disso: os filhos continuam negados.
+    - `/var` e `/etc` são SYMLINK neste sistema, então precisam de allow
+      próprio para o componente resolver. `file-read-metadata` basta e NÃO
+      permite ler conteúdo (medido nos dois sentidos).
+    """
+    linhas = [
+        '(allow file-read* (literal "/"))',
+        '(allow file-read-metadata (literal "/var"))',
+        '(allow file-read-metadata (literal "/etc"))',
+        '(allow file-read* (subpath "/System/Library"))',
+        '(allow file-read* (subpath "/usr/lib"))',
+        '(allow file-read* (subpath "/private/var/select"))',
+        f'(allow file-read* (literal "{os.devnull}"))',
+    ]
+    dev = os.path.realpath("/var/select/developer_dir")
+    if not os.path.isdir(dev):
+        raise ErroSeguranca(
+            f"developer dir não resolve ({dev}) — recuso em vez de cair para "
+            "leitura irrestrita: perder a fronteira para consertar a "
+            "toolchain seria trocar segurança por conveniência")
+    xc = os.path.dirname(dev)
+    linhas += [
+        f'(allow file-read* (subpath "{dev}"))',
+        f'(allow file-read* (literal "{xc}/Info.plist"))',
+        f'(allow file-read* (literal "{xc}/version.plist"))',
+    ]
+    # Sem os dois plists o xcrun cai para `xcodebuild` e o dyld falha em
+    # DVTSystemPrerequisites (rc=71, 1430 B de stderr) — medido.
+    cache = os.path.join(os.path.realpath(tempfile.gettempdir()), "xcrun_db")
+    linhas.append(f'(allow file-read* (literal "{cache}"))')
+    return linhas
+
+
+def _ancestrais(caminho: str) -> list[str]:
+    """Cada ancestral até `/` exclusive.
+
+    O Git resolve o caminho componente a componente; sem metadata do ancestral
+    ele para com `Invalid path <X>` (rc=128). Medido: faltar UM ancestral de
+    UMA das raízes já quebra.
+    """
+    saida, atual = [], os.path.dirname(caminho.rstrip("/"))
+    while atual and atual != "/":
+        saida.append(atual)
+        atual = os.path.dirname(atual)
+    return saida
+
+
+def _bloco_de_leitura(conf: Confinamento) -> list[str]:
+    """`(allow file-read*)` global, ou o piso medido quando há raízes.
+
+    A capacidade que NÃO declara raízes de leitura continua com leitura ampla:
+    a redução entra por adesão explícita, capacidade a capacidade, e não por
+    mudança global que quebraria tudo de uma vez.
+    """
+    if not conf.leitura:
+        return ["(allow file-read*)"]
+    linhas = _toolchain_legivel()
+    vistos: set[str] = set()
+    for bruto in conf.leitura:
+        real = canonicalizar(bruto)
+        if real not in vistos:
+            vistos.add(real)
+            linhas.append(f'(allow file-read* (subpath "{real}"))')
+        for pai in _ancestrais(real):
+            if pai not in vistos:
+                vistos.add(pai)
+                linhas.append(f'(allow file-read-metadata (literal "{pai}"))')
+    return linhas
+
+
 def perfil(conf: Confinamento) -> str:
     """Gera o perfil `sandbox-exec` a partir da autoridade concedida.
 
@@ -272,7 +361,7 @@ def perfil(conf: Confinamento) -> str:
         "(version 1)",
         "(deny default)",
         "(allow process-exec process-fork)",
-        "(allow file-read*)",
+        *_bloco_de_leitura(conf),
         "(allow sysctl-read)",
         MACH,
         f'(allow file-write* (literal "{os.devnull}"))',

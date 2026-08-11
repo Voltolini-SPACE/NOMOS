@@ -195,14 +195,40 @@ def test_filtro_hostil_nao_reescreve_mais_o_codigo_do_projeto(repo, tmp_path):
 # ═══════════ capacidades de leitura: sem autoridade de escrita ══════════════
 
 def test_leitura_nao_recebe_nenhuma_escrita_no_repo(repo):
-    conf = mod_git.confinamento_de_leitura()
+    conf = mod_git.confinamento_de_leitura(repo)
     assert conf.escrita == ()
     assert conf.declara_sem_escrita is True
     perfil = supervisor.perfil(conf)
-    assert f'(subpath "{os.path.realpath(repo)}")' not in perfil
+    assert f'(allow file-write* (subpath "{os.path.realpath(repo)}")' not in (
+        perfil), "a capacidade de leitura recebeu autoridade de ESCRITA"
     assert '(literal "/dev/null")' in perfil, (
         "GIT_CONFIG_GLOBAL=/dev/null é aberto em leitura E escrita; sem esta "
         "linha o git morre com rc=128")
+
+
+def test_leitura_perdeu_o_file_read_irrestrito(repo):
+    """A2: a capacidade de leitura declara raízes, então o piso medido entra.
+
+    O `(allow file-read*)` global some, e o repo passa a ser alcançável por
+    uma raiz explícita em vez de por autoridade sobre o disco inteiro.
+    """
+    perfil = supervisor.perfil(mod_git.confinamento_de_leitura(repo))
+    assert "\n(allow file-read*)\n" not in f"\n{perfil}", (
+        "leitura irrestrita voltou ao perfil da capacidade de leitura")
+    assert f'(allow file-read* (subpath "{os.path.realpath(repo)}"))' in perfil
+    assert '(allow file-read* (literal "/"))' in perfil, (
+        "sem o literal '/' o dyld aborta TUDO com rc=134 e sem mensagem")
+
+
+def test_capacidade_sem_raizes_declaradas_mantem_leitura_ampla():
+    """CONTROLE NEGATIVO da adesão explícita.
+
+    A redução entra capacidade a capacidade. Quem ainda não declarou raízes
+    tem de continuar com o comportamento histórico — senão A2 viraria uma
+    troca global, que é exatamente o que quebraria tudo de uma vez.
+    """
+    perfil = supervisor.perfil(supervisor.Confinamento(escrita=("/private/tmp",)))
+    assert "(allow file-read*)" in perfil
 
 
 def test_git_log_e_show_funcionam_sem_autoridade_de_escrita(repo):

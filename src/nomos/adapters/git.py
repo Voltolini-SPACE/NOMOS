@@ -210,7 +210,7 @@ def diretorio_git(repo: Path | str) -> tuple[str, str]:
     return git_dir, common
 
 
-def confinamento_de_leitura() -> supervisor.Confinamento:
+def confinamento_de_leitura(repo: Path | str) -> supervisor.Confinamento:
     """Capacidades object-only: NENHUMA escrita no repositório.
 
     Medido: `git-log`, `git-show` e `git-diff(refA, refB)` produzem saída
@@ -221,7 +221,12 @@ def confinamento_de_leitura() -> supervisor.Confinamento:
     É a maior redução barata desta fase: uma capacidade de leitura que
     fisicamente não consegue escrever, em vez de uma que promete não escrever.
     """
-    return supervisor.Confinamento(escrita=(), declara_sem_escrita=True)
+    git_dir, comum = diretorio_git(repo)
+    raizes = (supervisor.existente(repo), git_dir)
+    if comum != git_dir:
+        raizes += (comum,)
+    return supervisor.Confinamento(escrita=(), declara_sem_escrita=True,
+                                   leitura=raizes)
 
 
 def confinamento_de_repo(repo: Path | str,
@@ -328,7 +333,7 @@ class GitAdapter(Adapter):
         prazo = min(TIMEOUT_S, ctx.restante() or TIMEOUT_S)
         p = supervisor.executar(
             argv, cwd=repo, env=ambiente_minimo(), prazo=prazo,
-            confinamento=confinamento_de_leitura())
+            confinamento=confinamento_de_leitura(repo))
         if p.morto_por_timeout:
             raise ErroLimite(f"git excedeu {prazo:.1f}s")
         if len(p.stdout) > LIMITE_SAIDA:
