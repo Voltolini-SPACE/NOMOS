@@ -225,3 +225,77 @@ def test_MEDICAO_A531_o_primitive_forte_nao_existe_neste_host():
 
 if __name__ == "__main__":       # pragma: no cover
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+# ═══════ A5.3 POLICY BINDING — a autoridade de execução é o artefato ════════
+
+def _pol(**kw):
+    from nomos.adapters.filtro_governado import PoliticaDeFiltro
+    base = dict(filter_id="synthetic-redactor",
+                canonical_executable="/usr/bin/sed",
+                argv_policy=("-e", "s/x/y/"))
+    base.update(kw)
+    return PoliticaDeFiltro(**base)
+
+
+def test_politica_SEM_artefato_recusa_executar():
+    """Sem import não há execução. Apontar o exec para o path externo
+    reabriria exatamente o TOCTOU que A5.3 fechou."""
+    with pytest.raises(ErroFiltro, match="proveniência, não autoridade"):
+        _pol().executavel()
+
+
+def test_executavel_vem_do_ARTEFATO_e_nao_do_path_externo(armazem, tmp_path):
+    origem = _script(tmp_path / "f.sh", BOM)
+    art = armazem.importar(origem)
+    pol = _pol(canonical_executable=str(origem), managed_artifact=art)
+
+    assert pol.executavel() == art.managed_path
+    assert pol.executavel() != str(origem), (
+        "a execução aponta para o path externo — TOCTOU reaberto")
+    assert pol.proveniencia() == os.path.realpath(origem)
+
+
+@pytest.mark.parametrize("ataque", ["remover", "substituir", "retargetar"])
+def test_resolucao_IDENTICA_com_o_source_atacado(armazem, tmp_path, ataque):
+    """A propriedade que o gate exige: mexer no source não muda a resolução."""
+    origem = _script(tmp_path / "f.sh", BOM)
+    art = armazem.importar(origem)
+    pol = _pol(canonical_executable=str(origem), managed_artifact=art)
+    antes = pol.executavel()
+
+    hostil = _script(tmp_path / "hostil.sh", HOSTIL)
+    if ataque == "remover":
+        origem.unlink()
+    elif ataque == "substituir":
+        os.replace(hostil, origem)
+    else:
+        origem.unlink()
+        origem.symlink_to(hostil)
+
+    assert pol.executavel() == antes, f"{ataque} mudou a resolução"
+    canario = tmp_path / "C"
+    assert _rodar(pol.executavel(), canario).stdout.strip() == "SAIDA_BOA"
+    assert not canario.exists(), "UNAPPROVED_CODE_EXECUTED"
+
+
+def test_executavel_CONFERE_o_artefato_antes_de_devolver(armazem, tmp_path):
+    """`conferir()` está COLADO na porta de execução, não num passo anterior."""
+    art = armazem.importar(_script(tmp_path / "f.sh", BOM))
+    pol = _pol(managed_artifact=art)
+    assert pol.executavel() == art.managed_path
+
+    os.chmod(art.managed_path, 0o700)
+    Path(art.managed_path).write_text(HOSTIL)
+    with pytest.raises(ErroFiltro, match="DIVERGE"):
+        pol.executavel()
+
+
+def test_estrutural_conferir_está_dentro_de_executavel():
+    """Se alguém separar verificação de uso, a distância volta a existir."""
+    import inspect
+    from nomos.adapters.filtro_governado import PoliticaDeFiltro
+    fonte = inspect.getsource(PoliticaDeFiltro.executavel)
+    assert "conferir()" in fonte, (
+        "executavel() deixou de conferir — verificação longe do uso é a "
+        "superfície que A5.3 existe para fechar")

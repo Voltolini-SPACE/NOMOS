@@ -79,9 +79,10 @@ class PoliticaDeFiltro:
     output_limit: int = 8 * 1024 * 1024
     descendant_policy: str = "matar-arvore"
     audit_policy: str = "sempre"
-    # Identidade forte do executável entra em A5.3. O campo existe agora para
-    # que a política já tenha onde guardá-la — declarar depois exigiria migrar
-    # políticas em uso.
+    # A AUTORIDADE DE EXECUÇÃO. Depois de A5.3 é este campo — e não
+    # `canonical_executable` — que decide o que roda. O path externo fica como
+    # PROVENIÊNCIA: serve para auditar de onde o binário veio, e para nada mais.
+    managed_artifact: "ArtefatoGovernado | None" = None
     executable_identity: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -107,6 +108,32 @@ class PoliticaDeFiltro:
                 f"descendant_policy {self.descendant_policy!r} não suportada "
                 "— deixar descendente vivo não é opção de política")
         object.__setattr__(self, "canonical_executable", real)
+
+
+    def executavel(self) -> str:
+        """O caminho a EXECUTAR. Única porta, e ela verifica antes de abrir.
+
+        `conferir()` acontece AQUI, e não num passo anterior, de propósito:
+        quanto menor a distância lógica entre a verificação e o uso, menor a
+        superfície acidental. Quem chamar este método recebe um caminho já
+        conferido; quem quiser executar sem conferir teria de reimplementar a
+        resolução — e o teste estrutural pega isso.
+
+        Sem artefato importado NÃO HÁ EXECUÇÃO. O `canonical_executable` é
+        proveniência: apontar o exec para ele reabriria exatamente o TOCTOU
+        externo que A5.3 fechou.
+        """
+        if self.managed_artifact is None:
+            raise ErroFiltro(
+                f"filtro {self.filter_id!r} não tem artefato importado — o "
+                "path externo é proveniência, não autoridade de execução; "
+                "recuso em vez de executar a origem")
+        self.managed_artifact.conferir()
+        return self.managed_artifact.managed_path
+
+    def proveniencia(self) -> str:
+        """De onde o binário veio. Auditoria — nunca execução."""
+        return self.canonical_executable
 
 
 def conferir_id(bruto: object) -> str:
