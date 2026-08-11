@@ -31,3 +31,7 @@ cerebros/
 
 # trava do loop (efêmera, nunca versionar)
 loop/.lock
+
+# A5.5 — o binário do filtro nativo é BUILD, não fonte: compilado pelo teste
+# a partir de redator.c. Versionar Mach-O tornaria o artefato não auditável.
+tests/fixtures_nativas/redator
