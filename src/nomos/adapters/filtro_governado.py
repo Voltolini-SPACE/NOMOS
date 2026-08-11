@@ -178,16 +178,44 @@ class PoliticaDeFiltro:
         (negação) já construíram e provaram — um mecanismo paralelo só para
         filtros teria de reprovar tudo de novo, e divergiria na primeira
         correção aplicada a um lado só.
+
+        ## A6 vale para o filtro TAMBÉM, e não valia
+
+        MEDIDO: `confinamento_de_repo` nega `hooks/`, `config` e `info/` ao
+        processo do GIT — os três lugares de onde o repositório faz código
+        sobreviver à operação. O filtro governado não herdava nada disso: com
+        `write_roots=(repo,)` — o valor natural para um redator que grava no
+        próprio repositório — a sonda escreveu `PLANTADO` em `.git/hooks/
+        pre-commit`, `.git/info/attributes` e `.gitattributes`, todos com rc=0.
+
+        A assimetria era o furo inteiro: contém-se o Git e deixa-se o programa
+        que o Git chamou instalar o PRÓXIMO. A contenção valeria uma execução só
+        — exatamente a propriedade que A6 existe para negar.
+
+        A negação é do `.git` INTEIRO, não só dos três nomes. Um filtro de
+        conteúdo lê stdin e escreve stdout; ele não tem o que fazer dentro de um
+        diretório Git, e enumerar três nomes deixaria `index`, `objects` e
+        `refs` de fora — que é como esta série já se queimou uma vez, tentando
+        descer abaixo do git dir com allowlist.
         """
         from nomos.adapters import supervisor
         if self.managed_artifact is None:
             raise ErroFiltro(
                 f"filtro {self.filter_id!r} sem artefato — sem confinamento")
         leitura = tuple(self.read_roots) + (self.managed_artifact.managed_path,)
+        proibidos: tuple[str, ...] = ()
+        for raiz in self.write_roots:
+            base = str(raiz).rstrip("/")
+            # `<raiz>/.git` cobre o caso normal (raiz = working tree). Os três
+            # nomes soltos cobrem a política que declara o git dir como raiz —
+            # aí não existe `.git` dentro dele para negar.
+            proibidos += (f"{base}/.git",
+                          f"{base}/hooks", f"{base}/config", f"{base}/info")
         return supervisor.Confinamento(
             escrita=tuple(self.write_roots),
             declara_sem_escrita=not self.write_roots,
             leitura=leitura,
+            negacao_de_escrita=proibidos,
             rede=self.network_policy,          # DENY por padrão
             exec_permitido=(self.managed_artifact.managed_path,),
         )
