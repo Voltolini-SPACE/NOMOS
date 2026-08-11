@@ -63,6 +63,7 @@ from nomos.adapters.git import (
     ambiente_minimo,
     confinamento_de_leitura,
     confinamento_de_repo,
+    conferir_alternates,
     conferir_git_dir,
     diretorio_git,
 )
@@ -361,7 +362,8 @@ _OBJETO_SOLTO = re.compile(r"^[0-9a-f]{2}/[0-9a-f]{38,62}$")
 _OBJETO_PACK = re.compile(r"^pack/pack-[0-9a-f]{40,64}\.(pack|idx|rev)$")
 
 
-def _promover_quarentena(raiz: Path, reais: Path, git_dir: str = "") -> int:
+def _promover_quarentena(raiz: Path, reais: Path,
+                         raiz_do_store: str = "") -> int:
     """Promove os objetos aceitos para o store permanente. TUDO OU NADA.
 
     A versão anterior movia objeto a objeto com `os.replace`. Cada movimento é
@@ -401,18 +403,30 @@ def _promover_quarentena(raiz: Path, reais: Path, git_dir: str = "") -> int:
     que nenhum objeto fica VISÍVEL no store permanente quando a promoção não
     completa.
     """
-    if git_dir:
+    if raiz_do_store:
         # O destino não pode ser escolhido pelo repositório. `.git/objects` como
         # SYMLINK apontando para fora fazia a promoção escrever fora do
         # confinamento declarado — o sandbox não vê esta escrita, porque ela
         # acontece no processo do supervisor.
+        #
+        # A raiz conferida é o COMMON DIR, e não o git dir, porque é dele que
+        # `_abrir_quarentena` deriva `reais`. MEDIDO: com o git dir, TODO
+        # `git add` numa WORKTREE LIGADA era recusado — lá os objetos moram no
+        # common (`main/.git/objects`) e o git dir é `main/.git/worktrees/<n>`,
+        # então o guard reprovava o layout legítimo. Nenhum teste pegava porque
+        # nenhum exercia `add` em worktree ligada; o repositório desta missão É
+        # uma. Guard que confere contra uma raiz diferente da que a operação
+        # usa não é guard estrito, é guard errado.
         real = supervisor.canonicalizar(str(reais))
-        raiz_git = supervisor.canonicalizar(git_dir)
-        if os.path.commonpath([real, raiz_git]) != raiz_git:
+        # `permitida`, e não `raiz`: `raiz` é o PARÂMETRO com o diretório da
+        # quarentena, e sombreá-lo trocava um `Path` por `str` — o `rglob` logo
+        # abaixo morria com AttributeError no meio da promoção.
+        permitida = supervisor.canonicalizar(raiz_do_store)
+        if os.path.commonpath([real, permitida]) != permitida:
             raise ErroSeguranca(
-                f"o store de objetos resolve para {real!r}, fora do git dir "
-                f"{raiz_git!r} — o repositório não escolhe onde o objeto é "
-                "promovido")
+                f"o store de objetos resolve para {real!r}, fora da raiz do "
+                f"store {permitida!r} — o repositório não escolhe onde o objeto "
+                "é promovido")
 
     pendentes: list[tuple[Path, Path]] = []
     for origem in sorted(raiz.rglob("*")):
@@ -518,6 +532,7 @@ class GitTreeAdapter(Adapter):
         # do sandbox. Conferir aqui, junto do `resolver`, porque e aqui que as
         # raizes existem — e antes de qualquer I/O que use o caminho.
         conferir_git_dir(repo, ctx.raizes)
+        conferir_alternates(repo, ctx.raizes)
 
         # `governados` viaja como ARGUMENTO até `_confirmar`, e não guardado no
         # adapter. Estado de operação em `self` faria duas operações
@@ -530,7 +545,7 @@ class GitTreeAdapter(Adapter):
         if pedido.capacidade == "git-add":
             argv, descricao, governados = self._add(pedido, repo, prazo)
         elif pedido.capacidade == "git-commit":
-            argv, descricao = self._commit(pedido, repo)
+            argv, descricao = self._commit(pedido, repo, prazo)
             governados = {}
         else:
             raise ErroInvalido(f"operação desconhecida: {pedido.capacidade}")
@@ -841,7 +856,7 @@ class GitTreeAdapter(Adapter):
                           classificacao="EXIT_OK", morto_por_timeout=False)
             _promover_quarentena(Path(quarentena.diretorio),
                                  Path(quarentena.alternativos),
-                                 git_dir=diretorio_git(repo)[0])
+                                 raiz_do_store=diretorio_git(repo)[1])
             return CapabilityResult.sucesso(descricao, efeito_aplicado=True)
 
         p = supervisor.executar(argv, cwd=repo, env=self.ambiente(),
@@ -878,7 +893,7 @@ class GitTreeAdapter(Adapter):
         # aceita e nada mais pode recusá-la.
         _promover_quarentena(Path(quarentena.diretorio),
                              Path(quarentena.alternativos),
-                             git_dir=diretorio_git(repo)[0])
+                             raiz_do_store=diretorio_git(repo)[1])
         return CapabilityResult.sucesso(descricao, efeito_aplicado=True)
 
     # ---------------------------------------------------------------- argvs
@@ -920,13 +935,66 @@ class GitTreeAdapter(Adapter):
                           f"({len(governados)} por filtro governado)"), governados
         return argv, f"add {len(caminhos)} caminho(s)", governados
 
-    def _commit(self, pedido, repo: Path) -> tuple[list[str], str]:
+    def _conferir_head(self, repo: Path, prazo: float) -> None:
+        """`HEAD` tem de apontar para um BRANCH, e o repositório escreve `HEAD`.
+
+        MEDIDO, dois desfechos, os dois com `ok=True valor='commit'`:
+
+            HEAD -> refs/tags/v1.0        o commit MUTA a tag (8b2ceeff → …)
+            HEAD -> refs/replace/<sha>    o commit INSTALA substituição de objeto
+
+        `git commit` grava onde `HEAD` mandar, e `.git/HEAD` é do repositório. O
+        segundo é o mais grave: uma vez instalado o replace, toda leitura
+        posterior do NOMOS passa a servir outro objeto — e é o commit governado
+        que planta a arma.
+
+        A regra é a que o fluxo legítimo já obedece sem saber: um commit
+        atualiza um branch sob `refs/heads/`. Ref simbólica para tag, para
+        `refs/replace`, ou `HEAD` destacado (raw sha, escolhido pelo repo via
+        symlink) não são commit — são gravar num lugar que muda a semântica do
+        repositório.
+
+        `GIT_NO_REPLACE_OBJECTS=1` (em `ambiente_minimo`) fecha a mesma porta
+        pelo outro lado; este guard recusa ANTES de executar, com a mensagem do
+        porquê. MEDIDO ao tentar pôr as duas defesas juntas:
+        `--no-replace-objects` é opção de NÍVEL DO GIT, não do subcomando, e
+        `git commit --no-replace-objects` sai com rc=129 `unknown option` —
+        quebrando TODO commit legítimo. A variável de ambiente cobre as sete
+        capacidades sem essa armadilha de posição.
+        """
+        argv = self._base(repo) + ["symbolic-ref", "--quiet", "HEAD"]
+        p = supervisor.executar(
+            argv, cwd=repo, env=self.ambiente(), prazo=prazo,
+            confinamento=confinamento_de_leitura(repo),
+            arvore_de_trabalho=str(repo))
+        if p.returncode == 1:
+            # rc=1 = HEAD DESTACADO (não é symref). Um commit aqui não avança
+            # branch nenhum; e o vetor do symlink de HEAD chega exatamente assim.
+            raise ErroSeguranca(
+                "HEAD está destacado (não aponta para um branch). Um commit "
+                "governado atualiza um branch sob refs/heads/; HEAD destacado "
+                "grava um commit que nenhum branch alcança — e é a forma que o "
+                "symlink de HEAD escolhido pelo repositório assume")
+        if p.returncode != 0:
+            erro = p.stderr.decode("utf-8", "replace")[:400]
+            raise ErroInvalido(f"symbolic-ref HEAD falhou (rc={p.returncode}): {erro}")
+        destino = p.stdout.decode("utf-8", "replace").strip()
+        if not destino.startswith("refs/heads/"):
+            raise ErroSeguranca(
+                f"HEAD aponta para {destino!r}, fora de refs/heads/. O "
+                "repositório escreve `.git/HEAD`, e um commit segue esse "
+                "ponteiro: para refs/tags/ ele MUTA uma tag, para refs/replace/ "
+                "ele INSTALA substituição de objeto que falsifica toda leitura "
+                "posterior. Commit governado só avança um branch")
+
+    def _commit(self, pedido, repo: Path, prazo: float) -> tuple[list[str], str]:
         msg = mensagem_valida(pedido.arg("mensagem"))
         for proibido in ("autor", "author", "data", "date", "amend"):
             if pedido.arg(proibido, None) is not None:
                 raise ErroInvalido(
                     f"'{proibido}' não é aceito: autoria vem do runtime e "
                     "`amend` reescreveria histórico já auditado")
+        self._conferir_head(repo, prazo)
         argv = self._base(repo) + [
             "commit", "--no-verify", "--no-gpg-sign",
             "--cleanup=verbatim", "-m", msg]

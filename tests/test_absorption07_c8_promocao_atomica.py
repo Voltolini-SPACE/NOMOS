@@ -188,9 +188,9 @@ def test_c8_06_objects_como_SYMLINK_para_fora_e_recusado(cen):
     fora = cen.tmp / "store-alheio"
     fora.mkdir()
     objetos = Path(diretorio_git(cen.repo)[0]) / "objects"
-    with pytest.raises(supervisor.ErroSeguranca, match="fora do git dir"):
+    with pytest.raises(supervisor.ErroSeguranca, match="fora da raiz do store"):
         git_tree._promover_quarentena(cen.tmp / "q", fora,
-                                      git_dir=str(objetos.parent))
+                                      raiz_do_store=str(objetos.parent))
 
 
 def test_c8_07_nome_fora_da_forma_de_objeto_e_recusado(cen):
@@ -201,7 +201,7 @@ def test_c8_07_nome_fora_da_forma_de_objeto_e_recusado(cen):
     reais = Path(diretorio_git(cen.repo)[0]) / "objects"
     with pytest.raises(supervisor.ErroSeguranca, match="forma de objeto"):
         git_tree._promover_quarentena(q, reais,
-                                      git_dir=diretorio_git(cen.repo)[0])
+                                      raiz_do_store=diretorio_git(cen.repo)[1])
 
 
 def test_c8_08_symlink_na_quarentena_e_recusado(cen):
@@ -213,7 +213,7 @@ def test_c8_08_symlink_na_quarentena_e_recusado(cen):
     reais = Path(diretorio_git(cen.repo)[0]) / "objects"
     with pytest.raises(supervisor.ErroSeguranca, match="não é arquivo regular"):
         git_tree._promover_quarentena(q, reais,
-                                      git_dir=diretorio_git(cen.repo)[0])
+                                      raiz_do_store=diretorio_git(cen.repo)[1])
 
 
 def test_c8_09_deduplicacao_nao_conta_como_criado(cen):

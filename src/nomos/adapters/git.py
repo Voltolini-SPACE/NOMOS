@@ -168,6 +168,19 @@ def ambiente_minimo() -> dict[str, str]:
         "SSH_ASKPASS": "",
         "GIT_OPTIONAL_LOCKS": "0",        # leitura não escreve índice
         "GIT_FLUSH": "1",
+        # `refs/replace/<sha>` faz o Git servir OUTRO objeto no lugar do que foi
+        # pedido, e a ref é escrita pelo REPOSITÓRIO. MEDIDO: com um replace
+        # plantado, `git-show <sha real>` do NOMOS devolveu ok=True com o sha
+        # verdadeiro e a mensagem de outro commit — 'MENSAGEM_FORJADA_PELO_REPO'.
+        # Isto falsifica a EVIDÊNCIA: o histórico é o que o NOMOS usa para
+        # auditar a si mesmo, e uma auditoria que lê o objeto errado com
+        # sucesso é pior que uma que falha.
+        #
+        # Vai no ambiente e não em `_NEUTRALIZAR` de propósito: `git-log`,
+        # `git-show`, `git-diff`, `git-add`, `git-commit`, `git-tag` e
+        # `git-push` herdam todos daqui, e a lista de neutralização é por
+        # adapter — deixaria buracos por construção.
+        "GIT_NO_REPLACE_OBJECTS": "1",
     }
 
 
@@ -277,7 +290,86 @@ def conferir_git_dir(repo: Path | str, raizes: tuple[str, ...]) -> tuple[str, st
                 f"raízes aprovadas {reais}. O caminho vem de `.git`/`commondir`, "
                 "que o repositório escreve — aceitá-lo deixaria o repositório "
                 "escolher onde o NOMOS grava")
+
+    # Confusão CROSS-REPO, e ela sobra mesmo com o git dir DENTRO das raízes.
+    # MEDIDO: um repo `hostil` cujo `.git` é o arquivo `gitdir: <vitima>/.git`
+    # faz `git-add` sobre `hostil` estagiar no índice de `vitima` — os dois
+    # dentro das raízes, então o teste acima passa. O operador aprovou operar em
+    # `hostil`; o efeito caiu em `vitima`, e a auditoria registra alvo=hostil.
+    #
+    # O discriminador é medido e estável: só o `.git`-ARQUIVO chega aqui com git
+    # dir alheio, e no ataque esse git dir é a MAIN git dir de OUTRA working tree
+    # — basename `.git`, e o pai é uma working tree que não é o `repo` pedido.
+    # Worktree ligada (`.git/worktrees/<n>`), submódulo (`.git/modules/<n>`) e
+    # `--separate-git-dir <x>` nunca têm o git dir chamado `.git`, então passam.
+    base = Path(supervisor.existente(repo))
+    if (base / ".git").is_file():
+        gd = Path(supervisor.canonicalizar(git_dir))
+        if gd.name == ".git" and str(gd.parent) != str(base):
+            raise supervisor.ErroSeguranca(
+                f"o `.git` de {str(base)!r} aponta para {str(gd)!r}, que é a "
+                "git dir PRINCIPAL de outra working tree "
+                f"({str(gd.parent)!r}). Operar aqui estagiaria o efeito no "
+                "repositório do vizinho enquanto a auditoria registra este "
+                "alvo — confusão cross-repo. Worktree ligada e submódulo usam "
+                "git dir sob `.git/worktrees` ou `.git/modules`, nunca a `.git` "
+                "principal de outro repositório")
     return git_dir, common
+
+
+def conferir_alternates(repo: Path | str, raizes: tuple[str, ...]) -> None:
+    """Nenhum store de objetos ALTERNADO pode sair das raízes aprovadas.
+
+    MEDIDO (A2-REPO.5): `.git/objects/info/alternates` lista diretórios de
+    objetos que o Git passa a LER além do próprio store. É um arquivo do
+    repositório, e com ele `git-add`/`git-commit` alcançam objetos de um store
+    ESTRANGEIRO — `git cat-file -t <sha de fora>` passou de rc=128 para rc=0. As
+    consequências são duas: um commit pode ficar dependente de um store que o
+    NOMOS nunca aprovou (history quebrada sem ele), e um `push` posterior
+    publicaria objetos de outro repositório.
+
+    A regra é a mesma do git dir: alternate é mecanismo legítimo (clone
+    `--reference`, store compartilhado), então não se proíbe — exige-se que o
+    destino esteja dentro das mesmas raízes que já foram aprovadas. Quem aprovou
+    a raiz aprovou o que mora nela, e nada além.
+
+    Lê tanto o git dir quanto o common dir: em worktree ligada os objetos vivem
+    no common, e é lá que o `alternates` efetivo mora.
+    """
+    if not raizes:
+        return
+    git_dir, common = diretorio_git(repo)
+    reais = tuple(supervisor.canonicalizar(r) for r in raizes)
+    vistos: set[str] = set()
+    for base in (git_dir, common):
+        arquivo = Path(base) / "objects" / "info" / "alternates"
+        try:
+            bruto = arquivo.read_text("utf-8", "replace")
+        except OSError:
+            continue
+        for linha in bruto.splitlines():
+            entrada = linha.strip()
+            # Formato do Git: comentário com `#`, linha vazia ignorada. Caminho
+            # relativo é resolvido contra `<base>/objects`.
+            if not entrada or entrada.startswith("#"):
+                continue
+            if entrada in vistos:
+                continue
+            vistos.add(entrada)
+            alvo = (entrada if os.path.isabs(entrada)
+                    else str(Path(base) / "objects" / entrada))
+            try:
+                resolvido = supervisor.canonicalizar(alvo)
+            except OSError:
+                resolvido = alvo
+            if not _dentro(resolvido, reais):
+                raise supervisor.ErroSeguranca(
+                    f"o repositório declara um store de objetos alternado em "
+                    f"{resolvido!r}, FORA das raízes aprovadas {reais}. O "
+                    "arquivo `objects/info/alternates` é do repositório, e por "
+                    "ele o Git lê — e um commit passa a depender de — um store "
+                    "que ninguém aprovou. Alternate legítimo mora dentro das "
+                    "raízes")
 
 
 def _dentro(caminho: str, raizes: tuple[str, ...]) -> bool:

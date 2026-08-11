@@ -51,7 +51,8 @@ from nomos.adapters.contrato import (
 from nomos.adapters.estrito import texto_estrito
 from nomos.adapters import supervisor
 from nomos.adapters.git import (
-    _NEUTRALIZAR, ambiente_minimo, confinamento_de_repo, conferir_git_dir,
+    _NEUTRALIZAR, ambiente_minimo, confinamento_de_repo, conferir_alternates,
+    conferir_git_dir,
 )
 
 CAPACIDADES = ("git-push",)
@@ -239,6 +240,7 @@ class GitPushAdapter(Adapter):
         # do sandbox. Conferir aqui, junto do `resolver`, porque e aqui que as
         # raizes existem — e antes de qualquer I/O que use o caminho.
         conferir_git_dir(repo, ctx.raizes)
+        conferir_alternates(repo, ctx.raizes)
 
         # O plano NÃO fornece refspec, URL, branch de destino nem credencial.
         for proibido in ("refspec", "url", "remote_url", "branch_destino",

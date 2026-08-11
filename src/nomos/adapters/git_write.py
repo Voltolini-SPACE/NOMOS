@@ -40,7 +40,8 @@ from nomos.adapters.contrato import (
 )
 from nomos.adapters.estrito import texto_estrito
 from nomos.adapters.git import (
-    _NEUTRALIZAR, ambiente_minimo, confinamento_de_repo, conferir_git_dir,
+    _NEUTRALIZAR, ambiente_minimo, confinamento_de_repo, conferir_alternates,
+    conferir_git_dir,
     ref_valida,
 )
 
@@ -105,6 +106,7 @@ class GitTagAdapter(Adapter):
         # do sandbox. Conferir aqui, junto do `resolver`, porque e aqui que as
         # raizes existem — e antes de qualquer I/O que use o caminho.
         conferir_git_dir(repo, ctx.raizes)
+        conferir_alternates(repo, ctx.raizes)
 
         nome = tag_valida(pedido.arg("tag"))
         # O parâmetro chama-se `objeto`, não `target`. A defesa do P3 trata
