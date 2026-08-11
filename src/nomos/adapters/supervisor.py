@@ -204,6 +204,16 @@ class Confinamento:
     # allows: em SBPL a última regra que casa vence, então o deny mais
     # específico sobrepõe o allow do diretório que o contém.
     negacao_de_escrita: tuple[str, ...] = ()
+    # Executáveis permitidos, POR CAPACIDADE. Vazio = `process-exec` amplo (o
+    # estado histórico). Uma allowlist GLOBAL foi medida e REFUTADA: para o
+    # push local funcionar seria preciso admitir /bin/sh, e isso reabre a
+    # execução de código escolhido pelo repositório.
+    #
+    # CONTRATO PERMANENTE desta fronteira:
+    #   o repositório PODE declarar que precisa de um filtro;
+    #   o repositório NÃO PODE conceder autoridade de execução;
+    #   a política do NOMOS é a única autoridade de execução.
+    exec_permitido: tuple[str, ...] = ()
     rede: bool = False
     marca: object | None = None      # processos.Marca desta execução
     # As capacidades de LEITURA não escrevem nada — medido: `git log`, `git show`
@@ -267,6 +277,24 @@ def existente(caminho: str | Path) -> str:
 
 
 # ---------------------------------------------------------------------- perfil
+
+def _bloco_de_exec(conf: Confinamento) -> list[str]:
+    """`process-exec` amplo, ou a allowlist da capacidade.
+
+    `process-fork` PERMANECE sempre. Removê-lo foi medido: `git commit`
+    devolve rc=0 COM `error: cannot fork() for maintenance` — degradação
+    silenciosa, exatamente o modo de falha que esta série vem eliminando.
+
+    Sempre `(literal ...)`, NUNCA `(subpath ...)`: subpath sobre um diretório
+    de binários concede tudo que vier a existir ali depois.
+    """
+    if not conf.exec_permitido:
+        return ["(allow process-exec process-fork)"]
+    linhas = ["(allow process-fork)"]
+    for bruto in conf.exec_permitido:
+        linhas.append(f'(allow process-exec (literal "{canonicalizar(bruto)}"))')
+    return linhas
+
 
 def _toolchain_legivel() -> list[str]:
     """Mínimo de leitura que o Git deste host exige, derivado em RUNTIME.
@@ -364,7 +392,7 @@ def perfil(conf: Confinamento) -> str:
     linhas = [
         "(version 1)",
         "(deny default)",
-        "(allow process-exec process-fork)",
+        *_bloco_de_exec(conf),
         *_bloco_de_leitura(conf),
         "(allow sysctl-read)",
         MACH,

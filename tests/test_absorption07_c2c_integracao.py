@@ -24,7 +24,44 @@ import pytest
 
 from nomos.adapters import git as mod_git
 from nomos.adapters import git_tree, supervisor
+
 from nomos.adapters.contrato import ErroLimite
+
+# Depois de A5 a CAPACIDADE só admite o Git. Estas sondas medem rede, timeout e
+# árvore de processos usando sh/python3 — precisam declarar o próprio
+# executável, senão medem a allowlist de exec em vez da fronteira alvo.
+# `/bin/sh` re-executa `/bin/bash` neste host: os dois são necessários.
+def _sonda_exec():
+    """Binários das SONDAS, derivados em runtime.
+
+    `/usr/bin/python3` é shim do xcrun igual ao git: delega para o Python de
+    dentro do Xcode, e sem o caminho real a sonda morre com
+    `can't exec .../usr/bin/python3 (errno=Operation not permitted)`.
+    Mesmo landmine do `/bin/sh` que re-executa `/bin/bash`.
+    """
+    dev = os.path.realpath("/var/select/developer_dir")
+    return ("/bin/sh", "/bin/bash", "/bin/sleep", "/bin/dd",
+            "/usr/bin/python3", os.path.join(dev, "usr", "bin", "python3"))
+
+
+_SONDA_EXEC = _sonda_exec()
+
+
+def _com_sonda(conf):
+    """Devolve o confinamento com exec AMPLO (o perfil histórico).
+
+    Estas sondas medem REDE, TIMEOUT e ÁRVORE DE PROCESSOS. Para isso precisam
+    lançar sh/python3, e a cadeia de shims do host é profunda: `/usr/bin/sh`
+    re-executa `/bin/bash`, `/usr/bin/python3` delega ao Python do Xcode, que
+    por sua vez carrega de `Contents/Developer/Library/...`. Enumerar essa
+    cadeia dentro da sonda faria o teste medir a allowlist de exec — que NÃO é
+    o que ele se propõe a medir, e que tem bateria própria em A5.
+
+    A fronteira sob teste aqui continua real e intacta: a rede segue negada e a
+    árvore segue morrendo, agora provado sem depender da lista de executáveis.
+    """
+    import dataclasses
+    return dataclasses.replace(conf, exec_permitido=())
 
 GIT = "/usr/bin/git"
 pytestmark = pytest.mark.skipif(
@@ -208,9 +245,16 @@ def repo(tmp_path):
 
 
 def _rodar(repo, *argv, prazo=30.0, conf=None):
+    """Harness das sondas. Concede ao PROBE o executável que ele precisa.
+
+    Depois de A5 a capacidade real só admite o Git. Estas sondas medem rede,
+    timeout e árvore de processos — para isso precisam de sh/python3. Conceder
+    aqui é correto: o que está sob medição é a fronteira de REDE ou de
+    PROCESSO, não a allowlist de exec (essa tem bateria própria em A5).
+    """
     return supervisor.executar(
         list(argv), cwd=repo, env=mod_git.ambiente_minimo(), prazo=prazo,
-        confinamento=conf or mod_git.confinamento_de_repo(repo))
+        confinamento=_com_sonda(conf or mod_git.confinamento_de_repo(repo)))
 
 
 def _ctx_e_registro(raiz, tmp_path):
@@ -418,35 +462,27 @@ def repo_hostil(tmp_path):
     return r, fora, marca_neto
 
 
-def test_p8_filtro_hostil_executa_e_nao_alcanca_nada(repo_hostil, tmp_path):
-    """O `git add` pode terminar em sucesso ou recusa — o contrato é que
-    NENHUMA tentativa ultrapasse a autoridade concedida."""
+def test_p8_filtro_do_repo_NAO_EXECUTA(repo_hostil, tmp_path):
+    """CONTRATO NOVO (A5). Substitui `test_p8_filtro_hostil_executa_...`.
+
+    O contrato antigo era "o filtro executa e não alcança nada" — contenção
+    depois da execução. Depois de A5 o contrato é mais forte e mais simples:
+    o filtro escolhido pelo REPOSITÓRIO não executa. Fazer o teste antigo
+    passar de novo exigiria readmitir a execução, que é o que a decisão de
+    produto proibiu.
+    """
     from nomos.adapters.contrato import CapabilityRequest
 
-    repo, fora, marca_neto = repo_hostil
-    ad = git_tree.GitTreeAdapter()
+    repo, _fora, _marca_neto = repo_hostil
     registro = _ctx_e_registro(tmp_path, tmp_path)
-    # Sucesso ou recusa: ambos aceitáveis. O contrato do PASSO 8 não é sobre o
-    # desfecho do `add`, é sobre nenhuma tentativa ultrapassar a autoridade.
-    with contextlib.suppress(Exception):
-        ad.executar(CapabilityRequest(capacidade="git-add", alvo=str(repo),
-                                      argumentos={"caminhos": ["dados.dat"]}),
-                    _ctx(registro, "git-add", tmp_path))
-
-    # CONTROLE POSITIVO, antes de qualquer asserção de contenção. Sem ele o
-    # teste inteiro é vazio: um filtro que nunca rodou "não escapa" de nada, e
-    # o PASS diria só que o `git add` falhou por outro motivo. O canário fica
-    # DENTRO do repo, onde a escrita é legítima — é a única prova de que o
-    # código do repositório de fato executou sob o sandbox.
-    assert (repo / ".git" / "CANARIO").exists(), (
-        "o filter.clean NÃO executou — as asserções de contenção abaixo "
-        "seriam vácuo. Verifique .gitattributes/filter.hostil.clean")
-
-    assert fora.read_text() == "intacto", "FILESYSTEM_ESCAPE"
-    assert not (tmp_path / "no-pai.txt").exists(), "PARENT_WRITE"
-    assert "REDE_OK" not in fora.read_text(), "NETWORK_ESCAPE"
-    assert not (tmp_path / "ambiente.txt").exists(), "CONFIG_AUTHORITY_ESCALATION"
-    assert not (tmp_path / "config.txt").exists(), "CONFIG_AUTHORITY_ESCALATION"
+    with pytest.raises(supervisor.ErroSeguranca) as exc:
+        git_tree.GitTreeAdapter().executar(
+            CapabilityRequest(capacidade="git-add", alvo=str(repo),
+                              argumentos={"caminhos": ["dados.dat"]}),
+            _ctx(registro, "git-add", tmp_path))
+    assert "cannot exec" in str(exc.value), str(exc.value)[:300]
+    assert not (repo / ".git" / "CANARIO").exists(), (
+        "o filtro do repositório executou — NO_REPO_CONTROLLED_EXEC caiu")
 
 
 def test_p8_neto_do_filtro_hostil_nao_sobrevive(repo_hostil, tmp_path):

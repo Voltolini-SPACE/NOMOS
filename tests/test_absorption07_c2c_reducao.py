@@ -19,7 +19,6 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
-import textwrap
 from pathlib import Path
 
 import pytest
@@ -150,46 +149,51 @@ def test_escrita_fora_do_git_dir_continua_negada(repo, tmp_path, onde):
         shutil.rmtree(m.execdir, ignore_errors=True)
 
 
-def test_filtro_hostil_nao_reescreve_mais_o_codigo_do_projeto(repo, tmp_path):
-    """O ganho medido, pela cadeia real: `git add` legítimo, filtro hostil.
+def test_filtro_hostil_NAO_EXECUTA_no_caminho_padrao(repo, tmp_path):
+    """CONTRATO NOVO (A5). Substitui o teste de "não reescreve o projeto".
 
-    O filtro escreve o canário DENTRO do git dir (área permitida) para provar
-    que executou, e tenta reescrever um fonte da working tree (área agora
-    negada).
+    O contrato antigo media contenção DEPOIS da execução: o filtro rodava e a
+    escrita fora do git dir era negada. Depois de A5 o contrato é anterior e
+    mais forte — o filtro escolhido pelo repositório não executa.
+
+    A defesa antiga (escrita limitada ao git dir, A3) continua no perfil como
+    profundidade: se um dia uma capability futura reabrir exec, a fronteira de
+    escrita ainda está lá.
     """
+    import subprocess as _sp
+    fonte = repo / "FONTE.txt"
+    fonte.write_text("intacto")
+    filtro = repo / "hostil.sh"
+    filtro.write_text("#!/bin/sh\necho OWNED > %s\ncat\n" % fonte)
+    filtro.chmod(0o755)
+    env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull,
+               GIT_CONFIG_SYSTEM=os.devnull)
+    _sp.run([GIT, "-C", str(repo), "config", "filter.hostil.clean",
+             str(filtro)], check=True, capture_output=True, env=env)
+    (repo / ".gitattributes").write_text("*.dat filter=hostil\n")
+    _sp.run([GIT, "-C", str(repo), "add", "--", ".gitattributes"],
+            check=True, capture_output=True, env=env)
+    _sp.run([GIT, "-C", str(repo), "commit", "-q", "-m", "attrs"],
+            check=True, capture_output=True, env=env)
+    (repo / "dados.dat").write_text("conteudo\n")
+
     from nomos.adapters import git_tree
     from nomos.adapters.contrato import CapabilityContext, CapabilityRequest
     from nomos.adapters.wiring import registrar_git_tree
     from nomos.kernel.policy import PolicyEngine
     from nomos.orquestracao.registro import RegistroCapacidades
-
-    filtro = repo / ".git" / "f.sh"
-    filtro.write_text(textwrap.dedent(f"""\
-        #!/bin/sh
-        echo RODOU > {repo}/.git/CANARIO
-        echo OWNED > {repo}/FONTE.txt
-        cat
-    """))
-    filtro.chmod(0o755)
-    (repo / ".gitattributes").write_text("*.dat filter=evil\n")
-    _git(repo, "config", "filter.evil.clean", str(filtro), check=True)
-    (repo / "carga.dat").write_text("conteudo novo\n")
-
-    reg = RegistroCapacidades(policy=PolicyEngine(tmp_path / "p.json"),
-                              approver=lambda *a, **k: True)
-    registrar_git_tree(reg, raizes=(str(tmp_path),))
-    import contextlib
-    with contextlib.suppress(Exception):
+    registro = RegistroCapacidades(policy=PolicyEngine(tmp_path / "p.json"),
+                                   approver=lambda *a, **k: True)
+    registrar_git_tree(registro, raizes=(str(tmp_path),))
+    with pytest.raises(supervisor.ErroSeguranca) as exc:
         git_tree.GitTreeAdapter().executar(
             CapabilityRequest(capacidade="git-add", alvo=str(repo),
-                              argumentos={"caminhos": ["carga.dat"]}),
-            CapabilityContext.de_registro(reg, "git-add", "runtime-governado",
+                              argumentos={"caminhos": ["dados.dat"]}),
+            CapabilityContext.de_registro(registro, "git-add",
+                                          "runtime-governado",
                                           raizes=(str(tmp_path),)))
-
-    assert (repo / ".git" / "CANARIO").exists(), (
-        "o filtro NÃO executou — sem isso a asserção seguinte é vácuo")
-    assert (repo / "FONTE.txt").read_text() == "intacto", (
-        "o filtro hostil reescreveu o código do projeto")
+    assert "cannot exec" in str(exc.value), str(exc.value)[:300]
+    assert fonte.read_text() == "intacto", "o filtro executou e reescreveu"
 
 
 # ═══════════ capacidades de leitura: sem autoridade de escrita ══════════════

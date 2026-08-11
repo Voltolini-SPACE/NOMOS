@@ -171,6 +171,31 @@ def ambiente_minimo() -> dict[str, str]:
     }
 
 
+def executaveis_de_git() -> tuple[str, ...]:
+    """Os binários que uma operação Git REALMENTE executa neste host.
+
+    São dois: `/usr/bin/git` é o shim do xcrun, que delega ao Git de dentro do
+    Xcode. Ambos precisam de literal próprio.
+
+    O que NÃO precisa de literal, e é contraintuitivo: `git-receive-pack` e
+    `git-upload-pack`. Medido neste host — os três compartilham o MESMO inode
+    (1152921500312567503, hardlink), e o `git-receive-pack` do Xcode é symlink
+    para `../../bin/git`. O sandbox casa o caminho REAL, então dois literais já
+    cobrem os helpers.
+
+    Derivado em runtime: fixar o caminho do Xcode quebraria tudo depois de um
+    `xcode-select -s`, e cair para `process-exec` amplo seria trocar a
+    fronteira por conveniência — por isso é RECUSA.
+    """
+    dev = os.path.realpath("/var/select/developer_dir")
+    xcode_git = os.path.join(dev, "usr", "bin", "git")
+    if not os.path.exists(xcode_git):
+        raise supervisor.ErroSeguranca(
+            f"git da toolchain não resolve ({xcode_git}) — recuso em vez de "
+            "liberar process-exec amplo")
+    return ("/usr/bin/git", xcode_git)
+
+
 def diretorio_git(repo: Path | str) -> tuple[str, str]:
     """`(git_dir, common_dir)` canônicos, SEM executar git.
 
@@ -226,7 +251,8 @@ def confinamento_de_leitura(repo: Path | str) -> supervisor.Confinamento:
     if comum != git_dir:
         raizes += (comum,)
     return supervisor.Confinamento(escrita=(), declara_sem_escrita=True,
-                                   leitura=raizes)
+                                   leitura=raizes,
+                                   exec_permitido=executaveis_de_git())
 
 
 def confinamento_de_repo(repo: Path | str,
@@ -271,7 +297,8 @@ def confinamento_de_repo(repo: Path | str,
     proibidos = tuple(f"{raiz}/{nome}" for raiz in raizes
                       for nome in ("hooks", "info", "config"))
     return supervisor.Confinamento(escrita=raizes, rede=rede,
-                                   negacao_de_escrita=proibidos)
+                                   negacao_de_escrita=proibidos,
+                                   exec_permitido=executaveis_de_git())
 
 
 class GitAdapter(Adapter):

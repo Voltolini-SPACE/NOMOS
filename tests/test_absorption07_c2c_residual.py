@@ -38,6 +38,47 @@ import pytest
 from nomos.adapters import git_tree, processos, supervisor
 from nomos.adapters.contrato import CapabilityRequest, ErroInvalido
 
+
+@pytest.fixture(autouse=True)
+def _filtro_do_repo_pode_executar(monkeypatch):
+    """TODO este módulo mede MORTE DE ÁRVORE DE PROCESSOS, e para isso precisa
+    que o filtro hostil do repositório EXECUTE e gere descendentes destacados.
+
+    Depois de A5 o filtro do repositório não executa mais — esse é o ganho, e
+    ao mesmo tempo destrói o mecanismo desta medição. Sem este patch os testes
+    passariam por AUSÊNCIA de descendente: um PASS vazio, que é exatamente o
+    modo de falha que esta série vem eliminando.
+
+    O patch devolve exec AMPLO SOMENTE aqui. A propriedade sob teste continua
+    sendo `killpg não basta / zero residuais`; a allowlist de exec tem bateria
+    própria em A5.
+    """
+    import dataclasses
+    original = git_tree.confinamento_de_repo
+
+    def amplo(repo, *a, **k):
+        return dataclasses.replace(original(repo, *a, **k),
+                                   exec_permitido=())
+
+    monkeypatch.setattr(git_tree, "confinamento_de_repo", amplo)
+
+
+def _exec_amplo(conf):
+    """Confinamento com exec AMPLO (perfil histórico), para as sondas.
+
+    Estas sondas medem a MORTE DA ÁRVORE DE PROCESSOS: precisam que um filtro
+    hostil execute e gere descendentes destacados. Depois de A5 o filtro do
+    repositório não executa mais — o que é o ganho de segurança, e ao mesmo
+    tempo destruiria o mecanismo desta medição.
+
+    Conceder exec amplo AQUI é correto: a propriedade sob teste é `killpg não
+    basta / zero residuais`, não a allowlist de exec (que tem bateria própria
+    em A5). Sem isto o teste passaria por AUSÊNCIA de descendente — um PASS
+    vazio, exatamente o que esta série vem eliminando.
+    """
+    import dataclasses
+    return dataclasses.replace(conf, exec_permitido=())
+
 GIT = "/usr/bin/git"
 pytestmark = pytest.mark.skipif(
     not (Path(supervisor.SANDBOX).exists() and Path(GIT).exists()

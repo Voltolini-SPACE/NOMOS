@@ -90,7 +90,22 @@ def _sob(conf, *argv, env=None):
 
 def _amplo():
     """Perfil de CONTROLE: leitura irrestrita (o estado anterior a A2)."""
-    return supervisor.Confinamento(escrita=(), declara_sem_escrita=True)
+    return supervisor.Confinamento(escrita=(), declara_sem_escrita=True,
+                                   exec_permitido=_SONDA)
+
+
+# Depois de A5 o `exec_permitido` é POR CAPACIDADE, e a capacidade de leitura
+# só admite o Git. A sonda que usa `/bin/cat` precisa declarar o próprio
+# executável — senão ela mede a allowlist de exec, não a fronteira de LEITURA
+# que pretende medir.
+# Só o que cada sonda precisa. A CAPACIDADE continua admitindo apenas o Git.
+_SONDA = ("/bin/cat", "/bin/ls")
+
+
+def _com_sonda(conf):
+    """Mesmo confinamento, mais o binário da sonda. Nada além dele."""
+    import dataclasses
+    return dataclasses.replace(conf, exec_permitido=conf.exec_permitido + _SONDA)
 
 
 # ════════ Cada DENY vem com o ALLOW gêmeo — senão o teste é vácuo ═══════════
@@ -108,7 +123,7 @@ def test_leitura_fora_da_raiz_e_negada_com_controle_positivo(nome, rel, repo):
     if amplo.returncode != 0:
         pytest.skip("nem o perfil amplo lê o alvo; a sonda seria vácuo")
 
-    estreito = _sob(mod_git.confinamento_de_leitura(repo), "/bin/cat",
+    estreito = _sob(_com_sonda(mod_git.confinamento_de_leitura(repo)), "/bin/cat",
                     str(alvo))
     assert estreito.returncode != 0, f"{nome}: leitura fora da raiz permitida"
     assert "Operation not permitted" in estreito.stderr, estreito.stderr[:200]
@@ -122,7 +137,7 @@ def test_projeto_externo_e_negado(repo, tmp_path):
 
     assert _sob(_amplo(), "/bin/cat", str(alvo)).returncode == 0, (
         "controle positivo falhou: o perfil amplo já negava")
-    assert _sob(mod_git.confinamento_de_leitura(repo), "/bin/cat",
+    assert _sob(_com_sonda(mod_git.confinamento_de_leitura(repo)), "/bin/cat",
                 str(alvo)).returncode != 0
 
 
@@ -130,7 +145,7 @@ def test_canario_controlado_fora_da_fronteira_e_negado(repo, tmp_path):
     canario = tmp_path / "CANARIO"
     canario.write_text("nao pode ser lido\n")
     assert _sob(_amplo(), "/bin/cat", str(canario)).returncode == 0
-    assert _sob(mod_git.confinamento_de_leitura(repo), "/bin/cat",
+    assert _sob(_com_sonda(mod_git.confinamento_de_leitura(repo)), "/bin/cat",
                 str(canario)).returncode != 0
 
 
@@ -146,13 +161,13 @@ def test_gitconfig_do_usuario_fica_inalcancavel(repo):
     if not alvo.exists():
         pytest.skip("~/.gitconfig não existe neste host")
     assert _sob(_amplo(), "/bin/cat", str(alvo)).returncode == 0
-    assert _sob(mod_git.confinamento_de_leitura(repo), "/bin/cat",
+    assert _sob(_com_sonda(mod_git.confinamento_de_leitura(repo)), "/bin/cat",
                 str(alvo)).returncode != 0
 
 
 def test_o_proprio_repo_CONTINUA_legivel(repo):
     """ALLOW positivo. Sem ele a redução seria só quebra."""
-    r = _sob(mod_git.confinamento_de_leitura(repo), "/bin/cat",
+    r = _sob(_com_sonda(mod_git.confinamento_de_leitura(repo)), "/bin/cat",
              str(repo / "a.txt"))
     assert r.returncode == 0, r.stderr[:300]
     assert r.stdout == "conteudo\n"
@@ -165,7 +180,7 @@ def test_ancestral_nao_permite_LISTAR(repo):
     vizinho — e o teste acima ainda passaria.
     """
     pai = str(Path(repo).parent)
-    r = _sob(mod_git.confinamento_de_leitura(repo), "/bin/ls", pai)
+    r = _sob(_com_sonda(mod_git.confinamento_de_leitura(repo)), "/bin/ls", pai)
     assert r.returncode != 0, (
         "metadata do ancestral virou permissão de listagem")
 
@@ -189,7 +204,9 @@ def test_paridade_de_saida_com_o_perfil_amplo(repo):
     real = os.path.realpath(repo)
     argv = (GIT, "-C", real, "--no-pager", "log", "--oneline")
     amb = mod_git.ambiente_minimo()
-    largo = _sob(_amplo(), *argv, env=amb)
+    largo = _sob(supervisor.Confinamento(escrita=(), declara_sem_escrita=True,
+                                         exec_permitido=mod_git.executaveis_de_git()),
+                 *argv, env=amb)
     estreito = _sob(mod_git.confinamento_de_leitura(repo), *argv, env=amb)
     assert largo.returncode == estreito.returncode == 0
     assert largo.stdout == estreito.stdout, "a saída divergiu sob o piso"

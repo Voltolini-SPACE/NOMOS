@@ -301,7 +301,17 @@ def test_sucesso_normal_promove_o_objeto(tmp_path):
     assert _git(repo, "fsck", "--no-progress").returncode == 0
 
 
-def test_filtro_redator_legitimo_persiste_o_conteudo_redigido(tmp_path):
+def test_filtro_redator_legitimo_e_NEGADO_no_caminho_padrao(tmp_path):
+    """CONTRATO NOVO (A5). O redator legítimo migra para capability governada.
+
+    Antes este teste exigia que o redator FUNCIONASSE. Depois de A5 o caminho
+    padrão nega qualquer executável escolhido pelo repositório — inclusive um
+    `/usr/bin/sed` inofensivo. O critério não é a índole do binário: é QUEM
+    escolhe. Preservar este caso é trabalho de `git-add-governed-filter`, onde
+    o executável vem do registry/policy, não do `.git/config`.
+
+    A negação é fail-closed e completa: nada estagiado, nada no store.
+    """
     repo = _repo(tmp_path, filtro=None)
     _git(repo, "config", "filter.redator.clean",
          "/usr/bin/sed -e s/SENHA=.*/REDIGIDO/")
@@ -309,11 +319,7 @@ def test_filtro_redator_legitimo_persiste_o_conteudo_redigido(tmp_path):
     _git(repo, "add", "--", ".gitattributes")
     _git(repo, "commit", "-q", "-m", "attrs")
     (repo / "x.secreto").write_text(SEGREDO)
-
-    r = _exec(repo, ["x.secreto"], tmp_path)
-    assert r.efeito_aplicado is True
-    assert _git(repo, "show", ":x.secreto").stdout.strip() == "REDIGIDO"
-    assert _segredo_no_store(repo) == [], "o segredo cru vazou mesmo redigido"
+    _falha_e_confere(repo, ["x.secreto"], tmp_path, supervisor.ErroSeguranca)
 
 
 def test_commit_apos_add_funciona_ponta_a_ponta(tmp_path):

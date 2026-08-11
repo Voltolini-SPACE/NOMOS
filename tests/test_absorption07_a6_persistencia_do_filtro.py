@@ -79,10 +79,27 @@ def _sob(conf, *argv):
         os.unlink(caminho)
 
 
+# Depois de A5 a capacidade só admite o Git. A sonda que escreve com `/bin/sh`
+# precisa declarar o próprio executável — senão mede a allowlist de exec em vez
+# da fronteira de ESCRITA que pretende medir.
+# `/bin/sh` neste host RE-EXECUTA `/bin/bash` ("Failed to exec /bin/bash as
+# variant for /bin/sh"). Declarar só o sh dá exec negado — landmine medido no
+# censo. A sonda precisa dos dois; a CAPACIDADE continua sem nenhum.
+_SONDA = ("/bin/sh", "/bin/bash")
+
+
 def _sem_a6(repo):
     """Perfil ANTERIOR a A6: git dir gravável inteiro, sem as negações."""
     conf = mod_git.confinamento_de_repo(repo)
-    return supervisor.Confinamento(escrita=conf.escrita, rede=conf.rede)
+    return supervisor.Confinamento(escrita=conf.escrita, rede=conf.rede,
+                                   exec_permitido=conf.exec_permitido + _SONDA)
+
+
+def _com_sonda(repo):
+    import dataclasses
+    conf = mod_git.confinamento_de_repo(repo)
+    return dataclasses.replace(conf,
+                               exec_permitido=conf.exec_permitido + _SONDA)
 
 
 # ═════ CONTROLE POSITIVO — a persistência FUNCIONAVA antes de A6 ════════════
@@ -108,7 +125,7 @@ def test_a6_nega_a_instalacao(repo, alvo):
     destino.parent.mkdir(parents=True, exist_ok=True)
     anterior = destino.read_text() if destino.exists() else None
 
-    r = _sob(mod_git.confinamento_de_repo(repo), "/bin/sh", "-c",
+    r = _sob(_com_sonda(repo), "/bin/sh", "-c",
              f"echo PLANTADO > {destino}")
 
     assert r.returncode != 0 or "PLANTADO" not in (
@@ -121,7 +138,7 @@ def test_a6_nega_a_instalacao(repo, alvo):
 def test_o_resto_do_git_dir_CONTINUA_gravavel(repo):
     """A negação é cirúrgica. Negar o git dir inteiro quebraria o `add`."""
     git_dir = Path(mod_git.diretorio_git(repo)[0])
-    r = _sob(mod_git.confinamento_de_repo(repo), "/bin/sh", "-c",
+    r = _sob(_com_sonda(repo), "/bin/sh", "-c",
              f"echo ok > {git_dir}/NOMOS_CANARIO")
     assert r.returncode == 0, r.stderr[:200]
     assert (git_dir / "NOMOS_CANARIO").exists()
@@ -153,34 +170,61 @@ def test_add_e_commit_continuam_funcionando(repo, tmp_path):
     assert "novo.txt" in _git(repo, "show", "--stat", "HEAD").stdout
 
 
-def test_filtro_hostil_roda_mas_nao_persiste(repo, tmp_path):
-    """O cenário completo: filtro executa, e não consegue deixar herdeiro."""
+def test_filtro_do_repo_NAO_EXECUTA_MAIS(repo, tmp_path):
+    """CONTRATO NOVO (A5). Substitui `test_filtro_hostil_roda_mas_nao_persiste`.
+
+    O teste antigo afirmava "o filtro roda e não persiste". Depois de A5 essa
+    afirmação ficou FALSA por um motivo melhor: o filtro não roda. Mantê-lo
+    verde exigiria readmitir a execução — foi exatamente o que a decisão de
+    produto proibiu.
+
+        REPOSITORY_MAY_DECLARE_REQUIREMENT     = TRUE
+        REPOSITORY_MAY_GRANT_EXECUTION_AUTHORITY = FALSE
+        NOMOS_POLICY_IS_SOLE_EXECUTION_AUTHORITY = TRUE
+
+    O repositório declara `filter.hostil.clean` no `.git/config` e liga o
+    arquivo por `.gitattributes` — isto é, PEDE execução. O NOMOS nega, e a
+    negação é ALTA: `ErroSeguranca`, com o índice restaurado (A0.1) e o objeto
+    descartado com a quarentena (A0.3).
+    """
     git_dir = Path(mod_git.diretorio_git(repo)[0])
     filtro = repo / "filtro.sh"
-    filtro.write_text(
-        "#!/bin/sh\n"
-        f"echo RODOU > {git_dir}/CANARIO_A6\n"
-        f"echo '#!/bin/sh' > {git_dir}/hooks/pre-commit 2>/dev/null\n"
-        f"echo x > {git_dir}/config 2>/dev/null\n"
-        "cat\n")
+    filtro.write_text(f"#!/bin/sh\necho RODOU > {git_dir}/CANARIO_A6\ncat\n")
     filtro.chmod(0o755)
     _git(repo, "config", "filter.hostil.clean", str(filtro))
     (repo / ".gitattributes").write_text("*.dat filter=hostil\n")
     _git(repo, "add", "--", ".gitattributes")
     _git(repo, "commit", "-q", "-m", "attrs")
     (repo / "dados.dat").write_text("conteudo\n")
-    config_antes = (git_dir / "config").read_text()
 
-    _exec(repo, ["dados.dat"], tmp_path)
+    with pytest.raises(supervisor.ErroSeguranca) as exc:
+        _exec(repo, ["dados.dat"], tmp_path)
 
-    # CONTROLE POSITIVO antes de qualquer asserção de contenção.
-    assert (git_dir / "CANARIO_A6").exists(), (
-        "o filtro NÃO executou — as asserções abaixo seriam vácuo")
-    hook = git_dir / "hooks" / "pre-commit"
-    assert not hook.exists() or "#!/bin/sh" not in hook.read_text(), (
-        "o filtro instalou um hook: a contenção vale só desta vez")
-    assert (git_dir / "config").read_text() == config_antes, (
-        "o filtro reescreveu o config do repositório")
+    assert "cannot exec" in str(exc.value), str(exc.value)[:300]
+    assert not (git_dir / "CANARIO_A6").exists(), (
+        "o filtro do repositório EXECUTOU — NO_REPO_CONTROLLED_EXEC caiu")
+    assert _git(repo, "diff", "--cached", "--name-only").stdout.strip() == "", (
+        "a negação deixou conteúdo estagiado")
+
+
+def test_filtro_LEGITIMO_tambem_e_negado_no_caminho_padrao(repo, tmp_path):
+    """O custo da decisão, explícito em teste — não escondido.
+
+    `/usr/bin/sed` é inofensivo, e mesmo assim é negado: o critério não é a
+    índole do binário, é QUEM escolhe. Aqui quem escolheu foi o repositório.
+    Preservar este caso é trabalho da capacidade governada (registry escolhe o
+    executável), não de reabrir a porta no caminho padrão.
+    """
+    _git(repo, "config", "filter.redator.clean",
+         "/usr/bin/sed -e s/SENHA=.*/REDIGIDO/")
+    (repo / ".gitattributes").write_text("*.secreto filter=redator\n")
+    _git(repo, "add", "--", ".gitattributes")
+    _git(repo, "commit", "-q", "-m", "attrs")
+    (repo / "x.secreto").write_text("SENHA=hunter2\n")
+
+    with pytest.raises(supervisor.ErroSeguranca):
+        _exec(repo, ["x.secreto"], tmp_path)
+    assert _git(repo, "diff", "--cached", "--name-only").stdout.strip() == ""
 
 
 # ═══════════════════════ Invariantes estruturais ════════════════════════════

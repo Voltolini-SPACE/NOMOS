@@ -346,18 +346,31 @@ def test_commit_legitimo_continua_funcionando(tmp_path):
     assert "bom.txt" in _git(repo, "show", "--stat", "HEAD").stdout
 
 
-def test_filtro_que_FUNCIONA_persiste_o_conteudo_redigido(tmp_path):
-    """O redator legítimo tem de continuar funcionando ponta a ponta."""
+def test_filtro_LEGITIMO_e_negado_e_o_indice_fica_intacto(tmp_path):
+    """CONTRATO NOVO (A5). Antes exigia que o redator FUNCIONASSE.
+
+    O caminho padrão nega qualquer executável escolhido pelo REPOSITÓRIO —
+    inclusive um `/usr/bin/sed` inofensivo. O critério não é a índole do
+    binário: é quem escolhe. O caso legítimo migra para a capability governada
+    (`git-add-governed-filter`), onde o executável vem do registry.
+
+    O que este teste preserva de A0: a negação é transacional. Índice idêntico
+    ao anterior, nada estagiado.
+    """
     repo = _novo_repo(tmp_path, filtro=None)
-    _git(repo, "config", "filter.redator.clean", "/usr/bin/sed -e s/SENHA=.*/REDIGIDO/")
+    _git(repo, "config", "filter.redator.clean",
+         "/usr/bin/sed -e s/SENHA=.*/REDIGIDO/")
     (repo / ".gitattributes").write_text("*.secreto filter=redator\n")
     _git(repo, "add", "--", ".gitattributes")
     _git(repo, "commit", "-q", "-m", "attrs")
     (repo / "a.secreto").write_text("SENHA=hunter2\n")
+    antes = _indice_bytes(repo)
 
-    r = _executar(repo, ["a.secreto"], tmp_path)
-    assert r.efeito_aplicado is True
-    assert _git(repo, "show", ":a.secreto").stdout.strip() == "REDIGIDO"
+    with pytest.raises(supervisor.ErroSeguranca):
+        _executar(repo, ["a.secreto"], tmp_path)
+
+    assert _indice_bytes(repo) == antes
+    assert _git(repo, "diff", "--cached", "--name-only").stdout.strip() == ""
 
 
 # ═══════════════════════ Invariante estrutural do rollback ══════════════════
