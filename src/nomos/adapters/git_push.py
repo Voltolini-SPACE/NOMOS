@@ -271,6 +271,11 @@ class GitPushAdapter(Adapter):
             raise ErroRemoto(
                 f"push falhou (rc={p.returncode}): "
                 f"{p.stderr.decode('utf-8', 'replace')[:400]}")
+        # O push escreve progresso e linhas `remote:` em stderr por rotina, e
+        # nada disso é erro. Mas o lado remoto pode recusar objeto e a saída
+        # ainda vir 0 ("remote unpack failed" foi medido no censo do C2c) —
+        # publicação que não publicou não pode virar sucesso auditado.
+        supervisor.conferir_saida(p.stderr, "push")
         self._auditar(ctx, "git.push", alvo=supervisor.canonicalizar(repo),
                       remote_id=destino.remote_id, url=destino.url,
                       origem=origem, destino=alvo_branch, sandbox=True,

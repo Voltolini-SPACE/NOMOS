@@ -129,6 +129,7 @@ class GitTagAdapter(Adapter):
             if "not a valid object name" in erro or "Failed to resolve" in erro:
                 raise ErroNaoEncontrado(f"target não existe: {alvo_ref}")
             raise ErroInvalido(f"git tag falhou (rc={p.returncode}): {erro}")
+        supervisor.conferir_saida(p.stderr, "git tag")
         self._auditar(ctx, "git.tag", alvo=supervisor.canonicalizar(repo),
                       tag=nome, target=alvo_ref, sandbox=True, rede=False,
                       classificacao=p.classificacao,

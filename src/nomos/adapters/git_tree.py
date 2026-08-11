@@ -167,6 +167,10 @@ class GitTreeAdapter(Adapter):
             erro = p.stderr.decode("utf-8", "replace")[:400]
             raise ErroInvalido(
                 f"{pedido.capacidade} falhou (rc={p.returncode}): {erro}")
+        # `git add` é a ÚNICA capacidade que roda programa do repositório (o
+        # filtro). É também onde o rc=0 mente com mais consequência: filtro
+        # quebrado indexa o conteúdo cru. Aqui a mentira para.
+        supervisor.conferir_saida(p.stderr, pedido.capacidade)
         self._auditar(ctx, f"git.{pedido.capacidade[4:]}",
                       alvo=supervisor.canonicalizar(repo), detalhe=descricao,
                       sandbox=True, rede=False,

@@ -82,6 +82,7 @@ vazio`.
 from __future__ import annotations
 
 import os
+import re
 import resource
 import signal
 import shutil
@@ -155,6 +156,39 @@ EXIGIDAS_NO_AMBIENTE = {
 
 class ErroSeguranca(ErroInvalido):
     """Preparo de confinamento falhou. SEMPRE recusa, nunca degradação."""
+
+
+# O Git emite estes marcadores em stderr AINDA QUANDO sai com rc=0.
+#
+# MEDIDO, não suposto: `git add` num repositório cujo `filter.<driver>.clean`
+# falha devolve rc=0, indexa o arquivo assim mesmo e grava o conteúdo CRU —
+# reclamando só aqui. O Git só trata falha de filtro como fatal quando
+# `filter.<driver>.required` está ligado, e essa config vem do REPOSITÓRIO,
+# isto é, do lado não confiável: quem ataca escolhe se o erro é fatal.
+#
+# A consequência não é cosmética. O padrão documentado de usar `clean` como
+# REDATOR de segredo inverte de sentido: com o filtro quebrado, `SENHA=...`
+# entra em claro no índice e o adapter — que olhava só o rc — reporta SUCESSO.
+# Provado ponta a ponta pelo caminho governado antes desta checagem existir.
+#
+# `warning:` fica de fora de propósito: é comum e benigno (CRLF, etc.), e
+# recusar nele transformaria operação legítima em falha.
+_MARCADOR_ERRO = re.compile(rb"^(?:error|fatal):", re.MULTILINE)
+
+
+def conferir_saida(stderr: bytes, operacao: str) -> None:
+    """Recusa quando o Git relatou erro apesar de ter saído com rc=0.
+
+    Fail-closed por desenho. Sem isto, a frase "rc=0 significa que a operação
+    fez o que dizia" é FALSA para toda capacidade que toca a working tree.
+    """
+    achado = _MARCADOR_ERRO.search(stderr)
+    if achado is None:
+        return
+    linha = stderr[achado.start():].split(b"\n", 1)[0]
+    raise ErroSeguranca(
+        f"{operacao} saiu com rc=0 MAS o Git relatou erro — recuso por "
+        f"degradação silenciosa: {linha.decode('utf-8', 'replace')[:300]}")
 
 
 @dataclass(frozen=True)

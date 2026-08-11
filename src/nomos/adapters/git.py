@@ -336,4 +336,5 @@ class GitAdapter(Adapter):
         if p.returncode != 0:
             erro = p.stderr.decode("utf-8", "replace")[:400]
             raise ErroInvalido(f"git falhou (rc={p.returncode}): {erro}")
+        supervisor.conferir_saida(p.stderr, "git")
         return p.stdout.decode("utf-8", "replace"), p
