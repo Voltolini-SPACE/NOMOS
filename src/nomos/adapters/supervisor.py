@@ -98,6 +98,22 @@ from nomos.adapters.contrato import ErroInvalido, ErroLimite
 
 SANDBOX = "/usr/bin/sandbox-exec"
 
+# `mach-lookup` irrestrito era o canal de delegação aberto do perfil: pedir
+# trabalho a um serviço de sistema que NÃO está sandboxado. O censo mediu que UM
+# único nome basta.
+#
+# A causa é a toolchain, não o Git: `/usr/bin/git` neste host é o shim do xcrun
+# (116K), que delega ao git do Xcode (3,5M). O shim chama
+# `confstr(_CS_DARWIN_USER_TEMP_DIR)`, e é isso que resolve por `dirhelper`.
+#
+# Remover a linha INTEIRA também funciona — `git add` e `git commit` devolvem
+# rc=0 —, mas custa 78× em latência (0,045s → 3,53s por ciclo) e enche o stderr
+# com 1092 bytes de ruído do xcrun. O ruído não é cosmético: os adapters
+# reportam erro com `stderr[:400]`, e a janela inteira vira lixo — um
+# `git add` de caminho inexistente deixa de mostrar o "fatal: pathspec ...".
+# Perder diagnóstico é perder a capacidade de investigar incidente.
+MACH = '(allow mach-lookup (global-name "com.apple.bsd.dirhelper"))'
+
 # Graça entre o término controlado e o kill. Curta de propósito: já estamos
 # depois do prazo do nó, e quem ignorou o SIGTERM não vai colaborar mais.
 GRACA_S = 1.5
@@ -148,6 +164,12 @@ class Confinamento:
     escrita: tuple[str, ...] = ()
     rede: bool = False
     marca: object | None = None      # processos.Marca desta execução
+    # As capacidades de LEITURA não escrevem nada — medido: `git log`, `git show`
+    # e `git diff ref ref` rodam com saída byte-idêntica sem nenhum allow de
+    # escrita no repositório. Sem esta declaração explícita, o supervisor recusa
+    # confinamento vazio por ambiguidade, e a redução ficaria impossível de
+    # exprimir. O caminho é "a capacidade não escreve, E DIZ ISSO".
+    declara_sem_escrita: bool = False
     cpu_s: int = CPU_S
     arquivo_bytes: int = ARQUIVO_BYTES
     descritores: int = DESCRITORES
@@ -218,7 +240,7 @@ def perfil(conf: Confinamento) -> str:
         "(allow process-exec process-fork)",
         "(allow file-read*)",
         "(allow sysctl-read)",
-        "(allow mach-lookup)",
+        MACH,
         f'(allow file-write* (literal "{os.devnull}"))',
     ]
     linhas.insert(2, "(allow network*)" if conf.rede else "(deny network*)")
@@ -376,7 +398,7 @@ def executar(argv: list[str], *, cwd: str | Path, env: dict[str, str],
         raise ErroSeguranca(
             f"{binario_sandbox} ausente: sem sandbox não há execução de Git. "
             "O NOMOS recusa em vez de rodar sem confinamento")
-    if not confinamento.escrita:
+    if not confinamento.escrita and not confinamento.declara_sem_escrita:
         raise ErroSeguranca(
             "confinamento sem nenhuma raiz de escrita declarada — recuso por "
             "ambiguidade: ou a capacidade não escreve (e declara isso), ou "

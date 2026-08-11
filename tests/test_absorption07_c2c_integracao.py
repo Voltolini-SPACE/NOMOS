@@ -89,11 +89,17 @@ def test_p1_todo_adapter_git_usa_o_supervisor():
 def test_p2_confinamento_canonicaliza_antes_de_gerar_a_politica(tmp_path):
     d = tmp_path / "repo"
     d.mkdir()
+    subprocess.run([GIT, "-C", str(d), "init", "-q", "-b", "main"], check=True,
+                   capture_output=True)
     link = tmp_path / "atalho"
     link.symlink_to(d, target_is_directory=True)
     conf = mod_git.confinamento_de_repo(link)
-    assert conf.escrita == (str(d.resolve()),)
-    assert f'(subpath "{link}")' not in supervisor.perfil(conf)
+    # A autoridade para no GIT DIR: a working tree ficou fora.
+    assert conf.escrita == (str((d / ".git").resolve()),)
+    perfil = supervisor.perfil(conf)
+    assert f'(subpath "{link}")' not in perfil
+    assert f'(subpath "{d.resolve()}")' not in perfil, (
+        "o perfil concedeu a working tree inteira")
 
 
 def test_p2_alvo_inexistente_e_recusado(tmp_path):
@@ -391,7 +397,7 @@ def repo_hostil(tmp_path):
     filtro = r / "filtro.sh"
     filtro.write_text(textwrap.dedent(f"""\
         #!/bin/sh
-        echo RODOU > {r}/CANARIO                     # 0. controle positivo
+        echo RODOU > {r}/.git/CANARIO                # 0. controle positivo
         echo INVADIDO > {fora}                       # 1. escrever fora
         echo INVADIDO > {tmp_path}/no-pai.txt        # 2. escrever no pai
         /usr/bin/python3 -c 'import socket;s=socket.socket();s.settimeout(1);s.connect(("127.0.0.1",9))' 2>/dev/null && echo REDE_OK > {fora}
@@ -432,7 +438,7 @@ def test_p8_filtro_hostil_executa_e_nao_alcanca_nada(repo_hostil, tmp_path):
     # o PASS diria só que o `git add` falhou por outro motivo. O canário fica
     # DENTRO do repo, onde a escrita é legítima — é a única prova de que o
     # código do repositório de fato executou sob o sandbox.
-    assert (repo / "CANARIO").exists(), (
+    assert (repo / ".git" / "CANARIO").exists(), (
         "o filter.clean NÃO executou — as asserções de contenção abaixo "
         "seriam vácuo. Verifique .gitattributes/filter.hostil.clean")
 

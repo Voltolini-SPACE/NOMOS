@@ -171,6 +171,59 @@ def ambiente_minimo() -> dict[str, str]:
     }
 
 
+def diretorio_git(repo: Path | str) -> tuple[str, str]:
+    """`(git_dir, common_dir)` canônicos, SEM executar git.
+
+    Não uso `git rev-parse --absolute-git-dir` de propósito: resolver o
+    confinamento exigiria uma execução de git, que por sua vez exige um
+    confinamento. Além do ciclo, seria um `subprocess` fora do supervisor — o
+    teste estrutural do C2c proíbe.
+
+    O formato é documentado e estável: `.git` é diretório no caso comum e um
+    ARQUIVO com `gitdir: <caminho>` em worktree ligada ou submódulo. Concatenar
+    `<repo>/.git` cegamente daria um caminho que não existe nesses dois casos, e
+    a política sairia apontando para o lugar errado.
+    """
+    base = Path(supervisor.existente(repo))
+    ponto = base / ".git"
+    if ponto.is_dir():
+        git_dir = supervisor.existente(ponto)
+    elif ponto.is_file():
+        texto = ponto.read_text("utf-8", "replace").strip()
+        if not texto.startswith("gitdir:"):
+            raise ErroInvalido(f"arquivo .git ilegível em {base}")
+        alvo = texto.split(":", 1)[1].strip()
+        git_dir = supervisor.existente(
+            alvo if os.path.isabs(alvo) else str(base / alvo))
+    else:
+        raise ErroInvalido(f"não é repositório git: {base}")
+
+    # Em worktree ligada o estado compartilhado (objects, refs do repo
+    # principal) vive no common dir, não no git dir da worktree.
+    comum = Path(git_dir) / "commondir"
+    if comum.is_file():
+        bruto = comum.read_text("utf-8", "replace").strip()
+        common = supervisor.existente(
+            bruto if os.path.isabs(bruto) else str(Path(git_dir) / bruto))
+    else:
+        common = git_dir
+    return git_dir, common
+
+
+def confinamento_de_leitura() -> supervisor.Confinamento:
+    """Capacidades object-only: NENHUMA escrita no repositório.
+
+    Medido: `git-log`, `git-show` e `git-diff(refA, refB)` produzem saída
+    byte-idêntica à execução sem sandbox sem um único allow de escrita. O
+    `/dev/null` que o perfil sempre emite continua necessário porque
+    `GIT_CONFIG_GLOBAL=/dev/null` é aberto em leitura E escrita.
+
+    É a maior redução barata desta fase: uma capacidade de leitura que
+    fisicamente não consegue escrever, em vez de uma que promete não escrever.
+    """
+    return supervisor.Confinamento(escrita=(), declara_sem_escrita=True)
+
+
 def confinamento_de_repo(repo: Path | str,
                          rede: bool = False) -> supervisor.Confinamento:
     """Autoridade de filesystem de UMA execução Git: o repositório e mais nada.
@@ -180,14 +233,27 @@ def confinamento_de_repo(repo: Path | str,
     casa com o que o Git usa; um perfil escrito com o primeiro nega a operação
     legítima e parece falta de permissão.
 
-    Esta versão concede escrita ao repositório INTEIRO. É a baseline medida no
-    C2c, integrada primeiro sem regressão; a redução por operação (`add` toca
-    índice e objects, `commit` toca refs e logs) é o gate seguinte, e cada
-    corte precisa provar de novo que a operação funciona E que a fronteira
-    continua fechada.
+    A escrita para no DIRETÓRIO GIT — a working tree fica fora.
+
+    A hipótese foi medida e confirmada: `git add` e `git commit` não escrevem
+    nada no working tree, só no git dir. O ganho não é teórico. Com o repo
+    inteiro liberado, um `filter.clean` hostil SOBRESCREVEU um arquivo do
+    projeto durante o `git add`, com rc=0 e sem nenhum sinal. Com a escrita
+    limitada ao git dir, o mesmo filtro leva "Operation not permitted", o
+    arquivo do projeto fica intacto e o `add` continua funcionando.
+
+    Descer ABAIXO do git dir foi TENTADO E REFUTADO por medição. A allowlist
+    óbvia (index, objects, refs, logs, COMMIT_EDITMSG) falha por `HEAD.lock`,
+    que é lock transitório e não aparece em inventário de mtime; e mesmo
+    corrigida, todo commit passa a emitir `cannot lock ref 'AUTO_MERGE'` com
+    rc=0 — degradação silenciosa, que é justamente o modo de falha que esta
+    série vem eliminando. O git dir é o ponto estável: o contrato público "todo
+    estado mutável do repositório vive dentro do diretório Git" sobrevive a
+    mudanças de layout interno (packfiles, commit-graph, reftable).
     """
-    return supervisor.Confinamento(
-        escrita=(supervisor.existente(repo),), rede=rede)
+    git_dir, common = diretorio_git(repo)
+    raizes = (git_dir,) if common == git_dir else (git_dir, common)
+    return supervisor.Confinamento(escrita=raizes, rede=rede)
 
 
 class GitAdapter(Adapter):
@@ -262,7 +328,7 @@ class GitAdapter(Adapter):
         prazo = min(TIMEOUT_S, ctx.restante() or TIMEOUT_S)
         p = supervisor.executar(
             argv, cwd=repo, env=ambiente_minimo(), prazo=prazo,
-            confinamento=confinamento_de_repo(repo))
+            confinamento=confinamento_de_leitura())
         if p.morto_por_timeout:
             raise ErroLimite(f"git excedeu {prazo:.1f}s")
         if len(p.stdout) > LIMITE_SAIDA:

@@ -86,21 +86,21 @@ while True:
 def repo_hostil(tmp_path):
     """Repositório cujo `filter.clean` gera as 8 categorias de descendente.
 
-    Os marcadores ficam DENTRO do repo, onde a escrita é permitida pelo
-    sandbox: assim a ausência do marcador prova morte do processo, e não
-    negação de filesystem.
+    Os marcadores ficam dentro do GIT DIR — a única área gravável depois que a
+    redução de perfil tirou a working tree da autoridade de escrita. A posição
+    importa: marcador em área NEGADA sumiria por falta de permissão, e a
+    ausência provaria confinamento de filesystem em vez de morte do processo.
     """
     r = tmp_path / "hostil"
-    (r / "marks").mkdir(parents=True)
-    (r / "hostil.py").write_text(_HELPER)
+    r.mkdir(parents=True)
 
     linhas = "\n".join(
-        f'/usr/bin/python3 {r}/hostil.py {m} {r}/marks/{m}.mark >/dev/null 2>&1 &'
+        f'/usr/bin/python3 {r}/hostil.py {m} {r}/.git/marks/{m}.mark >/dev/null 2>&1 &'
         for m in MODOS)
-    espera = " ".join(f'"{r}/marks/{m}.mark"' for m in MODOS)
+    espera = " ".join(f'"{r}/.git/marks/{m}.mark"' for m in MODOS)
     (r / "filtro.sh").write_text(textwrap.dedent(f"""\
         #!/bin/sh
-        echo RODOU > {r}/CANARIO
+        echo RODOU > {r}/.git/CANARIO
         {linhas}
         # Esperar o REGIME PERMANENTE. Sem isto os descendentes em Python
         # morrem durante o startup do interpretador, antes de chegarem ao
@@ -121,6 +121,8 @@ def repo_hostil(tmp_path):
                GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
     subprocess.run([GIT, "-C", str(r), "init", "-q", "-b", "main"], check=True,
                    env=env, capture_output=True)
+    (r / ".git" / "marks").mkdir(parents=True, exist_ok=True)
+    (r / "hostil.py").write_text(_HELPER)
     subprocess.run([GIT, "-C", str(r), "config", "filter.hostil.clean",
                     str(r / "filtro.sh")], check=True, env=env,
                    capture_output=True)
@@ -135,7 +137,7 @@ def _faxina(repo: Path) -> None:
     Nunca por nome nem `pkill`: matar processo alheio do host seria pior que o
     defeito sob teste.
     """
-    for marca in (repo / "marks").glob("*.mark"):
+    for marca in (repo / ".git" / "marks").glob("*.mark"):
         with contextlib.suppress(OSError, ValueError):
             os.kill(int(marca.read_text().strip()), signal.SIGKILL)
 
@@ -176,10 +178,10 @@ def _reaparecem(repo: Path, espera: float = 1.2) -> set[str]:
     operação ainda corria. O que denuncia sobrevivência é escrita DEPOIS do
     retorno.
     """
-    for m in (repo / "marks").glob("*.mark"):
+    for m in (repo / ".git" / "marks").glob("*.mark"):
         m.unlink(missing_ok=True)
     time.sleep(espera)
-    return {m.stem for m in (repo / "marks").glob("*.mark")}
+    return {m.stem for m in (repo / ".git" / "marks").glob("*.mark")}
 
 
 # ════════════════ PASSO 3 — CONTROLE POSITIVO (sem ele nada vale) ═══════════
@@ -193,7 +195,7 @@ def test_controle_positivo_sem_defesa_os_destacados_sobrevivem(
     """
     monkeypatch.setattr(processos, "exterminar", lambda *a, **k: ([], []))
     _add(repo_hostil, tmp_path, "controle-positivo\n")
-    assert (repo_hostil / "CANARIO").exists(), "o filter.clean não executou"
+    assert (repo_hostil / ".git" / "CANARIO").exists(), "o filter.clean não executou"
 
     vivos = _reaparecem(repo_hostil)
     assert vivos, ("nenhum descendente sobreviveu nem com a defesa desligada — "
@@ -231,7 +233,7 @@ def test_pos_condicao_zero_residuais_apos_sucesso(repo_hostil, tmp_path):
     não voltou a escrever".
     """
     _add(repo_hostil, tmp_path, "com-defesa\n")
-    assert (repo_hostil / "CANARIO").exists(), "o filter.clean não executou"
+    assert (repo_hostil / ".git" / "CANARIO").exists(), "o filter.clean não executou"
     for rodada in range(3):
         vivos = _reaparecem(repo_hostil)
         assert vivos == set(), f"resíduo vivo na observação {rodada}: {vivos}"

@@ -164,3 +164,116 @@ def test_c2c_gerador_de_perfil_canonicaliza_sempre(tmp_path):
     assert str(d.resolve()) in perfil
     assert f'(subpath "{link}")' not in perfil, (
         "o gerador usou o pathname lógico — o landmine do realpath voltou")
+
+
+# ═════════ symlink em outras posições, e o repositório que se move ═════════
+#
+# O teste original cobre UMA posição: o repo alcançado por um symlink. O
+# landmine, porém, é sobre a diferença entre pathname e caminho real — e ela
+# aparece em pelo menos quatro lugares diferentes.
+
+def _sob(perfil: Path, *argv):
+    return _sob_sandbox(perfil, *argv)
+
+
+def test_c2c_symlink_DENTRO_do_repo_nao_estende_autoridade(repo_sob_tmp, tmp_path):
+    """O caso que mais assusta: um link dentro do repo apontando para fora.
+
+    Se a política fosse textual, `<repo>/atalho/x` "está dentro do repo" e
+    passaria. O sandbox resolve o caminho real antes de decidir, então a
+    autoridade acompanha o destino — não o nome. É por isso que a fronteira é
+    construída sobre `realpath` e não sobre prefixo de string.
+    """
+    _base, repo, _fora = repo_sob_tmp
+    destino = tmp_path / "destino-externo"
+    destino.mkdir()
+    alvo = destino / "arquivo.txt"
+    alvo.write_text("protegido")
+    (repo / "atalho").symlink_to(destino, target_is_directory=True)
+
+    p = tmp_path / "real.sb"
+    p.write_text(perfil_para(str(repo)))
+    _sob(p, "/bin/sh", "-c", f"echo INVADIDO > {repo}/atalho/arquivo.txt")
+    assert alvo.read_text() == "protegido", (
+        "escrita atravessou um symlink de dentro do repo para fora — a "
+        "política estaria decidindo por nome, não por caminho real")
+
+
+def test_c2c_symlink_no_DIRETORIO_PAI_do_repo(tmp_path):
+    """O repo é real; quem é link é um ancestral.
+
+    Foi essa forma que quebrou o guard do GATE C: o caminhamento subia até `/`
+    e encontrava `/private/var` no meio, tornando toda mutação impossível.
+    """
+    real = tmp_path / "real"
+    real.mkdir()
+    repo = real / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main", check=True)
+    link_pai = tmp_path / "pai-link"
+    link_pai.symlink_to(real, target_is_directory=True)
+
+    via_link = link_pai / "repo"
+    p = tmp_path / "pai.sb"
+    p.write_text(perfil_para(str(via_link)))
+    assert f'(subpath "{repo.resolve()}")' in p.read_text()
+
+    (repo / "a.txt").write_text("x\n")
+    r = _sob(p, GIT, "-C", str(repo.resolve()), "add", "--", "a.txt")
+    assert r.returncode == 0, r.stderr
+    fora = tmp_path / "FORA.txt"
+    fora.write_text("protegido")
+    _sob(p, "/bin/sh", "-c", f"echo X > {fora}")
+    assert fora.read_text() == "protegido"
+
+
+def test_c2c_symlink_ANINHADO_resolve_ate_o_fim(tmp_path):
+    """Cadeia de links: `a -> b -> c`. Resolver um nível só não basta."""
+    destino = tmp_path / "destino"
+    destino.mkdir()
+    meio = tmp_path / "meio"
+    meio.symlink_to(destino, target_is_directory=True)
+    topo = tmp_path / "topo"
+    topo.symlink_to(meio, target_is_directory=True)
+
+    perfil = perfil_para(str(topo))
+    assert f'(subpath "{destino.resolve()}")' in perfil
+    for parcial in (topo, meio):
+        assert f'(subpath "{parcial}")' not in perfil, (
+            f"o perfil parou em {parcial} — resolveu um nível, não a cadeia")
+
+
+def test_c2c_repo_movido_apos_gerar_a_politica_falha_FECHANDO(repo_sob_tmp,
+                                                              tmp_path):
+    """TOCTOU de caminho: o repositório muda de lugar depois do perfil pronto.
+
+    O importante aqui não é a operação continuar funcionando — é a direção da
+    falha. A política guarda o caminho canônico do momento da autorização; se o
+    alvo se move, a autoridade NÃO o acompanha. O resultado tem de ser recusa,
+    nunca autoridade sobre o lugar novo.
+    """
+    base, repo, _fora = repo_sob_tmp
+    p = tmp_path / "antes.sb"
+    p.write_text(perfil_para(str(repo)))
+
+    novo = base / "repo-renomeado"
+    repo.rename(novo)
+    (novo / "b.txt").write_text("depois da mudança\n")
+
+    r = _sob(p, GIT, "-C", str(os.path.realpath(novo)), "add", "--", "b.txt")
+    assert r.returncode != 0, (
+        "o perfil antigo autorizou escrita no caminho NOVO — a autoridade "
+        "seguiu o repositório em vez de ficar presa ao que foi autorizado")
+    indexado = _git(novo, "diff", "--cached", "--name-only").stdout
+    assert "b.txt" not in indexado
+
+
+def test_c2c_confinamento_do_supervisor_recusa_alvo_que_sumiu(tmp_path):
+    """E pela fronteira real: gerar política para caminho inexistente é recusa,
+    não resolução silenciosa para o diretório pai."""
+    from nomos.adapters import git as mod_git
+    from nomos.adapters.supervisor import ErroSeguranca
+
+    sumido = tmp_path / "some" / "repo"
+    with pytest.raises(ErroSeguranca):
+        mod_git.confinamento_de_repo(sumido)
