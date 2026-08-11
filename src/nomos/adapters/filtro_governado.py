@@ -296,7 +296,14 @@ class ArmazemDeExecutaveis:
                 f"origem {origem_real} não é arquivo regular — diretório, "
                 "device ou fifo não são executáveis governáveis")
 
-        sha_origem, tamanho = _digerir(origem_real)
+        try:
+            sha_origem, tamanho = _digerir(origem_real)
+        except OSError as e:
+            # Mesmo motivo do bloco da cópia: a origem pode sumir a qualquer
+            # instante. Toda falha desta fronteira sai como ErroFiltro — o
+            # contrato do módulo é um só, e exceção fora dele é exceção que o
+            # chamador não sabe tratar.
+            raise ErroFiltro(f"origem ilegível: {e}") from None
         artifact_id = sha_origem
         destino = self.caminho_de(artifact_id)
         os.makedirs(os.path.dirname(destino), mode=0o700, exist_ok=True)
@@ -304,10 +311,18 @@ class ArmazemDeExecutaveis:
         fd, temporario = tempfile.mkstemp(dir=os.path.dirname(destino),
                                           prefix=".importando-")
         try:
-            with os.fdopen(fd, "wb") as saida, open(origem_real, "rb") as ent:
-                shutil.copyfileobj(ent, saida, BLOCO)
-                saida.flush()
-                os.fsync(saida.fileno())
+            try:
+                with os.fdopen(fd, "wb") as saida, open(origem_real, "rb") as ent:
+                    shutil.copyfileobj(ent, saida, BLOCO)
+                    saida.flush()
+                    os.fsync(saida.fileno())
+            except OSError as e:
+                # A origem pode sumir ENTRE o digest e a cópia — medido na
+                # bateria de concorrência. Sem esta tradução escapava um
+                # `FileNotFoundError` cru, e quem trata o contrato documentado
+                # (`ErroFiltro`) NÃO o pegaria: falha fora do contrato é falha
+                # que o chamador não sabe tratar.
+                raise ErroFiltro(f"origem sumiu durante a cópia: {e}") from None
             os.chmod(temporario, 0o500)          # r-x, e NÃO gravável
 
             # RELER o que foi gravado. Comparar com o hash da origem não basta:
