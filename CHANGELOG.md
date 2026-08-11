@@ -4,6 +4,53 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (A5.7 — o filtro governado LEGÍTIMO, dentro do `git add`)
+A5 fechou o caminho padrão, e a negação é definitiva. Mas um sistema que só sabe
+negar não substitui o que proibiu: redator de segredo, normalizador e LFS são
+casos reais. A5.7 devolve o caso legítimo **sem devolver a autoridade**:
+
+    git add + filtro declarado PELO REPOSITÓRIO     -> DENY  (inalterado)
+    git add + filtro governado com id APROVADO      -> ALLOW, e transforma
+    git add + filtro governado com id DESCONHECIDO  -> DENY
+
+**Quem aplica o filtro é o NOMOS, não o Git**, e isso não é detalhe de
+implementação. Se o Git aplicasse, o binário do filtro precisaria entrar na
+allowlist de exec DO PROCESSO DO GIT — e a partir daí quem escolhe o que roda
+volta a ser a config do repositório, que é exatamente a autoridade que A5 tirou
+dele. Aplicando no adapter, a máquina de filtros do Git continua desligada
+(`hash-object --no-filters`, explícito) e o conteúdo transformado entra no índice
+por `update-index --cacheinfo`.
+
+A cadeia inteira, com cada elo já congelado antes:
+
+    .gitattributes  -> id (o PEDIDO)     única coisa que o repositório fornece
+    registry        -> política          autoridade do NOMOS        (A5.2)
+    artefato        -> o que executa     identidade imutável        (A5.3)
+    argv_policy     -> quais argumentos  fixo na política           (A5.4)
+    confinamento    -> com que autoridade sandbox dedicado          (A5.5)
+    supervisor      -> stdin/stdout, prazo, árvore                  (S2, A5.6)
+
+`filter=<id>` é entrada NÃO CONFIÁVEL e passa por `conferir_id` antes de virar
+consulta: um id que pareça caminho (`../../etc/passwd`) é recusado na gramática,
+sem nunca chegar perto de algo que resolva caminho. Registry **ausente** é
+diferente de registry **vazio** — sem registry o `.gitattributes` é ignorado
+(comportamento histórico); com registry vazio, o pedido é recusado por nome.
+Ausência de política nunca vira fallback permissivo.
+
+`governados` viaja como ARGUMENTO até `_confirmar`, e não guardado no adapter:
+estado de operação em `self` faria duas operações simultâneas no mesmo adapter
+trocarem de plano no meio — a `add` de um repositório aplicando o filtro
+escolhido para outro.
+
+Prova em `tests/test_absorption07_a57_filtro_legitimo.py`, 11 casos:
+`SENHA=hunter2` → `SENHA=REDIGIDO` no índice e no commit, com o segredo em claro
+na working tree como CONTROLE POSITIVO e ausente de **todo** objeto do store
+(`cat-file --batch-all-objects`, em bytes) — verificar só a presença de
+"REDIGIDO" aceitaria um filtro que concatenasse a redação ao segredo. Mais: a
+config do repo apontando `filter.redator.clean` para um hostil não muda o que
+executa (canário não dispara); lote misto não transforma o arquivo que ninguém
+pediu; conteúdo binário atravessa byte a byte.
+
 ### Fixed (A5.6 — sair por EXCEÇÃO era um caminho mais permissivo que o prazo)
 Achado da bateria de ciclo de vida, e não de inspeção: `_matar_arvore` e a
 pós-condição de resíduo ficavam DEPOIS do `proc.wait()`, no corpo, e não num

@@ -38,12 +38,17 @@ NOMOS usa para auditar a si mesmo. A identidade vem do runtime.
 from __future__ import annotations
 
 import contextlib
+import fnmatch
 import os
 import re
 import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:                    # só para o tipo — em runtime o import do
+    from nomos.adapters import filtro_governado   # registry é do chamador
 
 from nomos.adapters import supervisor
 from nomos.adapters.caminho import resolver
@@ -60,6 +65,42 @@ from nomos.adapters.git import (
 )
 
 CAPACIDADES = ("git-add", "git-commit")
+
+# ─────────────────── A5.7 — o caminho LEGÍTIMO do filtro ────────────────────
+#
+# A5 fechou o caminho padrão: um `filter.<driver>.clean` declarado no
+# `.git/config` do repositório não executa mais, porque a allowlist de exec do
+# sandbox tem só o Git. Essa negação é definitiva e NÃO é o que este bloco
+# reabre.
+#
+# O caso legítimo — redator de segredo, normalizador, LFS — volta a existir por
+# outra porta, e com outro dono:
+#
+#     o repositório PEDE um filtro, por id, no `.gitattributes`
+#     o NOMOS DECIDE se existe, qual binário roda, com que argumentos,
+#         lendo o quê, escrevendo onde, com que ambiente, prazo e rede
+#
+# Quem aplica o filtro é o NOMOS, não o Git. A diferença não é estilística: se o
+# Git aplicasse, seria preciso pôr o binário do filtro na allowlist de exec do
+# processo do Git — e a partir daí quem escolhe o que roda volta a ser a config
+# do repositório. Aplicando aqui, a máquina de filtros do Git continua
+# PERMANENTEMENTE desligada (`--no-filters` explícito no `hash-object`), e o
+# conteúdo transformado entra no índice por `update-index --cacheinfo`.
+#
+#     .gitattributes  →  id (pedido)      ← única coisa que o repo fornece
+#     registry        →  política          ← autoridade do NOMOS
+#     artefato        →  o que executa     (A5.3)
+#     argv_policy     →  com que argumentos (A5.4)
+#     confinamento    →  com que autoridade (A5.5)
+#     supervisor      →  stdin/stdout, prazo, árvore (S2 + A5.6)
+#
+# `filter=<id>` no `.gitattributes` é entrada NÃO CONFIÁVEL: passa por
+# `conferir_id` antes de qualquer uso, e id fora da gramática nem chega a virar
+# consulta ao registry.
+_ATRIBUTO_FILTRO = re.compile(r"^\s*(?P<padrao>\S+)\s+(?P<resto>.*)$")
+_FILTRO_NO_ATRIBUTO = re.compile(r"(?:^|\s)filter=(?P<id>[^\s]+)")
+MAX_ATRIBUTOS = 500
+MAX_CONTEUDO = 64 * 1024 * 1024
 
 TIMEOUT_S = 60.0
 MAX_CAMINHOS = 100
@@ -198,9 +239,16 @@ class GitTreeAdapter(Adapter):
     capacidades = CAPACIDADES
 
     def __init__(self, binario: str | None = None,
-                 identidade: Identidade | None = None):
+                 identidade: Identidade | None = None,
+                 registro: "filtro_governado.RegistroDeFiltros | None" = None):
         self._git = binario or "/usr/bin/git"
         self._id = identidade or Identidade()
+        # Registry AUSENTE é diferente de registry VAZIO, e a diferença é de
+        # comportamento: sem registry o adapter ignora `.gitattributes` por
+        # completo (comportamento histórico, o filtro do repo já não executa);
+        # com registry vazio, um pedido de filtro é RECUSADO por nome. Ausência
+        # de política nunca vira fallback permissivo.
+        self._registro = registro
 
     # -------------------------------------------------------------- ambiente
 
@@ -230,10 +278,15 @@ class GitTreeAdapter(Adapter):
         if not (repo / ".git").exists():
             raise ErroInvalido(f"não é repositório git: {repo}")
 
+        # `governados` viaja como ARGUMENTO até `_confirmar`, e não guardado no
+        # adapter. Estado de operação em `self` faria duas operações
+        # simultâneas no mesmo adapter trocarem de plano no meio — a `add` de um
+        # repositório aplicando o filtro escolhido para outro.
         if pedido.capacidade == "git-add":
-            argv, descricao = self._add(pedido, repo)
+            argv, descricao, governados = self._add(pedido, repo)
         elif pedido.capacidade == "git-commit":
             argv, descricao = self._commit(pedido, repo)
+            governados = {}
         else:
             raise ErroInvalido(f"operação desconhecida: {pedido.capacidade}")
 
@@ -248,7 +301,7 @@ class GitTreeAdapter(Adapter):
         raiz_q = Path(quarentena.diretorio)
         try:
             r = self._confirmar(pedido, ctx, repo, argv, descricao, prazo,
-                                quarentena)
+                                quarentena, governados)
         except BaseException:
             # BaseException, não Exception: KeyboardInterrupt e SystemExit
             # também não podem deixar segredo estagiado nem objeto no store.
@@ -263,9 +316,127 @@ class GitTreeAdapter(Adapter):
             shutil.rmtree(raiz_q, ignore_errors=True)
         return r
 
+    # ------------------------------------------------- A5.7 filtro governado
+
+    def _pedidos_de_filtro(self, repo: Path,
+                           caminhos: list[str]) -> dict[str, str]:
+        """Lê o `.gitattributes` e devolve `{caminho: filter_id PEDIDO}`.
+
+        É a única coisa que o repositório contribui, e é tratada como entrada
+        hostil: o id passa por `conferir_id` aqui, ANTES de virar consulta ao
+        registry, para que um id que pareça caminho (`../`, `/etc/x`) nem chegue
+        perto de algo que resolva caminho.
+
+        Sem `.gitattributes`, sem pedido — e sem pedido, o caminho é o normal.
+        """
+        from nomos.adapters import filtro_governado as fg
+
+        arquivo = repo / ".gitattributes"
+        if not arquivo.is_file():
+            return {}
+        try:
+            linhas = arquivo.read_text("utf-8", "replace").splitlines()
+        except OSError:
+            return {}
+        if len(linhas) > MAX_ATRIBUTOS:
+            raise ErroLimite(
+                f".gitattributes com {len(linhas)} linhas (limite "
+                f"{MAX_ATRIBUTOS}) — recuso em vez de varrer entrada ilimitada "
+                "vinda do repositório")
+        regras: list[tuple[str, str]] = []
+        for linha in linhas:
+            if not linha.strip() or linha.lstrip().startswith("#"):
+                continue
+            m = _ATRIBUTO_FILTRO.match(linha)
+            if not m:
+                continue
+            f = _FILTRO_NO_ATRIBUTO.search(m.group("resto"))
+            if f:
+                regras.append((m.group("padrao"), f.group("id")))
+
+
+        pedidos: dict[str, str] = {}
+        for caminho in caminhos:
+            for padrao, bruto in regras:          # última regra vence, como no Git
+                alvo = caminho if "/" in padrao else os.path.basename(caminho)
+                if fnmatch.fnmatch(alvo, padrao):
+                    pedidos[caminho] = fg.conferir_id(bruto)
+        return pedidos
+
+    def _aplicar_filtro_governado(self, repo: Path, caminho: str,
+                                  filter_id: str, prazo: float,
+                                  quarentena: supervisor.Quarentena) -> str:
+        """PEDIDO → política → artefato → argv → sandbox → stdin → índice.
+
+        Devolve o sha do blob TRANSFORMADO, já gravado na quarentena. Nada aqui
+        toca o store permanente: a promoção é a última coisa da transação, e
+        acontece só se a operação inteira for aceita.
+        """
+        politica = self._registro.resolver(filter_id)   # id desconhecido = DENY
+
+        alvo = repo / caminho
+        try:
+            bruto = alvo.read_bytes()
+        except OSError as e:
+            raise ErroInvalido(f"não consegui ler {caminho}: {e}") from None
+        if len(bruto) > MAX_CONTEUDO:
+            raise ErroLimite(
+                f"{caminho} tem {len(bruto)} bytes (limite {MAX_CONTEUDO})")
+
+        p = supervisor.executar(
+            politica.comando(), cwd=repo, env=politica.ambiente(),
+            prazo=min(politica.timeout, prazo),
+            confinamento=politica.confinamento(),
+            tipo=supervisor.TipoDeProcesso.FILTRO_GOVERNADO, entrada=bruto)
+        if p.morto_por_timeout:
+            raise ErroLimite(
+                f"filtro governado {filter_id!r} excedeu o prazo em {caminho} "
+                "e a árvore de processos foi encerrada")
+        if p.returncode != 0:
+            erro = p.stderr.decode("utf-8", "replace")[:400]
+            raise ErroInvalido(
+                f"filtro governado {filter_id!r} falhou em {caminho} "
+                f"(rc={p.returncode}): {erro}")
+
+        # `--no-filters` é o ponto da coisa toda: o conteúdo que entra no
+        # objeto é o que SAIU do filtro governado, e o Git não tem chance de
+        # aplicar por cima o `filter.<id>.clean` que o repositório declarou.
+        # Sem esta flag, a transformação do NOMOS seria a entrada do filtro do
+        # repo — o inverso exato do que A5 decidiu.
+        h = supervisor.executar(
+            self._base(repo) + ["hash-object", "-w", "--no-filters", "--stdin"],
+            cwd=repo, env=self.ambiente(), prazo=prazo,
+            confinamento=confinamento_de_repo(repo), quarentena=quarentena,
+            entrada=p.stdout)
+        if h.returncode != 0:
+            erro = h.stderr.decode("utf-8", "replace")[:400]
+            raise ErroInvalido(f"hash-object falhou em {caminho}: {erro}")
+        supervisor.conferir_saida(h.stderr, "git-add")
+        sha = h.stdout.decode().strip()
+        if not re.fullmatch(r"[0-9a-f]{40,64}", sha):
+            raise ErroInvalido(
+                f"hash-object devolveu {sha[:80]!r}, que não é um sha — recuso "
+                "em vez de estagiar um identificador que não sei o que é")
+        return sha
+
+    def _estagiar(self, repo: Path, caminho: str, sha: str, prazo: float,
+                  quarentena: supervisor.Quarentena) -> None:
+        """Põe o blob transformado no índice, sem passar pela working tree."""
+        modo = "100755" if os.access(repo / caminho, os.X_OK) else "100644"
+        u = supervisor.executar(
+            self._base(repo) + ["update-index", "--add", "--cacheinfo",
+                                f"{modo},{sha},{caminho}"],
+            cwd=repo, env=self.ambiente(), prazo=prazo,
+            confinamento=confinamento_de_repo(repo), quarentena=quarentena)
+        if u.returncode != 0:
+            erro = u.stderr.decode("utf-8", "replace")[:400]
+            raise ErroInvalido(f"update-index falhou em {caminho}: {erro}")
+        supervisor.conferir_saida(u.stderr, "git-add")
+
     def _confirmar(self, pedido, ctx, repo: Path, argv: list[str],
                    descricao: str, prazo: float,
-                   quarentena: supervisor.Quarentena) -> CapabilityResult:
+                   quarentena: supervisor.Quarentena,
+                   governados: dict[str, str]) -> CapabilityResult:
         """Executa e valida. Qualquer saída por exceção desfaz o índice.
 
         A promoção dos objetos acontece DEPOIS de todas as verificações: um
@@ -273,6 +444,23 @@ class GitTreeAdapter(Adapter):
         aceita. É isso que impede o segredo de um filtro quebrado de existir
         fora da quarentena, em vez de apagá-lo depois de gravado.
         """
+        for caminho, filter_id in governados.items():
+            sha = self._aplicar_filtro_governado(repo, caminho, filter_id,
+                                                 prazo, quarentena)
+            self._estagiar(repo, caminho, sha, prazo, quarentena)
+        if governados and not argv:
+            # TODOS os caminhos eram governados: não sobrou `git add` para
+            # rodar, e inventar um rodaria o Git sobre a working tree CRUA —
+            # desfazendo, no último passo, a transformação que acabou de ser
+            # aplicada.
+            self._auditar(ctx, "git.add",
+                          alvo=supervisor.canonicalizar(repo),
+                          detalhe=descricao, sandbox=True, rede=False,
+                          classificacao="EXIT_OK", morto_por_timeout=False)
+            _promover_quarentena(Path(quarentena.diretorio),
+                                 Path(quarentena.alternativos))
+            return CapabilityResult.sucesso(descricao, efeito_aplicado=True)
+
         p = supervisor.executar(argv, cwd=repo, env=self.ambiente(),
                                 prazo=prazo,
                                 confinamento=confinamento_de_repo(repo),
@@ -325,8 +513,21 @@ class GitTreeAdapter(Adapter):
         if len(brutos) > MAX_CAMINHOS:
             raise ErroLimite(f"acima de {MAX_CAMINHOS} caminhos por operação")
         caminhos = [caminho_relativo(c, i) for i, c in enumerate(brutos)]
-        argv = self._base(repo) + ["add", "--no-all", "--"] + caminhos
-        return argv, f"add {len(caminhos)} caminho(s)"
+
+        # A5.7 — separa os caminhos que o repositório PEDE filtro para. Eles
+        # saem do `git add` e passam pelo caminho governado; o resto segue
+        # exatamente como antes. Sem registry, não há separação nenhuma.
+        governados: dict[str, str] = {}
+        if self._registro is not None:
+            governados = self._pedidos_de_filtro(repo, caminhos)
+
+        restantes = [c for c in caminhos if c not in governados]
+        argv = (self._base(repo) + ["add", "--no-all", "--"] + restantes
+                if restantes else [])
+        if governados:
+            return argv, (f"add {len(caminhos)} caminho(s) "
+                          f"({len(governados)} por filtro governado)"), governados
+        return argv, f"add {len(caminhos)} caminho(s)", governados
 
     def _commit(self, pedido, repo: Path) -> tuple[list[str], str]:
         msg = mensagem_valida(pedido.arg("mensagem"))
