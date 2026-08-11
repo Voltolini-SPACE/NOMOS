@@ -44,6 +44,7 @@ import re
 import shutil
 import stat
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
@@ -315,11 +316,38 @@ def _instantaneo_do_indice(repo: Path, autoridade=None,
     """
     git_dir = autoridade.git_dir if autoridade is not None else diretorio_git(repo)[0]
     alvo = Path(git_dir) / "index"
-    if not alvo.exists():
+    try:
+        st = os.lstat(alvo)
+    except OSError:
         # Repositório recém-criado ainda não tem índice. "Restaurar" aqui
         # significa fazer o arquivo deixar de existir de novo.
         return alvo, None, None
-    return alvo, alvo.read_bytes(), alvo.stat().st_mode
+
+    # `.git/index` como SYMLINK é escolha do REPOSITÓRIO, e a leitura acontece
+    # AQUI — no processo do supervisor, fora do sandbox. MEDIDO: com
+    # `.git/index -> /fora/das/raizes/chave.pem`, `read_bytes()` seguia o link e
+    # trazia a chave privada do host para dentro do processo do NOMOS. O `add`
+    # falhava depois, e o vazamento já tinha acontecido: nenhuma escrita é
+    # necessária para violar confidencialidade.
+    #
+    # Junto vinha um segundo efeito: `_restaurar_indice` faz `os.replace` sobre
+    # o caminho, então o link do repositório era SUBSTITUÍDO por arquivo
+    # regular — mutação silenciosa de um repositório que a operação recusou.
+    #
+    # O índice é estado interno do Git; não existe caso legítimo em que ele
+    # precise ser um link. Recusar é estreito e correto.
+    if stat.S_ISLNK(st.st_mode):
+        raise ErroSeguranca(
+            f"{alvo} é um symlink, e o índice não pode ser link: a leitura do "
+            "instantâneo acontece no processo do supervisor, FORA do sandbox, "
+            "então o destino escolhido pelo repositório seria lido com a "
+            "autoridade do NOMOS — e o rollback trocaria o link por arquivo "
+            "regular num repositório cuja operação foi recusada")
+    if not stat.S_ISREG(st.st_mode):
+        raise ErroSeguranca(
+            f"{alvo} não é arquivo regular (modo {st.st_mode:o}) — FIFO e "
+            "device penduram a leitura do supervisor sem prazo nenhum")
+    return alvo, alvo.read_bytes(), st.st_mode
 
 
 def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> None:
@@ -331,6 +359,30 @@ def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> None:
     # Escrever direto em `index` deixaria uma janela com arquivo truncado, que
     # o Git leria como índice corrompido. `os.replace` no MESMO diretório é
     # rename atômico: ou o índice antigo, ou o restaurado, nunca um meio-termo.
+    #
+    # `index.lock` é tomado ANTES do replace, e não por simetria com o Git: é o
+    # único protocolo que um `git add` concorrente respeita. MEDIDO sem ele: o
+    # rollback sobrescrevia o índice de um `git add` concorrente que já tinha
+    # saído com rc=0 — trabalho aceito e depois APAGADO, sem sinal para ninguém.
+    # O Git serializa por este arquivo; escrever por fora dele é escrever contra
+    # a serialização, não sem ela.
+    #
+    # O lock é BEST-EFFORT de propósito: se outro processo o detém, esperar
+    # indefinidamente aqui penduraria o caminho de ROLLBACK — e um rollback que
+    # não completa é pior que um rollback sem lock, porque deixa o índice sujo
+    # com o segredo estagiado. Tenta-se por um prazo curto e segue-se.
+    lock = alvo.with_name("index.lock")
+    fd_lock = None
+    limite = time.monotonic() + 2.0
+    while time.monotonic() < limite:
+        try:
+            fd_lock = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            break
+        except FileExistsError:
+            time.sleep(0.01)
+        except OSError:
+            break
+
     tmp = alvo.with_name(f".index.nomos-rollback-{os.getpid()}")
     try:
         tmp.write_bytes(dados)
@@ -340,6 +392,10 @@ def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> None:
     finally:
         with contextlib.suppress(OSError):
             tmp.unlink()
+        if fd_lock is not None:
+            os.close(fd_lock)
+            with contextlib.suppress(OSError):
+                lock.unlink()
 
 
 def _abrir_quarentena(repo: Path, autoridade=None,
