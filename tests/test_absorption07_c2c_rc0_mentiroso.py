@@ -152,6 +152,53 @@ def test_a_recusa_e_de_seguranca_e_nao_quebra_o_contrato_de_erro():
     assert issubclass(supervisor.ErroSeguranca, ErroInvalido)
 
 
+# ══ PASSO 2b — o filtro que EXECUTA e falha (caminho distinto do não-exec) ══
+
+def test_filtro_que_executa_e_falha_tambem_e_recusado(tmp_path):
+    """Cenário levantado pela sonda FILE_READ do censo, e ele é OUTRO caminho.
+
+    Em `test_nomos_recusa_...` o filtro nem executa (`fatal: cannot exec`).
+    Aqui o binário EXISTE e roda — quem falha é ele, por não alcançar o próprio
+    arquivo de regras. É o caso realista de um `clean` redator legítimo cujas
+    regras moram fora do repositório: exatamente o que a redução de file-read
+    provoca ao negar ao filtro suas dependências.
+
+    O detalhe que faz a proteção funcionar: a PRIMEIRA linha do stderr é
+    `sed: ...: No such file or directory`, que NÃO casa com o marcador. Quem
+    casa é a segunda (`error: external filter ... failed`). Sem a âncora
+    MULTILINE, este caso passaria batido.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@t")
+    _git(repo, "config", "user.name", "t")
+    regras = tmp_path / "regras.sed"           # de propósito: não existe
+    _git(repo, "config", "filter.redator.clean", f"/usr/bin/sed -f {regras}")
+    (repo / ".gitattributes").write_text("SEGREDO.txt filter=redator\n")
+    _git(repo, "add", "--", ".gitattributes")
+    _git(repo, "commit", "-q", "-m", "attrs")
+    (repo / "SEGREDO.txt").write_text("SEGREDO=abc123\n")
+
+    # CONTROLE POSITIVO: o Git de fato sai com 0 e o marcador não é a 1ª linha.
+    r = _git(repo, "add", "--", "SEGREDO.txt")
+    assert r.returncode == 0
+    assert not r.stderr.startswith("error:"), (
+        "o marcador virou a primeira linha — este teste deixou de exercitar "
+        "a âncora MULTILINE, que é o ponto dele")
+    assert "error: external filter" in r.stderr
+    _git(repo, "reset", "-q")
+
+    registro = _ctx_e_registro(tmp_path, tmp_path)
+    with pytest.raises(supervisor.ErroSeguranca):
+        git_tree.GitTreeAdapter().executar(
+            CapabilityRequest(capacidade="git-add", alvo=str(repo),
+                              argumentos={"caminhos": ["SEGREDO.txt"]}),
+            CapabilityContext.de_registro(registro, "git-add",
+                                          "runtime-governado",
+                                          raizes=(str(tmp_path),)))
+
+
 # ═════════════ PASSO 3 — a checagem não pode virar falso positivo ═══════════
 
 def test_operacao_limpa_continua_passando(tmp_path):
