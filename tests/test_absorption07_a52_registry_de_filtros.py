@@ -148,22 +148,29 @@ def test_executavel_e_canonicalizado(tmp_path):
     assert _politica(canonical_executable=str(link)).canonical_executable == SED
 
 
-def test_LIMITE_A52_identidade_forte_ainda_NAO_esta_provada():
-    """Fronteira explícita entre o que A5.2 entrega e o que A5.3 deve entregar.
+def test_identidade_forte_AGORA_e_por_artefato_gerenciado(tmp_path):
+    """SUBSTITUI `test_LIMITE_A52_identidade_forte_ainda_NAO_esta_provada`.
 
-    A5.2 canonicaliza o caminho e exige que ele exista. Isso fecha o caso
-    trivial e NÃO fecha o adversarial: substituir o binário DEPOIS da
-    resolução (TOCTOU), trocar o alvo do symlink, ou aliasar por hardlink
-    continuam fora do alcance deste módulo.
+    Aquele teste passava AFIRMANDO a lacuna — `executable_identity == {}`. Sob
+    a regra `TEST_ASSERTS_DESIRED_SECURITY_PROPERTY` ele não podia sobreviver a
+    A5.3: um teste verde que documenta a ausência de uma defesa faz a defesa
+    parecer regressão quando ela chega.
 
-    `executable_identity` existe vazio de propósito — a política já tem onde
-    guardar a identidade forte, para que A5.3 não precise migrar políticas em
-    uso. Quando A5.3 chegar, este teste falha e deve ser substituído pelo
-    contrato real de identidade.
+    O contrato positivo que o substitui: identidade forte existe, é endereçada
+    por CONTEÚDO, e não depende do path externo.
     """
-    assert _politica().executable_identity == {}, (
-        "identidade forte passou a existir — troque este limite pelo contrato "
-        "de A5.3 em vez de deixá-lo verde afirmando a lacuna")
+    from nomos.adapters.filtro_governado import ArmazemDeExecutaveis
+
+    origem = tmp_path / "f.sh"
+    origem.write_text("#!/bin/sh\necho ok\n")
+    origem.chmod(0o755)
+    art = ArmazemDeExecutaveis(tmp_path / "store").importar(origem)
+
+    assert art.artifact_id == art.sha256, "identidade não é por conteúdo"
+    assert len(art.sha256) == 64
+    assert art.managed_path != str(origem), (
+        "o artefato governado é o próprio path externo — o TOCTOU externo "
+        "continuaria alcançando a execução")
 
 
 def test_erro_de_filtro_preserva_o_contrato_de_erro():

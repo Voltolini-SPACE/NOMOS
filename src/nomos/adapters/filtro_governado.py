@@ -40,7 +40,11 @@ não seja confundida com garantia.
 """
 from __future__ import annotations
 
+import hashlib
 import os
+import shutil
+import stat
+import tempfile
 from dataclasses import dataclass, field
 
 from nomos.adapters.contrato import ErroInvalido
@@ -161,3 +165,152 @@ class RegistroDeFiltros:
 
     def conhecidos(self) -> tuple[str, ...]:
         return tuple(sorted(self._politicas))
+
+
+# ════════════════ A5.3 — artefato executável gerenciado pelo NOMOS ══════════
+#
+# A medição de A5.3.1 fechou a porta do modelo por identidade de path:
+#
+#     os.execve in os.supports_fd                  -> False   (sem fexecve)
+#     exec via "/dev/fd/N" (com o fd preservado)   -> EACCES  (script E Mach-O)
+#
+# Não existe, neste host, primitive que vincule validação e uso ao MESMO objeto
+# aberto. E o TOCTOU é real, medido: trocar o arquivo no path entre validar e
+# executar roda o binário TROCADO (inode 437592231 -> 437592232, saída
+# 'EXECUTOU_HOSTIL').
+#
+# A saída não é vencer a corrida — é tirar a corrida do caminho de execução. O
+# executável externo é IMPORTADO uma vez, na aprovação, para um armazém privado
+# do NOMOS. Depois disso o source é irrelevante em runtime: pode ser trocado,
+# apagado, virar symlink para hostil. O NOMOS executa o artefato, não o source.
+#
+#     APPROVED_EXTERNAL_EXECUTABLE
+#         -> import (copia + verifica + publica atomicamente)
+#     NOMOS_CONTROLLED_EXECUTABLE_ARTIFACT
+#         -> identidade imutável, endereçada por conteúdo
+#     EXECUTION
+#
+# O gate deixa de afirmar a propriedade impossível ("o objeto validado no path
+# externo é o objeto executado no path externo") e passa a afirmar a que é
+# demonstrável: "o source externo NUNCA é executado depois da aprovação".
+
+BLOCO = 1024 * 1024
+MAX_ARTEFATO = 512 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class ArtefatoGovernado:
+    """Executável sob custódia do NOMOS. Identidade endereçada por conteúdo."""
+    artifact_id: str            # sha256 do conteúdo — o nome NÃO é confiável
+    managed_path: str
+    sha256: str
+    size: int
+    mode: int
+    source_metadata: dict[str, object] = field(default_factory=dict)
+
+    def conferir(self) -> None:
+        """Revalida o artefato ANTES do uso.
+
+        O armazém não é gravável pelo atacante do modelo de ameaça, mas
+        corrupção, regressão e drift administrativo existem — e a verificação
+        custa um hash. Nunca atualiza: divergência é DENY, não refresh.
+        """
+        try:
+            atual, tamanho = _digerir(self.managed_path)
+        except OSError as e:
+            raise ErroFiltro(
+                f"artefato {self.artifact_id} ilegível: {e}") from None
+        if atual != self.sha256 or tamanho != self.size:
+            raise ErroFiltro(
+                f"artefato {self.artifact_id} DIVERGE do registrado "
+                f"(sha {atual[:12]} != {self.sha256[:12]}) — recuso e NÃO "
+                "atualizo: trocar binário exige nova aprovação")
+
+
+def _digerir(caminho: str) -> tuple[str, int]:
+    """sha256 + tamanho, lendo do descriptor JÁ aberto."""
+    h, total = hashlib.sha256(), 0
+    with open(caminho, "rb") as fh:
+        while bloco := fh.read(BLOCO):
+            total += len(bloco)
+            if total > MAX_ARTEFATO:
+                raise ErroFiltro(f"executável acima de {MAX_ARTEFATO} bytes")
+            h.update(bloco)
+    return h.hexdigest(), total
+
+
+class ArmazemDeExecutaveis:
+    """`NOMOS_EXEC_STORE` — a área privada de onde os filtros executam."""
+
+    def __init__(self, raiz: str | os.PathLike):
+        self.raiz = os.path.realpath(str(raiz))
+        os.makedirs(self.raiz, mode=0o700, exist_ok=True)
+        os.chmod(self.raiz, 0o700)
+
+    def caminho_de(self, artifact_id: str) -> str:
+        # Fan-out por prefixo: diretório único com milhares de entradas é
+        # hostil a inspeção, e o prefixo não carrega significado nenhum.
+        return os.path.join(self.raiz, artifact_id[:2], artifact_id)
+
+    def importar(self, origem: str | os.PathLike) -> ArtefatoGovernado:
+        """Copia o executável para o armazém e devolve identidade imutável.
+
+        A publicação é ATÔMICA: escreve em temporário, verifica RELENDO o que
+        foi gravado, e só então renomeia. Artefato parcial nunca fica visível —
+        um `os.replace` só acontece depois de o conteúdo já estar conferido.
+        """
+        origem_real = os.path.realpath(str(origem))
+        try:
+            st = os.stat(origem_real)
+        except OSError as e:
+            raise ErroFiltro(f"origem ilegível: {e}") from None
+        if not stat.S_ISREG(st.st_mode):
+            raise ErroFiltro(
+                f"origem {origem_real} não é arquivo regular — diretório, "
+                "device ou fifo não são executáveis governáveis")
+
+        sha_origem, tamanho = _digerir(origem_real)
+        artifact_id = sha_origem
+        destino = self.caminho_de(artifact_id)
+        os.makedirs(os.path.dirname(destino), mode=0o700, exist_ok=True)
+
+        fd, temporario = tempfile.mkstemp(dir=os.path.dirname(destino),
+                                          prefix=".importando-")
+        try:
+            with os.fdopen(fd, "wb") as saida, open(origem_real, "rb") as ent:
+                shutil.copyfileobj(ent, saida, BLOCO)
+                saida.flush()
+                os.fsync(saida.fileno())
+            os.chmod(temporario, 0o500)          # r-x, e NÃO gravável
+
+            # RELER o que foi gravado. Comparar com o hash da origem não basta:
+            # a origem pode ter mudado ENTRE o digest e a cópia, e o que importa
+            # é o que está no armazém.
+            sha_gravado, tam_gravado = _digerir(temporario)
+            if tam_gravado != tamanho or sha_gravado != sha_origem:
+                raise ErroFiltro(
+                    "conteúdo mudou durante a importação "
+                    f"({sha_origem[:12]} -> {sha_gravado[:12]}) — a origem foi "
+                    "substituída no meio da cópia; recuso e não publico")
+
+            if os.path.exists(destino):
+                # Endereçado por conteúdo: mesmo id => mesmos bytes. Já existir
+                # é deduplicação, não conflito. Mas confere antes de confiar.
+                existente, _ = _digerir(destino)
+                if existente != sha_gravado:
+                    raise ErroFiltro(
+                        f"colisão real em {artifact_id} — armazém corrompido")
+                os.unlink(temporario)
+            else:
+                os.replace(temporario, destino)  # publicação ATÔMICA
+            temporario = None
+        finally:
+            if temporario and os.path.exists(temporario):
+                os.unlink(temporario)
+
+        return ArtefatoGovernado(
+            artifact_id=artifact_id, managed_path=destino, sha256=sha_origem,
+            size=tamanho, mode=0o500,
+            source_metadata={"source_path": origem_real,     # só auditoria
+                             "source_inode": st.st_ino,
+                             "source_size": st.st_size})
