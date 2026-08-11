@@ -56,26 +56,44 @@ segurava a ponta do pipe e o supervisor ficava bloqueado até ele terminar —
 30 segundos num `add` que levou milissegundos. Agora a saída é drenada por
 threads e o `wait` observa só o processo principal.
 
-## Limite conhecido: neto que faz setsid
+## O escape do process group, e por que `killpg` não bastava
 
-`killpg` alcança o grupo de processos. Um descendente que chame `setsid()` sai
-do grupo e sobrevive ao kill. Isso está MEDIDO, não suposto: o supervisor
-detecta o caso (o `communicate` final não retorna) e devolve
-`UNKNOWN_SECURITY_STATE`, que o adapter converte em recusa. Preferi um estado
-final honesto a um `PASS` que ignora o caso.
+Uma versão anterior desta docstring afirmava que o supervisor DETECTAVA o
+descendente que faz `setsid()`. Era falso, e de um jeito instrutivo: a detecção
+existia enquanto a saída era lida por `communicate()`, e morreu quando ela
+passou a ser drenada por threads com `join(timeout)` — a afirmação sobreviveu à
+mudança que a invalidou.
+
+A medição mostrou pior que isso. `killpg` num grupo vazio devolve
+`ProcessLookupError`, e `_matar_arvore` traduzia isso para "nada sobreviveu".
+Grupo vazio é exatamente a ASSINATURA do escape bem-sucedido: o falso negativo
+não era acidente, era construção. Um `git add` com filtro hostil retornava
+`efeito_aplicado=True` deixando quatro processos vivos.
+
+E o discriminante não é `setsid()`: `setpgid(0,0)` escapa igual, mantendo a
+sessão e trocando só o grupo. Qualquer troca de process group basta.
+
+Por isso `killpg` continua — é o caminho rápido, e mata tudo que NÃO trocou de
+grupo — mas a prova de ausência vem de `adapters/processos.py`, que identifica
+os processos desta execução pelo perfil de sandbox que eles carregam. A
+pós-condição passou a ser `ZERO descendentes vivos`, não `grupo original
+vazio`.
 """
 from __future__ import annotations
 
 import os
 import resource
 import signal
+import shutil
 import subprocess
 import tempfile
 import threading
 import time
-from dataclasses import dataclass, field
+import uuid
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from nomos.adapters import processos
 from nomos.adapters.contrato import ErroInvalido, ErroLimite
 
 SANDBOX = "/usr/bin/sandbox-exec"
@@ -129,6 +147,7 @@ class Confinamento:
     plano."""
     escrita: tuple[str, ...] = ()
     rede: bool = False
+    marca: object | None = None      # processos.Marca desta execução
     cpu_s: int = CPU_S
     arquivo_bytes: int = ARQUIVO_BYTES
     descritores: int = DESCRITORES
@@ -144,6 +163,8 @@ class Resultado:
     sandbox_aplicado: bool = True
     argv_efetivo: tuple[str, ...] = field(default=())
     perfil_usado: str = ""
+    residuais_mortos: int = 0        # descendentes que escaparam do grupo
+    grupo_resistiu: bool = False
 
 
 # --------------------------------------------------------------- canonicalizar
@@ -204,7 +225,31 @@ def perfil(conf: Confinamento) -> str:
     for bruto in conf.escrita:
         real = canonicalizar(bruto)
         linhas.append(f'(allow file-write* (subpath "{real}"))')
+    if conf.marca is not None:
+        # POR ÚLTIMO: em SBPL a regra que casa por último vence, e o `deny` do
+        # subdiretório precisa sobrepor o `allow` do diretório.
+        linhas.extend(conf.marca.regras_do_perfil())
     return "\n".join(linhas) + "\n"
+
+
+def criar_marca() -> "processos.Marca":
+    """Cria o diretório-nonce desta execução, com os dois caminhos EXISTINDO.
+
+    A existência não é detalhe: com caminho ausente o `sandbox_check` devolve
+    resposta errada sem sinalizar erro, e todo processo do host passaria a
+    casar a marca.
+    """
+    nonce = uuid.uuid4().hex
+    base = tempfile.mkdtemp(prefix=f"nomos-exec-{nonce[:12]}-")
+    execdir = os.path.realpath(base)
+    os.makedirs(os.path.join(execdir, "NEG"), exist_ok=True)
+    permitido = os.path.join(execdir, "CANARIO")
+    negado = os.path.join(execdir, "NEG", "alvo")
+    for caminho in (permitido, negado):
+        with open(caminho, "w") as fh:
+            fh.write(nonce)
+    return processos.Marca(nonce=nonce, execdir=execdir,
+                           permitido=permitido, negado=negado)
 
 
 # ------------------------------------------------------------------- ambiente
@@ -267,12 +312,12 @@ def _grupo_vivo(pgid: int) -> bool:
 
 
 def _matar_arvore(pgid: int) -> bool:
-    """Término controlado → escalada para kill → confirmação. Devolve se algo
-    sobreviveu.
+    """Caminho RÁPIDO: encerra o grupo original. Devolve se o grupo resistiu.
 
-    Mata o GRUPO, não o PID. Um `filter.clean` hostil que gera neto e sai deixa
-    o neto órfão vivo, e matar só o processo principal daria um `PASS` falso:
-    o `git` morre, o neto continua.
+    ATENÇÃO — o valor de retorno NÃO é prova de ausência de resíduo. Grupo
+    vazio (`ProcessLookupError`) devolve `False`, e grupo vazio é justamente o
+    que um `setsid()`/`setpgid()` bem-sucedido produz. Quem prova ausência é
+    `processos.exterminar`, pela marca de sandbox.
     """
     for sinal, prazo in ((signal.SIGTERM, GRACA_S), (signal.SIGKILL, REAP_S)):
         try:
@@ -338,7 +383,19 @@ def executar(argv: list[str], *, cwd: str | Path, env: dict[str, str],
             "alguém esqueceu de delimitar")
     conferir_ambiente(env)
     cwd_real = existente(cwd)
-    texto_perfil = perfil(confinamento)
+    # A marca é criada e AUTO-VALIDADA antes de existir processo algum: se o
+    # discriminante não estiver funcionando neste sistema, não há execução.
+    # Sem ele, não haveria como provar ausência de resíduo depois.
+    marca = confinamento.marca or criar_marca()
+    try:
+        marca.conferir()
+        confinamento = replace(confinamento, marca=marca)
+        texto_perfil = perfil(confinamento)
+    except BaseException:
+        # Recusa antes do `try` principal não passaria pelo `finally` que
+        # remove o diretório-nonce, e cada recusa deixaria lixo em /var/folders.
+        shutil.rmtree(marca.execdir, ignore_errors=True)
+        raise
 
     fd, caminho_perfil = tempfile.mkstemp(prefix="nomos-sb-", suffix=".sb")
     try:
@@ -378,7 +435,7 @@ def executar(argv: list[str], *, cwd: str | Path, env: dict[str, str],
 
         # SEMPRE, não só no timeout. A autoridade era executar ESTA operação;
         # o que o processo deixou rodando não foi autorizado por ninguém.
-        sobreviveu = _matar_arvore(pgid)
+        grupo_resistiu = _matar_arvore(pgid)
         for t in threads:
             t.join(REAP_S)
         try:
@@ -388,10 +445,15 @@ def executar(argv: list[str], *, cwd: str | Path, env: dict[str, str],
             raise ErroSeguranca(
                 "UNKNOWN_SECURITY_STATE: processo principal não morreu após "
                 f"SIGKILL no grupo (pgid={pgid})") from None
-        if sobreviveu:
+        # A PROVA de ausência. `_matar_arvore` só sabe do grupo ORIGINAL, e
+        # quem trocou de grupo o esvazia — o que aquela função lê como sucesso.
+        mortos, sobreviventes = processos.exterminar(marca)
+        if sobreviventes or grupo_resistiu:
             raise ErroSeguranca(
-                "UNKNOWN_SECURITY_STATE: grupo de processos sobreviveu ao "
-                f"SIGKILL (pgid={pgid}) — provável escape por setsid")
+                "PROCESS_CONFINEMENT=FAIL: sobraram "
+                f"{len(sobreviventes)} processo(s) desta execução após o "
+                f"SIGKILL (grupo_resistiu={grupo_resistiu}). Processo residual "
+                "NUNCA vira PASS só porque a resposta ao caller foi negada")
 
         saida = b"".join(buf_out)
         erro = b"".join(buf_err)
@@ -399,9 +461,14 @@ def executar(argv: list[str], *, cwd: str | Path, env: dict[str, str],
             returncode=proc.returncode, stdout=saida, stderr=erro,
             classificacao=_classificar(proc.returncode, morto),
             morto_por_timeout=morto, sandbox_aplicado=True,
-            argv_efetivo=tuple(completo), perfil_usado=texto_perfil)
+            argv_efetivo=tuple(completo), perfil_usado=texto_perfil,
+            residuais_mortos=len(mortos), grupo_resistiu=grupo_resistiu)
     finally:
         try:
             os.unlink(caminho_perfil)
         except OSError:
             pass
+        # O diretório-nonce sai por último: enquanto ele existir, a marca
+        # continua avaliável — e `conferir()` recusa marca com caminho ausente.
+        if confinamento.marca is not None:
+            shutil.rmtree(confinamento.marca.execdir, ignore_errors=True)
