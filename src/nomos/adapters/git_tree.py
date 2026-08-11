@@ -398,6 +398,70 @@ def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> None:
                 lock.unlink()
 
 
+def _instantaneo_das_refs(autoridade) -> dict[str, bytes | None]:
+    """Bytes de `HEAD`, das refs soltas e do reflog, antes da operação.
+
+    O que se guarda são os ARQUIVOS, pelo mesmo motivo do índice: `git
+    update-ref` desfaria semanticamente e não devolveria o reflog, que é parte
+    da evidência. Guardar bytes devolve o estado exato.
+
+    A varredura é do git dir E do common (em worktree ligada, `refs/heads` mora
+    no common e `HEAD` no git dir da worktree — restaurar só um deixaria o par
+    inconsistente, que é justamente a corrupção que isto existe para impedir).
+    """
+    estado: dict[str, bytes | None] = {}
+    bases = {autoridade.git_dir, autoridade.common}
+    for base in bases:
+        raiz = Path(base)
+        alvos = [raiz / "HEAD", raiz / "packed-refs", raiz / "ORIG_HEAD"]
+        for sub in ("refs", "logs"):
+            d = raiz / sub
+            if d.is_dir():
+                alvos.extend(p for p in d.rglob("*") if p.is_file())
+        for alvo in alvos:
+            try:
+                estado[str(alvo)] = alvo.read_bytes()
+            except OSError:
+                estado[str(alvo)] = None      # ausente: restaurar = remover
+    return estado
+
+
+def _restaurar_refs(estado: dict[str, bytes | None]) -> None:
+    """Devolve refs, HEAD e reflog ao estado do instantâneo.
+
+    Best-effort por arquivo: uma falha isolada não pode impedir a restauração
+    dos outros, senão um erro no meio do desfazer deixaria o repositório PIOR
+    que se nada tivesse sido tentado.
+    """
+    for caminho, dados in estado.items():
+        alvo = Path(caminho)
+        try:
+            if dados is None:
+                alvo.unlink(missing_ok=True)
+                continue
+            if alvo.exists() and alvo.read_bytes() == dados:
+                continue                      # não foi tocado
+            alvo.parent.mkdir(parents=True, exist_ok=True)
+            tmp = alvo.with_name(f".{alvo.name}.nomos-refs-{os.getpid()}")
+            tmp.write_bytes(dados)
+            os.replace(tmp, alvo)
+        except OSError:
+            continue
+    # Refs CRIADAS pela operação recusada não estão no instantâneo e ficariam
+    # órfãs apontando para objeto que a quarentena levou.
+    for caminho in list(estado):
+        raiz = Path(caminho)
+        if raiz.name == "HEAD":
+            for sub in ("refs", "logs"):
+                d = raiz.parent / sub
+                if not d.is_dir():
+                    continue
+                for p in list(d.rglob("*")):
+                    if p.is_file() and str(p) not in estado:
+                        with contextlib.suppress(OSError):
+                            p.unlink()
+
+
 def _abrir_quarentena(repo: Path, autoridade=None,
                       ) -> tuple[supervisor.Quarentena, Path]:
     """Object store descartável desta operação, dentro do próprio git dir.
@@ -624,6 +688,16 @@ class GitTreeAdapter(Adapter):
         # cru, e um `git commit` posterior persistiria o segredo mesmo com o
         # `add` tendo sido RECUSADO. O instantâneo é tirado ANTES do exec.
         instantaneo = _instantaneo_do_indice(repo, autoridade)
+        # As REFS entram na transação, e a ausência delas era corrupção medida.
+        # `git commit` avança `refs/heads/<b>` e escreve o reflog ANTES de o
+        # `conferir_saida` recusar; os objetos do commit, porém, estão na
+        # QUARENTENA, que o `finally` abaixo destrói. Resultado: `HEAD` e a ref
+        # apontando para objeto INEXISTENTE — `git log` e `git status` param de
+        # funcionar num repositório cuja operação foi RECUSADA.
+        #
+        # Restaurar o índice não alcançava isso: índice e refs são estados
+        # diferentes, e a transação só cobria o primeiro.
+        refs = _instantaneo_das_refs(autoridade)
         quarentena, reais = _abrir_quarentena(repo, autoridade)
         raiz_q = Path(quarentena.diretorio)
         try:
@@ -633,6 +707,7 @@ class GitTreeAdapter(Adapter):
             # BaseException, não Exception: KeyboardInterrupt e SystemExit
             # também não podem deixar segredo estagiado nem objeto no store.
             _restaurar_indice(instantaneo)
+            _restaurar_refs(refs)
             raise
         finally:
             # A quarentena some nos DOIS caminhos. No sucesso ela já foi

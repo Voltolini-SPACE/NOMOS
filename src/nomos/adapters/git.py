@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -346,8 +347,40 @@ def conferir_git_dir(repo: Path | str, raizes: tuple[str, ...]) -> tuple[str, st
     # `--separate-git-dir <x>` nunca têm o git dir chamado `.git`, então passam.
     base = Path(supervisor.existente(repo))
     ponto = base / ".git"
-    if not ponto.is_dir():
+    # `lstat`, NUNCA `is_dir()`: `is_dir()` SEGUE symlink, e com `.git` sendo um
+    # link para o git dir de OUTRO repositório ele devolvia True — o gate não
+    # disparava e a checagem de titularidade nunca rodava. MEDIDO: `git-add`
+    # estagiou no índice da VÍTIMA e `git-commit` AVANÇOU `refs/heads/main` dela
+    # para um commit com `AWS_SECRET_ACCESS_KEY`, com a auditoria registrando o
+    # repositório do atacante como alvo.
+    try:
+        st = os.lstat(ponto)
+        dentro_do_repo = stat.S_ISDIR(st.st_mode)
+    except OSError:
+        dentro_do_repo = False
+    if not dentro_do_repo:
         _conferir_titularidade(base, git_dir)
+
+    # O COMMON DIR é a SEGUNDA indireção, e ela tem dono próprio. Estar dentro
+    # das raízes não basta: com `.git` DIRETÓRIO e `commondir` apontando para o
+    # git dir de outro repositório — ambos na raiz aprovada — o efeito inteiro
+    # cai no vizinho e `_conferir_titularidade` sequer é chamada, porque o gate
+    # acima (corretamente) não dispara.
+    #
+    # A única relação que o Git produz entre common e git dir é a de worktree
+    # ligada: `<common>/worktrees/<nome>`. Exigir essa forma é exigir que os
+    # dois pertençam ao MESMO repositório.
+    if common != git_dir:
+        gd = Path(supervisor.canonicalizar(git_dir))
+        cm = Path(supervisor.canonicalizar(common))
+        if gd.parent.name != "worktrees" or gd.parent.parent != cm:
+            raise supervisor.ErroSeguranca(
+                f"o `commondir` de {str(base)!r} aponta para {str(cm)!r}, que "
+                f"não é o repositório do git dir {str(gd)!r}. A única relação "
+                "legítima entre os dois é a de worktree ligada "
+                "(`<common>/worktrees/<nome>`); qualquer outra faz o efeito "
+                "cair no repositório do vizinho enquanto a auditoria registra "
+                "este alvo")
     return git_dir, common
 
 

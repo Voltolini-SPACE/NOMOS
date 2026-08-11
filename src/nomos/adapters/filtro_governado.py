@@ -209,8 +209,24 @@ class PoliticaDeFiltro:
             # `<raiz>/.git` cobre o caso normal (raiz = working tree). Os três
             # nomes soltos cobrem a política que declara o git dir como raiz —
             # aí não existe `.git` dentro dele para negar.
-            proibidos += (f"{base}/.git",
-                          f"{base}/hooks", f"{base}/config", f"{base}/info")
+            # Dois casos, e o segundo custou uma medição. Quando a raiz é a
+            # WORKING TREE, `<raiz>/.git` cobre tudo. Quando a raiz é o GIT DIR
+            # — forma de política que o comentário anterior dizia estar coberta
+            # pelos "três nomes soltos" — `<raiz>/.git` aponta para um caminho
+            # que NÃO EXISTE, e sobravam graváveis `refs/`, `HEAD`,
+            # `packed-refs`, `objects/`, `logs/` e `index`.
+            #
+            # MEDIDO: `PLANTADO` escrito em `.git/refs/heads/plantado`,
+            # `.git/packed-refs`, `.git/objects/plantado` e por cima de
+            # `.git/HEAD`, com a operação devolvendo ok=True. É o cenário que o
+            # próprio `test_c6_negacao_cobre_o_git_dir_INTEIRO` descreve como
+            # pior — lá o filtro planta OBJETO e REF, não só configuração.
+            proibidos += (f"{base}/.git",)
+            proibidos += tuple(
+                f"{base}/{nome}" for nome in
+                ("hooks", "config", "info", "refs", "objects", "logs",
+                 "worktrees", "modules", "HEAD", "packed-refs", "index",
+                 "ORIG_HEAD", "FETCH_HEAD", "shallow", "commondir"))
         # `.gitattributes` é FONTE DE ATRIBUTO, e mora em qualquer diretório da
         # working tree — inclusive num que o próprio filtro crie durante a
         # operação. MEDIDO: com `write_roots=(repo,)` o filtro gravou o arquivo
