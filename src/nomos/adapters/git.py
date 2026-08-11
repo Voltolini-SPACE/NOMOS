@@ -456,7 +456,8 @@ def _conferir_titularidade(base: Path, git_dir: str) -> None:
         "tree o git dir pertence")
 
 
-def conferir_alternates(repo: Path | str, raizes: tuple[str, ...]) -> None:
+def conferir_alternates(repo: Path | str, raizes: tuple[str, ...],
+                        autoridade: "AutoridadeDeRepo | None" = None) -> None:
     """Nenhum store de objetos ALTERNADO pode sair das raízes aprovadas.
 
     MEDIDO (A2-REPO.5): `.git/objects/info/alternates` lista diretórios de
@@ -477,7 +478,16 @@ def conferir_alternates(repo: Path | str, raizes: tuple[str, ...]) -> None:
     """
     if not raizes:
         return
-    git_dir, common = diretorio_git(repo)
+    # MEDIDO: sem consumir a autoridade, esta guarda relia `.git` e passava a
+    # conferir um repositório DIFERENTE do que a autoridade ligou. Com um flip
+    # concorrente entre as duas leituras, 42/400 e 47/400 tentativas devolveram
+    # ok=True sobre um repo cujo store alcança um store FORA das raízes — e as
+    # 47 caíram TODAS no git dir da worktree, nenhuma no repo limpo, o que
+    # descarta acaso. A guarda tem de olhar o MESMO repositório que o efeito.
+    if autoridade is not None:
+        git_dir, common = autoridade.git_dir, autoridade.common
+    else:
+        git_dir, common = diretorio_git(repo)
     reais = tuple(supervisor.canonicalizar(r) for r in raizes)
     vistos: set[str] = set()
     for base in (git_dir, common):
@@ -651,9 +661,9 @@ class GitAdapter(Adapter):
     def executar(self, pedido: CapabilityRequest,
                  ctx: CapabilityContext) -> CapabilityResult:
         self._coerente(pedido, ctx)
-        repo = self._repo(pedido, ctx)
+        repo, autoridade = self._repo(pedido, ctx)
         argv = self._argv(pedido, repo)
-        saida, r = self._rodar(argv, repo, ctx)
+        saida, r = self._rodar(argv, repo, ctx, autoridade)
         self._auditar(ctx, f"git.{pedido.capacidade[4:]}",
                       alvo=supervisor.canonicalizar(repo), bytes=len(saida),
                       sandbox=True, rede=False,
@@ -663,7 +673,7 @@ class GitAdapter(Adapter):
 
     # ------------------------------------------------------------- entradas
 
-    def _repo(self, pedido, ctx) -> Path:
+    def _repo(self, pedido, ctx) -> tuple[Path, "AutoridadeDeRepo"]:
         """O repositório, confinado pelo MESMO escopo do filesystem."""
         bruto = texto_estrito(pedido.alvo, "alvo", obrigatorio=True)
         repo = resolver(bruto, ctx.raizes)
@@ -675,8 +685,14 @@ class GitAdapter(Adapter):
         # dir para fora das raizes aprovadas, e o git dir vira RAIZ DE ESCRITA
         # do sandbox. Conferir aqui, junto do `resolver`, porque e aqui que as
         # raizes existem — e antes de qualquer I/O que use o caminho.
-        conferir_git_dir(repo, ctx.raizes)
-        return repo
+        # BIND AUTHORITY também na LEITURA. MEDIDO: com o retorno descartado,
+        # `confinamento_de_leitura` relia `.git` e 63/500 tentativas com
+        # escritor concorrente devolveram ok=True contendo a história de um
+        # repositório INTEIRAMENTE FORA das raízes. Os adapters de escrita
+        # foram convertidos e este ficou para trás — divulgação vale tanto
+        # quanto mutação.
+        gd, comum = conferir_git_dir(repo, ctx.raizes)
+        return repo, autoridade_de(repo, gd, comum)
 
     def _argv(self, pedido, repo: Path) -> list[str]:
         """O argv INTEIRO é montado aqui. O plano não contribui com nenhum
@@ -711,11 +727,11 @@ class GitAdapter(Adapter):
     # ------------------------------------------------------------- execução
 
     def _rodar(self, argv: list[str], repo: Path,
-               ctx) -> tuple[str, supervisor.Resultado]:
+               ctx, autoridade=None) -> tuple[str, supervisor.Resultado]:
         prazo = min(TIMEOUT_S, ctx.restante() or TIMEOUT_S)
         p = supervisor.executar(
             argv, cwd=repo, env=ambiente_minimo(), prazo=prazo,
-            confinamento=confinamento_de_leitura(repo))
+            confinamento=confinamento_de_leitura(repo, autoridade))
         if p.morto_por_timeout:
             raise ErroLimite(f"git excedeu {prazo:.1f}s")
         if len(p.stdout) > LIMITE_SAIDA:

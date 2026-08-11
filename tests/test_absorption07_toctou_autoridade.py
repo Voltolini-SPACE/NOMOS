@@ -93,12 +93,53 @@ def test_toctou_01_a_autoridade_e_um_VALOR_nao_uma_releitura(campo):
     autoridade.
     """
     from nomos.adapters import git_push, git_tree as gt, git_write
-    for modulo in (gt, git_write, git_push):
+
+    # `nomos.adapters.git` (o adapter de LEITURA) estava FORA desta lista, e a
+    # omissão custou um vazamento: 63 de 500 tentativas com escritor concorrente
+    # devolveram `ok=True` contendo a história de um repositório INTEIRAMENTE
+    # FORA das raízes. Divulgação vale tanto quanto mutação — uma lista de
+    # adapters "que escrevem" é a fronteira errada.
+    for modulo in (git, gt, git_write, git_push):
         fonte = Path(modulo.__file__).read_text("utf-8")
         assert "conferir_git_dir(repo, ctx.raizes)" in fonte
         assert "autoridade_de(repo" in fonte, (
             f"{modulo.__name__} valida a identidade e DESCARTA o resultado — "
             "o efeito vai reler `.git` do disco e o TOCTOU volta")
+
+
+def test_toctou_01b_as_GUARDAS_tambem_consomem_a_autoridade(campo):
+    """Não basta o EFEITO consumir: a guarda tem de olhar o mesmo repositório.
+
+    MEDIDO: `conferir_alternates` relia `.git` por conta própria, então com um
+    flip entre as duas leituras ela conferia um repositório DIFERENTE do que a
+    autoridade ligou — 42/400 e 47/400 tentativas devolveram `ok=True` sobre um
+    repo cujo store alcança um store FORA das raízes. E as 47 caíram TODAS no
+    git dir da worktree, nenhuma no repo limpo: não foi acaso.
+    """
+    fonte = Path(git.__file__).read_text("utf-8")
+    corpo = fonte.split("def conferir_alternates", 1)[1].split("\ndef ", 1)[0]
+    assert "autoridade" in corpo, (
+        "conferir_alternates resolve `.git` por conta própria — a guarda e o "
+        "efeito podem acabar olhando repositórios diferentes")
+    for modulo in (gt_mod(), git_write_mod(), git_push_mod()):
+        fonte = Path(modulo.__file__).read_text("utf-8")
+        assert "conferir_alternates(repo, ctx.raizes, autoridade)" in fonte, (
+            f"{modulo.__name__} chama a guarda de alternates SEM a autoridade")
+
+
+def gt_mod():
+    from nomos.adapters import git_tree as m
+    return m
+
+
+def git_write_mod():
+    from nomos.adapters import git_write as m
+    return m
+
+
+def git_push_mod():
+    from nomos.adapters import git_push as m
+    return m
 
 
 def test_toctou_02_a_autoridade_carrega_git_dir_e_common(campo):

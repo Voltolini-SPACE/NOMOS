@@ -108,8 +108,8 @@ class GitTagAdapter(Adapter):
         # BIND AUTHORITY — ver `AutoridadeDeRepo`: valida uma vez e leva
         # adiante, para o efeito não reler `.git` do disco (TOCTOU medido).
         _gd, _comum = conferir_git_dir(repo, ctx.raizes)
-        conferir_alternates(repo, ctx.raizes)
         autoridade = autoridade_de(repo, _gd, _comum)
+        conferir_alternates(repo, ctx.raizes, autoridade)
 
         nome = tag_valida(pedido.arg("tag"))
         # O parâmetro chama-se `objeto`, não `target`. A defesa do P3 trata

@@ -269,8 +269,8 @@ class GitPushAdapter(Adapter):
         # BIND AUTHORITY — ver `AutoridadeDeRepo`: valida uma vez e leva
         # adiante, para o efeito não reler `.git` do disco (TOCTOU medido).
         _gd, _comum = conferir_git_dir(repo, ctx.raizes)
-        conferir_alternates(repo, ctx.raizes)
         autoridade = autoridade_de(repo, _gd, _comum)
+        conferir_alternates(repo, ctx.raizes, autoridade)
 
         # O plano NÃO fornece refspec, URL, branch de destino nem credencial.
         for proibido in ("refspec", "url", "remote_url", "branch_destino",

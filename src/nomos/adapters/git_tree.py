@@ -598,8 +598,8 @@ class GitTreeAdapter(Adapter):
         # medido e EXPLORADO (corrida vencida 1/40 no push, com publicação de
         # repositório fora das raízes).
         gd, comum = conferir_git_dir(repo, ctx.raizes)
-        conferir_alternates(repo, ctx.raizes)
         autoridade = autoridade_de(repo, gd, comum)
+        conferir_alternates(repo, ctx.raizes, autoridade)
 
         # `governados` viaja como ARGUMENTO até `_confirmar`, e não guardado no
         # adapter. Estado de operação em `self` faria duas operações
