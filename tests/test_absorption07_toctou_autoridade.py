@@ -1,0 +1,169 @@
+"""TOCTOU — a autoridade validada é LEVADA adiante, não revalidada.
+
+    resolve -> validate -> BIND AUTHORITY -> effect      (o contrato)
+    resolve -> validate -> discard -> resolve again -> effect   (o defeito)
+
+`.git` é um arquivo que o REPOSITÓRIO escreve, e o fluxo o relia do disco de 4 a
+6 vezes por operação. `conferir_git_dir` validava a PRIMEIRA leitura e devolvia a
+tupla — e os quatro chamadores DESCARTAVAM o retorno. Cada etapa seguinte
+resolvia de novo, e um escritor concorrente que trocasse `.git` entre a checagem
+e o efeito movia o efeito para outro git dir.
+
+MEDIDO, com corrida real e sem instrumentar o produto: em `git-push` o atacante
+venceu 1/40 e 3/40, com o NOMOS reportando `ok=True` e PUBLICANDO um repositório
+INTEIRAMENTE FORA das raízes, `AWS_SECRET_ACCESS_KEY` incluído. Janela medida:
+115 ms no `add`, 90,5 ms no `push`.
+
+## Por que "conferir de novo antes de cada uso" seria a correção errada
+
+Revalidar em N pontos cria N janelas em vez de zero: entre a última checagem e o
+uso ainda cabe uma troca. O que fecha é o efeito consumir a MESMA autoridade que
+foi validada — um valor, não uma releitura.
+"""
+from __future__ import annotations
+
+import contextlib
+import os
+import subprocess
+import threading
+import time
+from pathlib import Path
+
+import pytest
+
+from nomos.adapters import git, git_tree, supervisor
+from nomos.adapters.contrato import CapabilityContext, CapabilityRequest
+from nomos.adapters.wiring import registrar_git_tree
+from nomos.kernel.policy import PolicyEngine
+from nomos.orquestracao.registro import RegistroCapacidades
+
+GIT = "/usr/bin/git"
+
+pytestmark = pytest.mark.skipif(
+    not os.path.exists(supervisor.SANDBOX),
+    reason="sem sandbox-exec não há execução supervisionada neste host")
+
+
+def _git(*args):
+    r = subprocess.run([GIT, *args], capture_output=True, text=True)
+    assert r.returncode == 0, f"git {args}: {r.stderr}"
+    return r
+
+
+@pytest.fixture
+def campo(tmp_path):
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    fora = tmp_path / "fora"
+    fora.mkdir()
+
+    class Campo:
+        def __init__(self):
+            self.raiz, self.fora, self.tmp = raiz, fora, tmp_path
+
+        def repo(self, onde: Path, arquivo="a.txt"):
+            onde.mkdir(parents=True, exist_ok=True)
+            _git("init", "-q", "-b", "main", str(onde))
+            _git("-C", str(onde), "config", "user.email", "a@b.c")
+            _git("-C", str(onde), "config", "user.name", "T")
+            if arquivo:
+                (onde / arquivo).write_text("conteudo\n")
+            return onde
+
+        def add(self, repo, *caminhos):
+            rc = RegistroCapacidades(policy=PolicyEngine(tmp_path / "pol.json"),
+                                     approver=lambda *a, **k: True)
+            registrar_git_tree(rc, raizes=(str(raiz),))
+            ctx = CapabilityContext.de_registro(rc, "git-add",
+                                                "runtime-governado",
+                                                raizes=(str(raiz),))
+            return git_tree.GitTreeAdapter().executar(
+                CapabilityRequest(capacidade="git-add", alvo=str(repo),
+                                  argumentos={"caminhos": list(caminhos)}), ctx)
+
+    return Campo()
+
+
+def test_toctou_01_a_autoridade_e_um_VALOR_nao_uma_releitura(campo):
+    """Estrutural, e é o teste que impede a regressão de VOLTAR pelo desenho.
+
+    Se `conferir_git_dir` voltar a ter o retorno descartado, o TOCTOU volta
+    inteiro — e um teste de corrida é probabilístico demais para ser a única
+    defesa. Aqui a exigência é sobre a FORMA: os quatro adapters ligam a
+    autoridade.
+    """
+    from nomos.adapters import git_push, git_tree as gt, git_write
+    for modulo in (gt, git_write, git_push):
+        fonte = Path(modulo.__file__).read_text("utf-8")
+        assert "conferir_git_dir(repo, ctx.raizes)" in fonte
+        assert "autoridade_de(repo" in fonte, (
+            f"{modulo.__name__} valida a identidade e DESCARTA o resultado — "
+            "o efeito vai reler `.git` do disco e o TOCTOU volta")
+
+
+def test_toctou_02_a_autoridade_carrega_git_dir_e_common(campo):
+    """A autoridade tem de bastar para o efeito, senão alguém reresolve."""
+    repo = campo.repo(campo.raiz / "repo")
+    gd, comum = git.conferir_git_dir(repo, (str(campo.raiz),))
+    a = git.autoridade_de(repo, gd, comum)
+    assert a.git_dir == gd and a.common == comum
+    assert a.raizes_de_escrita == ((gd,) if gd == comum else (gd, comum))
+    conf = git.confinamento_de_repo(repo, autoridade=a)
+    assert conf.escrita == a.raizes_de_escrita
+
+
+def test_toctou_03_troca_de_git_dir_DURANTE_a_operacao_nao_move_o_efeito(campo):
+    """Corrida real: um escritor concorrente reescreve `.git` sem parar.
+
+    Não instrumenta o produto — só troca o arquivo de 49 bytes que o repositório
+    controla, que é exatamente o que o atacante pode fazer. O critério não é
+    "recusou": é que NENHUM efeito caia no git dir de fora das raízes.
+    """
+    # Worktree LIGADA: é o layout legítimo que tem `.git` como ARQUIVO — e a
+    # forma-arquivo é o que o atacante precisa para poder trocar o ponteiro.
+    principal = campo.repo(campo.raiz / "principal", arquivo="seed.txt")
+    _git("-C", str(principal), "add", "seed.txt")
+    _git("-C", str(principal), "commit", "-qm", "seed")
+    trabalho = campo.raiz / "work"
+    _git("-C", str(principal), "worktree", "add", "-q", str(trabalho), "-b", "b2")
+    (trabalho / "s.txt").write_text("AWS_SECRET_ACCESS_KEY=NUNCA_SAIR\n")
+
+    alheio = campo.fora / "alheio"
+    _git("init", "-q", "-b", "main", str(alheio))
+    ponto = trabalho / ".git"
+    assert ponto.is_file(), "o cenário não montou `.git` como arquivo"
+    bom = ponto.read_bytes()
+
+    parar = threading.Event()
+
+    def trocar():
+        while not parar.is_set():
+            try:
+                ponto.write_text(f"gitdir: {alheio / '.git'}\n")
+                ponto.write_bytes(bom)
+            except OSError:
+                pass
+            time.sleep(0.001)
+
+    t = threading.Thread(target=trocar, daemon=True)
+    t.start()
+    try:
+        for _ in range(25):
+            # A corrida faz a operação falhar de muitas formas; nenhuma delas é
+            # o critério. O critério é o ESTADO do repositório de fora.
+            with contextlib.suppress(Exception):
+                campo.add(trabalho, "s.txt")
+    finally:
+        parar.set()
+        t.join(timeout=5)
+        ponto.write_bytes(bom)
+
+    saida = subprocess.run([GIT, "-C", str(alheio), "ls-files"],
+                           capture_output=True, text=True).stdout
+    assert "s.txt" not in saida, (
+        "BOUNDARY_ESCAPE: o efeito caiu no repositório de FORA das raízes — a "
+        "autoridade validada não foi a que o efeito consumiu")
+    objetos = list((alheio / ".git" / "objects").rglob("*"))
+    assert not [p for p in objetos if p.is_file()
+                and "info" not in str(p) and "pack" not in str(p)], (
+        "objeto promovido para o store de fora das raízes")

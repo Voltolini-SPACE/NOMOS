@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from nomos.adapters import supervisor
@@ -248,6 +249,47 @@ def diretorio_git(repo: Path | str) -> tuple[str, str]:
     return git_dir, common
 
 
+@dataclass(frozen=True)
+class AutoridadeDeRepo:
+    """A identidade do repositório RESOLVIDA E VALIDADA uma única vez.
+
+    Existe por causa de um TOCTOU medido, com exploração real: `.git` é um
+    arquivo que o REPOSITÓRIO escreve, e o fluxo o relia do disco de 4 a 6 vezes
+    por operação. `conferir_git_dir` validava a PRIMEIRA leitura e devolvia a
+    tupla — e os quatro chamadores DESCARTAVAM o retorno, deixando cada etapa
+    seguinte (`confinamento_de_repo`, `_instantaneo_do_indice`,
+    `_abrir_quarentena`, `_promover_quarentena`) resolver de novo.
+
+    Um escritor concorrente que troca `.git` depois da checagem move o efeito
+    para outro git dir. MEDIDO em `git-push`: corrida vencida 1/40 e 3/40, com o
+    NOMOS reportando `ok=True` e PUBLICANDO um repositório INTEIRAMENTE FORA das
+    raízes, `AWS_SECRET_ACCESS_KEY` incluído. Janela medida: 115 ms no `add`,
+    90,5 ms no `push`.
+
+    O formato do conserto importa mais que o conserto:
+
+        resolve -> validate -> BIND AUTHORITY -> effect      (o que se faz aqui)
+        resolve -> validate -> discard -> resolve again -> effect   (o defeito)
+
+    "Conferir de novo antes de cada uso" seria mais um ponto de corrida, não
+    menos: o que fecha é o efeito consumir a MESMA autoridade que foi validada,
+    e não uma releitura sua.
+    """
+    repo: str
+    git_dir: str
+    common: str
+
+    @property
+    def raizes_de_escrita(self) -> tuple[str, ...]:
+        return ((self.git_dir,) if self.common == self.git_dir
+                else (self.git_dir, self.common))
+
+
+def autoridade_de(repo: Path | str, git_dir: str, common: str) -> AutoridadeDeRepo:
+    return AutoridadeDeRepo(repo=str(supervisor.existente(repo)),
+                            git_dir=git_dir, common=common)
+
+
 def conferir_git_dir(repo: Path | str, raizes: tuple[str, ...]) -> tuple[str, str]:
     """`(git_dir, common)` resolvidos E CONFRONTADOS com as raízes aprovadas.
 
@@ -392,21 +434,26 @@ def _conferir_titularidade(base: Path, git_dir: str) -> None:
             recusar(dono, "core.worktree")
         return
 
-    # 3) Sem registro de dono. Sobra a forma que o Git NUNCA produz por
-    #    indireção legítima: apontar para a `.git` PRINCIPAL de outro repo.
-    if gd.name == ".git" and str(gd.parent) != alvo:
-        recusar(str(gd.parent), "basename `.git`")
-
-    # 4) `--separate-git-dir`: nenhum dono registrado, e o layout é
-    #    indistinguível — byte a byte — entre uso legítimo e roubo. Recusar
-    #    fecharia duas formas P0 medidas (segredo estagiado no índice da VÍTIMA,
-    #    commit na história dela), e quebraria `test_a2repo_05_indirecao_
-    #    LEGITIMA…`, contrato CONGELADO que exige o layout funcionando.
+    # 3) NENHUM registro de dono. Aqui entra a decisão de dono
+    #    `UNPROVABLE_GITDIR_OWNERSHIP = REFUSE`, e ela é o ponto todo desta
+    #    função: o NOMOS não aceita um layout só porque o Git nativo aceita.
     #
-    #    Trocar um layout legítimo e documentado do Git por essa contenção é
-    #    decisão de DONO, não de quem corrige. Passa — e o achado fica ABERTO e
-    #    registrado, em vez de silenciosamente fechado ou silenciosamente
-    #    ignorado. Ver A2-REPO.7.12 e A2-REPO.9.05b.
+    #    `--separate-git-dir <x>` não grava dono em lugar nenhum — o git dir é
+    #    indistinguível, byte a byte, entre uso legítimo e roubo. Aceitar por
+    #    "o Git aceita" seria aceitar junto as duas formas P0 medidas: segredo
+    #    estagiado no índice da VÍTIMA e commit na história dela.
+    #
+    #    Fail-closed é o contrato: `PROVABLE_OWNERSHIP_OR_REFUSE`. A mensagem diz
+    #    exatamente o que fazer para voltar ao caminho provável.
+    raise supervisor.ErroSeguranca(
+        f"o `.git` de {alvo!r} aponta para o git dir {str(gd)!r}, que não "
+        "registra dono NENHUM — nem backpointer `<git_dir>/gitdir` (worktree "
+        "ligada) nem `core.worktree` (submódulo). Sem prova de titularidade o "
+        "layout é indistinguível de roubo cross-repo, e o NOMOS não aceita um "
+        "layout só porque o Git nativo aceita: PROVABLE_OWNERSHIP_OR_REFUSE. "
+        "Use um repositório com `.git` próprio, uma worktree ligada "
+        "(`git worktree add`) ou um submódulo — os três provam a que working "
+        "tree o git dir pertence")
 
 
 def conferir_alternates(repo: Path | str, raizes: tuple[str, ...]) -> None:
@@ -481,7 +528,9 @@ def _dentro(caminho: str, raizes: tuple[str, ...]) -> bool:
     return False
 
 
-def confinamento_de_leitura(repo: Path | str) -> supervisor.Confinamento:
+def confinamento_de_leitura(repo: Path | str,
+                            autoridade: "AutoridadeDeRepo | None" = None,
+                            ) -> supervisor.Confinamento:
     """Capacidades object-only: NENHUMA escrita no repositório.
 
     Medido: `git-log`, `git-show` e `git-diff(refA, refB)` produzem saída
@@ -492,7 +541,13 @@ def confinamento_de_leitura(repo: Path | str) -> supervisor.Confinamento:
     É a maior redução barata desta fase: uma capacidade de leitura que
     fisicamente não consegue escrever, em vez de uma que promete não escrever.
     """
-    git_dir, comum = diretorio_git(repo)
+    # `autoridade` fecha o TOCTOU: quando o chamador já validou a identidade,
+    # o confinamento usa AQUELA, em vez de reler `.git` do disco — que é
+    # exatamente onde o escritor concorrente entra.
+    if autoridade is not None:
+        git_dir, comum = autoridade.git_dir, autoridade.common
+    else:
+        git_dir, comum = diretorio_git(repo)
     raizes = (supervisor.existente(repo), git_dir)
     if comum != git_dir:
         raizes += (comum,)
@@ -501,8 +556,9 @@ def confinamento_de_leitura(repo: Path | str) -> supervisor.Confinamento:
                                    exec_permitido=executaveis_de_git())
 
 
-def confinamento_de_repo(repo: Path | str,
-                         rede: bool = False) -> supervisor.Confinamento:
+def confinamento_de_repo(repo: Path | str, rede: bool = False,
+                         autoridade: "AutoridadeDeRepo | None" = None,
+                         ) -> supervisor.Confinamento:
     """Autoridade de filesystem de UMA execução Git: o repositório e mais nada.
 
     O caminho é canonicalizado ANTES de virar política — não depois, não pelo
@@ -528,8 +584,13 @@ def confinamento_de_repo(repo: Path | str,
     estado mutável do repositório vive dentro do diretório Git" sobrevive a
     mudanças de layout interno (packfiles, commit-graph, reftable).
     """
-    git_dir, common = diretorio_git(repo)
-    raizes = (git_dir,) if common == git_dir else (git_dir, common)
+    # Ver `AutoridadeDeRepo`: com a autoridade ligada, esta função deixa de ser
+    # mais um ponto de releitura de `.git`.
+    if autoridade is not None:
+        raizes = autoridade.raizes_de_escrita
+    else:
+        git_dir, common = diretorio_git(repo)
+        raizes = (git_dir,) if common == git_dir else (git_dir, common)
     # A6: o git dir é gravável, MENOS os três lugares de onde o repositório
     # consegue fazer código sobreviver à operação. `git add`/`commit` não
     # precisam escrever em nenhum deles — medido, `quebras=[]`.

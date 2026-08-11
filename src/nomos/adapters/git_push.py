@@ -52,7 +52,7 @@ from nomos.adapters.estrito import texto_estrito
 from nomos.adapters import supervisor
 from nomos.adapters.git import (
     _NEUTRALIZAR, ambiente_minimo, confinamento_de_repo, conferir_alternates,
-    conferir_git_dir, executaveis_de_git,
+    autoridade_de, conferir_git_dir, executaveis_de_git,
 )
 
 CAPACIDADES = ("git-push",)
@@ -207,7 +207,7 @@ class GitPushAdapter(Adapter):
             return p.path or destino.url
         return ""
 
-    def confinamento(self, repo, destino: DestinoGovernado):
+    def confinamento(self, repo, destino: DestinoGovernado, autoridade=None):
         """A autoridade de `push` é derivada do DESTINO GOVERNADO, nunca do plano.
 
         Rede não é concedida por padrão nem sequer aqui: um destino `file://`
@@ -245,7 +245,8 @@ class GitPushAdapter(Adapter):
         — sem ele a contenção falharia por um caminho que ninguém veria.
         """
         local = self._local(destino)
-        raizes = [supervisor.existente(repo)]
+        raizes = [autoridade.repo if autoridade is not None
+                  else supervisor.existente(repo)]
         if local:
             raizes.append(supervisor.existente(local))
         return supervisor.Confinamento(
@@ -265,8 +266,11 @@ class GitPushAdapter(Adapter):
         # dir para fora das raizes aprovadas, e o git dir vira RAIZ DE ESCRITA
         # do sandbox. Conferir aqui, junto do `resolver`, porque e aqui que as
         # raizes existem — e antes de qualquer I/O que use o caminho.
-        conferir_git_dir(repo, ctx.raizes)
+        # BIND AUTHORITY — ver `AutoridadeDeRepo`: valida uma vez e leva
+        # adiante, para o efeito não reler `.git` do disco (TOCTOU medido).
+        _gd, _comum = conferir_git_dir(repo, ctx.raizes)
         conferir_alternates(repo, ctx.raizes)
+        autoridade = autoridade_de(repo, _gd, _comum)
 
         # O plano NÃO fornece refspec, URL, branch de destino nem credencial.
         for proibido in ("refspec", "url", "remote_url", "branch_destino",
@@ -297,7 +301,7 @@ class GitPushAdapter(Adapter):
             raise ErroLimite("prazo do nó esgotado antes do push")
         p = supervisor.executar(argv, cwd=repo, env=ambiente_minimo(),
                                 prazo=prazo,
-                                confinamento=self.confinamento(repo, destino))
+                                confinamento=self.confinamento(repo, destino, autoridade))
         if p.morto_por_timeout:
             raise ErroLimite(
                 f"push excedeu {prazo:.1f}s — remoto que não responde não "

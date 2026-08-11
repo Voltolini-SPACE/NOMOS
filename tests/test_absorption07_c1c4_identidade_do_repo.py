@@ -145,8 +145,13 @@ def test_c1_10_legitimo_SUBMODULO_continua_funcionando(campo):
     assert "novo.txt" in campo.indice(super_ / "sub")
 
 
-def test_c1_10_legitimo_SEPARATE_GIT_DIR_continua_funcionando(campo):
-    """CONTROLE 3/4 — git dir de nome arbitrário, dentro das raízes."""
+def test_c1_10_SEPARATE_GIT_DIR_sem_titularidade_e_RECUSADO(campo):
+    """SECURITY_BREAKING_CHANGE — `UNPROVABLE_GITDIR_OWNERSHIP = REFUSE`.
+
+    Este teste exigia o layout FUNCIONANDO. Mudou de lado porque
+    `--separate-git-dir` não grava dono em lugar nenhum, e é a porta das duas
+    formas P0 de confusão cross-repo (A2-REPO.7.12 / 9.05b).
+    """
     trabalho = campo.raiz / "work"
     gitdir = campo.raiz / "realgit"
     trabalho.mkdir()
@@ -156,9 +161,72 @@ def test_c1_10_legitimo_SEPARATE_GIT_DIR_continua_funcionando(campo):
     _git("-C", str(trabalho), "config", "user.name", "T")
     (trabalho / "x.txt").write_text("x\n")
 
-    r = campo.add(trabalho, "x.txt")
-    assert r.efeito_aplicado
-    assert "x.txt" in campo.indice(trabalho)
+    with pytest.raises(supervisor.ErroSeguranca, match="não registra dono"):
+        campo.add(trabalho, "x.txt")
+    assert "x.txt" not in campo.indice(trabalho)
+
+
+def test_c1_10_cross_repo_via_SEPARATE_GIT_DIR_e_RECUSADO(campo):
+    """A forma que derrubou a primeira correção: basename != `.git`.
+
+    `hostil/.git -> gitdir: <vitima-gd>`, com os DOIS repositórios dentro das
+    raízes aprovadas. O discriminador antigo (`gd.name == '.git'`) não via.
+    """
+    vitima = campo.raiz / "vitima"
+    gd = campo.raiz / "vitima-gd"
+    vitima.mkdir()
+    _git("init", "-q", "-b", "main", "--separate-git-dir", str(gd), str(vitima))
+    _git("-C", str(vitima), "config", "user.email", "a@b.c")
+    _git("-C", str(vitima), "config", "user.name", "T")
+    (vitima / "seed.txt").write_text("seed\n")
+    _git("-C", str(vitima), "add", "seed.txt")
+    _git("-C", str(vitima), "commit", "-qm", "seed")
+    antes = subprocess.run([GIT, f"--git-dir={gd}", "ls-files"],
+                           capture_output=True, text=True).stdout
+
+    hostil = campo.raiz / "hostil"
+    hostil.mkdir()
+    (hostil / ".git").write_text(f"gitdir: {gd}\n")
+    (hostil / "s.txt").write_text("AWS_SECRET_ACCESS_KEY=DO_ATACANTE\n")
+
+    with pytest.raises(supervisor.ErroSeguranca):
+        campo.add(hostil, "s.txt")
+
+    depois = subprocess.run([GIT, f"--git-dir={gd}", "ls-files"],
+                            capture_output=True, text=True).stdout
+    assert depois == antes, "INDEX_UNCHANGED=FALSE — o segredo entrou na vítima"
+
+
+def test_c1_10_cross_repo_via_GIT_MODULES_e_RECUSADO(campo):
+    """A segunda forma: apontar para `.git/modules/<n>` de outro superprojeto."""
+    filho = campo.tmp / "filho"
+    filho.mkdir()
+    _git("init", "-q", "-b", "main", str(filho))
+    _git("-C", str(filho), "config", "user.email", "a@b.c")
+    _git("-C", str(filho), "config", "user.name", "T")
+    (filho / "c.txt").write_text("c\n")
+    _git("-C", str(filho), "add", "c.txt")
+    _git("-C", str(filho), "commit", "-qm", "c")
+
+    super_ = campo.raiz / "super2"
+    super_.mkdir()
+    _git("init", "-q", "-b", "main", str(super_))
+    _git("-C", str(super_), "config", "user.email", "a@b.c")
+    _git("-C", str(super_), "config", "user.name", "T")
+    r = subprocess.run([GIT, "-C", str(super_), "-c",
+                        "protocol.file.allow=always", "submodule", "add", "-q",
+                        str(filho), "sub"], capture_output=True, text=True)
+    if r.returncode != 0:
+        pytest.skip(f"submodule add indisponível: {r.stderr[:160]}")
+
+    gd = super_ / ".git" / "modules" / "sub"
+    hostil = campo.raiz / "hostil2"
+    hostil.mkdir()
+    (hostil / ".git").write_text(f"gitdir: {gd}\n")
+    (hostil / "s.txt").write_text("SEGREDO\n")
+
+    with pytest.raises(supervisor.ErroSeguranca, match="OUTRA working tree"):
+        campo.add(hostil, "s.txt")
 
 
 def test_c1_10_legitimo_REPO_COMUM_continua_funcionando(campo):

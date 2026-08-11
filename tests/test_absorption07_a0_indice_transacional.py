@@ -385,7 +385,11 @@ def test_rollback_nunca_usa_git_reset():
 def test_instantaneo_e_tirado_ANTES_da_execucao():
     """Ordem importa: instantâneo depois do exec guardaria o índice já sujo."""
     fonte = Path(git_tree.__file__).read_text("utf-8")
-    i_snap = fonte.index("_instantaneo_do_indice(repo)", fonte.index("def executar"))
+    # Casa a CHAMADA, não a lista de argumentos: `_instantaneo_do_indice` passou
+    # a receber a autoridade validada (bind authority, TOCTOU), e prender a
+    # assinatura aqui faria este teste falhar por refatoração legítima em vez de
+    # por inversão de ordem, que é o que ele mede.
+    i_snap = fonte.index("_instantaneo_do_indice(repo", fonte.index("def executar"))
     i_exec = fonte.index("supervisor.executar", fonte.index("def executar"))
     assert i_snap < i_exec, "o instantâneo é tirado depois do exec"
 

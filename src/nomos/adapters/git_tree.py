@@ -61,6 +61,7 @@ from nomos.adapters.estrito import texto_estrito
 from nomos.adapters.git import (
     _NEUTRALIZAR,
     ambiente_minimo,
+    autoridade_de,
     confinamento_de_leitura,
     confinamento_de_repo,
     conferir_alternates,
@@ -297,7 +298,8 @@ def mensagem_valida(bruta) -> str:
     return texto
 
 
-def _instantaneo_do_indice(repo: Path) -> tuple[Path, bytes | None, int | None]:
+def _instantaneo_do_indice(repo: Path, autoridade=None,
+                           ) -> tuple[Path, bytes | None, int | None]:
     """Copia BRUTA do arquivo de índice, antes da operação.
 
     O índice é UM arquivo, e ele É o estado completo do que está preparado:
@@ -311,7 +313,7 @@ def _instantaneo_do_indice(repo: Path) -> tuple[Path, bytes | None, int | None]:
     índice diferente do conteúdo na working tree). Restaurar os bytes devolve
     o estado exato; `reset` devolveria um estado plausível.
     """
-    git_dir, _ = diretorio_git(repo)
+    git_dir = autoridade.git_dir if autoridade is not None else diretorio_git(repo)[0]
     alvo = Path(git_dir) / "index"
     if not alvo.exists():
         # Repositório recém-criado ainda não tem índice. "Restaurar" aqui
@@ -340,7 +342,8 @@ def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> None:
             tmp.unlink()
 
 
-def _abrir_quarentena(repo: Path) -> tuple[supervisor.Quarentena, Path]:
+def _abrir_quarentena(repo: Path, autoridade=None,
+                      ) -> tuple[supervisor.Quarentena, Path]:
     """Object store descartável desta operação, dentro do próprio git dir.
 
     Fica no git dir porque essa área JÁ é a autoridade de escrita concedida
@@ -348,7 +351,10 @@ def _abrir_quarentena(repo: Path) -> tuple[supervisor.Quarentena, Path]:
     em `/tmp` exigiria abrir mais uma raiz de escrita no sandbox — autoridade
     nova para resolver um problema de contenção seria o caminho errado.
     """
-    git_dir, comum = diretorio_git(repo)
+    if autoridade is not None:
+        git_dir, comum = autoridade.git_dir, autoridade.common
+    else:
+        git_dir, comum = diretorio_git(repo)
     reais = Path(comum) / "objects"
     raiz = Path(tempfile.mkdtemp(prefix="nomos-quarentena-", dir=git_dir))
     return supervisor.Quarentena(diretorio=str(raiz),
@@ -531,8 +537,13 @@ class GitTreeAdapter(Adapter):
         # dir para fora das raizes aprovadas, e o git dir vira RAIZ DE ESCRITA
         # do sandbox. Conferir aqui, junto do `resolver`, porque e aqui que as
         # raizes existem — e antes de qualquer I/O que use o caminho.
-        conferir_git_dir(repo, ctx.raizes)
+        # BIND AUTHORITY: resolve+valida UMA vez e leva adiante. Antes, o
+        # retorno era descartado e cada etapa relia `.git` do disco — TOCTOU
+        # medido e EXPLORADO (corrida vencida 1/40 no push, com publicação de
+        # repositório fora das raízes).
+        gd, comum = conferir_git_dir(repo, ctx.raizes)
         conferir_alternates(repo, ctx.raizes)
+        autoridade = autoridade_de(repo, gd, comum)
 
         # `governados` viaja como ARGUMENTO até `_confirmar`, e não guardado no
         # adapter. Estado de operação em `self` faria duas operações
@@ -543,9 +554,10 @@ class GitTreeAdapter(Adapter):
         # programa nesta série roda com prazo — inclusive a que só lê.
         prazo = min(TIMEOUT_S, ctx.restante() or TIMEOUT_S)
         if pedido.capacidade == "git-add":
-            argv, descricao, governados = self._add(pedido, repo, prazo)
+            argv, descricao, governados = self._add(pedido, repo, prazo,
+                                                    autoridade)
         elif pedido.capacidade == "git-commit":
-            argv, descricao = self._commit(pedido, repo, prazo)
+            argv, descricao = self._commit(pedido, repo, prazo, autoridade)
             governados = {}
         else:
             raise ErroInvalido(f"operação desconhecida: {pedido.capacidade}")
@@ -555,12 +567,12 @@ class GitTreeAdapter(Adapter):
         # detecção sem contenção — o `git add` já tinha estagiado o conteúdo
         # cru, e um `git commit` posterior persistiria o segredo mesmo com o
         # `add` tendo sido RECUSADO. O instantâneo é tirado ANTES do exec.
-        instantaneo = _instantaneo_do_indice(repo)
-        quarentena, reais = _abrir_quarentena(repo)
+        instantaneo = _instantaneo_do_indice(repo, autoridade)
+        quarentena, reais = _abrir_quarentena(repo, autoridade)
         raiz_q = Path(quarentena.diretorio)
         try:
             r = self._confirmar(pedido, ctx, repo, argv, descricao, prazo,
-                                quarentena, governados)
+                                quarentena, governados, autoridade)
         except BaseException:
             # BaseException, não Exception: KeyboardInterrupt e SystemExit
             # também não podem deixar segredo estagiado nem objeto no store.
@@ -643,8 +655,8 @@ class GitTreeAdapter(Adapter):
                     "do sandbox — o pedido de filtro sumiria e o conteúdo seria "
                     "indexado EM CLARO com rc=0")
 
-    def _recusar_fonte_de_atributo_externa(self, repo: Path,
-                                           prazo: float) -> None:
+    def _recusar_fonte_de_atributo_externa(self, repo: Path, prazo: float,
+                                           autoridade) -> None:
         """`core.attributesFile` declarado pelo repositório é RECUSA, não no-op.
 
         A chave aponta a fonte de atributos para fora do repositório, e dentro
@@ -661,7 +673,7 @@ class GitTreeAdapter(Adapter):
         argv = self._base(repo) + ["config", "--get-all", "core.attributesFile"]
         p = supervisor.executar(
             argv, cwd=repo, env=self.ambiente(), prazo=prazo,
-            confinamento=confinamento_de_leitura(repo),
+            confinamento=confinamento_de_leitura(repo, autoridade),
             arvore_de_trabalho=str(repo))
         # rc=1 é "chave ausente", o caso normal. rc>1 é erro de verdade.
         if p.returncode not in (0, 1):
@@ -677,7 +689,7 @@ class GitTreeAdapter(Adapter):
                 "repositório (`.gitattributes` ou `.git/info/attributes`)")
 
     def _pedidos_de_filtro(self, repo: Path, caminhos: list[str],
-                           prazo: float) -> dict[str, str]:
+                           prazo: float, autoridade) -> dict[str, str]:
         """`{caminho: filter_id PEDIDO}` — decidido pelo GIT, não por nós.
 
         ## Por que não um parser próprio
@@ -721,12 +733,12 @@ class GitTreeAdapter(Adapter):
         from nomos.adapters import filtro_governado as fg
 
         self._recusar_fonte_de_atributo_por_link(repo, caminhos)
-        self._recusar_fonte_de_atributo_externa(repo, prazo)
+        self._recusar_fonte_de_atributo_externa(repo, prazo, autoridade)
 
         argv = self._base(repo) + ["check-attr", "-z", "filter", "--", *caminhos]
         p = supervisor.executar(
             argv, cwd=repo, env=self.ambiente(), prazo=prazo,
-            confinamento=confinamento_de_leitura(repo),
+            confinamento=confinamento_de_leitura(repo, autoridade),
             arvore_de_trabalho=str(repo))
         if p.morto_por_timeout:
             raise ErroLimite(
@@ -833,7 +845,8 @@ class GitTreeAdapter(Adapter):
     def _confirmar(self, pedido, ctx, repo: Path, argv: list[str],
                    descricao: str, prazo: float,
                    quarentena: supervisor.Quarentena,
-                   governados: dict[str, str]) -> CapabilityResult:
+                   governados: dict[str, str],
+                   autoridade) -> CapabilityResult:
         """Executa e valida. Qualquer saída por exceção desfaz o índice.
 
         A promoção dos objetos acontece DEPOIS de todas as verificações: um
@@ -856,12 +869,13 @@ class GitTreeAdapter(Adapter):
                           classificacao="EXIT_OK", morto_por_timeout=False)
             _promover_quarentena(Path(quarentena.diretorio),
                                  Path(quarentena.alternativos),
-                                 raiz_do_store=diretorio_git(repo)[1])
+                                 raiz_do_store=autoridade.common)
             return CapabilityResult.sucesso(descricao, efeito_aplicado=True)
 
         p = supervisor.executar(argv, cwd=repo, env=self.ambiente(),
                                 prazo=prazo,
-                                confinamento=confinamento_de_repo(repo),
+                                confinamento=confinamento_de_repo(
+                                    repo, autoridade=autoridade),
                                 quarentena=quarentena,
                                 arvore_de_trabalho=str(repo))
         if p.morto_por_timeout:
@@ -893,7 +907,7 @@ class GitTreeAdapter(Adapter):
         # aceita e nada mais pode recusá-la.
         _promover_quarentena(Path(quarentena.diretorio),
                              Path(quarentena.alternativos),
-                             raiz_do_store=diretorio_git(repo)[1])
+                             raiz_do_store=autoridade.common)
         return CapabilityResult.sucesso(descricao, efeito_aplicado=True)
 
     # ---------------------------------------------------------------- argvs
@@ -907,7 +921,8 @@ class GitTreeAdapter(Adapter):
         return [self._git, "-C", str(repo), "--no-pager",
                 *_NEUTRALIZAR, *_NEUTRALIZAR_TREE]
 
-    def _add(self, pedido, repo: Path, prazo: float) -> tuple[list[str], str]:
+    def _add(self, pedido, repo: Path, prazo: float,
+             autoridade) -> tuple[list[str], str]:
         brutos = pedido.arg("caminhos")
         if not isinstance(brutos, (list, tuple)):
             raise ErroInvalido(
@@ -925,7 +940,8 @@ class GitTreeAdapter(Adapter):
         # exatamente como antes. Sem registry, não há separação nenhuma.
         governados: dict[str, str] = {}
         if self._registro is not None:
-            governados = self._pedidos_de_filtro(repo, caminhos, prazo)
+            governados = self._pedidos_de_filtro(repo, caminhos, prazo,
+                                                 autoridade)
 
         restantes = [c for c in caminhos if c not in governados]
         argv = (self._base(repo) + ["add", "--no-all", "--"] + restantes
@@ -935,7 +951,7 @@ class GitTreeAdapter(Adapter):
                           f"({len(governados)} por filtro governado)"), governados
         return argv, f"add {len(caminhos)} caminho(s)", governados
 
-    def _conferir_head(self, repo: Path, prazo: float) -> None:
+    def _conferir_head(self, repo: Path, prazo: float, autoridade) -> None:
         """`HEAD` tem de apontar para um BRANCH, e o repositório escreve `HEAD`.
 
         MEDIDO, dois desfechos, os dois com `ok=True valor='commit'`:
@@ -965,7 +981,7 @@ class GitTreeAdapter(Adapter):
         argv = self._base(repo) + ["symbolic-ref", "--quiet", "HEAD"]
         p = supervisor.executar(
             argv, cwd=repo, env=self.ambiente(), prazo=prazo,
-            confinamento=confinamento_de_leitura(repo),
+            confinamento=confinamento_de_leitura(repo, autoridade),
             arvore_de_trabalho=str(repo))
         if p.returncode == 1:
             # rc=1 = HEAD DESTACADO (não é symref). Um commit aqui não avança
@@ -987,14 +1003,15 @@ class GitTreeAdapter(Adapter):
                 "ele INSTALA substituição de objeto que falsifica toda leitura "
                 "posterior. Commit governado só avança um branch")
 
-    def _commit(self, pedido, repo: Path, prazo: float) -> tuple[list[str], str]:
+    def _commit(self, pedido, repo: Path, prazo: float,
+                autoridade) -> tuple[list[str], str]:
         msg = mensagem_valida(pedido.arg("mensagem"))
         for proibido in ("autor", "author", "data", "date", "amend"):
             if pedido.arg(proibido, None) is not None:
                 raise ErroInvalido(
                     f"'{proibido}' não é aceito: autoria vem do runtime e "
                     "`amend` reescreveria histórico já auditado")
-        self._conferir_head(repo, prazo)
+        self._conferir_head(repo, prazo, autoridade)
         argv = self._base(repo) + [
             "commit", "--no-verify", "--no-gpg-sign",
             "--cleanup=verbatim", "-m", msg]

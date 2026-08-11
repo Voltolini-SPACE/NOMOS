@@ -159,23 +159,86 @@ def test_a2repo_04_git_como_SYMLINK_para_fora_e_recusado(campo):
         campo.add(trabalho, "x.txt")
 
 
-def test_a2repo_05_indirecao_LEGITIMA_dentro_das_raizes_CONTINUA_funcionando(campo):
-    """O controle que separa contenção de quebra.
+def test_a2repo_05_separate_git_dir_SEM_titularidade_e_RECUSADO(campo):
+    """SECURITY_BREAKING_CHANGE — este contrato mudou por decisão de dono.
 
-    `.git` como arquivo é o mecanismo normal de worktree ligada e submódulo — o
-    próprio repositório desta missão usa isso. Sem este teste, os quatro
-    anteriores passariam igual num sistema que simplesmente parou de aceitar
-    worktree.
+    A versão anterior deste teste exigia que `--separate-git-dir` FUNCIONASSE,
+    tratando "o Git nativo aceita" como razão suficiente. A bateria adversarial
+    mostrou o custo: esse layout não grava dono em lugar nenhum, e um
+    `.git`-arquivo apontando para o git dir de OUTRO repositório é
+    indistinguível — byte a byte — do uso legítimo. Medido, com os dois repos
+    dentro das raízes: `AWS_SECRET_ACCESS_KEY=DO_ATACANTE` estagiado no índice da
+    VÍTIMA, promovido ao object store dela, e `git-commit` gravando na história
+    dela, com a auditoria registrando o repo do ATACANTE como alvo.
+
+    Decisão de dono registrada: `UNPROVABLE_GITDIR_OWNERSHIP = REFUSE`, regra
+    `PROVABLE_OWNERSHIP_OR_REFUSE`. Um contrato legado comprovadamente inseguro
+    não tem autoridade para manter o comportamento.
+
+    Os layouts com titularidade DEMONSTRÁVEL continuam funcionando, e é o que
+    `test_a2repo_05b` e a bateria `c1c4_identidade_do_repo` provam — sem eles
+    esta recusa não se distinguiria de "parou de aceitar indireção".
     """
     trabalho = campo.raiz / "repo"
     gitdir = campo.raiz / "gitdir-legitimo"          # DENTRO da raiz aprovada
     _repo_com_gitdir_separado(trabalho, gitdir)
     assert (trabalho / ".git").is_file()
-    (trabalho / "x.txt").write_text("conteudo legitimo\n")
+    (trabalho / "x.txt").write_text("conteudo\n")
 
-    r = campo.add(trabalho, "x.txt")
-    assert r.efeito_aplicado, "a indireção legítima parou de funcionar"
-    assert (gitdir / "index").exists(), "o índice não foi escrito no git dir"
+    antes = _instantaneo_do_repo(gitdir)
+    with pytest.raises(supervisor.ErroSeguranca, match="não registra dono"):
+        campo.add(trabalho, "x.txt")
+
+    # `rc != 0` NÃO é prova suficiente de recusa: o efeito pode ter acontecido
+    # antes do erro. O que vale é o estado.
+    depois = _instantaneo_do_repo(gitdir)
+    assert depois["index"] == antes["index"], "INDEX_UNCHANGED=FALSE"
+    assert depois["refs"] == antes["refs"], "REFS_UNCHANGED=FALSE"
+    assert depois["objetos"] == antes["objetos"], "objeto novo no store"
+
+
+def test_a2repo_05b_worktree_LIGADA_com_titularidade_provada_FUNCIONA(campo):
+    """O controle que impede a recusa acima de virar "negue toda indireção".
+
+    Worktree ligada é o layout do próprio repositório desta missão, e ela PROVA
+    titularidade: `<git_dir>/gitdir` aponta de volta para `<repo>/.git`.
+    """
+    principal = campo.raiz / "principal"
+    principal.mkdir()
+    subprocess.run([GIT, "init", "-q", "-b", "main", str(principal)],
+                   check=True, capture_output=True)
+    for k, v in (("user.email", "a@b.c"), ("user.name", "T")):
+        subprocess.run([GIT, "-C", str(principal), "config", k, v],
+                       check=True, capture_output=True)
+    (principal / "seed.txt").write_text("seed\n")
+    subprocess.run([GIT, "-C", str(principal), "add", "seed.txt"],
+                   check=True, capture_output=True)
+    subprocess.run([GIT, "-C", str(principal), "commit", "-qm", "seed"],
+                   check=True, capture_output=True)
+    wt = campo.raiz / "wt"
+    subprocess.run([GIT, "-C", str(principal), "worktree", "add", "-q",
+                    str(wt), "-b", "b2"], check=True, capture_output=True)
+    (wt / "x.txt").write_text("conteudo legitimo\n")
+
+    r = campo.add(wt, "x.txt")
+    assert r.efeito_aplicado, "a indireção COM titularidade parou de funcionar"
+    saida = subprocess.run([GIT, "-C", str(wt), "ls-files"],
+                           capture_output=True, text=True).stdout
+    assert "x.txt" in saida
+
+
+def _instantaneo_do_repo(git_dir: Path) -> dict:
+    """Estado que uma recusa NÃO pode ter mexido: índice, refs e objetos."""
+    idx = git_dir / "index"
+    refs = git_dir / "refs"
+    objetos = git_dir / "objects"
+    return {
+        "index": idx.read_bytes() if idx.exists() else None,
+        "refs": sorted(p.name for p in refs.rglob("*")) if refs.exists() else [],
+        "objetos": sorted(str(p.relative_to(objetos))
+                          for p in objetos.rglob("*") if p.is_file())
+        if objetos.exists() else [],
+    }
 
 
 def test_a2repo_06_a_conferencia_e_por_COMPONENTE_nao_por_prefixo(campo):
