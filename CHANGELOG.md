@@ -4,6 +4,47 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (A5.8 + A5.9 — a transação com o filtro dentro, e os ataques COMBINADOS)
+**A5.8** liga as peças que já tinham sido medidas sozinhas — índice transacional
+(A0.1), quarentena de objetos (A0.3), registry (A5.2), artefato (A5.3), argv
+(A5.4), sandbox (A5.5), ciclo de vida (A5.6) e o filtro legítimo (A5.7) — e
+exige, depois de falha em QUALQUER ponto:
+
+    INDEX_BYTES_AFTER == INDEX_BYTES_BEFORE     PERMANENT_SECRET_OBJECTS   = 0
+    ORPHAN_PROCESS    = 0                       UNREACHABLE_SECRET_OBJECTS = 0
+    PARTIAL_PROMOTION = 0
+
+12 casos, com falha injetada antes do filtro, durante o filtro, em `rc != 0`, no
+prazo, depois do filtro (`hash-object`), no estagiamento (`update-index`), na
+auditoria, por sinal, na pré-condição de promoção, com artefato trocado, e com
+índice JÁ POVOADO — este último é o caso que `git reset` estragaria, e por isso o
+rollback restaura BYTES.
+
+Todos os testes de falha usam DOIS caminhos, e o primeiro sempre funciona: com um
+caminho só, "falhou, nada promovido" é quase automático. É o lote que morde — se
+a promoção fosse incremental, o blob do primeiro já estaria no store permanente,
+promoção PARCIAL de uma operação recusada.
+
+**A5.9** combina, em vez de repetir controles isolados. Sistema seguro por peça e
+inseguro por composição é o padrão, não a exceção: o atacante não escolhe UMA
+fronteira, escolhe a costura entre duas. 10 casos: exfiltração de rede e de
+arquivo **com o segredo na entrada do filtro**; escopo legítimo ainda gravável
+(o controle que impede os dois anteriores de passarem por um sandbox
+simplesmente quebrado); argv hostil recusado na construção da política; artefato
+trocado + `git add`; repositório hostil declarando `clean` E pedindo o id
+aprovado ao mesmo tempo; prazo estourando com stdin em voo; fork do filtro
+durante a transação (árvore morre E índice volta, as duas na mesma saída);
+registry sob contenção de 12 threads; e substituição do artefato ENTRE dois
+`add`, que a revalidação por uso pega.
+
+A diferença para A5.5 é a carga: lá o filtro foi medido VAZIO tentando alcançar
+rede e disco. Aqui ele está SEGURANDO O SEGREDO quando tenta vazar — contenção
+medida sem carga não demonstrou nada sobre o caso com carga. Todo alvo de
+exfiltração tem controle positivo: o mesmo binário, a mesma entrada, sem
+sandbox, CONSEGUE (o listener recebe `hunter2`).
+
+Sondas novas em `redator.c`: `--sonda-exfil-rede` e `--sonda-exfil-arquivo`.
+
 ### Added (A5.7 — o filtro governado LEGÍTIMO, dentro do `git add`)
 A5 fechou o caminho padrão, e a negação é definitiva. Mas um sistema que só sabe
 negar não substitui o que proibiu: redator de segredo, normalizador e LFS são

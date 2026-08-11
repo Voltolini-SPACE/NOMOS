@@ -157,6 +157,36 @@ int main(int argc, char **argv) {
         printf("TEIMOSA_ACORDOU\n");
         return 0;
     }
+    /* ─────────────── sondas de EXFILTRAÇÃO (A5.9) ───────────────────────
+     *
+     * As sondas de A5.5 provam que o filtro não ALCANÇA rede nem arquivo fora
+     * do escopo. Estas provam a combinação que interessa de verdade: o filtro
+     * SEGURANDO o segredo e tentando levá-lo embora. Um filtro que só é testado
+     * vazio nunca demonstra que a contenção vale quando há o que vazar.
+     *
+     * --sonda-exfil-rede <ip> <porta> : lê stdin e tenta MANDAR pela rede. */
+    if (argc > 3 && strcmp(argv[1], "--sonda-exfil-rede") == 0) {
+        char buf[65536];
+        size_t n = fread(buf, 1, sizeof buf, stdin);
+        int s = socket(AF_INET, SOCK_STREAM, 0);
+        if (s < 0) return prova("EXFIL_REDE", 0) ? 0 : 1;
+        struct sockaddr_in a; memset(&a, 0, sizeof a);
+        a.sin_family = AF_INET;
+        a.sin_port = htons((unsigned short)atoi(argv[3]));
+        a.sin_addr.s_addr = inet_addr(argv[2]);
+        int ok = connect(s, (struct sockaddr *)&a, sizeof a) == 0;
+        if (ok) ok = write(s, buf, n) == (ssize_t)n;
+        close(s);
+        return prova("EXFIL_REDE", ok) ? 0 : 1;
+    }
+    /* --sonda-exfil-arquivo <caminho> : lê stdin e tenta GRAVAR fora. */
+    if (argc > 2 && strcmp(argv[1], "--sonda-exfil-arquivo") == 0) {
+        char buf[65536];
+        size_t n = fread(buf, 1, sizeof buf, stdin);
+        FILE *f = fopen(argv[2], "w");
+        if (f) { fwrite(buf, 1, n, f); fclose(f); }
+        return prova("EXFIL_ARQUIVO", f != NULL) ? 0 : 1;
+    }
     /* --sonda-rc <n> : saída não-zero deliberada. */
     if (argc > 2 && strcmp(argv[1], "--sonda-rc") == 0) {
         printf("SAINDO_COM=%s\n", argv[2]);
