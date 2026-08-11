@@ -110,23 +110,15 @@ def test_nomos_recusa_em_vez_de_reportar_sucesso(repo_com_redator, tmp_path):
     assert FILTRO_QUEBRADO in str(exc.value)
 
 
-def test_LIMITE_CONHECIDO_a_recusa_nao_desfaz_o_indice(repo_com_redator,
-                                                       tmp_path):
-    """O que a correção NÃO faz — medido, e fixado aqui para não surpreender.
+def test_o_indice_NAO_fica_contaminado_apos_a_recusa(repo_com_redator,
+                                                     tmp_path):
+    """Antes existia aqui um teste que PASSAVA asserindo o índice sujo.
 
-    A checagem acontece DEPOIS de o Git já ter mexido no índice. Levantar
-    exceção não desfaz `git add`: o segredo continua ESTAGIADO em claro. O
-    ganho real é ter deixado de ser silencioso — o NOMOS agora recusa e audita
-    em vez de reportar sucesso —, mas o efeito no índice persiste.
-
-    Consequência operacional que segue ABERTA: um `git-commit` posterior não
-    reexecuta o filtro para conteúdo já estagiado, então o segredo entraria no
-    commit. Fechar isso exige desfazer o índice na recusa, restaurando o estado
-    ANTERIOR (não basta `reset`, porque o caminho podia já estar estagiado de
-    propósito) — mudança maior, que precisa do seu próprio gate adversarial.
-
-    Se alguém implementar esse rollback, ESTE teste falha — e é assim que se
-    descobre que o limite deixou de existir.
+    Estava errado por método: teste verde que afirma a vulnerabilidade
+    transforma o defeito em comportamento esperado e faz a correção parecer
+    regressão. O contrato correto é o oposto, e está em
+    `tests/test_absorption07_a0_indice_transacional.py` (A0).
+    Aqui fica só a ponta: recusou, então nada ficou estagiado.
     """
     registro = _ctx_e_registro(tmp_path, tmp_path)
     ctx = CapabilityContext.de_registro(
@@ -137,19 +129,9 @@ def test_LIMITE_CONHECIDO_a_recusa_nao_desfaz_o_indice(repo_com_redator,
                               alvo=str(repo_com_redator),
                               argumentos={"caminhos": ["SEGREDO.txt"]}), ctx)
 
-    estagiado = _git(repo_com_redator, "diff", "--cached",
-                     "--name-only").stdout.strip()
-    assert estagiado == "SEGREDO.txt", (
-        "o índice deixou de ser poluído — o limite documentado acima mudou; "
-        "reavalie este teste e o KNOWN_GAP correspondente")
-    assert _git(repo_com_redator, "show",
-                ":SEGREDO.txt").stdout == "SENHA=hunter2\n"
-
-
-def test_a_recusa_e_de_seguranca_e_nao_quebra_o_contrato_de_erro():
-    """`ErroSeguranca` é `ErroInvalido` — quem já tratava, continua tratando."""
-    from nomos.adapters.contrato import ErroInvalido
-    assert issubclass(supervisor.ErroSeguranca, ErroInvalido)
+    assert _git(repo_com_redator, "diff", "--cached",
+                "--name-only").stdout.strip() == "", (
+        "a recusa deixou conteúdo estagiado — a cadeia até o commit segue viva")
 
 
 # ══ PASSO 2b — o filtro que EXECUTA e falha (caminho distinto do não-exec) ══

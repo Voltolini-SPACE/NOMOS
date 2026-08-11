@@ -37,6 +37,8 @@ NOMOS usa para auditar a si mesmo. A identidade vem do runtime.
 """
 from __future__ import annotations
 
+import contextlib
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,7 +50,12 @@ from nomos.adapters.contrato import (
     ErroInvalido, ErroLimite,
 )
 from nomos.adapters.estrito import texto_estrito
-from nomos.adapters.git import _NEUTRALIZAR, ambiente_minimo, confinamento_de_repo
+from nomos.adapters.git import (
+    _NEUTRALIZAR,
+    ambiente_minimo,
+    confinamento_de_repo,
+    diretorio_git,
+)
 
 CAPACIDADES = ("git-add", "git-commit")
 
@@ -108,6 +115,49 @@ def mensagem_valida(bruta) -> str:
     return texto
 
 
+def _instantaneo_do_indice(repo: Path) -> tuple[Path, bytes | None, int | None]:
+    """Copia BRUTA do arquivo de índice, antes da operação.
+
+    O índice é UM arquivo, e ele É o estado completo do que está preparado:
+    conteúdo estagiado, estagiamento parcial, renomeação, remoção, modo,
+    resolução de conflito. Guardar os bytes captura tudo isso de uma vez.
+
+    É por isso que o rollback NÃO é feito com `git reset`: `reset` é uma
+    operação semântica que recalcula o índice a partir de HEAD, e por isso
+    destrói justamente os casos que precisamos preservar — um caminho que já
+    estava estagiado de propósito, ou estagiado PELA METADE (conteúdo no
+    índice diferente do conteúdo na working tree). Restaurar os bytes devolve
+    o estado exato; `reset` devolveria um estado plausível.
+    """
+    git_dir, _ = diretorio_git(repo)
+    alvo = Path(git_dir) / "index"
+    if not alvo.exists():
+        # Repositório recém-criado ainda não tem índice. "Restaurar" aqui
+        # significa fazer o arquivo deixar de existir de novo.
+        return alvo, None, None
+    return alvo, alvo.read_bytes(), alvo.stat().st_mode
+
+
+def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> None:
+    """Devolve o índice ao estado do instantâneo, atomicamente."""
+    alvo, dados, modo = inst
+    if dados is None:
+        alvo.unlink(missing_ok=True)
+        return
+    # Escrever direto em `index` deixaria uma janela com arquivo truncado, que
+    # o Git leria como índice corrompido. `os.replace` no MESMO diretório é
+    # rename atômico: ou o índice antigo, ou o restaurado, nunca um meio-termo.
+    tmp = alvo.with_name(f".index.nomos-rollback-{os.getpid()}")
+    try:
+        tmp.write_bytes(dados)
+        if modo is not None:
+            os.chmod(tmp, modo)
+        os.replace(tmp, alvo)
+    finally:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+
+
 class GitTreeAdapter(Adapter):
     """`git add` e `git commit`, confinados pelo supervisor."""
 
@@ -154,6 +204,23 @@ class GitTreeAdapter(Adapter):
             raise ErroInvalido(f"operação desconhecida: {pedido.capacidade}")
 
         prazo = min(TIMEOUT_S, ctx.restante() or TIMEOUT_S)
+        # A partir daqui a operação é TRANSACIONAL: ou confirma, ou o índice
+        # volta ao byte anterior. Detectar a falha e deixar o índice sujo era
+        # detecção sem contenção — o `git add` já tinha estagiado o conteúdo
+        # cru, e um `git commit` posterior persistiria o segredo mesmo com o
+        # `add` tendo sido RECUSADO. O instantâneo é tirado ANTES do exec.
+        instantaneo = _instantaneo_do_indice(repo)
+        try:
+            return self._confirmar(pedido, ctx, repo, argv, descricao, prazo)
+        except BaseException:
+            # BaseException, não Exception: KeyboardInterrupt e SystemExit
+            # também não podem deixar segredo estagiado para trás.
+            _restaurar_indice(instantaneo)
+            raise
+
+    def _confirmar(self, pedido, ctx, repo: Path, argv: list[str],
+                   descricao: str, prazo: float) -> CapabilityResult:
+        """Executa e valida. Qualquer saída por exceção desfaz o índice."""
         p = supervisor.executar(argv, cwd=repo, env=self.ambiente(),
                                 prazo=prazo,
                                 confinamento=confinamento_de_repo(repo))
