@@ -103,6 +103,7 @@ class PoliticaDeFiltro:
                 "recuso na construção, não na execução")
         if self.timeout <= 0:
             raise ErroFiltro(f"timeout inválido em {self.filter_id!r}")
+        conferir_argv(self.argv_policy, self.filter_id)
         if self.descendant_policy != "matar-arvore":
             raise ErroFiltro(
                 f"descendant_policy {self.descendant_policy!r} não suportada "
@@ -131,9 +132,54 @@ class PoliticaDeFiltro:
         self.managed_artifact.conferir()
         return self.managed_artifact.managed_path
 
+    def comando(self) -> list[str]:
+        """O argv COMPLETO a executar. Única porta, e ela não aceita nada.
+
+        Repare na assinatura: não há parâmetro. Não existe canal por onde um
+        chamador — muito menos o repositório — contribua com um elemento do
+        argv. A5.2 decidiu QUEM escolhe o executável; A5.3, QUAL objeto; aqui,
+        QUAIS ARGUMENTOS. Os três têm o mesmo dono.
+
+        Um executável aprovado vira executor genérico no instante em que o
+        argv aceita entrada: `/usr/bin/sed` é inofensivo até receber
+        `-e 's/.*/rm -rf/e'`.
+        """
+        return [self.executavel(), *self.argv_policy]
+
     def proveniencia(self) -> str:
         """De onde o binário veio. Auditoria — nunca execução."""
         return self.canonical_executable
+
+
+# Argumento que o Git NÃO deve poder reinterpretar, e nomes de opção que
+# transformam um filtro em executor de outro programa. A lista é POSITIVA e
+# explícita: adivinhar padrão deixaria buraco, e `--exec`/`-e` provam que o
+# perigo mora no nome da flag, não no formato dela.
+_ARG_PROIBIDO = frozenset({
+    "--exec", "--command", "--program", "--helper", "--shell",
+    "--interpreter", "--config", "--rcfile", "--init-file", "--eval",
+})
+# Metacaracteres. NÃO ganham semântica (não há shell), mas um argumento que os
+# carrega denuncia intenção — e um dia alguém pode acrescentar um shell.
+_META = frozenset(";&|`$<>\n\r\x00")
+
+
+def conferir_argv(argv: object, filter_id: str = "?") -> tuple[str, ...]:
+    """Valida o argv da POLÍTICA na construção. Argv inválido nunca existe."""
+    if not isinstance(argv, tuple):
+        raise ErroFiltro(
+            f"argv_policy de {filter_id!r} não é tupla: lista é mutável, e "
+            "argv mutável é argv que alguém estende depois")
+    for i, a in enumerate(argv):
+        if not isinstance(a, str):
+            raise ErroFiltro(f"argv[{i}] de {filter_id!r} não é str: {a!r}")
+        if "\x00" in a:
+            raise ErroFiltro(f"argv[{i}] de {filter_id!r} tem NUL")
+        if a in _ARG_PROIBIDO:
+            raise ErroFiltro(
+                f"argv[{i}] de {filter_id!r} é {a!r} — flag que pede execução "
+                "de OUTRO programa: o filtro aprovado viraria executor genérico")
+    return argv
 
 
 def conferir_id(bruto: object) -> str:
