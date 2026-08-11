@@ -33,6 +33,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -357,7 +358,8 @@ def test_a56_14_kill_EXTERNO_do_principal_nao_deixa_descendente(cenario):
 # ═════════════ 16 — exceção DENTRO do supervisor, depois do spawn ════════════
 
 def test_a56_16_excecao_do_supervisor_limpa_processo_e_disco(cenario,
-                                                             monkeypatch):
+                                                             monkeypatch,
+                                                             tmp_path):
     """Falha no caminho de reaping não pode virar vazamento.
 
     A pós-condição é a última coisa a rodar; se ELA quebrar, o processo já
@@ -368,6 +370,22 @@ def test_a56_16_excecao_do_supervisor_limpa_processo_e_disco(cenario,
         raise RuntimeError("falha injetada no reaping")
 
     monkeypatch.setattr(supervisor.processos, "exterminar", explodir)
+
+    # TMPDIR PRÓPRIO deste teste. `_nonces_em_disco()` varre um diretório
+    # GLOBAL, e com outra atividade NOMOS no host ele contabiliza artefato de
+    # vizinho como vazamento daqui — medido duas vezes nesta missão (13
+    # diretórios-nonce vivos, criados por dez agentes de medição em paralelo).
+    #
+    # O escopo é de FUNÇÃO de propósito: trocar `TMPDIR` na sessão inteira foi
+    # TENTADO e MEDIDO — 71 falhas, porque o `basetemp` do `tmp_path_factory` já
+    # tinha sido escolhido sob o TMPDIR antigo e metade da suíte passa a montar
+    # cenário sob uma raiz e comparar contra outra. Ver
+    # `tests/test_isolamento_de_worker.py`.
+    proprio = tmp_path / "tmpdir-do-teste"
+    proprio.mkdir()
+    monkeypatch.setenv("TMPDIR", str(proprio))
+    monkeypatch.setattr(tempfile, "tempdir", None, raising=False)
+
     antes = _nonces_em_disco()
     with pytest.raises(RuntimeError, match="falha injetada"):
         cenario.rodar("--sonda-forks", "2", "60", str(cenario.escopo), prazo=2.0)
