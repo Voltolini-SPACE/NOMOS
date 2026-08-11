@@ -38,6 +38,7 @@ NOMOS usa para auditar a si mesmo. A identidade vem do runtime.
 from __future__ import annotations
 
 import contextlib
+import errno
 import os
 import re
 import shutil
@@ -146,6 +147,75 @@ _NEUTRALIZAR_TREE = [
 ]
 
 
+def _abrir_sem_atravessar_link(repo: Path, caminho: str) -> int:
+    """Descritor do alvo, com `O_NOFOLLOW` em CADA componente.
+
+    MEDIDO, e é o furo que sobrou depois de A2-REPO: `O_NOFOLLOW` protege
+    apenas o ÚLTIMO componente. Com
+
+        sub -> /etc            (symlink de DIRETÓRIO)
+        .gitattributes:  sub/hosts filter=redator
+
+    o `lstat`/`open` de `repo/sub/hosts` encontra um arquivo regular — porque o
+    `sub` do meio já foi atravessado pelo kernel. O NOMOS lia e indexava
+    conteúdo de fora do repositório, no processo do supervisor, fora do sandbox.
+
+    O contraste que torna o achado material: o `git add` CRU recusa isto por
+    conta própria (`fatal: pathspec ... is beyond a symbolic link`). O caminho
+    governado atravessava uma defesa que o Git já tinha — divergência a MENOS
+    de segurança, não a mais.
+
+    Descer componente a componente com `dir_fd` é o único jeito que não tem
+    corrida: cada `openat` parte de um descritor já validado, então trocar um
+    diretório do meio por link depois da checagem não muda o que foi aberto.
+    """
+    partes = PurePosixPath(caminho).parts
+    fd_dir = os.open(repo, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for componente in partes[:-1]:
+            try:
+                proximo = os.open(componente,
+                                  os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                  dir_fd=fd_dir)
+            except OSError as e:
+                # MEDIDO no macOS: `O_DIRECTORY|O_NOFOLLOW` sobre symlink-para-
+                # diretório devolve ENOTDIR, não ELOOP. Tratar só ELOOP
+                # classificaria o ataque como erro de caminho do usuário — a
+                # contenção valeria igual, mas o registro mentiria sobre o quê
+                # aconteceu, e é do registro que a auditoria vive.
+                if e.errno in (errno.ELOOP, errno.EMLINK, errno.ENOTDIR):
+                    raise ErroSeguranca(
+                        f"{caminho}: o componente {componente!r} é um symlink "
+                        "de diretório, e o caminho governado não o atravessa — "
+                        "o conteúdo lido viria de fora do repositório, no "
+                        "processo do supervisor, fora do sandbox do filtro. O "
+                        "próprio `git add` recusa este caminho") from None
+                raise ErroInvalido(
+                    f"não consegui abrir {componente!r} de {caminho}: {e}") from None
+            os.close(fd_dir)
+            fd_dir = proximo
+        try:
+            # `O_NONBLOCK` é obrigatório aqui, e a razão é medida: `open` de
+            # FIFO sem escritor BLOQUEIA — no processo do supervisor, antes de
+            # existir prazo, exatamente o pendura-tudo que A2-REPO mediu. Com
+            # ele o open retorna na hora e o `fstat` logo abaixo recusa por não
+            # ser arquivo regular. Para arquivo regular a flag é inócua.
+            return os.open(partes[-1],
+                           os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                           dir_fd=fd_dir)
+        except OSError as e:
+            if e.errno in (errno.ELOOP, errno.EMLINK):
+                raise ErroSeguranca(
+                    f"{caminho} é um symlink, e filtro governado não segue "
+                    "link: o conteúdo lido seria o do DESTINO, escolhido pelo "
+                    "repositório, e a leitura acontece no processo do "
+                    "supervisor — fora do sandbox do filtro. Um link para "
+                    "segredo do host viraria conteúdo indexado") from None
+            raise ErroInvalido(f"não consegui ler {caminho}: {e}") from None
+    finally:
+        os.close(fd_dir)
+
+
 def _ler_alvo_do_filtro(repo: Path, caminho: str) -> bytes:
     """Lê o conteúdo que vai para o filtro governado, SEM seguir link.
 
@@ -169,37 +239,20 @@ def _ler_alvo_do_filtro(repo: Path, caminho: str) -> bytes:
     vetor. Quem quiser versionar um link usa o caminho normal, onde o Git grava
     o link como link.
     """
-    alvo = repo / caminho
+    fd = _abrir_sem_atravessar_link(repo, caminho)
     try:
-        st = os.lstat(alvo)
-    except OSError as e:
-        raise ErroInvalido(f"não consegui inspecionar {caminho}: {e}") from None
-    if stat.S_ISLNK(st.st_mode):
-        raise ErroSeguranca(
-            f"{caminho} é um symlink, e filtro governado não segue link: o "
-            "conteúdo lido seria o do DESTINO, escolhido pelo repositório, e a "
-            "leitura acontece no processo do supervisor — fora do sandbox do "
-            "filtro. Um link para segredo do host viraria conteúdo indexado")
-    if not stat.S_ISREG(st.st_mode):
-        raise ErroSeguranca(
-            f"{caminho} não é arquivo regular (modo {st.st_mode:o}) — FIFO e "
-            "device penduram a leitura do supervisor sem prazo nenhum")
-    if st.st_size > MAX_CONTEUDO:
-        raise ErroLimite(
-            f"{caminho} tem {st.st_size} bytes (limite {MAX_CONTEUDO})")
-
-    # `O_NOFOLLOW` fecha a corrida entre o `lstat` e o `open`: sem ele, trocar o
-    # arquivo por link entre as duas chamadas devolveria o destino do link.
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise ErroSeguranca(
+                f"{caminho} não é arquivo regular (modo {st.st_mode:o}) — FIFO "
+                "e device penduram a leitura do supervisor sem prazo nenhum")
+        if st.st_size > MAX_CONTEUDO:
+            raise ErroLimite(
+                f"{caminho} tem {st.st_size} bytes (limite {MAX_CONTEUDO})")
+    except BaseException:
+        os.close(fd)
+        raise
     try:
-        fd = os.open(alvo, os.O_RDONLY | os.O_NOFOLLOW)
-    except OSError as e:
-        raise ErroInvalido(f"não consegui ler {caminho}: {e}") from None
-    try:
-        # Reconfere pelo DESCRITOR já aberto: é o mesmo objeto que vai ser lido,
-        # e não um caminho que pode ter mudado de significado no meio.
-        st2 = os.fstat(fd)
-        if not stat.S_ISREG(st2.st_mode):
-            raise ErroSeguranca(f"{caminho} deixou de ser arquivo regular")
         dados = b""
         while len(dados) <= MAX_CONTEUDO:
             bloco = os.read(fd, 1024 * 1024)
@@ -508,6 +561,35 @@ class GitTreeAdapter(Adapter):
         return r
 
     # ------------------------------------------------- A5.7 filtro governado
+
+    def _recusar_diretorio(self, repo: Path, caminhos: list[str]) -> None:
+        """Um DIRETÓRIO na lista é o `-A` disfarçado que este módulo proíbe.
+
+        MEDIDO: `caminhos=['dir']` estagiou os TRÊS arquivos de `dir/`,
+        inclusive `dir/NAO_APROVADO_segredo.txt`, e devolveu
+        `valor='add 1 caminho(s)'` — a contagem relatada é a do PEDIDO, não a do
+        efeito, então nem a auditoria mostrava o escopo real.
+
+        `--no-all` não impede isso: ele governa o que acontece com arquivos
+        REMOVIDOS, não a expansão de diretório. `_CAMINHO_PROIBIDO` já barra
+        glob pelo mesmo motivo ("expande para o que existir no momento") — um
+        diretório é o mesmo problema com outra sintaxe: entre a aprovação e a
+        execução, qualquer arquivo que aparecer ali entra junto.
+
+        `lstat` e não `is_dir()`: `is_dir()` SEGUE symlink, e um link para
+        diretório passaria batido para virar exatamente o caso acima.
+        """
+        for caminho in caminhos:
+            try:
+                st = os.lstat(repo / caminho)
+            except OSError:
+                continue          # inexistente: quem recusa é o Git, com erro claro
+            if stat.S_ISDIR(st.st_mode):
+                raise ErroInvalido(
+                    f"{caminho!r} é um DIRETÓRIO, e diretório expande para tudo "
+                    "que estiver dentro dele no momento da execução — é o `-A` "
+                    "disfarçado. O operador aprova uma lista de ARQUIVOS: "
+                    "nomeie cada um")
 
     def _recusar_fonte_de_atributo_por_link(self, repo: Path,
                                             caminhos: list[str]) -> None:
@@ -821,6 +903,7 @@ class GitTreeAdapter(Adapter):
         if len(brutos) > MAX_CAMINHOS:
             raise ErroLimite(f"acima de {MAX_CAMINHOS} caminhos por operação")
         caminhos = [caminho_relativo(c, i) for i, c in enumerate(brutos)]
+        self._recusar_diretorio(repo, caminhos)
 
         # A5.7 — separa os caminhos que o repositório PEDE filtro para. Eles
         # saem do `git add` e passam pelo caminho governado; o resto segue
