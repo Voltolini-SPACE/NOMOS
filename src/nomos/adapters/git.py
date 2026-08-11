@@ -401,8 +401,15 @@ def _conferir_titularidade(base: Path, git_dir: str) -> None:
             "enquanto a auditoria registra este alvo — confusão cross-repo")
 
     # 1) Worktree ligada: `<git_dir>/gitdir` nomeia o `.git` da dona.
+    #
+    # SÓ VALE onde o Git REALMENTE lê esse arquivo: um git dir de worktree
+    # ligada, que mora em `<common>/worktrees/<nome>`. MEDIDO: num git dir
+    # PRINCIPAL o Git IGNORA `gitdir` por completo — então plantar 85 bytes lá
+    # dentro forjava a prova sem mudar nada no comportamento do Git, e a vítima
+    # seguia normal em toda inspeção. Confrontar com o que o Git honra é a
+    # diferença entre ler um dado e aceitar uma afirmação do atacante.
     ponteiro = gd / "gitdir"
-    if ponteiro.is_file():
+    if gd.parent.name == "worktrees" and ponteiro.is_file():
         try:
             bruto = ponteiro.read_text("utf-8", "replace").strip()
         except OSError:
@@ -414,13 +421,26 @@ def _conferir_titularidade(base: Path, git_dir: str) -> None:
             return
 
     # 2) Submódulo: `core.worktree` no config do git dir aponta para a dona.
+    #
+    # O parse é SENSÍVEL A SEÇÃO, e a versão anterior não era. MEDIDO: uma
+    # linha `worktree = <hostil>` sob QUALQUER seção — inclusive uma inventada,
+    # `[naoexiste]` — era aceita como prova, e o Git só honra `[core] worktree`.
+    # Ou seja: a chave era INERTE para o Git e autoritativa para o NOMOS, que é
+    # a pior combinação possível — a adulteração não aparece em nenhuma
+    # inspeção de git e mesmo assim decide a titularidade.
     try:
         texto = (gd / "config").read_text("utf-8", "replace")
     except OSError:
         texto = ""
+    secao = ""
     for linha in texto.splitlines():
+        crua = linha.strip()
+        if crua.startswith("["):
+            # `[core]` e `[core "sub"]`; o nome da seção é o primeiro token.
+            secao = crua[1:].split("]")[0].split()[0].strip('"').lower()
+            continue
         chave, sep, valor = linha.partition("=")
-        if not sep or chave.strip().lower() != "worktree":
+        if not sep or secao != "core" or chave.strip().lower() != "worktree":
             continue
         v = valor.strip()
         if not v:

@@ -197,6 +197,55 @@ def test_c1_10_cross_repo_via_SEPARATE_GIT_DIR_e_RECUSADO(campo):
     assert depois == antes, "INDEX_UNCHANGED=FALSE — o segredo entrou na vítima"
 
 
+def test_c1_10_prova_de_titularidade_FORJADA_backpointer(campo):
+    """A prova tem de casar com o que o Git HONRA, não só com o que existe.
+
+    MEDIDO: plantar `<vitima>/.git/gitdir` = `<hostil>/.git` (85 bytes) imitava
+    o backpointer de worktree ligada e o NOMOS aceitava. O Git IGNORA esse
+    arquivo num git dir PRINCIPAL — então a adulteração era INERTE para o Git e
+    AUTORITATIVA para o NOMOS, a pior combinação possível: a vítima seguia
+    normal em toda inspeção (`rev-parse --show-toplevel` do hostil devolvia
+    hostil) e o segredo entrava no índice, no store e na história dela.
+
+    O backpointer só vale onde o Git realmente o lê: `<common>/worktrees/<n>`.
+    """
+    vitima = campo.repo(campo.raiz / "vitima", arquivo="ok.txt")
+    _git("-C", str(vitima), "add", "ok.txt")
+    _git("-C", str(vitima), "commit", "-qm", "inicial")
+
+    hostil = campo.raiz / "hostil"
+    hostil.mkdir()
+    (hostil / ".git").write_text(f"gitdir: {vitima / '.git'}\n")
+    (hostil / "segredo.txt").write_text("AWS_SECRET_ACCESS_KEY=hunter2\n")
+    (vitima / ".git" / "gitdir").write_text(f"{hostil / '.git'}\n")
+
+    with pytest.raises(supervisor.ErroSeguranca):
+        campo.add(hostil, "segredo.txt")
+    assert "segredo.txt" not in campo.indice(vitima)
+
+
+def test_c1_10_prova_de_titularidade_FORJADA_secao_de_config(campo):
+    """`worktree` fora de `[core]` é inerte para o Git — e era prova aqui.
+
+    O parser não era sensível a seção: uma linha sob `[naoexiste]` valia como
+    registro de submódulo. O Git só honra `[core] worktree`.
+    """
+    vitima = campo.repo(campo.raiz / "vitima", arquivo="ok.txt")
+    _git("-C", str(vitima), "add", "ok.txt")
+    _git("-C", str(vitima), "commit", "-qm", "inicial")
+
+    hostil = campo.raiz / "hostil"
+    hostil.mkdir()
+    (hostil / ".git").write_text(f"gitdir: {vitima / '.git'}\n")
+    (hostil / "segredo.txt").write_text("AWS_SECRET_ACCESS_KEY=hunter2\n")
+    with open(vitima / ".git" / "config", "a") as f:
+        f.write(f"[naoexiste]\n\tworktree = {hostil}\n")
+
+    with pytest.raises(supervisor.ErroSeguranca):
+        campo.add(hostil, "segredo.txt")
+    assert "segredo.txt" not in campo.indice(vitima)
+
+
 def test_c1_10_cross_repo_via_GIT_MODULES_e_RECUSADO(campo):
     """A segunda forma: apontar para `.git/modules/<n>` de outro superprojeto."""
     filho = campo.tmp / "filho"
