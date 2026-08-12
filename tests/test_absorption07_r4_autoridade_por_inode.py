@@ -749,3 +749,79 @@ def test_r4_52_CONTROLE_arvore_normal_nao_estoura_nem_custa(tmp_path):
     for i in range(400):
         (raiz / f"d{i}").mkdir(parents=True)
     assert fg._git_dirs_aninhados(str(raiz)) == []
+
+
+# ═══ `.11.09` (P1) — o ramo TODOS-GOVERNADOS acusava o NOSSO estagiamento ════
+
+def test_r4_60_ramo_todos_governados_nao_acusa_o_proprio_estagiamento(
+        governado):
+    """MEDIDO 8/8 com gatilho REAL do repositório (ablação: 8/8 antes, 0/8 depois).
+
+    Quando TODOS os caminhos são governados não sobra `git add` para rodar, e o
+    ramo retornava ANTES de `janela` ser populada. `_estagiar` já reescreveu o
+    índice; com `idx_antes`/`idx_depois` em None, o desfazer caía no fallback
+    `esperado = dados` (instantâneo PRÉ-OPERAÇÃO) e acusava como TERCEIRO
+    exatamente o efeito que NÓS aplicamos — incidente forense falso, sem
+    concorrência nenhuma.
+
+    O gatilho é do próprio repositório, sem injeção: ele planta
+    `.git/objects/<2hex>` como ARQUIVO REGULAR no prefixo do sha determinístico
+    do blob REDIGIDO, e a promoção falha porque o Git quer um diretório ali.
+
+    As fotos passaram a enquadrar TODOS os nossos efeitos, não só o exec.
+    """
+    import hashlib
+    cen = governado
+    (cen.repo / "base.txt").write_text("legitimo\n")
+    _git("-C", str(cen.repo), "add", "base.txt")
+    (cen.repo / ".gitattributes").write_text("segredo.txt filter=redator\n")
+    (cen.repo / "segredo.txt").write_text("SENHA=hunter2\n")
+
+    red = b"SENHA=REDIGIDO\n"
+    sha = hashlib.sha1(b"blob %d\0" % len(red) + red).hexdigest()  # noqa: S324
+    pref = cen.repo / ".git" / "objects" / sha[:2]
+    if pref.exists():
+        shutil.rmtree(pref)
+    pref.write_text("bloqueio")     # o Git quer um DIRETÓRIO aqui
+
+    erro = ""
+    try:
+        cen.add("segredo.txt")
+    except Exception as e:                                   # noqa: BLE001
+        erro = str(e)
+    assert erro, "o cenário não chegou a exercitar o desfazer"
+    assert "trabalho de terceiro foi perdido" not in erro, (
+        f"INCIDENTE FORENSE FALSO no ramo todos-governados: o índice foi "
+        f"reescrito pelo NOSSO `_estagiar`, não por terceiro. {erro[:200]}")
+
+
+def test_r4_61_CONTROLE_o_canal_de_terceiro_continua_vivo(governado,
+                                                           monkeypatch):
+    """Fechar o falso positivo não pode calar o sinal REAL.
+
+    O par de `test_r4_60`: um `git add` de terceiro de verdade, na janela, ainda
+    tem de produzir incidente. Sem este controle, o conserto seria
+    indistinguível de "nunca mais acuse ninguém".
+    """
+    from nomos.adapters import git_tree
+    cen = governado
+    (cen.repo / "base.txt").write_text("legitimo\n")
+    _git("-C", str(cen.repo), "add", "base.txt")
+    (cen.repo / "zz.txt").write_text("x\n")
+    (cen.repo / "concorrente.txt").write_text("de outro\n")
+
+    real = git_tree._instantaneo_das_refs
+
+    def espiao(*a, **k):
+        est = real(*a, **k)
+        _git("-C", str(cen.repo), "add", "concorrente.txt")
+        return est
+    monkeypatch.setattr(git_tree, "_instantaneo_das_refs", espiao)
+    monkeypatch.setattr(git_tree.GitTreeAdapter, "_auditar",
+                        lambda self, *a, **k: (_ for _ in ()).throw(
+                            RuntimeError("recusa pos-exec")))
+
+    with pytest.raises(RuntimeError) as ei:
+        cen.add("zz.txt")
+    assert "trabalho de terceiro foi perdido" in str(ei.value), (
+        "o `git add` de terceiro foi sobreposto pelo desfazer SEM incidente")

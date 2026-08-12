@@ -1761,11 +1761,39 @@ class GitTreeAdapter(Adapter):
         aceita. É isso que impede o segredo de um filtro quebrado de existir
         fora da quarentena, em vez de apagá-lo depois de gravado.
         """
+        # AS FOTOS ENQUADRAM TODOS OS NOSSOS EFEITOS, não só o exec (`.11.09`).
+        #
+        # MEDIDO 8/8 com gatilho REAL do repositório: `_estagiar` (logo abaixo)
+        # já reescreve o índice, e o ramo TODOS-GOVERNADOS retorna ANTES de
+        # `janela` ser populada. Aí `idx_antes`/`idx_depois` ficam None, o
+        # desfazer cai no fallback `esperado = dados` (o instantâneo
+        # PRÉ-OPERAÇÃO) e acusa como TERCEIRO exatamente o efeito que NÓS
+        # acabamos de aplicar — incidente forense falso, sem concorrência
+        # nenhuma. É o mesmo defeito de `.11.09` no ramo que ninguém olhou.
+        #
+        # A foto de ANTES sobe para cá: o que ela ainda não vê e o desfazer
+        # encontra é nosso; o que ela JÁ vê divergindo do instantâneo é de outro
+        # processo. Vale para os DOIS ramos, com exec e sem.
+        alvo_idx = Path(autoridade.git_dir) / "index" if autoridade else None
+        if janela is not None and not janela:
+            janela["refs_antes"] = _refs_agora(autoridade)
+            if alvo_idx is not None and alvo_idx.exists():
+                with contextlib.suppress(OSError):
+                    janela["idx_antes"] = alvo_idx.read_bytes()
+
         for caminho, filter_id in governados.items():
             sha = self._aplicar_filtro_governado(repo, caminho, filter_id,
                                                  prazo, quarentena, autoridade)
             self._estagiar(repo, caminho, sha, prazo, quarentena, autoridade)
         if governados and not argv:
+            # Ramo TODOS-GOVERNADOS: não há exec, mas HOUVE efeito nosso (o
+            # `_estagiar` acima). A foto de DEPOIS tem de ser tirada aqui, senão
+            # o desfazer de uma falha na auditoria ou na promoção — que vêm
+            # logo abaixo — culpa terceiro pelo nosso próprio estagiamento.
+            if janela is not None and alvo_idx is not None and alvo_idx.exists():
+                with contextlib.suppress(OSError):
+                    janela["idx_depois"] = alvo_idx.read_bytes()
+                janela["refs_depois"] = _refs_agora(autoridade)
             # TODOS os caminhos eram governados: não sobrou `git add` para
             # rodar, e inventar um rodaria o Git sobre a working tree CRUA —
             # desfazendo, no último passo, a transformação que acabou de ser
@@ -1780,17 +1808,11 @@ class GitTreeAdapter(Adapter):
                                  raiz_do_store=autoridade.common)
             return CapabilityResult.sucesso(descricao, efeito_aplicado=True)
 
-        # As fotos que DELIMITAM o nosso efeito. A de ANTES tem de ser a última
-        # coisa antes do `executar`: tudo o que ela ainda não vê e o desfazer
-        # encontra é nosso; tudo o que ela JÁ vê divergindo do instantâneo é de
-        # outro processo (`.8.05-08`).
-        alvo_idx = Path(autoridade.git_dir) / "index" if autoridade else None
-        if janela is not None:
-            janela["refs_antes"] = _refs_agora(autoridade)
-            if alvo_idx is not None and alvo_idx.exists():
-                with contextlib.suppress(OSError):
-                    janela["idx_antes"] = alvo_idx.read_bytes()
-
+        # A foto de ANTES já foi tirada no TOPO deste método, e é lá que ela tem
+        # de ficar: se fosse retirada aqui, o `_estagiar` dos caminhos
+        # governados (que roda acima, no caminho MISTO) já teria entrado nela, e
+        # o nosso próprio efeito passaria a contar como estado pré-existente.
+        # Retirá-la de novo aqui SOBRESCREVERIA a foto correta.
         p = supervisor.executar(argv, cwd=repo, env=self.ambiente(),
                                 prazo=prazo,
                                 confinamento=confinamento_de_repo(

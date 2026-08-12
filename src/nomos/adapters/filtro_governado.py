@@ -91,7 +91,7 @@ MAX_NOS_VARREDURA = 20_000
 
 
 def _git_dirs_aninhados(raiz: str, teto: int = MAX_NOS_VARREDURA) -> list[str]:
-    """Git dirs DENTRO da raiz cujo nome não é `.git`.
+    r"""Git dirs DENTRO da raiz cujo nome não é `.git`.
 
     Existe por `--separate-git-dir`: o git dir pode se chamar qualquer coisa, e
     aí a negação por NOME (`\.git`) não o alcança. Procurar é o único jeito —
