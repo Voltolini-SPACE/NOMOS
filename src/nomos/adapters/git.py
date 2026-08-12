@@ -295,7 +295,7 @@ def ler_controle_do_repo(caminho: Path, rotulo: str,
         os.close(fd)
 
 
-def _ler_ponto_git(base: Path) -> tuple[str, str]:
+def _ler_ponto_git(base: Path, raizes: tuple[str, ...] = ()) -> tuple[str, str]:
     """A FORMA de `.git` e seu conteúdo, de UM único descritor.
 
     MEDIDO (`.7.14`), e é a razão de esta função existir: `conferir_git_dir` lia
@@ -334,14 +334,43 @@ def _ler_ponto_git(base: Path) -> tuple[str, str]:
             # pulado. Devolver "link" garante que o chamador exija titularidade,
             # e a conferência de raízes continua valendo sobre o destino.
             alvo = ponto.resolve()
-            if alvo.is_dir():
-                return "link", ""
+            # AS RAÍZES ANTES DE QUALQUER `stat` (`.9.12`, P2). MEDIDO: este
+            # ramo é o ÚNICO lugar em que um symlink é deliberadamente seguido,
+            # e o destino era interrogado ANTES de qualquer conferência de
+            # escopo. Não era só a leitura — era um ORÁCULO DE SISTEMA DE
+            # ARQUIVOS sobre caminho ARBITRÁRIO do host, todo ele legível pela
+            # EXCEÇÃO que voltava:
+            #
+            #   /etc/passwd            -> "arquivo .git ilegível"      (existe)
+            #   /etc/nao-existe        -> "não é repositório git"      (ausente)
+            #   /var/db/sudo           -> "git dir FORA das raízes"    (diretório)
+            #   arquivo de 123457 B    -> "tem 123457 bytes"           (TAMANHO)
+            #   FIFO / /dev/null       -> "modo 10644" / "modo 20666"  (st_mode)
+            #
+            # e, quando o alvo começava com `gitdir:`, o RESTO do conteúdo saía
+            # embutido na mensagem. Uma chave privada de fora das raízes entrou
+            # no processo do supervisor com `texto` completo.
+            #
+            # `_dentro` primeiro elimina os cinco de uma vez: o repositório só
+            # interroga o que ele já podia ler. O caminho aparece na mensagem
+            # porque é ENTRADA DELE, não conteúdo do host.
+            reais = tuple(supervisor.canonicalizar(r) for r in raizes)
+            if not reais or not _dentro(str(alvo), reais):
+                raise supervisor.ErroSeguranca(
+                    f"o `.git` de {str(base)!r} é symlink para {str(alvo)!r}, "
+                    f"FORA das raízes aprovadas {reais}. Seguir o link para ler "
+                    "o destino é o repositório escolhendo QUAL arquivo do host o "
+                    "supervisor abre — e a própria falha ao abrir já responde "
+                    "existência, tipo, modo e tamanho de qualquer caminho"
+                ) from None
             # MEDIDO (`.9.11`): este ramo fazia `read_text()` SEM limite, sem
             # `O_NONBLOCK` e sem `S_ISREG` — `.git` como symlink para um arquivo
             # FORA das raízes era lido POR INTEIRO para dentro do processo do
             # supervisor. Os dois ramos da mesma função tinham garantias
             # OPOSTAS: o de arquivo regular limitava a 64 KiB, o de link não
             # limitava nada. `ler_controle_do_repo` é o guard que já existe.
+            if alvo.is_dir():
+                return "link", ""
             conteudo = ler_controle_do_repo(alvo, ".git (destino do symlink)")
             if conteudo is None:
                 return "ausente", ""
@@ -362,14 +391,15 @@ def _ler_ponto_git(base: Path) -> tuple[str, str]:
         os.close(fd)
 
 
-def _resolver_git_dir(repo: Path | str) -> tuple[str, str, str]:
+def _resolver_git_dir(repo: Path | str,
+                      raizes: tuple[str, ...] = ()) -> tuple[str, str, str]:
     """`(git_dir, common, forma_do_ponto_git)` — a forma vem da MESMA leitura.
 
     Existe para que `conferir_git_dir` decida o gate de titularidade com o
     resultado que JÁ resolveu o git dir, em vez de um segundo `stat` que o
     repositório pode ter trocado no meio (`.7.14`).
     """
-    return _diretorio_git_com_forma(repo)
+    return _diretorio_git_com_forma(repo, raizes)
 
 
 def diretorio_git(repo: Path | str) -> tuple[str, str]:
@@ -388,9 +418,10 @@ def diretorio_git(repo: Path | str) -> tuple[str, str]:
     return _diretorio_git_com_forma(repo)[:2]
 
 
-def _diretorio_git_com_forma(repo: Path | str) -> tuple[str, str, str]:
+def _diretorio_git_com_forma(repo: Path | str,
+                             raizes: tuple[str, ...] = ()) -> tuple[str, str, str]:
     base = Path(supervisor.existente(repo))
-    forma, texto = _ler_ponto_git(base)
+    forma, texto = _ler_ponto_git(base, raizes)
     if forma in ("dir", "link"):
         # `link` = `.git` é symlink para um DIRETÓRIO git. Resolve normalmente;
         # o que muda é que o chamador NÃO o trata como `dir` para efeito de
@@ -487,7 +518,7 @@ def conferir_git_dir(repo: Path | str, raizes: tuple[str, ...]) -> tuple[str, st
     cada chamada relia `.git` do disco, um escritor concorrente podia trocar o
     destino entre a validação e o uso.
     """
-    git_dir, common, forma = _diretorio_git_com_forma(repo)
+    git_dir, common, forma = _diretorio_git_com_forma(repo, raizes)
     if not raizes:
         # Sem raízes, esta função não tem contra o que conferir — e a versão
         # anterior RETORNAVA sem conferir, "corrija o chamador". MEDIDO (`.7.03`):
@@ -552,7 +583,23 @@ def conferir_git_dir(repo: Path | str, raizes: tuple[str, ...]) -> tuple[str, st
     if common != git_dir:
         gd = Path(supervisor.canonicalizar(git_dir))
         cm = Path(supervisor.canonicalizar(common))
-        if gd.parent.name != "worktrees" or gd.parent.parent != cm:
+        # `.git` DIRETÓRIO fecha a questão ANTES da forma do caminho (`.1.07`).
+        # MEDIDO: um repositório COMUM cujo diretório se chama literalmente
+        # `worktrees`, criado dentro do `.git` da vítima, satisfaz
+        # `gd.parent.name == "worktrees" and gd.parent.parent == cm` — a forma
+        # casa sem que exista worktree ligada nenhuma. Com `commondir`
+        # declarado, `git-add` devolveu ok=True e
+        # `AWS_SECRET_ACCESS_KEY=VAZOU_1_07` foi parar no OBJECT STORE DA
+        # VÍTIMA, e o `git-commit` seguinte AVANÇOU A REF dela.
+        #
+        # O Git honra o `commondir` aqui, e isso não muda a decisão: a questão
+        # não é o que o Git faz, é o repositório redirecionar a autoridade de
+        # ESCRITA concedida para o git dir do vizinho. E há um invariante que
+        # não depende de reconhecer nome de diretório: `git worktree add` e
+        # submódulo SEMPRE deixam `.git` como ARQUIVO na working tree ligada.
+        # Logo `.git` como DIRETÓRIO nunca é worktree ligada nem submódulo, e
+        # `commondir` não tem para onde redirecionar.
+        if forma == "dir" or gd.parent.name != "worktrees" or gd.parent.parent != cm:
             raise supervisor.ErroSeguranca(
                 f"o `commondir` de {str(base)!r} aponta para {str(cm)!r}, que "
                 f"não é o repositório do git dir {str(gd)!r}. A única relação "

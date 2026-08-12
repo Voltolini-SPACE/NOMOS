@@ -35,12 +35,30 @@ def espiao_nativo():
 
     ## Por que binário e não script
 
-    Um espião `#!/bin/sh` NÃO executa sob a allowlist de exec desta série: o
-    kernel precisa do interpretador, e `/bin/sh` ainda reexecuta `/bin/bash`
-    como variante. Um teste com espião em shell mede a ausência do
-    INTERPRETADOR na allowlist — não a contenção do programa do repositório — e
-    continuaria verde mesmo com a neutralização removida. Binário nativo tira o
-    interpretador da equação: se não rodou, foi porque a execução foi negada.
+    ATENÇÃO — a justificativa anterior deste bloco era FALSA, e ficou aqui por
+    tempo suficiente para virar premissa de quem lesse depois (`.3.05`). Ela
+    dizia que um espião `#!/bin/sh` "continuaria verde mesmo com a neutralização
+    removida", isto é, que seria VÁCUO. RE-MEDIDO, no único regime em que
+    "neutralização removida" tem efeito observável (exec AMPLO, onde a
+    neutralização é a única defesa):
+
+        neutralização PRESENTE (hooksPath + --no-verify)   canário = não
+        neutralização REMOVIDA                             canário = SIM
+
+    O espião shell DISCRIMINA — ele fica vermelho ao remover a defesa. E a
+    allowlist LITERAL do push, medida, já contém `/bin/sh` E `/bin/bash`, então
+    a razão dada ("o kernel precisa do interpretador") também não era o que o
+    continha ali: o que contém é o caminho do HOOK não estar na allowlist.
+
+    A escolha do espião nativo continua CERTA, por um motivo mais fraco e
+    honesto: o espião em shell depende de duas defesas ao mesmo tempo (a
+    allowlist do interpretador e a neutralização), então um verde dele não diz
+    QUAL das duas segurou. O nativo tira o interpretador da equação e deixa uma
+    causa só — se não rodou, foi a execução que foi negada.
+
+    O padrão de anotar a afirmação como histórica em vez de apagá-la é o mesmo
+    de `test_absorption07_hooks_contencao.py`: quem já leu a versão errada
+    precisa encontrar a correção, não o silêncio.
 
     ## Por que o canário precisa morar na área gravável
 

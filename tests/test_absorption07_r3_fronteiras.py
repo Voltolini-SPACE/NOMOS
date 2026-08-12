@@ -1,6 +1,6 @@
-"""As fronteiras que a 3ª medição global abriu — 4 P0 e 3 P1, uma por teste.
+"""As fronteiras que a 3ª medição global abriu — 4 P0, 3 P1 e 4 P2.
 
-Sete achados independentes com UMA forma em comum: a defesa existia e estava
+Onze achados independentes com UMA forma em comum: a defesa existia e estava
 CERTA, e o repositório chegou nela por um caminho que ela não olhava.
 
     .2.NOVO-BANG-FILTER   trocar `-filter` por `!filter` muda a RESPOSTA do
@@ -19,8 +19,16 @@ CERTA, e o repositório chegou nela por um caminho que ela não olhava.
     .8.05-08              e o discriminador do índice só via a janela
                           exec→desfazer: terceiro que entra ANTES do exec era
                           destruído em silêncio
+    .6.N1                 o mesmo falso incidente, pelo canal das refs, num
+                          cenário que o repositório monta sozinho
+    .9.12                 `.git` como symlink era um ORÁCULO do host: a
+                          EXCEÇÃO respondia existência, tipo, modo e tamanho
+    .7.19                 o repo RENOMEIA o git dir e a limpeza da quarentena
+                          vira no-op silencioso — o blob cru sobrevive
+    .1.07                 um diretório CHAMADO `worktrees` satisfazia a forma
+                          de worktree ligada, e o efeito caía no vizinho
 
-Os dois últimos são o mesmo par de erros opostos no mesmo mecanismo — falso
+`.11.09`+`.8.05-08` são o mesmo par de erros opostos no mesmo mecanismo — falso
 positivo e falso negativo — e por isso vivem juntos aqui: consertar um sem medir
 o outro foi exatamente o que aconteceu na rodada anterior.
 """
@@ -475,3 +483,301 @@ def test_r3_13_o_incidente_diz_QUAL_estado_foi_sobreposto(campo, monkeypatch):
         campo.add(repo, "zz.txt")
     assert "índice" in str(ei.value), (
         "o incidente não nomeia o estado sobreposto")
+
+
+# ═══════ .6.N1 (P2) — o cenário EXATO do vetor, que era 2/2 antes ════════════
+
+def test_r3_14_ref_NOVA_criada_pelo_nosso_commit_nao_acusa_terceiro(campo):
+    """O vetor de `.6.N1`, sem gancho nenhum: dois arquivos que o REPO escreve.
+
+    `.git/HEAD` num branch não-nascido + `objects/info/alternates` apontando
+    para um store que não existe (mas DENTRO das raízes, então passa a guarda).
+    O `git commit` sai rc=0 com erro no stderr, `conferir_saida` recusa DEPOIS
+    de o commit ter criado `refs/heads/nova` e os logs, e o desfazer acusava
+    perda de trabalho alheio — com o repositório sozinho na máquina.
+
+    O contraste do vetor era o HEAD: com ref preexistente, sem acusação; com ref
+    NOVA, acusação. Os dois estão aqui, porque foi o par que provou a causa.
+    """
+    repo = _init(campo.raiz / "repo")
+    (repo / "a.txt").write_text("a\n")
+    _git("-C", str(repo), "add", "a.txt")
+    _git("-C", str(repo), "commit", "-qm", "x")
+    (repo / "b.txt").write_text("b\n")
+    _git("-C", str(repo), "add", "b.txt")
+    (repo / ".git" / "HEAD").write_text("ref: refs/heads/nova\n")
+    info = repo / ".git" / "objects" / "info"
+    info.mkdir(parents=True, exist_ok=True)
+    (info / "alternates").write_text(
+        str(campo.raiz / "store-que-nao-existe" / "objects") + "\n")
+
+    with pytest.raises(Exception) as ei:
+        campo.commit(repo)
+    assert "degradação silenciosa" in str(ei.value), (
+        "o cenário não chegou à recusa que ele existe para exercitar")
+    assert "trabalho de terceiro foi perdido" not in str(ei.value), (
+        "INCIDENTE FORENSE FALSO: a ref e o reflog eram do NOSSO commit")
+
+
+# ═══════ .9.12 (P2) — `.git` como symlink era um ORÁCULO do host ════════════
+
+@pytest.mark.parametrize("como", ["regular", "grande", "fifo", "diretorio",
+                                   "ausente", "isca-com-gitdir"])
+def test_r3_15_symlink_de_git_para_FORA_nao_responde_nada_sobre_o_alvo(
+        tmp_path, como):
+    """Uma resposta só para as seis sondas — senão a exceção É o oráculo.
+
+    `_ler_ponto_git` é o ÚNICO lugar em que um symlink é deliberadamente
+    seguido, e o destino era interrogado ANTES de qualquer conferência de
+    escopo. MEDIDO, cada linha uma resposta DIFERENTE sobre caminho arbitrário
+    do host: "arquivo .git ilegível" (existe), "não é repositório git"
+    (ausente), "FORA das raízes" (diretório), "tem 123457 bytes" (TAMANHO
+    exato), "modo 10644"/"modo 20666" (st_mode). E com o alvo começando por
+    `gitdir:`, o resto do conteúdo saía DENTRO da mensagem — uma chave privada
+    de fora das raízes entrou no processo do supervisor.
+
+    O critério não é "recusou": é a exceção ser INDISTINGUÍVEL entre os seis.
+    """
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    fora = tmp_path / "fora"
+    fora.mkdir()
+    real = _init(raiz / "real")
+
+    alvos = {
+        "regular": lambda: (fora / "chave").write_text(
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nSEGREDO_DO_HOST\n"),
+        "grande": lambda: (fora / "chave").write_bytes(b"x" * 123457),
+        "fifo": lambda: os.mkfifo(fora / "chave"),
+        "diretorio": lambda: (fora / "chave").mkdir(),
+        "ausente": lambda: None,
+        "isca-com-gitdir": lambda: (fora / "chave").write_text(
+            f"gitdir: {real / '.git'} SENHA_DO_HOST=P4SS\n"),
+    }
+    alvos[como]()
+
+    trab = raiz / "trab"
+    trab.mkdir()
+    (trab / ".git").symlink_to(fora / "chave")
+
+    with pytest.raises(supervisor.ErroSeguranca) as ei:
+        git.conferir_git_dir(str(trab), (str(raiz),))
+    msg = str(ei.value)
+    assert "é symlink para" in msg and "FORA das raízes" in msg, (
+        f"a recusa mudou de forma e volta a distinguir os alvos: {msg[:200]}")
+    for vazamento in ("SEGREDO_DO_HOST", "123457", "modo 1", "modo 2",
+                      "P4SS", "não é repositório"):
+        assert vazamento not in msg, (
+            f"a mensagem responde {vazamento!r} sobre um caminho de FORA das "
+            "raízes — a exceção é o oráculo")
+
+
+def test_r3_16_CONTROLE_symlink_de_git_DENTRO_das_raizes_nao_e_barrado_por_aqui(
+        tmp_path):
+    """A guarda nova é de ESCOPO, não da forma-link.
+
+    Sem este controle ela passaria igual num sistema que recusa todo symlink —
+    e a recusa que sobra (titularidade não provável) é outra decisão, tomada em
+    outro lugar por outro motivo.
+    """
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    real = _init(raiz / "real")
+    isca = raiz / "ponteiro"
+    isca.write_text(f"gitdir: {real / '.git'}\n")
+    trab = raiz / "trab"
+    trab.mkdir()
+    (trab / ".git").symlink_to(isca)
+
+    with pytest.raises(supervisor.ErroSeguranca) as ei:
+        git.conferir_git_dir(str(trab), (str(raiz),))
+    assert "é symlink para" not in str(ei.value), (
+        "o alvo está DENTRO das raízes; barrar aqui é recusar por forma, não "
+        "por escopo")
+
+
+# ═══ .7.19 (P2) — a limpeza por CAMINHO some quando o repo renomeia o git dir ═
+
+def _add_com_recusa_apos_o_exec(campo, repo, monkeypatch):
+    _recusa_apos_o_exec(monkeypatch)
+    with pytest.raises(RuntimeError) as ei:
+        campo.add(repo, "s.txt")
+    return str(ei.value)
+
+
+def test_r3_17_renomear_o_git_dir_nao_faz_a_quarentena_sobreviver(campo,
+                                                                  monkeypatch):
+    """MEDIDO 6/6 antes: o blob CRU do arquivo recusado ficava legível.
+
+    `shutil.rmtree(<git_dir>/nomos-quarentena-*)` resolve o CAMINHO na hora de
+    apagar. O repositório renomeia `.git` na janela e o caminho deixa de
+    existir; `ignore_errors=True` engole a falha e a limpeza vira no-op
+    SILENCIOSO. A operação sai RECUSADA, o índice volta certo, `git fsck` fica
+    limpo — e `zlib.decompress` do objeto residual devolve o segredo.
+
+    É o mesmo resolve→valida→descarta→resolve-de-novo que `AutoridadeDeRepo`
+    fechou para a autoridade, sobrevivendo no DESFAZER. O descritor segue o
+    INODE, então renomear deixa de ter efeito.
+    """
+    import zlib
+    repo = _init(campo.raiz / "repo")
+    (repo / "s.txt").write_bytes(b"AWS_SECRET_ACCESS_KEY=P19ESEGREDO\n")
+    gd, movido = repo / ".git", repo / ".git-movido"
+
+    def explode(self, *a, **k):
+        gd.rename(movido)          # o REPOSITÓRIO renomeia o próprio git dir
+        raise RuntimeError("recusa pos-exec")
+    monkeypatch.setattr(git_tree.GitTreeAdapter, "_auditar", explode)
+
+    with pytest.raises(RuntimeError):
+        campo.add(repo, "s.txt")
+
+    assert movido.is_dir(), "o cenário não chegou a renomear o git dir"
+    residuais = [q for d in (movido, gd) if d.is_dir()
+                 for q in d.glob("nomos-quarentena-*")]
+    legiveis = [o for q in residuais for o in q.rglob("*") if o.is_file()
+                and _tem_segredo(o, zlib)]
+    assert not residuais, (
+        f"a quarentena sobreviveu à operação: {residuais}")
+    assert not legiveis, (
+        f"o conteúdo CRU do arquivo recusado ficou legível em {legiveis}")
+
+
+def _tem_segredo(objeto, zlib) -> bool:
+    try:
+        return b"P19ESEGREDO" in zlib.decompress(objeto.read_bytes())
+    except Exception:                                        # noqa: BLE001
+        return False
+
+
+def test_r3_18_quarentena_que_NAO_pode_ser_apagada_vira_incidente(campo,
+                                                                  monkeypatch):
+    """Apagar pode falhar; falhar em SILÊNCIO não pode.
+
+    Sem este teste, o conserto acima passaria numa implementação que só trocou
+    um `rmtree` silencioso por outro. O canal é a propriedade — o descritor é
+    só o mecanismo.
+    """
+    import shutil as _sh
+    repo = _init(campo.raiz / "repo")
+    (repo / "s.txt").write_bytes(b"AWS_SECRET_ACCESS_KEY=P19ESEGREDO\n")
+
+    real = _sh.rmtree
+
+    def rmtree_quebra_so_a_limpeza(*a, **k):
+        # Só a limpeza FINAL usa `dir_fd`. Sabotar o `rmtree` inteiro quebraria
+        # a promoção também, e o erro original deixaria de ser o injetado —
+        # o teste passaria medindo outra coisa.
+        if "dir_fd" in k:
+            raise OSError(1, "Operation not permitted")
+        return real(*a, **k)
+    monkeypatch.setattr(_sh, "rmtree", rmtree_quebra_so_a_limpeza)
+    monkeypatch.setattr(git_tree.GitTreeAdapter, "_auditar",
+                        lambda self, *a, **k: (_ for _ in ()).throw(
+                            RuntimeError("recusa pos-exec")))
+
+    with pytest.raises(RuntimeError) as ei:
+        campo.add(repo, "s.txt")
+    assert "QUARENTENA não pôde ser apagada" in str(ei.value), (
+        "a limpeza falhou e a recusa saiu limpa — o store com o conteúdo "
+        f"recusado fica em disco sem ninguém saber: {str(ei.value)[:200]}")
+
+
+def test_r3_19_no_SUCESSO_a_quarentena_residual_tambem_e_recusa(campo,
+                                                                monkeypatch):
+    """O outro lado da mesma propriedade, que o vetor mediu como `ok=True`.
+
+    Numa variante da janela a capacidade devolveu `ok=True` sem ter promovido
+    nada, deixando o índice apontando para blob AUSENTE. Sucesso com store
+    paralelo sobrevivendo é a mesma omissão, do lado que ninguém olha.
+    """
+    import shutil as _sh
+    repo = _init(campo.raiz / "repo")
+    (repo / "ok.txt").write_text("conteudo\n")
+
+    real = _sh.rmtree
+    chamadas = {"n": 0}
+
+    def rmtree_quebra_no_fim(*a, **k):
+        # A promoção usa `rmtree` também; só a limpeza FINAL é sabotada.
+        chamadas["n"] += 1
+        if "dir_fd" in k:
+            raise OSError(1, "Operation not permitted")
+        return real(*a, **k)
+    monkeypatch.setattr(_sh, "rmtree", rmtree_quebra_no_fim)
+
+    with pytest.raises(supervisor.ErroSeguranca, match="QUARENTENA"):
+        campo.add(repo, "ok.txt")
+
+
+# ═══ .1.07 (P2) — um diretório CHAMADO `worktrees` não é uma worktree ligada ══
+
+def test_r3_20_repo_comum_dentro_do_git_dir_alheio_nao_redireciona_o_efeito(
+        campo):
+    """MEDIDO: `AWS_SECRET_ACCESS_KEY=VAZOU_1_07` no store da VÍTIMA, ok=True.
+
+    A guarda exigia a FORMA `<common>/worktrees/<nome>` para aceitar que
+    `commondir` aponte para outro lugar. Um repositório COMUM criado em
+    `<vitima>/.git/worktrees` satisfaz a forma — `gd.parent.name` é literalmente
+    `worktrees` e `gd.parent.parent` é o git dir da vítima — sem que exista
+    worktree ligada nenhuma. Reconhecer NOME de diretório é reconhecer algo que
+    o atacante escolhe.
+
+    O Git honra o `commondir` aqui, e isso não muda a decisão: a questão é o
+    repositório redirecionar a autoridade de ESCRITA para o vizinho. O
+    invariante que fecha sem depender de nome: `git worktree add` e submódulo
+    SEMPRE deixam `.git` como ARQUIVO, então `.git` DIRETÓRIO nunca é worktree
+    ligada.
+    """
+    vitima = _init(campo.raiz / "vitima")
+    (vitima / "a").write_text("a\n")
+    _git("-C", str(vitima), "add", "a")
+    _git("-C", str(vitima), "commit", "-qm", "x")
+    head0 = _git("-C", str(vitima), "rev-parse", "HEAD").stdout.strip()
+
+    hostil = _init(vitima / ".git" / "worktrees")
+    (hostil / ".git" / "commondir").write_text(str(vitima / ".git") + "\n")
+    (hostil / "SEGREDO.txt").write_text("AWS_SECRET_ACCESS_KEY=VAZOU_1_07\n")
+
+    objs = vitima / ".git" / "objects"
+    antes = {p.name for p in objs.rglob("*") if p.is_file()}
+
+    with pytest.raises(supervisor.ErroSeguranca, match="commondir"):
+        campo.add(hostil, "SEGREDO.txt")
+
+    novos = {p.name for p in objs.rglob("*") if p.is_file()} - antes
+    assert not novos, f"objetos entraram no store da VÍTIMA: {sorted(novos)}"
+    assert _git("-C", str(vitima), "rev-parse", "HEAD").stdout.strip() == head0
+
+
+@pytest.mark.parametrize("layout", ["worktree-ligada", "principal", "submodulo"])
+def test_r3_21_CONTROLE_os_tres_layouts_LEGITIMOS_continuam_aceitos(campo,
+                                                                     layout):
+    """Sem este controle, o de cima passaria num sistema que recusa `commondir`.
+
+    Os três são os únicos que o Git PRODUZ, e os três têm de continuar
+    funcionando — inclusive a worktree ligada, que é o caso em que `common` e
+    `git_dir` legitimamente diferem (e é o layout do próprio repositório desta
+    missão).
+    """
+    p = _init(campo.raiz / "principal")
+    (p / "a").write_text("a\n")
+    _git("-C", str(p), "add", "a")
+    _git("-C", str(p), "commit", "-qm", "x")
+
+    if layout == "principal":
+        alvo = p
+    elif layout == "worktree-ligada":
+        alvo = campo.raiz / "ligada"
+        r = _git("-C", str(p), "worktree", "add", "-q", str(alvo))
+        assert r.returncode == 0, r.stderr
+    else:
+        sup = _init(campo.raiz / "super")
+        r = _git("-C", str(sup), "-c", "protocol.file.allow=always",
+                 "submodule", "add", "-q", str(p), "vendor")
+        if r.returncode != 0:
+            pytest.skip(f"submódulo por file:// bloqueado neste host: "
+                        f"{r.stderr[:120]}")
+        alvo = sup / "vendor"
+
+    git.conferir_git_dir(str(alvo), (str(campo.raiz),))

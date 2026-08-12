@@ -690,22 +690,73 @@ def _restaurar_refs(estado: dict[str, bytes | None],
 
 
 def _abrir_quarentena(repo: Path, autoridade=None,
-                      ) -> tuple[supervisor.Quarentena, Path]:
+                      ) -> tuple[supervisor.Quarentena, Path, int]:
     """Object store descartável desta operação, dentro do próprio git dir.
 
     Fica no git dir porque essa área JÁ é a autoridade de escrita concedida
     (`confinamento_de_repo`), então a quarentena não amplia nada. Um diretório
     em `/tmp` exigiria abrir mais uma raiz de escrita no sandbox — autoridade
     nova para resolver um problema de contenção seria o caminho errado.
+
+    ## O DESCRITOR do git dir sobe junto, e por medição (`.7.19`, P2)
+
+    A limpeza fazia `shutil.rmtree(<git_dir>/nomos-quarentena-*)` — resolvendo o
+    CAMINHO de novo, na hora de apagar. O repositório observa o próprio git dir
+    e o RENOMEIA assim que a quarentena ganha um arquivo: o caminho deixa de
+    existir, `ignore_errors=True` engole a falha, e a limpeza vira no-op
+    SILENCIOSO. MEDIDO 8/8 e depois 5/5: operação RECUSADA, índice corretamente
+    revertido, `git fsck` limpo — e o blob CRU do arquivo recusado legível em
+    `<git dir>/nomos-quarentena-*/`, com
+    `zlib.decompress` devolvendo `AWS_SECRET_ACCESS_KEY=...`.
+
+    É o mesmo resolve→valida→descarta→resolve-de-novo que `AutoridadeDeRepo`
+    fechou para a autoridade, sobrevivendo no DESFAZER. O descritor segue o
+    INODE: renomear o git dir deixa de ter efeito sobre a limpeza.
     """
     if autoridade is not None:
         git_dir, comum = autoridade.git_dir, autoridade.common
     else:
         git_dir, comum = diretorio_git(repo)
     reais = Path(comum) / "objects"
-    raiz = Path(tempfile.mkdtemp(prefix="nomos-quarentena-", dir=git_dir))
-    return supervisor.Quarentena(diretorio=str(raiz),
-                                 alternativos=str(reais)), reais
+    # `O_NOFOLLOW` no git dir: ele já foi validado pela autoridade, e abrir por
+    # caminho seguindo link seria reabrir a mesma indireção que ela consumiu.
+    fd = os.open(git_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        raiz = Path(tempfile.mkdtemp(prefix="nomos-quarentena-", dir=git_dir))
+    except BaseException:
+        os.close(fd)
+        raise
+    return (supervisor.Quarentena(diretorio=str(raiz), alternativos=str(reais)),
+            reais, fd)
+
+
+def _fechar_quarentena(raiz_q: Path, fd_git_dir: int) -> str:
+    """Apaga a quarentena PELO DESCRITOR e PROVA que ela sumiu.
+
+    Devolve "" quando não restou nada, ou a descrição do resíduo. Silêncio aqui
+    era o defeito: `ignore_errors=True` transformava "não consegui apagar o
+    store com o segredo" em sucesso aparente.
+    """
+    nome = raiz_q.name
+    try:
+        try:
+            shutil.rmtree(nome, dir_fd=fd_git_dir)
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            return f"{type(e).__name__}: {e}"
+        # A PROVA, pelo MESMO descritor: perguntar pelo caminho responderia
+        # sobre outro diretório se o git dir tiver sido renomeado no meio.
+        # `rmtree` levanta ao falhar, mas "levantou" e "sumiu" são afirmações
+        # diferentes, e é a segunda que importa para o segredo em disco.
+        try:
+            os.stat(nome, dir_fd=fd_git_dir, follow_symlinks=False)
+        except FileNotFoundError:
+            return ""
+        return f"a quarentena {nome} continua no git dir depois da limpeza"
+    finally:
+        with contextlib.suppress(OSError):
+            os.close(fd_git_dir)
 
 
 # Nomes que a quarentena do Git legitimamente produz. MEDIDO num `add` + `commit`
@@ -954,7 +1005,7 @@ class GitTreeAdapter(Adapter):
                                                              autoridade)
         refs = _instantaneo_das_refs(autoridade)
         split = _instantaneo_do_split(autoridade)
-        quarentena, reais = _abrir_quarentena(repo, autoridade)
+        quarentena, reais, fd_gd = _abrir_quarentena(repo, autoridade)
         raiz_q = Path(quarentena.diretorio)
         try:
             janela: dict = {}
@@ -977,6 +1028,11 @@ class GitTreeAdapter(Adapter):
             # processo lendo/limpando a lista uma da outra.
             falhas: list[str] = []
             terceiro: list[str] = []
+            # A quarentena some ANTES da montagem do aviso, para que um resíduo
+            # entre no MESMO incidente. Deixá-la no `finally` fazia a limpeza
+            # acontecer depois do `raise`, sem canal nenhum para relatar que o
+            # store com o segredo continuava em disco (`.7.19`).
+            residuo = _fechar_quarentena(raiz_q, fd_gd)
             depois = janela.get("idx_depois")
             antes = janela.get("idx_antes")
             for etapa, fn in (("índice",
@@ -995,8 +1051,16 @@ class GitTreeAdapter(Adapter):
                         terceiro.append(etapa)
                 except Exception as e:               # noqa: BLE001
                     falhas.append(f"{etapa}: {type(e).__name__}: {e}")
-            if falhas or terceiro:
+            if falhas or terceiro or residuo:
                 aviso = []
+                if residuo:
+                    # O resíduo é a quarentena INTEIRA, com o blob cru do
+                    # arquivo recusado. Sem este canal, a recusa saía limpa e o
+                    # segredo ficava legível por `git cat-file` no git dir.
+                    aviso.append(
+                        f"a QUARENTENA não pôde ser apagada ({residuo}) — o "
+                        "conteúdo recusado pode ter ficado legível em "
+                        f"{raiz_q}")
                 if falhas:
                     aviso.append("o DESFAZER falhou em " + "; ".join(falhas)
                                  + " — o repositório pode ter ficado com o "
@@ -1036,13 +1100,22 @@ class GitTreeAdapter(Adapter):
                     raise
                 raise novo from original
             raise
-        finally:
-            # A quarentena some nos DOIS caminhos. No sucesso ela já foi
-            # esvaziada pela promoção (dentro de `_confirmar`, depois de TODAS
-            # as verificações); na falha ela some cheia, levando junto o objeto
-            # que o filtro gravou. Nunca `git gc`: isto apaga um diretório que
-            # só esta execução escreveu, e nada mais.
-            shutil.rmtree(raiz_q, ignore_errors=True)
+        # A quarentena some nos DOIS caminhos. No sucesso ela já foi esvaziada
+        # pela promoção (dentro de `_confirmar`, depois de TODAS as
+        # verificações); na falha ela some cheia, levando junto o objeto que o
+        # filtro gravou. Nunca `git gc`: isto apaga um diretório que só esta
+        # execução escreveu, e nada mais.
+        residuo = _fechar_quarentena(raiz_q, fd_gd)
+        if residuo:
+            # No SUCESSO o resíduo é vazio por construção (a promoção esvaziou),
+            # então chegar aqui com sobra significa que alguém mexeu no git dir
+            # durante a operação. Devolver `sucesso` com store paralelo em disco
+            # seria a mesma omissão que `.7.19` mede, do outro lado.
+            raise ErroSeguranca(
+                f"a operação concluiu mas a QUARENTENA não pôde ser apagada "
+                f"({residuo}): {raiz_q} continua no git dir. Um store paralelo "
+                "sobrevivendo à operação é exatamente o que a quarentena existe "
+                "para impedir")
         return r
 
     # ------------------------------------------------- A5.7 filtro governado
