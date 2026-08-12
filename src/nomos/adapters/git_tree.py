@@ -1125,6 +1125,13 @@ class GitTreeAdapter(Adapter):
                         terceiro.append(etapa)
                 except Exception as e:               # noqa: BLE001
                     falhas.append(f"{etapa}: {type(e).__name__}: {e}")
+            # JANELA B: o que a comparação de BYTES não vê, o PATH-space viu.
+            # `_conferir_escopo_estagiado` já identificou os caminhos que
+            # entraram no índice e não são nossos; se houver, o desfazer os
+            # sobrepôs — e sobrepor calado é o defeito (`.8.05-08`).
+            de_terceiro = janela.get("caminhos_de_terceiro") or []
+            if de_terceiro and "índice" not in terceiro:
+                terceiro.append("índice")
             if falhas or terceiro or residuo:
                 aviso = []
                 if residuo:
@@ -1144,11 +1151,13 @@ class GitTreeAdapter(Adapter):
                     # recuperar o trabalho perdido precisa saber onde procurar,
                     # e um aviso que diz "índice" quando o que sumiu foi uma
                     # REF manda a pessoa para o lugar errado.
+                    quais = (f" (caminhos: {', '.join(de_terceiro[:5])})"
+                             if de_terceiro else "")
                     aviso.append(
                         f"{' e '.join(terceiro)} — escrito por OUTRO processo "
                         "entre o instantâneo e o desfazer, e o rollback "
                         "sobrepôs esse trabalho: trabalho de terceiro foi "
-                        "perdido")
+                        f"perdido{quais}")
                 # O TIPO do erro original é preservado, e isso é o ponto.
                 # A primeira versão desta correção levantava `ErroSeguranca`
                 # sempre — o que consertava o mascaramento medido em `.8.03` e
@@ -1215,7 +1224,8 @@ class GitTreeAdapter(Adapter):
         return {c for c in p.stdout.decode("utf-8", "replace").split("\0") if c}
 
     def _conferir_escopo_estagiado(self, repo: Path, antes: set, aprovados,
-                                   prazo: float, autoridade) -> None:
+                                   prazo: float, autoridade,
+                                   janela: dict | None = None) -> None:
         """Pós-condição: o índice só pode ter ganhado o que foi APROVADO.
 
         MEDIDO (`.4.05b`), e é a razão de a checagem ser POSTERIOR: um
@@ -1253,6 +1263,25 @@ class GitTreeAdapter(Adapter):
         # `_restaurar_indice`, que reporta o incidente em vez de silenciá-lo.
         prefixos = tuple(f"{a}/" for a in aprovados)
         novos = {c for c in candidatos if c.startswith(prefixos)}
+        # A JANELA B em PATH-SPACE (`.8.05-08`, `.8.NEW-REFS-TERCEIRO`, P1).
+        #
+        # O canal de incidente de `_restaurar_indice` compara BYTES do índice, e
+        # é por isso que ele enxerga as janelas A (instantâneo→foto de antes) e
+        # C (foto de depois→desfazer) mas NÃO a B — a escrita de terceiro que
+        # acontece DURANTE o nosso exec cai entre as duas fotos, junto com o
+        # nosso próprio efeito, e as duas comparações dão "igual". MEDIDO 10/10
+        # determinístico: o `git add` do terceiro saía rc=0, era aceito, e o
+        # rollback o apagava sem emitir nada.
+        #
+        # Em BYTE-space não há como separar os dois. Em PATH-space há, e o dado
+        # já está aqui: `candidatos` são os caminhos que apareceram no índice e
+        # não são nossos (nem aprovados, nem descendentes deles). Reaproveitar
+        # este conjunto não custa subprocesso novo — que importaria, porque cada
+        # subprocesso a mais é mais uma superfície para morte por sinal sob
+        # carga.
+        terceiros = candidatos - novos
+        if terceiros and janela is not None:
+            janela["caminhos_de_terceiro"] = sorted(terceiros)
         if novos:
             raise ErroSeguranca(
                 f"a operação estagiou caminho que NÃO foi aprovado: "
@@ -1847,7 +1876,7 @@ class GitTreeAdapter(Adapter):
         supervisor.conferir_saida(p.stderr, pedido.capacidade)
         if pedido.capacidade == "git-add":
             self._conferir_escopo_estagiado(repo, estagiados_antes, aprovados,
-                                            prazo, autoridade)
+                                            prazo, autoridade, janela)
         self._auditar(ctx, f"git.{pedido.capacidade[4:]}",
                       alvo=supervisor.canonicalizar(repo), detalhe=descricao,
                       **_campos_de_autoridade(autoridade),

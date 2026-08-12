@@ -39,6 +39,7 @@ from pathlib import Path
 import pytest
 
 from nomos.adapters import git, supervisor
+from nomos.adapters import git_tree as git_tree_mod
 
 GIT = "/usr/bin/git"
 
@@ -825,3 +826,101 @@ def test_r4_61_CONTROLE_o_canal_de_terceiro_continua_vivo(governado,
         cen.add("zz.txt")
     assert "trabalho de terceiro foi perdido" in str(ei.value), (
         "o `git add` de terceiro foi sobreposto pelo desfazer SEM incidente")
+
+
+@pytest.fixture
+def campo_add(tmp_path):
+    """Repo com trabalho estagiado, um alvo e um arquivo de terceiro pronto."""
+    from nomos.adapters import git_tree as _gt
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    repo = _init(raiz / "repo")
+    (repo / "a.txt").write_text("a\n")
+    _git("-C", str(repo), "add", "a.txt")
+    (repo / "zz.txt").write_text("x\n")
+    (repo / "concorrente.txt").write_text("trabalho de outro\n")
+
+    class Cen:
+        def __init__(self):
+            self.raiz, self.repo, self.tmp = raiz, repo, tmp_path
+
+        def add(self, *caminhos):
+            from nomos.adapters import filtro_governado as fg
+            from nomos.adapters.contrato import (CapabilityContext,
+                                                 CapabilityRequest)
+            from nomos.adapters.wiring import registrar_git_tree
+            from nomos.kernel.policy import PolicyEngine
+            from nomos.orquestracao.registro import RegistroCapacidades
+            rc = RegistroCapacidades(policy=PolicyEngine(tmp_path / "pa.json"),
+                                     approver=lambda *a, **k: True)
+            registrar_git_tree(rc, raizes=(str(raiz),))
+            ctx = CapabilityContext.de_registro(rc, "git-add",
+                                                "runtime-governado",
+                                                raizes=(str(raiz),))
+            return _gt.GitTreeAdapter(registro=fg.RegistroDeFiltros()).executar(
+                CapabilityRequest(capacidade="git-add", alvo=str(repo),
+                                  argumentos={"caminhos": list(caminhos)}), ctx)
+
+    return Cen()
+
+# ═══ `.8.05-08` / `.8.NEW-REFS-TERCEIRO` (P1) — a JANELA B, em path-space ════
+
+def test_r4_70_terceiro_DURANTE_o_exec_emite_incidente(campo_add, monkeypatch):
+    """MEDIDO 10/10 determinístico: sobreposto em SILÊNCIO antes do conserto.
+
+    O canal de incidente compara BYTES do índice, e por isso enxerga as janelas
+    A (instantâneo→foto de antes) e C (foto de depois→desfazer), mas não a B: a
+    escrita de terceiro que acontece DURANTE o nosso exec cai ENTRE as duas
+    fotos, junto com o nosso próprio efeito, e as duas comparações dão "igual".
+
+    Em byte-space não há como separar os dois. Em path-space há, e o dado já
+    existia: `_conferir_escopo_estagiado` calcula os caminhos que apareceram no
+    índice e não são nossos. Reaproveitá-lo não custa subprocesso novo — o que
+    importa, porque cada subprocesso a mais é superfície para morte por sinal.
+
+    O trabalho de terceiro AINDA é sobreposto (a operação foi recusada e o
+    índice tem de voltar); o que muda é que deixa de ser silencioso.
+    """
+    cen = campo_add
+    real_exec = git_tree_mod.supervisor.executar
+    feito = {}
+
+    def espiao(argv, **kw):
+        p = real_exec(argv, **kw)
+        if any(a == "add" for a in argv) and "rodou" not in feito:
+            feito["rodou"] = True
+            feito["rc"] = _git("-C", str(cen.repo), "add",
+                               "concorrente.txt").returncode
+        return p
+    monkeypatch.setattr(git_tree_mod.supervisor, "executar", espiao)
+    monkeypatch.setattr(git_tree_mod.GitTreeAdapter, "_auditar",
+                        lambda self, *a, **k: (_ for _ in ()).throw(
+                            RuntimeError("recusa pos-exec")))
+
+    with pytest.raises(RuntimeError) as ei:
+        cen.add("zz.txt")
+
+    assert feito.get("rc") == 0, "o terceiro não chegou a ser aceito"
+    msg = str(ei.value)
+    assert "trabalho de terceiro foi perdido" in msg, (
+        f"janela B: o `git add` de terceiro (rc=0) foi sobreposto pelo desfazer "
+        f"SEM incidente — perda silenciosa de trabalho aceito. {msg[:200]}")
+    assert "concorrente.txt" in msg, (
+        f"o incidente não nomeia o caminho perdido: {msg[:200]}")
+
+
+def test_r4_71_CONTROLE_sem_terceiro_nenhum_incidente_e_emitido(campo_add,
+                                                                 monkeypatch):
+    """O par: path-space não pode acusar quando não há terceiro nenhum.
+
+    Sem este controle, `test_r4_70` passaria numa implementação que acusa
+    sempre — que é o defeito `.11.09` recém-fechado, de volta por outra porta.
+    """
+    cen = campo_add
+    monkeypatch.setattr(git_tree_mod.GitTreeAdapter, "_auditar",
+                        lambda self, *a, **k: (_ for _ in ()).throw(
+                            RuntimeError("recusa pos-exec")))
+    with pytest.raises(RuntimeError) as ei:
+        cen.add("zz.txt")
+    assert "trabalho de terceiro foi perdido" not in str(ei.value), (
+        "acusou terceiro sem terceiro — falso positivo destrói o sinal")
