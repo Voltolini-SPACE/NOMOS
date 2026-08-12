@@ -239,6 +239,10 @@ def governado(tmp_path):
     reg.registrar("redator", fg.PoliticaDeFiltro(
         filter_id="redator", canonical_executable=str(binario),
         managed_artifact=art, read_roots=(str(repo),), write_roots=(str(repo),)))
+    # A regra que LIGA `*.txt` ao filtro na working tree. Sem ela, check-attr
+    # responde `unspecified` e nada redige — os testes de controle mediriam a
+    # ausência da regra, não a defesa.
+    (repo / ".gitattributes").write_text("*.txt filter=redator\n")
 
     class Cen:
         def __init__(self):
@@ -372,3 +376,211 @@ def test_r4_14_CONTROLE_sem_cancelamento_o_filtro_roda(governado):
     corpo = subprocess.run([GIT, "-C", str(cen.repo), "cat-file", "-p", sha],
                            capture_output=True).stdout
     assert corpo == b"SENHA=REDIGIDO\n"
+
+
+# ═══ `.2.N3` (P0) — cancelamento numa ÁRVORE via attr.tree, cego ao disco ════
+
+def _mktree_cancelamento(repo: Path) -> str:
+    """Uma árvore Git com `.gitattributes` que cancela o filtro.
+
+    Escrita pelo próprio Git (`hash-object` + `mktree`), não à mão: o que se
+    mede é a árvore que o Git de fato lê, não uma aproximação.
+    """
+    env = dict(os.environ, GIT_DIR=str(repo / ".git"))
+    blob = subprocess.run([GIT, "hash-object", "-w", "--stdin"],
+                          input=b"segredo.txt !filter\n",
+                          capture_output=True, env=env).stdout.decode().strip()
+    return subprocess.run(
+        [GIT, "mktree"],
+        input=f"100644 blob {blob}\t.gitattributes\n".encode(),
+        capture_output=True, env=env).stdout.decode().strip()
+
+
+@pytest.mark.parametrize("via", ["config", "include"])
+def test_r4_20_cancelamento_em_ARVORE_via_attr_tree_e_recusa(governado, via):
+    """MEDIDO: `!filter` numa árvore -> check-attr `unspecified` -> segredo cru.
+
+    `attr.tree` lê os atributos de uma ÁRVORE Git em vez da working tree. Um
+    `!filter` plantado ali cancela a redação, e o `check-attr` responde
+    `unspecified` — indistinguível de 'não há regra'. A varredura de disco de
+    `_recusar_cancelamento_de_filtro` não alcança a árvore, e a resposta do Git
+    não deixa auditar. Ponta a ponta antes do conserto: ok=True, segredo EM
+    CLARO no store.
+
+    As duas formas de declarar: direto no config, e por `include.path` — porque
+    `git config --get-all` resolve includes, então esconder a chave num arquivo
+    incluído não contorna a detecção (medido: o Git honra e o get-all vê).
+    """
+    cen = governado
+    tree = _mktree_cancelamento(cen.repo)
+    if via == "config":
+        subprocess.run([GIT, "-C", str(cen.repo), "config", "attr.tree", tree],
+                       capture_output=True)
+    else:
+        inc = cen.repo / ".git" / "incluido.cfg"
+        inc.write_text(f"[attr]\n\ttree = {tree}\n")
+        subprocess.run([GIT, "-C", str(cen.repo), "config", "include.path",
+                        str(inc)], capture_output=True)
+    (cen.repo / "segredo.txt").write_text("SENHA=hunter2\n")
+
+    with pytest.raises(supervisor.ErroSeguranca, match="attr.tree"):
+        cen.add("segredo.txt")
+    assert not cen.cru_no_store(), "o `!filter` da árvore vazou o segredo cru"
+
+
+def test_r4_21_CONTROLE_sem_attr_tree_a_redacao_acontece(governado):
+    """O controle positivo: sem `attr.tree`, o caminho legítimo redige.
+
+    Sem ele, `test_r4_20` passaria numa implementação que recusa todo `git-add`.
+    """
+    cen = governado
+    (cen.repo / "segredo.txt").write_text("SENHA=hunter2\n")
+    r = cen.add("segredo.txt")
+    assert r.efeito_aplicado
+    sha = subprocess.run([GIT, "-C", str(cen.repo), "ls-files", "-s", "--",
+                          "segredo.txt"], capture_output=True,
+                        text=True).stdout.split()[1]
+    corpo = subprocess.run([GIT, "-C", str(cen.repo), "cat-file", "-p", sha],
+                           capture_output=True).stdout
+    assert corpo == b"SENHA=REDIGIDO\n"
+
+
+def test_r4_22_attr_source_NAO_e_config_e_nao_gera_recusa_falsa(governado):
+    """Estrutural + medição: `attr.source` não é chave de config do Git.
+
+    MEDIDO: `config attr.source=<árvore>` não teve efeito nenhum no
+    `check-attr` (o filtro seguiu aplicando). Recusar `attr.source` seria uma
+    recusa falsa de uma chave inócua — o vetor é `attr.tree`, e só ele.
+    """
+    cen = governado
+    tree = _mktree_cancelamento(cen.repo)
+    subprocess.run([GIT, "-C", str(cen.repo), "config", "attr.source", tree],
+                   capture_output=True)
+    (cen.repo / "segredo.txt").write_text("SENHA=hunter2\n")
+    r = cen.add("segredo.txt")
+    assert r.efeito_aplicado, "recusa FALSA por causa de attr.source inócuo"
+    assert not cen.cru_no_store()
+
+
+# ═══ `.6.08` / `.6.NOVO-08` (P1) — refs/heads symlink de dir na PROFUNDIDADE 2 ═
+
+@pytest.fixture
+def repo_commitavel(tmp_path):
+    """Repo com um commit e um arquivo pendente, para git-add/commit governado."""
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    repo = _init(raiz / "repo")
+    (repo / "a.txt").write_text("a\n")
+    _git("-C", str(repo), "add", "a.txt")
+    _git("-C", str(repo), "commit", "-qm", "x")
+
+    class Cen:
+        def __init__(self):
+            self.raiz, self.repo, self.tmp = raiz, repo, tmp_path
+
+        def add(self, *caminhos):
+            from nomos.adapters import git_tree, filtro_governado as fg
+            from nomos.adapters.contrato import (CapabilityContext,
+                                                 CapabilityRequest)
+            from nomos.adapters.wiring import registrar_git_tree
+            from nomos.kernel.policy import PolicyEngine
+            from nomos.orquestracao.registro import RegistroCapacidades
+            rc = RegistroCapacidades(policy=PolicyEngine(tmp_path / "p.json"),
+                                     approver=lambda *a, **k: True)
+            registrar_git_tree(rc, raizes=(str(raiz),))
+            ctx = CapabilityContext.de_registro(rc, "git-add",
+                                                "runtime-governado",
+                                                raizes=(str(raiz),))
+            return git_tree.GitTreeAdapter(registro=fg.RegistroDeFiltros()
+                                           ).executar(
+                CapabilityRequest(capacidade="git-add", alvo=str(repo),
+                                  argumentos={"caminhos": list(caminhos)}), ctx)
+
+    return Cen()
+
+
+def _refs_heads_para_symlink(gd: Path) -> None:
+    """`<gd>/refs/heads` vira symlink para um dir REAL dentro do git dir.
+
+    O alvo mora DENTRO da raiz de escrita já concedida, então não é fuga de
+    raiz: é a estrutura de refs saindo do alcance do guard de profundidade 1.
+    """
+    reais = gd / "heads_reais"
+    reais.mkdir()
+    for f in (gd / "refs" / "heads").iterdir():
+        shutil.move(str(f), str(reais / f.name))
+    shutil.rmtree(gd / "refs" / "heads")
+    (gd / "refs" / "heads").symlink_to(reais, target_is_directory=True)
+
+
+def test_r4_30_refs_heads_symlink_profundidade_2_e_recusado(repo_commitavel):
+    """MEDIDO 8/8: `rglob` não recursa em symlink de dir; refs/heads escapava.
+
+    O guard de `.8.NEW-REFSDIR-SYMLINK` via só profundidade 1 (`refs`, `logs`).
+    Com `refs/heads` (profundidade 2) como symlink, as refs sob ele saíam do
+    instantâneo e da transação, e um commit governado mutava tag / instalava
+    refs/replace com ok=True.
+    """
+    cen = repo_commitavel
+    _refs_heads_para_symlink(cen.repo / ".git")
+    (cen.repo / "b.txt").write_text("b\n")
+    with pytest.raises(supervisor.ErroSeguranca, match="refs/ ou logs/"):
+        cen.add("b.txt")
+
+
+def test_r4_31_ref_de_terceiro_nao_avanca_em_operacao_recusada(repo_commitavel):
+    """`.6.NOVO-08-REFS-FORA-DA-TRANSACAO`: o critério é o EFEITO no branch.
+
+    Como o instantâneo RECUSA antes do exec, o commit nunca roda e o branch não
+    pode avançar. Sem o conserto, a operação saía ok=True e `refs/heads/main`
+    apontava para objeto que a quarentena destruía.
+    """
+    cen = repo_commitavel
+    head0 = _git("-C", str(cen.repo), "rev-parse", "HEAD").stdout.strip()
+    _refs_heads_para_symlink(cen.repo / ".git")
+    (cen.repo / "b.txt").write_text("b\n")
+    with pytest.raises(supervisor.ErroSeguranca):
+        cen.add("b.txt")
+    # O branch real (agora em heads_reais/main) não pode ter avançado.
+    ref = cen.repo / ".git" / "heads_reais" / "main"
+    assert ref.read_text().strip() == head0, "o branch avançou numa recusa"
+
+
+@pytest.mark.parametrize("onde", ["refs/tags", "refs/heads/sub", "logs/refs"])
+def test_r4_32_symlink_em_QUALQUER_profundidade_de_refs_e_recusado(
+        repo_commitavel, onde):
+    """A descida é por componente: symlink em tags, num subdir de heads, em logs.
+
+    Um único ponto de symlink em qualquer nível da árvore de refs derruba a
+    transação; o teste varre três profundidades e dois troncos (refs e logs).
+    """
+    cen = repo_commitavel
+    gd = cen.repo / ".git"
+    alvo = gd / onde
+    fora = gd / "escondido"
+    fora.mkdir()
+    (fora / "x").write_text("dead\n")
+    alvo.parent.mkdir(parents=True, exist_ok=True)
+    if alvo.exists():
+        shutil.rmtree(alvo)
+    alvo.symlink_to(fora, target_is_directory=True)
+    (cen.repo / "b.txt").write_text("b\n")
+    with pytest.raises(supervisor.ErroSeguranca, match="refs/ ou logs/"):
+        cen.add("b.txt")
+
+
+def test_r4_33_CONTROLE_refs_PROFUNDAS_e_legitimas_continuam_valendo(
+        repo_commitavel):
+    """`refs/heads/feature/x` — dirs reais em 3 níveis — tem de funcionar.
+
+    Sem este controle, os testes acima passariam numa implementação que recusa
+    toda estrutura de refs com profundidade. A descida por componente aceita
+    diretórios reais em qualquer nível; só o symlink é recusado.
+    """
+    cen = repo_commitavel
+    _git("-C", str(cen.repo), "branch", "feature/x")
+    _git("-C", str(cen.repo), "tag", "v1.0")
+    assert (cen.repo / ".git" / "refs" / "heads" / "feature" / "x").is_file()
+    (cen.repo / "b.txt").write_text("b\n")
+    r = cen.add("b.txt")
+    assert r.efeito_aplicado

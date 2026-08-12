@@ -191,8 +191,29 @@ def test_c2_05_git_info_attributes_tem_precedencia(cen):
     assert cen.indice("SEGREDO.txt") == REDIGIDO
 
 
-def test_c2_06_attr_tree_le_atributos_de_uma_ARVORE(cen):
-    """Caso extremo: o working tree nem TEM `.gitattributes`."""
+def test_c2_06_attr_tree_e_RECUSA_por_fonte_nao_auditavel(cen):
+    """SECURITY_BREAKING_CHANGE — este contrato mudou por medição (`.2.N3`, P0).
+
+    A versão anterior deste teste EXIGIA que `attr.tree=HEAD` FUNCIONASSE:
+    atributos lidos de uma árvore Git, com o working tree sem `.gitattributes`,
+    e a redação acontecendo a partir da regra committada. A 4ª medição global
+    mostrou o custo dessa capacidade.
+
+    Com `attr.tree` apontando para uma árvore, um `!filter` plantado nela
+    CANCELA a redação, e `git check-attr filter` responde `unspecified` —
+    BYTE A BYTE indistinguível de 'não há regra', que é a resposta legítima e
+    comum. MEDIDO ponta a ponta: `git-add` governado devolveu ok=True e o
+    segredo entrou EM CLARO no store. A varredura de disco de
+    `_recusar_cancelamento_de_filtro` não alcança a árvore, e a autoridade que
+    `_pedidos_de_filtro` delega ao Git fica cega justamente aqui.
+
+    Não é possível ADMITIR a árvore como fonte e ao mesmo tempo PROVAR ausência
+    de cancelamento: a saída do Git não distingue os dois casos. Fail-closed é a
+    resposta — a mesma regra `PROVABLE_OR_REFUSE` que já rege
+    `--separate-git-dir` (`.7.18`) e a titularidade de git dir. O caminho
+    legítimo declara os atributos onde o disk-scan alcança: `.gitattributes` na
+    working tree ou `.git/info/attributes`.
+    """
     cen.escrever("SEGREDO.txt")
     cen.escrever(".gitattributes", "SEGREDO.txt filter=redator\n")
     subprocess.run([GIT, "-C", str(cen.repo), "add", ".gitattributes"],
@@ -202,8 +223,8 @@ def test_c2_06_attr_tree_le_atributos_de_uma_ARVORE(cen):
     (cen.repo / ".gitattributes").unlink()
     subprocess.run([GIT, "-C", str(cen.repo), "config", "attr.tree", "HEAD"],
                    check=True, capture_output=True)
-    cen.add("SEGREDO.txt")
-    assert cen.indice("SEGREDO.txt") == REDIGIDO
+    with pytest.raises(supervisor.ErroSeguranca, match="attr.tree"):
+        cen.add("SEGREDO.txt")
 
 
 def test_c2_07_divergencia_de_CAIXA(cen):

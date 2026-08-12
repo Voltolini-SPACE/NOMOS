@@ -532,6 +532,74 @@ def _campos_de_autoridade(autoridade) -> dict[str, str]:
     return {"git_dir": autoridade.git_dir, "common_dir": autoridade.common}
 
 
+def _descer_refs(raiz: Path, estrito: bool) -> list[Path]:
+    """Arquivos de ref de UM git dir, descendo COMPONENTE A COMPONENTE.
+
+    ## Por que descida manual e não `rglob` (`.6.08`/`.6.NOVO-08`, P1)
+
+    MEDIDO: `<git_dir>/refs/heads` como SYMLINK DE DIRETÓRIO na PROFUNDIDADE 2,
+    com o alvo dentro do git dir, escapa de `d.rglob("*")` — `rglob` NÃO recursa
+    em symlink de diretório, e `p.is_file()` descarta o próprio link. As refs
+    sob ele (`refs/heads/main`, tags, `refs/replace/*`) somem do instantâneo e
+    portanto da TRANSAÇÃO: um `git-commit` governado MUTA uma tag ou INSTALA
+    `refs/replace` e devolve ok=True, e uma operação RECUSADA deixa o branch
+    AVANÇADO para um objeto que a quarentena destruiu.
+
+    O guard de `.8.NEW-REFSDIR-SYMLINK` via só o componente de PROFUNDIDADE 1
+    (`refs`, `logs`). Descer com `os.lstat` em cada nível fecha QUALQUER
+    profundidade: um symlink em `refs/`, `logs/` ou abaixo não é forma legítima
+    de referência do Git — refs soltas são arquivos regulares e os diretórios
+    (`heads`, `tags`, `remotes`) são diretórios reais.
+
+    `estrito`: `_instantaneo_das_refs` RECUSA a operação (o efeito ainda não
+    aconteceu); `_refs_agora` (discriminador de autoria) apenas ignora o galho,
+    degradando para o lado conservador — nunca destruindo calado.
+    """
+    alvos = [raiz / "HEAD", raiz / "packed-refs", raiz / "ORIG_HEAD"]
+    pilha = [raiz / "refs", raiz / "logs"]
+    while pilha:
+        d = pilha.pop()
+        try:
+            modo = os.lstat(d).st_mode
+        except FileNotFoundError:
+            continue
+        except OSError:
+            if estrito:
+                raise
+            continue
+        if not stat.S_ISDIR(modo):
+            if estrito:
+                raise ErroSeguranca(
+                    f"{d} não é diretório real (modo {modo:o}) — um symlink em "
+                    "refs/ ou logs/, em qualquer profundidade, tira as "
+                    "referências sob ele do instantâneo e da transação; um "
+                    "commit governado passa a MUTAR tag ou instalar "
+                    "refs/replace sem que o desfazer alcance")
+            continue
+        try:
+            entradas = sorted(d.iterdir())
+        except OSError:
+            if estrito:
+                raise
+            continue
+        for entrada in entradas:
+            try:
+                m = os.lstat(entrada).st_mode
+            except OSError:
+                continue
+            if stat.S_ISDIR(m):
+                pilha.append(entrada)
+            elif stat.S_ISREG(m):
+                alvos.append(entrada)
+            elif estrito:
+                raise ErroSeguranca(
+                    f"{entrada} não é arquivo nem diretório regular (modo "
+                    f"{m:o}) — symlink/FIFO dentro de refs/ ou logs/ não é forma "
+                    "legítima de referência, e leria/gravaria fora das raízes no "
+                    "processo do supervisor")
+    return alvos
+
+
 def _instantaneo_das_refs(autoridade) -> dict[str, bytes | None]:
     """Bytes de `HEAD`, das refs soltas e do reflog, antes da operação.
 
@@ -547,25 +615,9 @@ def _instantaneo_das_refs(autoridade) -> dict[str, bytes | None]:
     bases = {autoridade.git_dir, autoridade.common}
     for base in bases:
         raiz = Path(base)
-        alvos = [raiz / "HEAD", raiz / "packed-refs", raiz / "ORIG_HEAD"]
-        for sub in ("refs", "logs"):
-            d = raiz / sub
-            # `lstat` no DIRETÓRIO, não `is_dir()`. MEDIDO
-            # (`.8.NEW-REFSDIR-SYMLINK`): com `<git_dir>/refs` plantado como
-            # SYMLINK DE DIRETÓRIO para fora das raízes, `is_dir()` e `rglob`
-            # SEGUEM o link e cada arquivo encontrado passa no `lstat` final
-            # (são arquivos regulares de verdade, lá fora). O guard do
-            # componente final nunca vê o link do meio — a mesma forma de
-            # `.2.14` e `.3.02`, num terceiro lugar.
-            try:
-                if not stat.S_ISDIR(os.lstat(d).st_mode):
-                    raise ErroSeguranca(
-                        f"{sub} do git dir não é diretório real (é link ou "
-                        "outra coisa): o instantâneo de refs leria e o rollback "
-                        "escreveria FORA das raízes, no processo do supervisor")
-            except FileNotFoundError:
-                continue
-            alvos.extend(p for p in d.rglob("*") if p.is_file())
+        # Descida COMPONENTE A COMPONENTE (`_descer_refs`), não `rglob`: o
+        # symlink de diretório em profundidade >= 2 é o furo que `rglob` não vê.
+        alvos = _descer_refs(raiz, estrito=True)
         for alvo in alvos:
             # `HEAD`, `packed-refs` e `ORIG_HEAD` são nomes que o REPOSITÓRIO
             # controla, e esta leitura roda no processo do supervisor, fora do
@@ -607,13 +659,10 @@ def _refs_agora(autoridade) -> dict[str, bytes | None]:
         return estado
     for base in {autoridade.git_dir, autoridade.common}:
         raiz = Path(base)
-        alvos = [raiz / "HEAD", raiz / "packed-refs", raiz / "ORIG_HEAD"]
-        for sub in ("refs", "logs"):
-            d = raiz / sub
-            with contextlib.suppress(OSError):
-                if stat.S_ISDIR(os.lstat(d).st_mode):
-                    alvos.extend(d.rglob("*"))
-        for alvo in alvos:
+        # Mesma descida por componente, modo LENIENTE: o galho com symlink é
+        # ignorado (degrada para incidente conservador), não recusado — esta
+        # foto é discriminador de autoria, e já rodou o guard estrito antes.
+        for alvo in _descer_refs(raiz, estrito=False):
             with contextlib.suppress(OSError):
                 if stat.S_ISREG(os.lstat(alvo).st_mode):
                     estado[str(alvo)] = alvo.read_bytes()
@@ -1419,22 +1468,15 @@ class GitTreeAdapter(Adapter):
             with contextlib.suppress(OSError):
                 os.close(fd)
 
-    def _recusar_fonte_de_atributo_externa(self, repo: Path, prazo: float,
-                                           autoridade) -> None:
-        """`core.attributesFile` declarado pelo repositório é RECUSA, não no-op.
+    def _config_declarada(self, repo: Path, chave: str, prazo: float,
+                          autoridade) -> str | None:
+        """Valor de uma config do REPOSITÓRIO, ou None se ausente.
 
-        A chave aponta a fonte de atributos para fora do repositório, e dentro
-        do sandbox esse destino não é legível — nem pelo `check-attr`, nem pelo
-        `add`. Os dois concordam em não ver pedido de filtro, e o conteúdo é
-        indexado CRU com `rc=0`.
-
-        `_NEUTRALIZAR_TREE` já desliga a chave, então os dois nunca divergem. Só
-        que "desligar em silêncio" é o modo de falha que esta série elimina: se
-        alguém pôs ali uma regra de REDAÇÃO, ignorá-la caladamente publica o
-        segredo que a regra existia para esconder. A neutralização garante
-        CONSISTÊNCIA; esta recusa garante que a consistência não seja silenciosa.
+        `--get-all` resolve `include.path` — MEDIDO (`.2.N3`): `attr.tree`
+        plantado por include é honrado pelo Git E aparece aqui, então a
+        detecção não é contornável escondendo a chave num arquivo incluído.
         """
-        argv = self._base(repo) + ["config", "--get-all", "core.attributesFile"]
+        argv = self._base(repo) + ["config", "--get-all", chave]
         p = supervisor.executar(
             argv, cwd=repo, env=self.ambiente(), prazo=prazo,
             confinamento=confinamento_de_leitura(repo, autoridade),
@@ -1446,13 +1488,50 @@ class GitTreeAdapter(Adapter):
             raise ErroLimite(
                 f"git config foi encerrado por sinal (rc={p.returncode})"
                 f"{' após o prazo' if p.morto_por_timeout else ''} — sem "
-                "resposta não dá para saber se `core.attributesFile` está "
-                "declarado, e seguir seria indexar sem conhecer a política")
+                f"resposta não dá para saber se `{chave}` está declarado, e "
+                "seguir seria indexar sem conhecer a política")
         # rc=1 é "chave ausente", o caso normal. rc>1 é erro de verdade.
         if p.returncode not in (0, 1):
             erro = p.stderr.decode("utf-8", "replace")[:400]
             raise ErroInvalido(f"git config falhou (rc={p.returncode}): {erro}")
-        if p.returncode == 0 and p.stdout.strip():
+        texto = p.stdout.decode("utf-8", "replace").strip()
+        return texto if (p.returncode == 0 and texto) else None
+
+    def _recusar_fonte_de_atributo_externa(self, repo: Path, prazo: float,
+                                           autoridade) -> None:
+        """Fonte de atributo que o disk-scan não alcança é RECUSA, não no-op.
+
+        Duas chaves do REPOSITÓRIO reapontam a fonte de atributos para fora do
+        alcance de `_recusar_cancelamento_de_filtro` (que varre ARQUIVOS):
+
+            core.attributesFile   um arquivo FORA do repositório
+            attr.tree             uma ÁRVORE Git (`.2.N3`, P0)
+
+        `core.attributesFile`: dentro do sandbox o destino não é legível — nem
+        pelo `check-attr`, nem pelo `add`. Os dois concordam em não ver pedido
+        de filtro, e o conteúdo é indexado CRU com rc=0.
+
+        `attr.tree`: MEDIDO, e é a razão de esta recusa existir. Com a árvore
+        apontada, `git check-attr filter` responde `unspecified` para um
+        `!filter` que MORA na árvore — indistinguível de "não há regra", que é
+        a resposta legítima e comum. Não há como o Git DISTINGUIR os dois na
+        saída, então a autoridade que `_pedidos_de_filtro` delega ao Git fica
+        cega justamente aqui: o segredo entra EM CLARO com ok=True. E a
+        neutralização não salva — `attr.tree` REESCREVE a fonte (não acumula),
+        então `-c attr.tree=<vazio>` restaura o working tree mas
+        `-c attr.tree=<árvore-vazia>` APAGA também a regra de redação legítima.
+        `attr.source` NÃO é chave de config (medido: sem efeito); o vetor é
+        `attr.tree`, e ele é o único.
+
+        Por que RECUSAR e não varrer a árvore: varrer exigiria reimplementar a
+        precedência de atributos por diretório que o Git resolve — o parser que
+        esta série documenta NÃO manter (l. 1485-1489). Fonte que o Git resolve
+        de um jeito que a saída não deixa auditar é fonte que a política não
+        consegue provar; fail-closed é a resposta. O caminho legítimo declara
+        os atributos no `.gitattributes` da working tree ou em
+        `.git/info/attributes`, que o disk-scan alcança.
+        """
+        if self._config_declarada(repo, "core.attributesFile", prazo, autoridade):
             raise ErroSeguranca(
                 "o repositório declara `core.attributesFile`, que põe a fonte "
                 "de atributos FORA do repositório. Dentro do sandbox esse "
@@ -1460,6 +1539,15 @@ class GitTreeAdapter(Adapter):
                 "e o conteúdo seria indexado EM CLARO com rc=0 — recuso em vez "
                 "de ignorar em silêncio. Declare os atributos no próprio "
                 "repositório (`.gitattributes` ou `.git/info/attributes`)")
+        if self._config_declarada(repo, "attr.tree", prazo, autoridade):
+            raise ErroSeguranca(
+                "o repositório declara `attr.tree`, que lê os atributos de uma "
+                "ÁRVORE Git em vez da working tree. Um `!filter` plantado nessa "
+                "árvore CANCELA a redação e o `check-attr` responde "
+                "`unspecified` — indistinguível de 'não há regra'. A varredura "
+                "de disco não alcança a árvore, e a resposta do Git não deixa "
+                "auditar: recuso em vez de indexar EM CLARO. Declare os "
+                "atributos no `.gitattributes` da working tree")
 
     def _pedidos_de_filtro(self, repo: Path, caminhos: list[str],
                            prazo: float, autoridade) -> dict[str, str]:
