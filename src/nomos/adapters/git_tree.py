@@ -303,6 +303,43 @@ def mensagem_valida(bruta) -> str:
     return texto
 
 
+def _recusar_fifo_no_git_dir(autoridade) -> None:
+    """FIFO nos arquivos de controle é recusa IMEDIATA (`.11.NOVO-FIFO-60S`).
+
+    As guardas Python que já existem (`lstat` + só arquivo regular) rodam
+    DEPOIS dos subprocessos do git que tocam esses caminhos. MEDIDO, com FIFO
+    plantado pelo repositório:
+
+        HEAD              ErroLimite   60,1 s      <-- prazo INTEIRO
+        index             ErroLimite   60,2 s      <-- prazo INTEIRO
+        packed-refs       ErroSeguranca 0,4 s
+        logs/HEAD         ErroSeguranca 0,3 s
+        refs/heads/main   ErroSeguranca 0,3 s
+
+    Os três rápidos passam por guarda Python; `HEAD` e `index` chegam primeiro
+    a um subprocesso do git, que fica bloqueado no `open` do FIFO até o prazo
+    vencer. Não é fuga de autoridade — a operação é corretamente RECUSADA — mas
+    é o repositório escolhendo gastar 60 s do NOMOS por operação, e isso é
+    negação de serviço barata para quem a escreve.
+
+    `lstat` não abre o arquivo, então não bloqueia: a checagem custa
+    microssegundos e roda ANTES de qualquer subprocesso.
+    """
+    if autoridade is None:
+        return
+    for base in {autoridade.git_dir, autoridade.common}:
+        raiz = Path(base)
+        for nome in ("HEAD", "index", "packed-refs", "ORIG_HEAD"):
+            with contextlib.suppress(OSError):
+                modo = os.lstat(raiz / nome).st_mode
+                if not (stat.S_ISREG(modo) or stat.S_ISLNK(modo)):
+                    raise ErroSeguranca(
+                        f"{nome} do git dir não é arquivo regular (modo "
+                        f"{modo:o}). FIFO e device BLOQUEIAM o `open` do git "
+                        "pelo prazo inteiro antes de a operação ser recusada — "
+                        "o repositório escolhe gastar o prazo do NOMOS")
+
+
 def _instantaneo_do_indice(repo: Path, autoridade=None,
                            ) -> tuple[Path, bytes | None, int | None]:
     """Copia BRUTA do arquivo de índice, antes da operação.
@@ -1027,6 +1064,9 @@ class GitTreeAdapter(Adapter):
         gd, comum = conferir_git_dir(repo, ctx.raizes)
         autoridade = autoridade_de(repo, gd, comum)
         conferir_alternates(repo, ctx.raizes, autoridade)
+        # ANTES de qualquer subprocesso do git: FIFO em HEAD/index custa o
+        # prazo INTEIRO se a descoberta ficar para depois (`.11.NOVO-FIFO-60S`).
+        _recusar_fifo_no_git_dir(autoridade)
 
         # `governados` viaja como ARGUMENTO até `_confirmar`, e não guardado no
         # adapter. Estado de operação em `self` faria duas operações

@@ -1301,3 +1301,86 @@ def test_r4_100_ultima_declaracao_vence_mesmo_citada(tmp_path):
     assert efetivo == "/tmp/x", f"premissa mudou neste host: {efetivo!r}"
     with pytest.raises(supervisor.ErroSeguranca):
         git.conferir_git_dir(str(trab), (str(raiz),))
+
+
+# ═══ `.11.NOVO-FIFO-60S` (P2) — o repositório gastava o PRAZO INTEIRO ═══════
+
+@pytest.mark.parametrize("rel", ["HEAD", "index", "packed-refs"])
+def test_r4_110_fifo_no_git_dir_recusa_IMEDIATAMENTE(tmp_path, rel):
+    """MEDIDO: `HEAD` e `index` como FIFO custavam 60,1 s e 60,2 s.
+
+    As guardas Python que existem para isto (`lstat` + só arquivo regular)
+    rodavam DEPOIS dos subprocessos do git que tocam esses caminhos. Os três
+    caminhos cobertos por guarda Python recusavam em 0,3 s; `HEAD` e `index`
+    chegavam primeiro a um subprocesso, que ficava bloqueado no `open` do FIFO
+    até o prazo vencer.
+
+    Não é fuga de autoridade — a operação era corretamente RECUSADA — mas é o
+    repositório escolhendo gastar 60 s do NOMOS por operação. Negação de
+    serviço barata para quem escreve o repositório.
+
+    `lstat` não abre o arquivo, então não bloqueia: a checagem custa
+    microssegundos e roda ANTES de qualquer subprocesso.
+    """
+    import time
+    from nomos.adapters import git_tree, filtro_governado as fg
+    from nomos.adapters.contrato import CapabilityContext, CapabilityRequest
+    from nomos.adapters.wiring import registrar_git_tree
+    from nomos.kernel.policy import PolicyEngine
+    from nomos.orquestracao.registro import RegistroCapacidades
+
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    repo = _init(raiz / "r")
+    (repo / "a.txt").write_text("a\n")
+    _git("-C", str(repo), "add", "a.txt")
+    _git("-C", str(repo), "commit", "-qm", "x")
+    (repo / "x.txt").write_text("x\n")
+
+    alvo = repo / ".git" / rel
+    alvo.parent.mkdir(parents=True, exist_ok=True)
+    if alvo.exists():
+        alvo.unlink()
+    os.mkfifo(alvo)
+
+    rc = RegistroCapacidades(policy=PolicyEngine(tmp_path / "p.json"),
+                             approver=lambda *a, **k: True)
+    registrar_git_tree(rc, raizes=(str(raiz),))
+    ctx = CapabilityContext.de_registro(rc, "git-add", "runtime-governado",
+                                        raizes=(str(raiz),))
+    t0 = time.monotonic()
+    with pytest.raises(supervisor.ErroSeguranca, match="não é arquivo regular"):
+        git_tree.GitTreeAdapter(registro=fg.RegistroDeFiltros()).executar(
+            CapabilityRequest(capacidade="git-add", alvo=str(repo),
+                              argumentos={"caminhos": ["x.txt"]}), ctx)
+    dt = time.monotonic() - t0
+    assert dt < 5.0, (
+        f"a recusa levou {dt:.1f}s — o FIFO do repositório está gastando o "
+        "prazo do NOMOS antes de a checagem rodar")
+
+
+def test_r4_111_CONTROLE_repo_normal_nao_e_afetado_pela_guarda(tmp_path):
+    """Sem este controle, o de cima passaria numa implementação que recusa tudo.
+
+    `HEAD`, `index` e `packed-refs` de um repositório real são arquivos comuns
+    (ou nem existem, no caso de `packed-refs`), e a operação tem de funcionar.
+    """
+    from nomos.adapters import git_tree, filtro_governado as fg
+    from nomos.adapters.contrato import CapabilityContext, CapabilityRequest
+    from nomos.adapters.wiring import registrar_git_tree
+    from nomos.kernel.policy import PolicyEngine
+    from nomos.orquestracao.registro import RegistroCapacidades
+
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    repo = _init(raiz / "r")
+    (repo / "x.txt").write_text("x\n")
+    rc = RegistroCapacidades(policy=PolicyEngine(tmp_path / "p.json"),
+                             approver=lambda *a, **k: True)
+    registrar_git_tree(rc, raizes=(str(raiz),))
+    ctx = CapabilityContext.de_registro(rc, "git-add", "runtime-governado",
+                                        raizes=(str(raiz),))
+    r = git_tree.GitTreeAdapter(registro=fg.RegistroDeFiltros()).executar(
+        CapabilityRequest(capacidade="git-add", alvo=str(repo),
+                          argumentos={"caminhos": ["x.txt"]}), ctx)
+    assert r.efeito_aplicado
