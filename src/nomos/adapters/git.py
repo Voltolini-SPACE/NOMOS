@@ -1201,6 +1201,7 @@ class GitAdapter(Adapter):
             raise ErroLimite(f"git excedeu {prazo:.1f}s")
         if len(p.stdout) > LIMITE_SAIDA:
             raise ErroLimite(f"saída do git acima de {LIMITE_SAIDA} bytes")
+        supervisor.conferir_sinal(p, "git")
         if p.returncode != 0:
             erro = p.stderr.decode("utf-8", "replace")[:400]
             raise ErroInvalido(f"git falhou (rc={p.returncode}): {erro}")

@@ -337,6 +337,7 @@ class GitPushAdapter(Adapter):
             raise ErroLimite(
                 f"push excedeu {prazo:.1f}s — remoto que não responde não "
                 "pendura o NOMOS")
+        supervisor.conferir_sinal(p, "push")
         if p.returncode != 0:
             raise ErroRemoto(
                 f"push falhou (rc={p.returncode}): "

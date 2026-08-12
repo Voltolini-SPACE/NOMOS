@@ -1372,8 +1372,8 @@ class GitTreeAdapter(Adapter):
                                   ["info", "attributes"]))
         return raizes_fontes
 
-    def _recusar_cancelamento_de_filtro(self, repo: Path, caminhos: list[str],
-                                        autoridade=None) -> None:
+    def _cancelamento_declarado(self, repo: Path, caminhos: list[str],
+                                autoridade=None) -> str:
         """Nenhuma fonte de atributo pode CANCELAR um filtro governado.
 
         MEDIDO, e é a segunda forma do mesmo ataque: `-filter` faz `check-attr`
@@ -1439,14 +1439,13 @@ class GitTreeAdapter(Adapter):
                 # demais são atributos.
                 tokens = corpo.split()
                 if any(t in ("-filter", "!filter") for t in tokens[1:]):
-                    raise ErroSeguranca(
-                        f"a fonte de atributo {alvo} CANCELA filtro "
-                        f"({linha.strip()!r}). `-filter` e `!filter` desligam a "
-                        "regra de redação declarada numa fonte de menor "
-                        "precedência, e o conteúdo seria indexado EM CLARO com "
-                        "rc=0. `check-attr` responde `unset` para o primeiro e "
-                        "`unspecified` para o segundo — o token muda, o efeito é "
-                        "o mesmo. Remova o cancelamento")
+                    # NAO recusa aqui: quem sabe se o cancelamento ALCANCA os
+                    # caminhos pedidos e o `check-attr`, e a resposta dele vem
+                    # depois. Recusar por EXISTENCIA recusava `*.png -filter`,
+                    # que e o uso mais comum e mais legitimo de `-filter`
+                    # (`.2.N7`). Aqui so se reporta que existe.
+                    return f"{alvo}: {linha.strip()!r}"
+        return ""
 
     def _recusar_componente_link(self, base: Path, componentes: list[str]) -> None:
         """Nenhum COMPONENTE do caminho da fonte pode ser symlink.
@@ -1497,15 +1496,38 @@ class GitTreeAdapter(Adapter):
             with contextlib.suppress(OSError):
                 os.close(fd)
 
-    def _config_declarada(self, repo: Path, chave: str, prazo: float,
-                          autoridade) -> str | None:
-        """Valor de uma config do REPOSITÓRIO, ou None se ausente.
+    def _config_do_repo(self, repo: Path, prazo: float,
+                        autoridade) -> dict[str, str]:
+        """TODA a config efetiva do repositório, numa ÚNICA execução.
 
-        `--get-all` resolve `include.path` — MEDIDO (`.2.N3`): `attr.tree`
-        plantado por include é honrado pelo Git E aparece aqui, então a
-        detecção não é contornável escondendo a chave num arquivo incluído.
+        `--list` resolve `include.path` — MEDIDO (`.2.N3`): tanto `attr.tree`
+        quanto `core.attributesFile` plantados por include são honrados pelo
+        Git E aparecem aqui, então a detecção não é contornável escondendo a
+        chave num arquivo incluído.
+
+        UMA chamada e não duas, por medição: cada subprocesso no caminho
+        governado é mais uma superfície para morte por SIGKILL sob carga, e a
+        bateria de corrida cobrou isso — `git config foi encerrado por sinal
+        (rc=-9)` derrubou `test_a9_03` depois que este guard passou a rodar.
+        O produto classificou certo (fail-closed); o custo é que a janela
+        existe, e metade dela era evitável.
+
+        As chaves vêm em CAIXA BAIXA do `--list`, que é como o Git as compara.
         """
-        argv = self._base(repo) + ["config", "--get-all", chave]
+        # `_base` NÃO entra aqui, e isso é a correção de um defeito que eu
+        # mesmo introduzi ao colapsar duas chamadas em uma. MEDIDO: `_base`
+        # injeta `-c core.attributesFile=` (a neutralização de `_NEUTRALIZAR_TREE`),
+        # e `--list` emite AS DUAS ocorrências — a do repositório e a vazia.
+        # Guardando a última (regra do Git: a última vence), o valor efetivo é
+        # `""` e a detecção morria: `test_c2_11` deixou de recusar
+        # `core.attributesFile`. O `--get-all` anterior não sofria disso porque
+        # o `-c` não estava no argv dele.
+        #
+        # O que se quer aqui não é o valor EFETIVO — é a DECLARAÇÃO do
+        # repositório. Por isso o argv é mínimo e sem neutralização: o
+        # `--list` puro mostra o que o repositório escreveu, que é exatamente
+        # sobre o que a política decide.
+        argv = [self._git, "-C", str(repo), "--no-pager", "config", "--list"]
         p = supervisor.executar(
             argv, cwd=repo, env=self.ambiente(), prazo=prazo,
             confinamento=confinamento_de_leitura(repo, autoridade),
@@ -1517,14 +1539,19 @@ class GitTreeAdapter(Adapter):
             raise ErroLimite(
                 f"git config foi encerrado por sinal (rc={p.returncode})"
                 f"{' após o prazo' if p.morto_por_timeout else ''} — sem "
-                f"resposta não dá para saber se `{chave}` está declarado, e "
-                "seguir seria indexar sem conhecer a política")
-        # rc=1 é "chave ausente", o caso normal. rc>1 é erro de verdade.
+                "resposta não dá para saber que fontes de atributo o "
+                "repositório declara, e seguir seria indexar sem conhecer a "
+                "política")
+        # rc=1 é "config vazia", o caso normal. rc>1 é erro de verdade.
         if p.returncode not in (0, 1):
             erro = p.stderr.decode("utf-8", "replace")[:400]
             raise ErroInvalido(f"git config falhou (rc={p.returncode}): {erro}")
-        texto = p.stdout.decode("utf-8", "replace").strip()
-        return texto if (p.returncode == 0 and texto) else None
+        mapa: dict[str, str] = {}
+        for linha in p.stdout.decode("utf-8", "replace").splitlines():
+            chave, sep, valor = linha.partition("=")
+            if sep:
+                mapa[chave.strip().lower()] = valor.strip()
+        return mapa
 
     def _recusar_fonte_de_atributo_externa(self, repo: Path, prazo: float,
                                            autoridade) -> None:
@@ -1560,7 +1587,8 @@ class GitTreeAdapter(Adapter):
         os atributos no `.gitattributes` da working tree ou em
         `.git/info/attributes`, que o disk-scan alcança.
         """
-        if self._config_declarada(repo, "core.attributesFile", prazo, autoridade):
+        cfg = self._config_do_repo(repo, prazo, autoridade)
+        if cfg.get("core.attributesfile"):
             raise ErroSeguranca(
                 "o repositório declara `core.attributesFile`, que põe a fonte "
                 "de atributos FORA do repositório. Dentro do sandbox esse "
@@ -1568,7 +1596,7 @@ class GitTreeAdapter(Adapter):
                 "e o conteúdo seria indexado EM CLARO com rc=0 — recuso em vez "
                 "de ignorar em silêncio. Declare os atributos no próprio "
                 "repositório (`.gitattributes` ou `.git/info/attributes`)")
-        if self._config_declarada(repo, "attr.tree", prazo, autoridade):
+        if cfg.get("attr.tree"):
             raise ErroSeguranca(
                 "o repositório declara `attr.tree`, que lê os atributos de uma "
                 "ÁRVORE Git em vez da working tree. Um `!filter` plantado nessa "
@@ -1623,7 +1651,7 @@ class GitTreeAdapter(Adapter):
         from nomos.adapters import filtro_governado as fg
 
         self._recusar_fonte_de_atributo_por_link(repo, caminhos, autoridade)
-        self._recusar_cancelamento_de_filtro(repo, caminhos, autoridade)
+        cancelamento = self._cancelamento_declarado(repo, caminhos, autoridade)
         self._recusar_fonte_de_atributo_externa(repo, prazo, autoridade)
 
         argv = self._base(repo) + ["check-attr", "-z", "filter", "--", *caminhos]
@@ -1636,6 +1664,7 @@ class GitTreeAdapter(Adapter):
                 "check-attr excedeu o prazo — sem a resposta do Git não dá "
                 "para saber se um caminho pede filtro, e seguir seria indexar "
                 "conteúdo cru sem saber")
+        supervisor.conferir_sinal(p, "check-attr")
         if p.returncode != 0:
             erro = p.stderr.decode("utf-8", "replace")[:400]
             raise ErroInvalido(f"check-attr falhou (rc={p.returncode}): {erro}")
@@ -1677,6 +1706,25 @@ class GitTreeAdapter(Adapter):
             # `unspecified` = NÃO HÁ regra. `set` = o atributo existe sem nomear
             # driver. Nenhum dos dois é pedido de filtro, e nenhum dos dois
             # exige decisão.
+            if valor == "unspecified" and cancelamento:
+                # `unspecified` e AMBIGUO: e a resposta de "nao ha regra" E a de
+                # `!filter` (`.2.N1`). O `check-attr` nao distingue as duas na
+                # saida — mas se alguma fonte DECLARA cancelamento e ESTE
+                # caminho vem sem filtro, a coincidencia e o ataque.
+                #
+                # Cruzar os dois sinais e o que separa `.2.N1` de `.2.N7`: com
+                # `*.png -filter` e o pedido em `segredo.txt`, o check-attr
+                # responde `redator` e nao chega aqui — o cancelamento existe,
+                # mas nao ALCANCA o caminho pedido, e recusar seria recusa falsa
+                # do uso mais legitimo que `-filter` tem.
+                raise ErroSeguranca(
+                    f"o caminho {caminho!r} vem SEM filtro do `check-attr` e o "
+                    f"repositorio DECLARA cancelamento em {cancelamento}. "
+                    "`!filter` e `-filter` desligam a regra de redacao de uma "
+                    "fonte de menor precedencia, e `unspecified` e a MESMA "
+                    "resposta que o Git da para 'nao ha regra' — nao da para "
+                    "distinguir pela saida. Recuso em vez de indexar EM CLARO. "
+                    "Remova o cancelamento ou declare o filtro governado")
             if valor in ("unspecified", "set"):
                 continue
             # `unset` é DIFERENTE, e a diferença é o achado (`.2.13`): ele só
@@ -1730,6 +1778,7 @@ class GitTreeAdapter(Adapter):
             raise ErroLimite(
                 f"filtro governado {filter_id!r} excedeu o prazo em {caminho} "
                 "e a árvore de processos foi encerrada")
+        supervisor.conferir_sinal(p, f"filtro governado {filter_id!r}")
         if p.returncode != 0:
             erro = p.stderr.decode("utf-8", "replace")[:400]
             raise ErroInvalido(
@@ -1866,6 +1915,7 @@ class GitTreeAdapter(Adapter):
             raise ErroLimite(
                 f"{pedido.capacidade} excedeu {prazo:.1f}s e a árvore de "
                 "processos foi encerrada (provável filtro do repositório)")
+        supervisor.conferir_sinal(p, pedido.capacidade)
         if p.returncode != 0:
             erro = p.stderr.decode("utf-8", "replace")[:400]
             raise ErroInvalido(

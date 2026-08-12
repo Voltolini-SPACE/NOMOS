@@ -135,6 +135,7 @@ class GitTagAdapter(Adapter):
                                 confinamento=confinamento_de_repo(repo, autoridade=autoridade))
         if p.morto_por_timeout:
             raise ErroLimite(f"git tag excedeu {prazo:.1f}s")
+        supervisor.conferir_sinal(p, "git tag")
         if p.returncode != 0:
             erro = p.stderr.decode("utf-8", "replace")[:400]
             if "not a valid object name" in erro or "Failed to resolve" in erro:

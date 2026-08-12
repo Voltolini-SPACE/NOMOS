@@ -924,3 +924,94 @@ def test_r4_71_CONTROLE_sem_terceiro_nenhum_incidente_e_emitido(campo_add,
         cen.add("zz.txt")
     assert "trabalho de terceiro foi perdido" not in str(ei.value), (
         "acusou terceiro sem terceiro — falso positivo destrói o sinal")
+
+
+# ═══ `.2.N7` (P2) — recusa FALSA do uso mais legítimo de `-filter` ══════════
+
+@pytest.mark.parametrize("regra", [
+    "*.png -filter",          # binário não passa por redator: o uso canônico
+    "*.bin binary",           # macro que expande para -diff -merge -text
+    "outro.txt -filter",      # cancelamento em caminho que NÃO foi pedido
+])
+def test_r4_80_cancelamento_que_NAO_alcanca_o_caminho_pedido_nao_recusa(
+        governado, regra):
+    """A guarda recusava por EXISTÊNCIA de cancelamento em qualquer fonte.
+
+    `*.png -filter` é o uso mais comum e mais legítimo de `-filter`: binário
+    não deve passar pelo redator. Recusar a operação inteira por causa dele —
+    com o pedido em `segredo.txt`, que casa `*.txt filter=redator` — é recusa
+    falsa, e recusa falsa treina quem lê a suíte a contornar a guarda.
+
+    O discriminador NÃO reimplementa casamento de padrão (essa é a classe de
+    divergência que `check-attr` existe para eliminar). Ele cruza dois sinais
+    que já existem: a varredura diz que HÁ cancelamento declarado, e o
+    `check-attr` diz o valor efetivo DAQUELE caminho. Se o caminho pedido vem
+    com filtro de verdade, o cancelamento não o alcança.
+    """
+    cen = governado
+    (cen.repo / ".gitattributes").write_text(
+        f"*.txt filter=redator\n{regra}\n")
+    (cen.repo / "segredo.txt").write_text("SENHA=hunter2\n")
+
+    r = cen.add("segredo.txt")
+    assert r.efeito_aplicado, f"recusa FALSA por causa de {regra!r}"
+    sha = subprocess.run([GIT, "-C", str(cen.repo), "ls-files", "-s", "--",
+                          "segredo.txt"], capture_output=True,
+                        text=True).stdout.split()[1]
+    corpo = subprocess.run([GIT, "-C", str(cen.repo), "cat-file", "-p", sha],
+                           capture_output=True).stdout
+    assert corpo == b"SENHA=REDIGIDO\n", "o filtro deixou de rodar"
+
+
+@pytest.mark.parametrize("cancelamento", ["!filter", "-filter"])
+def test_r4_81_CONTROLE_cancelamento_QUE_ALCANCA_continua_recusado(governado,
+                                                                    cancelamento):
+    """O par obrigatório: afrouxar `.2.N7` não pode reabrir `.2.N1`.
+
+    Mesmo arquivo, mesma guarda — só muda se a regra casa o caminho pedido.
+    Quando casa, `check-attr` responde `unspecified`/`unset` e a recusa vale.
+    """
+    cen = governado
+    (cen.repo / ".gitattributes").write_text(
+        f"*.txt filter=redator\nsegredo.txt {cancelamento}\n")
+    (cen.repo / "segredo.txt").write_text("SENHA=hunter2\n")
+
+    with pytest.raises(supervisor.ErroSeguranca):
+        cen.add("segredo.txt")
+    assert not cen.cru_no_store(), "o cancelamento vazou o segredo cru"
+
+
+def test_r4_82_a_deteccao_de_config_le_a_DECLARACAO_nao_o_valor_efetivo():
+    """Regressão de um defeito que EU introduzi ao colapsar duas chamadas.
+
+    `_config_do_repo` trocou dois `git config --get-all <chave>` por um único
+    `git config --list`, para reduzir a superfície de morte por SIGKILL no
+    caminho governado. Só que `_base` injeta `-c core.attributesFile=` (a
+    neutralização de `_NEUTRALIZAR_TREE`), e `--list` emite AS DUAS ocorrências
+    — a do repositório e a vazia. Guardando a última (regra do Git: a última
+    vence), o valor efetivo virou `""` e a detecção MORREU: `test_c2_11` deixou
+    de recusar `core.attributesFile`, e a fonte externa voltaria a ser ignorada
+    em silêncio.
+
+    O que a política decide não é o valor EFETIVO — é a DECLARAÇÃO do
+    repositório. Este teste prende o argv: neutralização não entra na consulta
+    que detecta declaração, senão a defesa apaga a própria evidência.
+    """
+    from nomos.adapters import git_tree as gt
+    fonte = Path(gt.__file__).read_text("utf-8")
+    i = fonte.index("def _config_do_repo")
+    corpo = fonte[i:fonte.index("\n    def ", i + 10)]
+    assert 'argv = [self._git' in corpo, (
+        "a consulta de declaração voltou a montar o argv por `_base`; a "
+        "neutralização entra junto e o `--list` passa a reportar o valor "
+        "EFETIVO (vazio) em vez do declarado")
+    # Só as linhas de CÓDIGO: o docstring cita `_NEUTRALIZAR_TREE` para
+    # explicar por que ela NÃO entra aqui, e um teste que casasse o texto
+    # proibiria a própria explicação.
+    codigo = [ln for ln in corpo.splitlines()
+              if ln.strip() and not ln.strip().startswith("#")]
+    dentro = "\n".join(codigo[codigo.index(next(
+        l for l in codigo if "argv = " in l)):])
+    assert "_NEUTRALIZAR" not in dentro, (
+        "neutralização no argv da detecção: ela apaga a declaração que a "
+        "detecção existe para ver")

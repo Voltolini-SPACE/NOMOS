@@ -405,8 +405,15 @@ def test_a8_12_morte_por_SINAL_nunca_vira_erro_da_ferramenta():
             if "returncode != 0" not in linha and "returncode not in" not in linha:
                 continue
             janela = "\n".join(fonte[max(0, i - 8):i + 1])
+            # `morto_por_timeout` NÃO conta, e isso é medição, não rigor
+            # gratuito (`.11.NOVO-SINAL-IRMAOS`). Ele distingue PRAZO, não
+            # SINAL: três sítios checavam só o prazo, passavam neste teste, e
+            # sob carga reportavam `rc=-9` (SIGKILL) como erro de sintaxe da
+            # ferramenta. A suíte completa entregou a reprodução —
+            # `ErroInvalido: filtro governado 'redator' falhou ... (rc=-9)`.
+            # Só `conferir_sinal` ou o teste explícito de `returncode < 0`
+            # separam processo MORTO de ferramenta que RECLAMOU.
             assert ("conferir_sinal" in janela
-                    or "morto_por_timeout" in janela
                     or "returncode < 0" in janela), (
                 f"{modulo.__name__}:{i + 1} decide por `returncode` sem antes "
                 "distinguir morte por SINAL — sob carga isso reporta um "
