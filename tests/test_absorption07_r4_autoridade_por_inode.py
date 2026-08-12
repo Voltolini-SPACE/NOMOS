@@ -1110,3 +1110,73 @@ def test_r4_91_CONTROLE_repo_legitimo_e_nao_repo_seguem_corretos(tmp_path):
     assert rodar("repo").efeito_aplicado, "repositório legítimo parou de funcionar"
     with pytest.raises(Exception, match="não é repositório git"):
         rodar("sem-git")
+
+
+# ═ `.9.NOVO-CONTROLE-TRAVESSIA` / `.5.NOVO-INFO-SYMLINK` (P2) — o MEIO do caminho ═
+
+@pytest.mark.parametrize("componente", ["objects", "objects/info"])
+def test_r4_95_symlink_no_componente_do_MEIO_e_recusado(tmp_path, componente):
+    """`O_NOFOLLOW` no ÚLTIMO componente não vê o link do MEIO.
+
+    Em `<objects>/info/alternates`, tanto `objects` quanto `info` são
+    diretórios que o REPOSITÓRIO controla. Como SYMLINK DE DIRETÓRIO para fora
+    das raízes, o `open` do componente final abre um arquivo regular de
+    verdade — lá fora — e o guard não dispara. MEDIDO: com `<objects>` como
+    link, o conteúdo do arquivo externo saiu EMBUTIDO na mensagem de erro
+    (`SEGREDO_DO_HOST`); com `<objects>/info`, o arquivo de fora foi lido e a
+    operação foi ACEITA.
+
+    Quinta ocorrência da mesma forma (`.2.14`, `.3.02`, `.8.NEW-REFSDIR`,
+    `.11.13`), e a técnica é a que `_abrir_sem_atravessar_link` já usava no
+    `git_tree`: descer com `O_NOFOLLOW` a CADA componente, a partir de uma base
+    que a autoridade validou.
+    """
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    fora = tmp_path / "fora"
+    fora.mkdir()
+    repo = _init(raiz / "r")
+    obj = repo / ".git" / "objects"
+
+    if componente == "objects":
+        alvo = fora / "obj"
+        (alvo / "info").mkdir(parents=True)
+        (alvo / "info" / "alternates").write_text("SEGREDO_DO_HOST=p4ss\n")
+        shutil.rmtree(obj)
+        obj.symlink_to(alvo, target_is_directory=True)
+    else:
+        (fora / "alternates").write_text("SEGREDO_DO_HOST=p4ss\n")
+        shutil.rmtree(obj / "info", ignore_errors=True)
+        (obj / "info").symlink_to(fora, target_is_directory=True)
+
+    raizes = (str(raiz),)
+    gd, cm = git.conferir_git_dir(str(repo), raizes)
+    aut = git.autoridade_de(str(repo), gd, cm)
+    with pytest.raises(supervisor.ErroSeguranca) as ei:
+        git.conferir_alternates(str(repo), raizes, autoridade=aut)
+
+    msg = str(ei.value)
+    assert "componente" in msg, f"a recusa não é a do componente: {msg[:150]}"
+    assert "SEGREDO_DO_HOST" not in msg, (
+        "o conteúdo do arquivo de FORA das raízes saiu na mensagem de erro — "
+        "divulgação sem escrita nenhuma")
+
+
+def test_r4_96_CONTROLE_alternates_LEGITIMO_continua_valendo(tmp_path):
+    """Sem este controle, o de cima passaria num sistema que recusa todo alternate.
+
+    Um alternate real, dentro das raízes, com `objects/` e `info/` sendo
+    diretórios de verdade: tem de passar.
+    """
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    repo = _init(raiz / "r")
+    doador = _init(raiz / "doador")
+    info = repo / ".git" / "objects" / "info"
+    info.mkdir(parents=True, exist_ok=True)
+    (info / "alternates").write_text(str(doador / ".git" / "objects") + "\n")
+
+    raizes = (str(raiz),)
+    gd, cm = git.conferir_git_dir(str(repo), raizes)
+    aut = git.autoridade_de(str(repo), gd, cm)
+    git.conferir_alternates(str(repo), raizes, autoridade=aut)

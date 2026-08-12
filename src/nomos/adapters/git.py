@@ -46,6 +46,7 @@ hostil com essas chaves e prova que nenhuma delas executa.
 """
 from __future__ import annotations
 
+import contextlib
 import errno
 import os
 import re
@@ -249,8 +250,56 @@ def helpers_de_transporte() -> tuple[str, ...]:
     return tuple(achados)
 
 
+def _ler_descendo(base: Path, partes: tuple[str, ...], rotulo: str,
+                  maximo: int) -> str | None:
+    """Desce componente a componente com `O_NOFOLLOW`, a partir de `base`.
+
+    `base` já foi validada pela autoridade; o que vem depois é escolha do
+    repositório e por isso cada nível é aberto sem seguir link.
+    """
+    try:
+        fd = os.open(base, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError:
+        return None
+    try:
+        for i, nome in enumerate(partes):
+            ultimo = i == len(partes) - 1
+            flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+            if not ultimo:
+                flags |= os.O_DIRECTORY
+            try:
+                prox = os.open(nome, flags, dir_fd=fd)
+            except OSError as e:
+                if e.errno in (errno.ELOOP, errno.EMLINK, errno.ENOTDIR):
+                    caminho_rel = "/".join(partes[:i + 1])
+                    raise supervisor.ErroSeguranca(
+                        f"{rotulo}: o componente {caminho_rel!r} é um symlink, "
+                        "e nenhum nível do caminho de um arquivo de controle "
+                        "pode ser link — quem escolhe o destino escolhe o que o "
+                        "supervisor LÊ, fora do sandbox. O guard do último "
+                        "componente não vê o link do MEIO") from None
+                return None
+            os.close(fd)
+            fd = prox
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise supervisor.ErroSeguranca(
+                f"{rotulo} não é arquivo regular (modo {st.st_mode:o}) — FIFO "
+                "e device penduram a leitura do supervisor, que acontece antes "
+                "de existir qualquer prazo")
+        if st.st_size > maximo:
+            raise ErroLimite(
+                f"{rotulo} tem {st.st_size} bytes (limite {maximo}) — recuso "
+                "em vez de ler entrada ilimitada vinda do repositório")
+        return os.read(fd, st.st_size).decode("utf-8", "replace")
+    finally:
+        with contextlib.suppress(OSError):
+            os.close(fd)
+
+
 def ler_controle_do_repo(caminho: Path, rotulo: str,
-                         maximo: int = 64 * 1024) -> str | None:
+                         maximo: int = 64 * 1024,
+                         base: Path | str | None = None) -> str | None:
     """Lê um arquivo de CONTROLE que o repositório escreve, sem se expor.
 
     `commondir`, `objects/info/alternates`, `<git_dir>/gitdir` e `config` são
@@ -268,7 +317,28 @@ def ler_controle_do_repo(caminho: Path, rotulo: str,
     `O_NOFOLLOW` (o link não é seguido), `O_NONBLOCK` (FIFO retorna na hora em
     vez de pendurar) e `S_ISREG` pelo descritor já aberto. `None` = não há
     arquivo de controle a considerar; a ausência é o caso normal.
+    ## `O_NOFOLLOW` no ÚLTIMO componente não basta (`.9.NOVO-CONTROLE`, P2)
+
+    MEDIDO: em `<objects>/info/alternates`, tanto `objects` quanto `info` são
+    diretórios que o REPOSITÓRIO controla, e podem ser SYMLINK DE DIRETÓRIO
+    para fora das raízes. O `open` do componente final não vê o link do meio —
+    ele abre um arquivo regular de verdade, lá fora. Com `<objects>` como link,
+    o conteúdo saiu embutido na mensagem de erro (`SEGREDO_DO_HOST` na
+    exceção); com `<objects>/info`, o arquivo de fora foi lido e ACEITO.
+
+    É a mesma forma de `.2.14`, `.3.02` e `.8.NEW-REFSDIR`, num quinto lugar. A
+    técnica também é a mesma que `_abrir_sem_atravessar_link` já usa no
+    `git_tree`: descer com `openat` e `O_NOFOLLOW` a CADA componente, a partir
+    de uma base que a autoridade já validou. `base` ausente preserva o
+    comportamento antigo para quem passa caminho já contido.
     """
+    if base is not None:
+        try:
+            rel = Path(caminho).relative_to(base)
+        except ValueError:
+            rel = None
+        if rel is not None:
+            return _ler_descendo(Path(base), rel.parts, rotulo, maximo)
     try:
         fd = os.open(caminho, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError as e:
@@ -947,7 +1017,10 @@ def conferir_alternates(repo: Path | str, raizes: tuple[str, ...],
                 "trabalho")
         vistos.add(objects)
         arquivo = Path(objects) / "info" / "alternates"
-        bruto = ler_controle_do_repo(arquivo, "objects/info/alternates")
+        # `base` = o diretório de objetos JÁ validado pela autoridade; tudo
+        # abaixo dele é escolha do repositório e desce sem seguir link.
+        bruto = ler_controle_do_repo(arquivo, "objects/info/alternates",
+                                     base=Path(objects).parent)
         if bruto is None:
             continue
         for linha in bruto.splitlines():
