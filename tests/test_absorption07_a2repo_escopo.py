@@ -258,18 +258,24 @@ def test_a2repo_06_a_conferencia_e_por_COMPONENTE_nao_por_prefixo(campo):
         git.conferir_git_dir(trabalho, (str(campo.raiz),))
 
 
-def test_a2repo_07_sem_raizes_declaradas_nao_ha_o_que_conferir(campo):
-    """Contrato explícito: sem raízes, `conferir_git_dir` não inventa uma.
+def test_a2repo_07_sem_raizes_declaradas_e_RECUSA(campo):
+    """SECURITY_BREAKING_CHANGE: escopo vazio é ausência de autoridade.
 
-    O chamador que não delimita escopo tem de ser corrigido, não silenciosamente
-    contido por um palpite deste módulo — um palpite errado seria pior que a
-    ausência, porque pareceria contenção.
+    A versão anterior deste teste CONGELAVA o comportamento permissivo —
+    `conferir_git_dir` retornava sem conferir quando `raizes=()`, "corrija o
+    chamador". MEDIDO (`.7.03`): um `CapabilityContext` com `raizes=()`
+    construído à mão desligava a defesa e o escape do `.git`-arquivo voltava a
+    gravar índice e objeto FORA das raízes.
+
+    Nenhum caminho governado monta contexto sem raízes (`registrar_git_tree`
+    levanta a montante), então recusar aqui não quebra fluxo legítimo — fecha um
+    furo de contrato do composition root. Escopo vazio recusa, não libera.
     """
     trabalho = campo.raiz / "repo"
     subprocess.run([GIT, "init", "-q", str(trabalho)], check=True,
                    capture_output=True)
-    git_dir, common = git.conferir_git_dir(trabalho, ())
-    assert Path(git_dir).is_dir() and Path(common).is_dir()
+    with pytest.raises(supervisor.ErroSeguranca, match="raízes VAZIAS"):
+        git.conferir_git_dir(trabalho, ())
 
 
 # ════════════ 12-14 — a WORKING TREE também é escolhida pelo repo ═══════════

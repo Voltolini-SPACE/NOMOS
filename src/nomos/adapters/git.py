@@ -358,10 +358,22 @@ def conferir_git_dir(repo: Path | str, raizes: tuple[str, ...]) -> tuple[str, st
     """
     git_dir, common = diretorio_git(repo)
     if not raizes:
-        # Sem raízes declaradas não há o que conferir, e inventar uma seria pior
-        # que não ter: o chamador que não delimita escopo tem de ser corrigido,
-        # não silenciosamente contido por um palpite deste módulo.
-        return git_dir, common
+        # Sem raízes, esta função não tem contra o que conferir — e a versão
+        # anterior RETORNAVA sem conferir, "corrija o chamador". MEDIDO (`.7.03`):
+        # um `CapabilityContext` com `raizes=()` construído à mão desligava a
+        # defesa por completo, e o escape do `.git`-arquivo voltava a gravar
+        # índice e objeto FORA das raízes.
+        #
+        # Os caminhos sancionados já barram a montante (`registrar_git_tree`
+        # levanta sem raízes), então nenhum fluxo legítimo chega aqui vazio.
+        # Fail-closed é a resposta correta para o que resta: um escopo vazio é
+        # ausência de autoridade, não autoridade ilimitada. Recusar em vez de
+        # confiar num palpite fecha o furo de contrato do composition root.
+        raise supervisor.ErroSeguranca(
+            "conferir_git_dir chamado com raízes VAZIAS — escopo vazio é "
+            "ausência de autoridade, não autoridade ilimitada. Nenhum caminho "
+            "governado monta contexto sem raízes; recuso em vez de deixar o "
+            "efeito cair onde o `.git` do repositório apontar")
     reais = tuple(supervisor.canonicalizar(r) for r in raizes)
     for rotulo, caminho in (("git dir", git_dir), ("common dir", common)):
         if not _dentro(caminho, reais):

@@ -349,13 +349,6 @@ def _instantaneo_do_indice(repo: Path, autoridade=None,
     return alvo, alvo.read_bytes(), st.st_mode
 
 
-# Preenchido por `_restaurar_indice` quando o índice mudou entre o instantâneo e
-# o rollback — isto é, quando OUTRO processo escreveu nele. Lido em `executar`,
-# que anexa o aviso ao erro. Lista de módulo porque `_restaurar_indice` é
-# chamada de um `except` e não tem canal de retorno.
-_TERCEIRO_DETECTADO: list[str] = []
-
-
 def _instantaneo_do_split(autoridade) -> dict[str, bytes]:
     """Bytes dos `sharedindex.<sha>`, que o índice pode REFERENCIAR.
 
@@ -392,12 +385,21 @@ def _restaurar_split(estado: dict[str, bytes]) -> None:
             continue
 
 
-def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> None:
-    """Devolve o índice ao estado do instantâneo, atomicamente."""
+def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> bool:
+    """Devolve o índice ao estado do instantâneo. Retorna se detectou terceiro.
+
+    O retorno substitui a lista de MÓDULO que existia aqui. MEDIDO (`.8.07`):
+    `_TERCEIRO_DETECTADO` era estado global mutável, e duas operações governadas
+    no MESMO processo — o `git-commit` que segue um `git-add`, ou dois adapters
+    concorrentes — liam e limpavam a lista uma da outra. É a exata violação que
+    o adapter documenta evitar ("estado de operação em `self` faria duas
+    operações trocarem de plano"). A detecção agora é LOCAL: sobe pelo retorno,
+    e cada `executar` decide sobre a sua própria.
+    """
     alvo, dados, modo = inst
     if dados is None:
         alvo.unlink(missing_ok=True)
-        return
+        return False
 
     # ESCRITOR DE TERCEIRO. MEDIDO 5/5: um `git add` concorrente saía com rc=0,
     # era visto no índice, e o rollback restaurava os bytes antigos APAGANDO o
@@ -406,14 +408,12 @@ def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> None:
     #
     # Aqui a operação já está sendo recusada, então o índice PRECISA voltar (o
     # conteúdo recusado não pode ficar estagiado). O que não pode é a destruição
-    # ser SILENCIOSA — por isso o incidente é registrado no próprio texto do
-    # erro que sobe.
+    # ser SILENCIOSA — por isso o incidente sobe pelo retorno.
     try:
         atual = alvo.read_bytes()
     except OSError:
         atual = None
-    if atual is not None and atual != dados:
-        _TERCEIRO_DETECTADO.append(str(alvo))
+    terceiro = atual is not None and atual != dados
     # Escrever direto em `index` deixaria uma janela com arquivo truncado, que
     # o Git leria como índice corrompido. `os.replace` no MESMO diretório é
     # rename atômico: ou o índice antigo, ou o restaurado, nunca um meio-termo.
@@ -437,6 +437,7 @@ def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> None:
     finally:
         with contextlib.suppress(OSError):
             tmp.unlink()
+    return terceiro
 
 
 def _campos_de_autoridade(autoridade) -> dict[str, str]:
@@ -802,7 +803,6 @@ class GitTreeAdapter(Adapter):
         split = _instantaneo_do_split(autoridade)
         quarentena, reais = _abrir_quarentena(repo, autoridade)
         raiz_q = Path(quarentena.diretorio)
-        del _TERCEIRO_DETECTADO[:]
         try:
             r = self._confirmar(pedido, ctx, repo, argv, descricao, prazo,
                                 quarentena, governados, autoridade)
@@ -816,27 +816,31 @@ class GitTreeAdapter(Adapter):
             # False — qualquer chamador que classifique incidente de segurança
             # por tipo deixava de ver o incidente, que ficava só em
             # `__context__`. Mascarar a recusa é pior que a falha do rollback.
+            #
+            # A detecção de terceiro é LOCAL (retorno de `_restaurar_indice`),
+            # não estado de módulo: `.8.07` mediu duas operações no mesmo
+            # processo lendo/limpando a lista uma da outra.
             falhas: list[str] = []
+            terceiro = False
             for etapa, fn in (("índice", lambda: _restaurar_indice(instantaneo)),
                               ("split index", lambda: _restaurar_split(split)),
                               ("refs", lambda: _restaurar_refs(refs))):
                 try:
-                    fn()
+                    if fn() and etapa == "índice":
+                        terceiro = True
                 except Exception as e:               # noqa: BLE001
                     falhas.append(f"{etapa}: {type(e).__name__}: {e}")
-            if falhas or _TERCEIRO_DETECTADO:
+            if falhas or terceiro:
                 aviso = []
                 if falhas:
                     aviso.append("o DESFAZER falhou em " + "; ".join(falhas)
                                  + " — o repositório pode ter ficado com o "
                                  "conteúdo recusado estagiado")
-                if _TERCEIRO_DETECTADO:
+                if terceiro:
                     aviso.append(
                         "o índice foi escrito por OUTRO processo entre o "
                         "instantâneo e o desfazer, e o rollback sobrepôs esse "
-                        f"trabalho ({', '.join(_TERCEIRO_DETECTADO)}) — "
-                        "trabalho de terceiro foi perdido")
-                    del _TERCEIRO_DETECTADO[:]
+                        "trabalho — trabalho de terceiro foi perdido")
                 # O TIPO do erro original é preservado, e isso é o ponto.
                 # A primeira versão desta correção levantava `ErroSeguranca`
                 # sempre — o que consertava o mascaramento medido em `.8.03` e
