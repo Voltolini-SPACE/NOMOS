@@ -342,8 +342,15 @@ def test_c2_14_check_attr_roda_sob_o_supervisor(cen):
     """
     fonte = Path(git_tree.__file__).read_text("utf-8")
     corpo = fonte.split("def _pedidos_de_filtro", 1)[1].split("\n    def ", 1)[0]
-    assert "supervisor.executar" in corpo
-    assert "subprocess" not in corpo
+    # Só as linhas de CÓDIGO. Comentário que EXPLICA por que não se usa
+    # `subprocess` aqui não pode derrubar o teste — senão a asserção proíbe a
+    # própria documentação da regra, e quem vier depois apaga a explicação para
+    # o teste passar. (Aconteceu: um comentário sobre "o subprocesso do git
+    # bloqueia no `open`" deixou este teste vermelho.)
+    codigo = "\n".join(ln for ln in corpo.splitlines()
+                       if ln.strip() and not ln.strip().startswith("#"))
+    assert "supervisor.executar" in codigo
+    assert "subprocess" not in codigo
 
 
 def test_c2_15_fonte_de_atributo_do_COMMON_em_worktree_ligada(cen, tmp_path):

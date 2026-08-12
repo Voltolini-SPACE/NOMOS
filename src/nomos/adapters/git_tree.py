@@ -1701,6 +1701,23 @@ class GitTreeAdapter(Adapter):
         from nomos.adapters import filtro_governado as fg
 
         self._recusar_fonte_de_atributo_por_link(repo, caminhos, autoridade)
+        # FIFO numa FONTE DE ATRIBUTO custa o prazo INTEIRO se a descoberta
+        # ficar para o `check-attr` (`.9.NOVO-FIFO-ATTR-PRAZO-60S`). MEDIDO:
+        # `.gitattributes` como FIFO -> ErroLimite em 60,2 s. É o mesmo defeito
+        # de `.11.NOVO-FIFO-60S`, numa fonte que aquela guarda não cobre — o
+        # subprocesso do git bloqueia no `open` antes de qualquer teto nosso.
+        # `lstat` não abre, então não bloqueia.
+        for base_f, componentes in self._fontes_de_atributo(repo, caminhos,
+                                                            autoridade):
+            alvo_f = base_f.joinpath(*componentes)
+            with contextlib.suppress(OSError):
+                modo = os.lstat(alvo_f).st_mode
+                if not (stat.S_ISREG(modo) or stat.S_ISLNK(modo)):
+                    raise ErroSeguranca(
+                        f"a fonte de atributo {alvo_f} não é arquivo regular "
+                        f"(modo {modo:o}). FIFO e device BLOQUEIAM o `open` do "
+                        "git pelo prazo inteiro antes de a operação ser "
+                        "recusada — o repositório escolhe gastar o prazo")
         cancelamento = self._cancelamento_declarado(repo, caminhos, autoridade)
         self._recusar_fonte_de_atributo_externa(repo, prazo, autoridade)
 
