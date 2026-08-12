@@ -349,6 +349,35 @@ def _instantaneo_do_indice(repo: Path, autoridade=None,
     return alvo, alvo.read_bytes(), st.st_mode
 
 
+def _gravar_atomico(alvo: Path, dados: bytes, modo: int | None = None) -> None:
+    """Escreve `dados` em `alvo` atomicamente, por temporário NÃO ADIVINHÁVEL.
+
+    MEDIDO (`.8.03` e `.8.NEW-ROLLBACK-TMPNAME`): os três restauradores da
+    transação usavam nome TOTALMENTE previsível — `.<nome>.nomos-*-<pid>` —
+    dentro de diretórios que o REPOSITÓRIO controla. Pré-criar esse caminho como
+    DIRETÓRIO derruba o desfazer, e o índice fica com o conteúdo RECUSADO
+    estagiado. Não é corrida: é conteúdo ESTÁTICO do repositório, sem oráculo
+    nenhum — basta saber o formato do nome.
+
+    `mkstemp` no MESMO diretório resolve, e é o que `_promover_quarentena` já
+    fazia: o contraste dentro do próprio arquivo é que denunciava a assimetria.
+    Mesmo diretório porque `os.replace` só é atômico dentro de um filesystem.
+    """
+    fd, temporario = tempfile.mkstemp(dir=alvo.parent, prefix=".nomos-tmp-")
+    try:
+        with os.fdopen(fd, "wb") as saida:
+            saida.write(dados)
+            saida.flush()
+            os.fsync(saida.fileno())
+        if modo is not None:
+            os.chmod(temporario, modo)
+        os.replace(temporario, alvo)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(temporario)
+        raise
+
+
 def _instantaneo_do_split(autoridade) -> dict[str, bytes]:
     """Bytes dos `sharedindex.<sha>`, que o índice pode REFERENCIAR.
 
@@ -401,14 +430,13 @@ def _restaurar_split(estado: dict[str, bytes]) -> None:
         if alvo.exists():
             continue
         try:
-            tmp = alvo.with_name(f".{alvo.name}.nomos-{os.getpid()}")
-            tmp.write_bytes(dados)
-            os.replace(tmp, alvo)
+            _gravar_atomico(alvo, dados)
         except OSError:
             continue
 
 
-def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> bool:
+def _restaurar_indice(inst: tuple[Path, bytes | None, int | None],
+                      depois_do_exec: bytes | None = None) -> bool:
     """Devolve o índice ao estado do instantâneo. Retorna se detectou terceiro.
 
     O retorno substitui a lista de MÓDULO que existia aqui. MEDIDO (`.8.07`):
@@ -432,11 +460,21 @@ def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> bool:
     # Aqui a operação já está sendo recusada, então o índice PRECISA voltar (o
     # conteúdo recusado não pode ficar estagiado). O que não pode é a destruição
     # ser SILENCIOSA — por isso o incidente sobe pelo retorno.
+    # O DISCRIMINADOR é o estado APÓS o nosso exec, não o instantâneo. MEDIDO
+    # (`.11.09`): o `git add`/`commit` do PRÓPRIO NOMOS reescreve o índice
+    # (refresh do stat cache), então comparar com o instantâneo acusava
+    # "trabalho de terceiro foi perdido" em toda recusa — sem que existisse
+    # terceiro nenhum. Um sinal que dispara sempre não é sinal; ele destrói a
+    # confiança na única evidência que `.8.03` construiu.
+    #
+    # Sem `depois_do_exec` (o exec nem chegou a rodar) não há efeito nosso a
+    # descontar, e qualquer diferença é de fato de outro processo.
     try:
         atual = alvo.read_bytes()
     except OSError:
         atual = None
-    terceiro = atual is not None and atual != dados
+    esperado = depois_do_exec if depois_do_exec is not None else dados
+    terceiro = atual is not None and atual != esperado
     # Escrever direto em `index` deixaria uma janela com arquivo truncado, que
     # o Git leria como índice corrompido. `os.replace` no MESMO diretório é
     # rename atômico: ou o índice antigo, ou o restaurado, nunca um meio-termo.
@@ -451,15 +489,7 @@ def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> bool:
     # logo acima: se o índice mudou entre o instantâneo e o desfazer, o
     # incidente sobe anexado ao erro. Perda pode ser inevitável numa recusa;
     # perda sem sinal não.
-    tmp = alvo.with_name(f".index.nomos-rollback-{os.getpid()}")
-    try:
-        tmp.write_bytes(dados)
-        if modo is not None:
-            os.chmod(tmp, modo)
-        os.replace(tmp, alvo)
-    finally:
-        with contextlib.suppress(OSError):
-            tmp.unlink()
+    _gravar_atomico(alvo, dados, modo)
     return terceiro
 
 
@@ -546,9 +576,7 @@ def _restaurar_refs(estado: dict[str, bytes | None]) -> None:
             if alvo.exists() and alvo.read_bytes() == dados:
                 continue                      # não foi tocado
             alvo.parent.mkdir(parents=True, exist_ok=True)
-            tmp = alvo.with_name(f".{alvo.name}.nomos-refs-{os.getpid()}")
-            tmp.write_bytes(dados)
-            os.replace(tmp, alvo)
+            _gravar_atomico(alvo, dados)
         except OSError:
             continue
     # Refs CRIADAS pela operação recusada não estão no instantâneo e ficariam
@@ -834,9 +862,10 @@ class GitTreeAdapter(Adapter):
         quarentena, reais = _abrir_quarentena(repo, autoridade)
         raiz_q = Path(quarentena.diretorio)
         try:
+            pos_exec: list[bytes] = []
             r = self._confirmar(pedido, ctx, repo, argv, descricao, prazo,
                                 quarentena, governados, autoridade,
-                                estagiados_antes, aprovados)
+                                estagiados_antes, aprovados, pos_exec)
         except BaseException as original:
             # BaseException, não Exception: KeyboardInterrupt e SystemExit
             # também não podem deixar segredo estagiado nem objeto no store.
@@ -853,7 +882,9 @@ class GitTreeAdapter(Adapter):
             # processo lendo/limpando a lista uma da outra.
             falhas: list[str] = []
             terceiro = False
-            for etapa, fn in (("índice", lambda: _restaurar_indice(instantaneo)),
+            depois = pos_exec[-1] if pos_exec else None
+            for etapa, fn in (("índice",
+                               lambda: _restaurar_indice(instantaneo, depois)),
                               ("split index", lambda: _restaurar_split(split)),
                               ("refs", lambda: _restaurar_refs(refs))):
                 try:
@@ -1283,7 +1314,8 @@ class GitTreeAdapter(Adapter):
                    quarentena: supervisor.Quarentena,
                    governados: dict[str, str],
                    autoridade, estagiados_antes=None,
-                   aprovados: list[str] | None = None) -> CapabilityResult:
+                   aprovados: list[str] | None = None,
+                   pos_exec: list | None = None) -> CapabilityResult:
         """Executa e valida. Qualquer saída por exceção desfaz o índice.
 
         A promoção dos objetos acontece DEPOIS de todas as verificações: um
@@ -1329,6 +1361,12 @@ class GitTreeAdapter(Adapter):
         # `git add` é a ÚNICA capacidade que roda programa do repositório (o
         # filtro). É também onde o rc=0 mente com mais consequência: filtro
         # quebrado indexa o conteúdo cru. Aqui a mentira para.
+        # O índice LOGO APÓS o nosso exec: é o baseline que separa "o meu
+        # próprio filho reescreveu" de "outro processo escreveu" (`.11.09`).
+        alvo_idx = Path(autoridade.git_dir) / "index" if autoridade else None
+        if alvo_idx is not None and alvo_idx.exists():
+            with contextlib.suppress(OSError):
+                pos_exec.append(alvo_idx.read_bytes()) if pos_exec is not None else None
         supervisor.conferir_saida(p.stderr, pedido.capacidade)
         if pedido.capacidade == "git-add":
             self._conferir_escopo_estagiado(repo, estagiados_antes, aprovados,

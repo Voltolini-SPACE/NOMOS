@@ -256,12 +256,29 @@ class GitPushAdapter(Adapter):
         capacidade.
         """
         local = self._local(destino)
-        raizes = [autoridade.repo if autoridade is not None
-                  else supervisor.existente(repo)]
+        # A raiz de escrita é o GIT DIR, não a working tree. MEDIDO (`.4.06`):
+        # este confinamento era montado à mão com `escrita=<repo>` — a working
+        # tree INTEIRA gravável — enquanto `confinamento_de_repo` já derivava a
+        # raiz correta há tempos. `git push` escreve `refs/remotes`, `FETCH_HEAD`
+        # e o reflog: tudo dentro do git dir. Conceder a working tree dava ao
+        # processo do push autoridade sobre os arquivos do projeto, que ele não
+        # usa para nada.
+        if autoridade is not None:
+            raizes = list(autoridade.raizes_de_escrita)
+        else:
+            raizes = list(confinamento_de_repo(repo).escrita)
         if local:
             raizes.append(supervisor.existente(local))
+
+        # E os três lugares de onde o repositório faz código SOBREVIVER à
+        # operação continuam negados, como em `confinamento_de_repo`. Montar o
+        # Confinamento à mão tinha deixado `hooks/`, `config` e `info/`
+        # graváveis justamente na única capacidade com egresso de rede.
+        proibidos = tuple(f"{raiz}/{nome}" for raiz in raizes
+                          for nome in ("hooks", "info", "config"))
         return supervisor.Confinamento(
             escrita=tuple(raizes), rede=not local,
+            negacao_de_escrita=proibidos,
             exec_permitido=(executaveis_de_git() + ("/bin/sh", "/bin/bash")
                             + helpers_de_transporte()))
 

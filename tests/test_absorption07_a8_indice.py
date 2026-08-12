@@ -236,17 +236,32 @@ def test_a8_07_falha_no_DESFAZER_nao_mascara_o_ErroSeguranca(campo):
     False, e qualquer chamador que classifique incidente de segurança por tipo
     deixava de ver o incidente, que ficava só em `__context__`.
     """
-    # O índice tem de EXISTIR: sem ele o desfazer é um `unlink`, não usa
-    # temporário, e a armadilha não é sequer tocada — o teste passaria por
-    # não medir nada.
+    # O índice tem de EXISTIR: sem ele o desfazer é um `unlink` e não há
+    # gravação a falhar — o teste passaria por não medir nada.
     _git("-C", str(campo.repo), "add", "a.txt")
-    armadilha = (campo.repo / ".git"
-                 / f".index.nomos-rollback-{os.getpid()}")
-    armadilha.mkdir(parents=True, exist_ok=True)
+
+    # A injeção é por monkeypatch, e NÃO por armadilha de nome. Pré-criar
+    # `.index.nomos-rollback-<pid>` era o gatilho original — e deixou de
+    # funcionar quando `_gravar_atomico` passou a usar `mkstemp` (correção de
+    # `.8.NEW-ROLLBACK-TMPNAME`: o repositório não escolhe o nome do
+    # temporário). O gatilho velho virou prova do conserto, não do defeito;
+    # a propriedade medida aqui continua sendo "a falha do desfazer não
+    # mascara o erro original".
+    import nomos.adapters.git_tree as gt
+    real = gt._gravar_atomico
+
+    def explodir(alvo, dados, modo=None):
+        if alvo.name == "index":
+            raise OSError(13, "permissão negada no desfazer")
+        return real(alvo, dados, modo)
 
     from nomos.adapters import filtro_governado as fg
-    with pytest.raises(fg.ErroFiltro) as exc:
-        _com_filtro_desconhecido(campo)
+    gt._gravar_atomico = explodir
+    try:
+        with pytest.raises(fg.ErroFiltro) as exc:
+            _com_filtro_desconhecido(campo)
+    finally:
+        gt._gravar_atomico = real
 
     # O TIPO do erro original é preservado. A primeira versão desta correção
     # levantava `ErroSeguranca` sempre — consertava o mascaramento medido e
@@ -324,3 +339,24 @@ def test_a8_10_CONTROLE_sharedindex_regular_e_capturado(campo):
     estado = git_tree._instantaneo_do_split(aut)
     assert any(b"DIRC-conteudo" in v for v in estado.values()), (
         "o snapshot do split parou de capturar sharedindex legítimo")
+
+
+def test_a8_11_o_temporario_do_desfazer_NAO_e_escolhivel_pelo_repositorio(campo):
+    """`.8.NEW-ROLLBACK-TMPNAME`: nome previsível é gatilho estático.
+
+    Os três restauradores usavam `.<nome>.nomos-*-<pid>` dentro de diretórios
+    que o REPOSITÓRIO controla. Pré-criar esse caminho como DIRETÓRIO derrubava
+    o desfazer, e o índice ficava com o conteúdo RECUSADO estagiado. Não é
+    corrida — é conteúdo estático, sem oráculo: basta saber o formato do nome.
+
+    O contraste estava no mesmo arquivo: `_promover_quarentena` já usava
+    `mkstemp`. Este teste prende a simetria.
+    """
+    fonte = Path(git_tree.__file__).read_text("utf-8")
+    corpo = fonte.split("def _gravar_atomico", 1)[1].split("\ndef ", 1)[0]
+    assert "mkstemp" in corpo, (
+        "o temporário do desfazer voltou a ter nome derivável — o repositório "
+        "pode pré-criá-lo como diretório e derrubar o rollback")
+    for previsivel in (".index.nomos-rollback-", ".nomos-refs-"):
+        assert previsivel not in fonte, (
+            f"nome previsível {previsivel!r} voltou ao caminho de desfazer")

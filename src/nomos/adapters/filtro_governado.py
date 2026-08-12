@@ -62,14 +62,24 @@ class ErroFiltro(ErroInvalido):
 
 
 def _parece_git_dir(caminho: str) -> bool:
-    """Heurística estável: um git dir tem `HEAD` e `objects`.
+    """Um git dir tem `HEAD` e mais um marcador de layout.
 
-    Não executa git nem lê config — só a presença dos dois nomes que TODO git
-    dir tem. Serve para decidir se uma raiz de ESCRITA do filtro é um diretório
-    Git e, portanto, tem de ser negada por inteiro.
+    MEDIDO (`.11.08`): exigir `HEAD` **e** `objects/` não reconhece o git dir de
+    uma WORKTREE LIGADA — lá os objetos moram no common, e o git dir tem
+    `HEAD` + `commondir` + `gitdir`. A heurística estreita deixava esse layout
+    inteiro gravável pelo filtro.
+
+    Não executa git nem lê config: só a presença dos nomes. `HEAD` sozinho seria
+    amplo demais (um diretório de trabalho pode ter um arquivo chamado HEAD),
+    daí o segundo marcador.
     """
-    return (os.path.exists(os.path.join(caminho, "HEAD"))
-            and os.path.isdir(os.path.join(caminho, "objects")))
+    def tem(nome: str) -> bool:
+        return os.path.exists(os.path.join(caminho, nome))
+
+    return tem("HEAD") and (os.path.isdir(os.path.join(caminho, "objects"))
+                            or tem("commondir") or tem("gitdir")
+                            or tem("packed-refs")
+                            or os.path.isdir(os.path.join(caminho, "refs")))
 
 
 @dataclass(frozen=True)
@@ -238,7 +248,14 @@ class PoliticaDeFiltro:
         # operação. MEDIDO: com `write_roots=(repo,)` o filtro gravou o arquivo
         # da raiz, e com ele escolheria qual filtro roda na PRÓXIMA operação.
         # Negar por caminho não alcança: por isso a negação é por NOME.
-        por_nome = (r"\.gitattributes",) if self.write_roots else ()
+        # `.gitattributes` é FONTE DE ATRIBUTO e `.git` é o diretório inteiro:
+        # os dois em QUALQUER profundidade. MEDIDO (`.11.10`): quando a política
+        # declara como raiz um ANCESTRAL do repositório — o valor natural quando
+        # o escopo do filtro é o WORKSPACE, que é o mesmo das `raizes` do runtime
+        # — a negação por caminho só alcançava `<raiz>/.git`, um nível. Qualquer
+        # `<raiz>/<projeto>/.git` ficava gravável. Negar por NOME é a única forma
+        # que não depende de enumerar onde os repositórios estão.
+        por_nome = ((r"\.gitattributes", r"\.git") if self.write_roots else ())
         return supervisor.Confinamento(
             escrita=tuple(self.write_roots),
             declara_sem_escrita=not self.write_roots,

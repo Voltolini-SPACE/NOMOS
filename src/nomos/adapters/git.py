@@ -249,6 +249,52 @@ def helpers_de_transporte() -> tuple[str, ...]:
     return tuple(achados)
 
 
+def ler_controle_do_repo(caminho: Path, rotulo: str,
+                         maximo: int = 64 * 1024) -> str | None:
+    """Lê um arquivo de CONTROLE que o repositório escreve, sem se expor.
+
+    `commondir`, `objects/info/alternates`, `<git_dir>/gitdir` e `config` são
+    todos escolhidos pelo REPOSITÓRIO, e esta leitura roda no processo do
+    SUPERVISOR — fora do sandbox, com a autoridade do NOMOS. Um `read_text()`
+    cru neles custou três achados da mesma família:
+
+        FIFO             `open` sem escritor PENDURA o supervisor, e o prazo do
+                         nó só existe depois (`.9.04`)
+        symlink p/ fora  o conteúdo de um arquivo fora das raízes é LIDO, e
+                         sai inteiro embutido na mensagem de erro (`.9.08`,
+                         `.9.10`) — divulgação sem escrita nenhuma
+
+    O guard é o mesmo de `_ler_alvo_do_filtro` e `_instantaneo_do_indice`:
+    `O_NOFOLLOW` (o link não é seguido), `O_NONBLOCK` (FIFO retorna na hora em
+    vez de pendurar) e `S_ISREG` pelo descritor já aberto. `None` = não há
+    arquivo de controle a considerar; a ausência é o caso normal.
+    """
+    try:
+        fd = os.open(caminho, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError as e:
+        if e.errno in (errno.ELOOP, errno.EMLINK):
+            raise supervisor.ErroSeguranca(
+                f"{rotulo} é um symlink, e arquivo de controle do repositório "
+                "não pode ser link: quem escolhe o destino escolhe o que o "
+                "supervisor LÊ, fora do sandbox — o conteúdo de um arquivo de "
+                "fora das raízes entraria no processo do NOMOS") from None
+        return None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise supervisor.ErroSeguranca(
+                f"{rotulo} não é arquivo regular (modo {st.st_mode:o}) — FIFO "
+                "e device penduram a leitura do supervisor, que acontece antes "
+                "de existir qualquer prazo")
+        if st.st_size > maximo:
+            raise ErroLimite(
+                f"{rotulo} tem {st.st_size} bytes (limite {maximo}) — recuso "
+                "em vez de ler entrada ilimitada vinda do repositório")
+        return os.read(fd, st.st_size).decode("utf-8", "replace")
+    finally:
+        os.close(fd)
+
+
 def _ler_ponto_git(base: Path) -> tuple[str, str]:
     """A FORMA de `.git` e seu conteúdo, de UM único descritor.
 
@@ -351,8 +397,9 @@ def _diretorio_git_com_forma(repo: Path | str) -> tuple[str, str, str]:
     # Em worktree ligada o estado compartilhado (objects, refs do repo
     # principal) vive no common dir, não no git dir da worktree.
     comum = Path(git_dir) / "commondir"
-    if comum.is_file():
-        bruto = comum.read_text("utf-8", "replace").strip()
+    bruto_comum = ler_controle_do_repo(comum, "<git_dir>/commondir")
+    if bruto_comum is not None:
+        bruto = bruto_comum.strip()
         common = supervisor.existente(
             bruto if os.path.isabs(bruto) else str(Path(git_dir) / bruto))
     else:
@@ -564,10 +611,7 @@ def _conferir_titularidade(base: Path, git_dir: str) -> None:
     # diferença entre ler um dado e aceitar uma afirmação do atacante.
     ponteiro = gd / "gitdir"
     if gd.parent.name == "worktrees" and ponteiro.is_file():
-        try:
-            bruto = ponteiro.read_text("utf-8", "replace").strip()
-        except OSError:
-            bruto = ""
+        bruto = (ler_controle_do_repo(ponteiro, "<git_dir>/gitdir") or "").strip()
         if bruto:
             dono = supervisor.canonicalizar(str(Path(bruto).parent))
             if dono != alvo:
@@ -582,10 +626,7 @@ def _conferir_titularidade(base: Path, git_dir: str) -> None:
     # Ou seja: a chave era INERTE para o Git e autoritativa para o NOMOS, que é
     # a pior combinação possível — a adulteração não aparece em nenhuma
     # inspeção de git e mesmo assim decide a titularidade.
-    try:
-        texto = (gd / "config").read_text("utf-8", "replace")
-    except OSError:
-        texto = ""
+    texto = ler_controle_do_repo(gd / "config", "<git_dir>/config") or ""
     secao = ""
     for linha in texto.splitlines():
         crua = linha.strip()
@@ -685,9 +726,8 @@ def conferir_alternates(repo: Path | str, raizes: tuple[str, ...],
     while fila and len(vistos) < MAX_SALTOS:
         objects = fila.pop()
         arquivo = Path(objects) / "info" / "alternates"
-        try:
-            bruto = arquivo.read_text("utf-8", "replace")
-        except OSError:
+        bruto = ler_controle_do_repo(arquivo, "objects/info/alternates")
+        if bruto is None:
             continue
         for linha in bruto.splitlines():
             entrada = linha.strip()
