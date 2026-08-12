@@ -1011,7 +1011,102 @@ def test_r4_82_a_deteccao_de_config_le_a_DECLARACAO_nao_o_valor_efetivo():
     codigo = [ln for ln in corpo.splitlines()
               if ln.strip() and not ln.strip().startswith("#")]
     dentro = "\n".join(codigo[codigo.index(next(
-        l for l in codigo if "argv = " in l)):])
+        ln for ln in codigo if "argv = " in ln)):])
     assert "_NEUTRALIZAR" not in dentro, (
         "neutralização no argv da detecção: ela apaga a declaração que a "
         "detecção existe para ver")
+
+
+# ═══ `N-A7-03` / `.1.N2` (P2) — o ORÁCULO residual de 1 BIT ═════════════════
+
+_HOST_EXISTEM = ["/etc/passwd", "/etc/hosts", "/var/db/sudo", "/dev/null",
+                 "/Applications", "/usr/libexec"]
+_HOST_AUSENTES = ["/etc/nao-existe-xyz", "/var/db/nao-existe-xyz",
+                  "/dev/nao-existe-xyz", "/Applications/nao-existe-xyz",
+                  "/usr/libexec/nao-existe-xyz", "/nao-existe-r5-xyz"]
+
+
+def _sondar_git_symlink(tmp_path, alvo_host: str, n: int) -> str:
+    """Resposta do NOMOS a `.git` = symlink para um caminho do HOST."""
+    from nomos.adapters import git_tree
+    from nomos.adapters import filtro_governado as fg
+    from nomos.adapters.contrato import CapabilityContext, CapabilityRequest
+    from nomos.adapters.wiring import registrar_git_tree
+    from nomos.kernel.policy import PolicyEngine
+    from nomos.orquestracao.registro import RegistroCapacidades
+    raiz = tmp_path / f"raizes{n}"
+    repo = raiz / "r"
+    repo.mkdir(parents=True)
+    (repo / ".git").symlink_to(alvo_host)
+    (repo / "x.txt").write_text("x\n")
+    rc = RegistroCapacidades(policy=PolicyEngine(tmp_path / f"p{n}.json"),
+                             approver=lambda *a, **k: True)
+    registrar_git_tree(rc, raizes=(str(raiz),))
+    ctx = CapabilityContext.de_registro(rc, "git-add", "runtime-governado",
+                                        raizes=(str(raiz),))
+    try:
+        git_tree.GitTreeAdapter(registro=fg.RegistroDeFiltros()).executar(
+            CapabilityRequest(capacidade="git-add", alvo=str(repo),
+                              argumentos={"caminhos": ["x.txt"]}), ctx)
+        return "ACEITOU"
+    except Exception as e:                                   # noqa: BLE001
+        # A CLASSE da exceção é o canal: dois tipos distintos = 1 bit vazado.
+        return type(e).__name__
+
+
+def test_r4_90_existencia_no_host_e_INDISTINGUIVEL(tmp_path):
+    """MEDIDO: 2 classes de resposta, separação PERFEITA — 6 existem, 6 não.
+
+    O `.exists()` que rodava ANTES de `conferir_git_dir` nos quatro adapters
+    SEGUE o symlink e responde sem confrontar o destino com as raízes. Caminho
+    ausente virava `ErroInvalido: não é repositório git`; caminho existente
+    virava `ErroSeguranca: FORA das raízes`. Um bit por sonda, sobre qualquer
+    caminho do host.
+
+    Era redundante além de vazante: `conferir_git_dir` já recusa o que não é
+    repositório, e recusa DEPOIS de confrontar com as raízes. Uma pré-checagem
+    que antecipa a mesma decisão sem escopo não protege nada.
+
+    O critério não é "recusou" — é a resposta ser a MESMA para os doze.
+    """
+    respostas = {alvo: _sondar_git_symlink(tmp_path, alvo, i)
+                 for i, alvo in enumerate(_HOST_EXISTEM + _HOST_AUSENTES)}
+    classes = set(respostas.values())
+    assert len(classes) == 1, (
+        f"a resposta DISTINGUE existência no host: {classes}. "
+        f"Detalhe: { {a: r for a, r in respostas.items()} }")
+
+
+def test_r4_91_CONTROLE_repo_legitimo_e_nao_repo_seguem_corretos(tmp_path):
+    """Remover a pré-checagem não pode aceitar não-repositório nem quebrar repo.
+
+    Sem este controle, `test_r4_90` passaria numa implementação que devolve a
+    mesma coisa para tudo — inclusive aceitando o que não é repositório.
+    """
+    from nomos.adapters import git_tree
+    from nomos.adapters import filtro_governado as fg
+    from nomos.adapters.contrato import CapabilityContext, CapabilityRequest
+    from nomos.adapters.wiring import registrar_git_tree
+    from nomos.kernel.policy import PolicyEngine
+    from nomos.orquestracao.registro import RegistroCapacidades
+
+    def rodar(tipo):
+        raiz = tmp_path / f"raiz_{tipo}"
+        repo = raiz / "r"
+        repo.mkdir(parents=True)
+        if tipo == "repo":
+            subprocess.run([GIT, "init", "-q", "-b", "main", str(repo)],
+                           check=True, capture_output=True)
+        (repo / "x.txt").write_text("x\n")
+        rc = RegistroCapacidades(policy=PolicyEngine(tmp_path / f"c{tipo}.json"),
+                                 approver=lambda *a, **k: True)
+        registrar_git_tree(rc, raizes=(str(raiz),))
+        ctx = CapabilityContext.de_registro(rc, "git-add", "runtime-governado",
+                                            raizes=(str(raiz),))
+        return git_tree.GitTreeAdapter(registro=fg.RegistroDeFiltros()).executar(
+            CapabilityRequest(capacidade="git-add", alvo=str(repo),
+                              argumentos={"caminhos": ["x.txt"]}), ctx)
+
+    assert rodar("repo").efeito_aplicado, "repositório legítimo parou de funcionar"
+    with pytest.raises(Exception, match="não é repositório git"):
+        rodar("sem-git")

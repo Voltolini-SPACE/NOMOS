@@ -1004,8 +1004,18 @@ class GitTreeAdapter(Adapter):
         self._coerente(pedido, ctx)
         repo = resolver(texto_estrito(pedido.alvo, "alvo", obrigatorio=True),
                         ctx.raizes)
-        if not (repo / ".git").exists():
-            raise ErroInvalido(f"não é repositório git: {repo}")
+        # O `.exists()` que existia aqui era um ORÁCULO DE EXISTÊNCIA sobre
+        # caminho ARBITRÁRIO do host (`N-A7-03`/`.1.N2`, resíduo de `.9.12`).
+        # Ele SEGUE o symlink e responde ANTES de qualquer conferência de
+        # raízes: com `.git` apontando para um caminho do host, a CLASSE da
+        # exceção separava existente de ausente. MEDIDO em 12 caminhos —
+        # 6 que existem e 6 que não — exatamente 2 classes de resposta, com
+        # separação PERFEITA.
+        #
+        # E era redundante: `conferir_git_dir` logo abaixo já recusa o que não
+        # é repositório, e recusa DEPOIS de confrontar o destino com as raízes.
+        # Uma pré-checagem que só antecipa a mesma decisão, mas sem escopo, não
+        # protege nada e vaza um bit por sonda.
         # A2-REPO: o `.git` do repositorio pode ser um ARQUIVO apontando o git
         # dir para fora das raizes aprovadas, e o git dir vira RAIZ DE ESCRITA
         # do sandbox. Conferir aqui, junto do `resolver`, porque e aqui que as
