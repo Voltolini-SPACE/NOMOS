@@ -360,10 +360,33 @@ def _instantaneo_do_split(autoridade) -> dict[str, bytes]:
     operação foi RECUSADA. O trabalho legítimo que já estava estagiado ia junto.
 
     Guardar os bytes dos dois é a mesma decisão do índice: estado, não semântica.
+
+    ## O mesmo guard de `.8.04`, e a razão de ele não poder faltar aqui
+
+    `sharedindex.<sha>` é nome que o REPOSITÓRIO controla, e a leitura acontece
+    NESTE processo — o do supervisor, fora do sandbox. Um `read_bytes()` cru
+    seguiria um symlink plantado para um segredo do host, trazendo o conteúdo
+    para dentro do NOMOS: exatamente o vazamento que `_instantaneo_do_indice`
+    já recusa sobre `.git/index`. Confidencialidade não precisa de escrita, e a
+    assimetria entre os três instantâneos (índice e refs faziam `lstat`, o split
+    não) era o furo. `lstat` antes de ler, só arquivo regular.
     """
     estado: dict[str, bytes] = {}
     for base in {autoridade.git_dir, autoridade.common}:
         for p in Path(base).glob("sharedindex.*"):
+            try:
+                st = os.lstat(p)
+            except OSError:
+                continue
+            if not stat.S_ISREG(st.st_mode):
+                # symlink, FIFO, device: o `sharedindex` é estado interno do
+                # Git, nunca um link. Recusar em vez de seguir para um destino
+                # escolhido pelo repositório.
+                raise ErroSeguranca(
+                    f"{p} não é arquivo regular (modo {st.st_mode:o}) — "
+                    "`sharedindex.<sha>` como symlink/FIFO faria a leitura do "
+                    "instantâneo, que roda no processo do supervisor fora do "
+                    "sandbox, seguir um destino escolhido pelo repositório")
             try:
                 estado[str(p)] = p.read_bytes()
             except OSError:

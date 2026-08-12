@@ -288,3 +288,39 @@ def test_a8_08_escritor_concorrente_nao_tem_o_trabalho_destruido(campo):
     assert sobreviveu or "OUTRO processo" in erro, (
         "o trabalho do concorrente foi destruído E o incidente não foi "
         "reportado — perda de dado silenciosa")
+
+
+def test_a8_09_sharedindex_como_SYMLINK_nao_e_lido_pelo_supervisor(campo):
+    """`.8.NEW`: a assimetria entre os três instantâneos era o furo.
+
+    `_instantaneo_do_indice` (index) e `_instantaneo_das_refs` (HEAD/refs)
+    faziam `lstat` e recusavam symlink ANTES de ler. `_instantaneo_do_split`
+    lia `sharedindex.<sha>` com `read_bytes()` cru — e esse nome é controlado
+    pelo repositório. Plantado como symlink para um segredo do host, a leitura,
+    que roda no processo do supervisor FORA do sandbox, trazia o conteúdo para
+    dentro do NOMOS. Confidencialidade não precisa de escrita — mesmo padrão
+    que `test_a8_01` mede sobre o índice.
+    """
+    vitima = campo.fora / "chave_do_host.pem"
+    vitima.write_text("-----BEGIN PRIVATE KEY-----\nSEGREDO\n")
+    link = campo.repo / ".git" / "sharedindex.deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+    os.symlink(str(vitima), str(link))
+
+    from nomos.adapters.git import autoridade_de, conferir_git_dir
+    gd, comum = conferir_git_dir(campo.repo, (str(campo.raiz),))
+    aut = autoridade_de(campo.repo, gd, comum)
+
+    with pytest.raises(supervisor.ErroSeguranca, match="arquivo regular"):
+        git_tree._instantaneo_do_split(aut)
+    assert vitima.read_text().startswith("-----BEGIN"), "a vítima foi tocada"
+
+
+def test_a8_10_CONTROLE_sharedindex_regular_e_capturado(campo):
+    """Sem isto, o teste acima passaria com o snapshot do split QUEBRADO."""
+    from nomos.adapters.git import autoridade_de, conferir_git_dir
+    (campo.repo / ".git" / "sharedindex.abc123").write_bytes(b"DIRC-conteudo")
+    gd, comum = conferir_git_dir(campo.repo, (str(campo.raiz),))
+    aut = autoridade_de(campo.repo, gd, comum)
+    estado = git_tree._instantaneo_do_split(aut)
+    assert any(b"DIRC-conteudo" in v for v in estado.values()), (
+        "o snapshot do split parou de capturar sharedindex legítimo")
