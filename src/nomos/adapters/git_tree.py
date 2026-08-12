@@ -44,7 +44,6 @@ import re
 import shutil
 import stat
 import tempfile
-import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
@@ -419,29 +418,16 @@ def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> None:
     # o Git leria como índice corrompido. `os.replace` no MESMO diretório é
     # rename atômico: ou o índice antigo, ou o restaurado, nunca um meio-termo.
     #
-    # `index.lock` é tomado ANTES do replace, e não por simetria com o Git: é o
-    # único protocolo que um `git add` concorrente respeita. MEDIDO sem ele: o
-    # rollback sobrescrevia o índice de um `git add` concorrente que já tinha
-    # saído com rc=0 — trabalho aceito e depois APAGADO, sem sinal para ninguém.
-    # O Git serializa por este arquivo; escrever por fora dele é escrever contra
-    # a serialização, não sem ela.
+    # NÃO se toma `index.lock` aqui, e isso é MEDIÇÃO, não omissão. A tentativa
+    # de serializar o desfazer por esse arquivo COLIDE com o uso que o próprio
+    # Git faz dele: sob a bateria de corrida (A9), o `update-index` da operação
+    # SEGUINTE passou a morrer com `Unable to create index.lock: File exists`.
+    # A defesa criou uma falha nova sem ser o que resolve a propriedade.
     #
-    # O lock é BEST-EFFORT de propósito: se outro processo o detém, esperar
-    # indefinidamente aqui penduraria o caminho de ROLLBACK — e um rollback que
-    # não completa é pior que um rollback sem lock, porque deixa o índice sujo
-    # com o segredo estagiado. Tenta-se por um prazo curto e segue-se.
-    lock = alvo.with_name("index.lock")
-    fd_lock = None
-    limite = time.monotonic() + 2.0
-    while time.monotonic() < limite:
-        try:
-            fd_lock = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-            break
-        except FileExistsError:
-            time.sleep(0.01)
-        except OSError:
-            break
-
+    # O que resolve a perda SILENCIOSA de trabalho concorrente é a DETECÇÃO
+    # logo acima: se o índice mudou entre o instantâneo e o desfazer, o
+    # incidente sobe anexado ao erro. Perda pode ser inevitável numa recusa;
+    # perda sem sinal não.
     tmp = alvo.with_name(f".index.nomos-rollback-{os.getpid()}")
     try:
         tmp.write_bytes(dados)
@@ -451,10 +437,6 @@ def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> None:
     finally:
         with contextlib.suppress(OSError):
             tmp.unlink()
-        if fd_lock is not None:
-            os.close(fd_lock)
-            with contextlib.suppress(OSError):
-                lock.unlink()
 
 
 def _campos_de_autoridade(autoridade) -> dict[str, str]:
@@ -815,9 +797,30 @@ class GitTreeAdapter(Adapter):
                         f"trabalho ({', '.join(_TERCEIRO_DETECTADO)}) — "
                         "trabalho de terceiro foi perdido")
                     del _TERCEIRO_DETECTADO[:]
-                raise ErroSeguranca(
-                    f"{original}\n\nINCIDENTE NO DESFAZER: " + " | ".join(aviso)
-                ) from original
+                # O TIPO do erro original é preservado, e isso é o ponto.
+                # A primeira versão desta correção levantava `ErroSeguranca`
+                # sempre — o que consertava o mascaramento medido em `.8.03` e
+                # criava o MESMO defeito na direção oposta: um chamador que
+                # classifica por `except RuntimeError` (ou `ErroFiltro`, ou
+                # `ErroLimite`) deixava de ver o erro que realmente ocorreu.
+                # A bateria A9 pegou: dois cenários injetam `RuntimeError` e
+                # recebiam `ErroSeguranca`.
+                #
+                # Trocar o tipo é mascarar, mesmo mantendo o texto. O incidente
+                # entra na MENSAGEM; a identidade da falha continua sendo a que
+                # o chamador precisa para decidir.
+                texto = f"{original}\n\nINCIDENTE NO DESFAZER: " + " | ".join(aviso)
+                try:
+                    novo = type(original)(texto)
+                except Exception:                    # noqa: BLE001
+                    # Exceção que não aceita um único argumento de texto: o
+                    # original sobe intacto, e o incidente vai no `__notes__`
+                    # em vez de sumir.
+                    with contextlib.suppress(Exception):
+                        original.add_note("INCIDENTE NO DESFAZER: "
+                                          + " | ".join(aviso))
+                    raise
+                raise novo from original
             raise
         finally:
             # A quarentena some nos DOIS caminhos. No sucesso ela já foi

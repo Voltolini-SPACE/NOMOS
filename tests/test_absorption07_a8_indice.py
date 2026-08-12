@@ -122,17 +122,24 @@ def test_a8_02_index_FIFO_nao_pendura_o_supervisor(campo):
         signal.signal(signal.SIGALRM, anterior)
 
 
-def test_a8_03_rollback_toma_index_lock(campo):
-    """`index.lock` é o único protocolo que um `git add` concorrente respeita.
+def test_a8_03_rollback_DETECTA_escritor_concorrente(campo):
+    """A perda de trabalho concorrente não pode ser SILENCIOSA.
 
-    Estrutural porque a corrida é probabilística: sem o lock, o rollback
-    sobrescrevia o índice de um `git add` concorrente que já tinha saído com
-    rc=0 — trabalho aceito e depois APAGADO, sem sinal para ninguém.
+    Registro de uma correção TENTADA e REFUTADA: tomar `index.lock` no desfazer
+    parecia a defesa óbvia — é o protocolo que um `git add` concorrente
+    respeita. MEDIDO sob A9: colide com o uso que o próprio Git faz do arquivo,
+    e o `update-index` da operação SEGUINTE passou a morrer com
+    `Unable to create index.lock: File exists`. Defesa que cria falha nova sem
+    resolver a propriedade sai.
+
+    O que resolve é a DETECÇÃO: se o índice mudou entre o instantâneo e o
+    desfazer, o incidente sobe anexado ao erro.
     """
     fonte = Path(git_tree.__file__).read_text("utf-8")
     corpo = fonte.split("def _restaurar_indice", 1)[1].split("\ndef ", 1)[0]
-    assert "index.lock" in corpo, (
-        "o rollback escreve o índice por fora da serialização do Git")
+    assert "_TERCEIRO_DETECTADO" in corpo, (
+        "o desfazer deixou de detectar escritor concorrente — a perda de "
+        "trabalho de terceiro volta a ser silenciosa")
 
 
 def test_a8_04_rollback_nao_pendura_se_o_lock_esta_preso(campo):
@@ -237,9 +244,15 @@ def test_a8_07_falha_no_DESFAZER_nao_mascara_o_ErroSeguranca(campo):
                  / f".index.nomos-rollback-{os.getpid()}")
     armadilha.mkdir(parents=True, exist_ok=True)
 
-    with pytest.raises(supervisor.ErroSeguranca) as exc:
+    from nomos.adapters import filtro_governado as fg
+    with pytest.raises(fg.ErroFiltro) as exc:
         _com_filtro_desconhecido(campo)
 
+    # O TIPO do erro original é preservado. A primeira versão desta correção
+    # levantava `ErroSeguranca` sempre — consertava o mascaramento medido e
+    # criava o MESMO defeito na direção oposta: quem classifica por
+    # `except ErroFiltro` (ou `RuntimeError`) deixava de ver o erro real. A
+    # bateria A9 pegou. Trocar o tipo é mascarar, mesmo mantendo o texto.
     assert "INCIDENTE NO DESFAZER" in str(exc.value), (
         "a falha do desfazer não foi reportada — some em silêncio")
 
