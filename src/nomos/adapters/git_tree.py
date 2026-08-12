@@ -560,7 +560,7 @@ def _instantaneo_das_refs(autoridade) -> dict[str, bytes | None]:
     return estado
 
 
-def _restaurar_refs(estado: dict[str, bytes | None]) -> None:
+def _restaurar_refs(estado: dict[str, bytes | None]) -> bool:
     """Devolve refs, HEAD e reflog ao estado do instantâneo.
 
     Best-effort por arquivo: uma falha isolada não pode impedir a restauração
@@ -580,7 +580,12 @@ def _restaurar_refs(estado: dict[str, bytes | None]) -> None:
         except OSError:
             continue
     # Refs CRIADAS pela operação recusada não estão no instantâneo e ficariam
-    # órfãs apontando para objeto que a quarentena levou.
+    # órfãs apontando para objeto que a quarentena levou. Mas o laço não
+    # distingue "ref criada pela operação recusada" de "ref criada por um
+    # TERCEIRO durante a janela" — e destruía as duas. MEDIDO
+    # (`.8.NEW-REFS-TERCEIRO`, `.6.N2`): destruição real, e SEM sinal, porque só
+    # `_restaurar_indice` tinha canal de incidente. A simetria estava faltando.
+    terceiro = False
     for caminho in list(estado):
         raiz = Path(caminho)
         if raiz.name == "HEAD":
@@ -590,8 +595,10 @@ def _restaurar_refs(estado: dict[str, bytes | None]) -> None:
                     continue
                 for p in list(d.rglob("*")):
                     if p.is_file() and str(p) not in estado:
+                        terceiro = True
                         with contextlib.suppress(OSError):
                             p.unlink()
+    return terceiro
 
 
 def _abrir_quarentena(repo: Path, autoridade=None,
@@ -888,7 +895,10 @@ class GitTreeAdapter(Adapter):
                               ("split index", lambda: _restaurar_split(split)),
                               ("refs", lambda: _restaurar_refs(refs))):
                 try:
-                    if fn() and etapa == "índice":
+                    # `índice` E `refs`: os dois desfazeres podem destruir
+                    # trabalho de terceiro, e antes só o primeiro tinha canal —
+                    # refs de outro processo sumiam em SILÊNCIO (`.6.N2`).
+                    if fn() and etapa in ("índice", "refs"):
                         terceiro = True
                 except Exception as e:               # noqa: BLE001
                     falhas.append(f"{etapa}: {type(e).__name__}: {e}")
@@ -1061,6 +1071,18 @@ class GitTreeAdapter(Adapter):
                 raizes_fontes.append((repo, [*partes[:i], ".gitattributes"]))
         gd = Path(autoridade.git_dir) if autoridade is not None else repo / ".git"
         raizes_fontes.append((gd, ["info", "attributes"]))
+        # E o COMMON DIR. MEDIDO (`.2.15`, P0): em WORKTREE LIGADA o Git lê
+        # `info/attributes` do COMMON — o per-worktree é IGNORADO. Conferir só
+        # o git dir era conferir um arquivo que o Git nem lê, e um symlink em
+        # `<common>/info/attributes` (ou `<common>/info` como link de diretório)
+        # fazia o pedido de filtro DESAPARECER: segredo EM CLARO no índice e no
+        # store permanente, com ok=True, enquanto o git cru redige.
+        #
+        # A suíte C2 inteira roda em repo simples, onde `git_dir == common` e o
+        # furo é invisível — 15/15 verdes com ele presente.
+        if autoridade is not None and autoridade.common != autoridade.git_dir:
+            raizes_fontes.append((Path(autoridade.common),
+                                  ["info", "attributes"]))
 
         vistos: set[str] = set()
         for base, componentes in raizes_fontes:
@@ -1139,6 +1161,15 @@ class GitTreeAdapter(Adapter):
             argv, cwd=repo, env=self.ambiente(), prazo=prazo,
             confinamento=confinamento_de_leitura(repo, autoridade),
             arvore_de_trabalho=str(repo))
+        # Morte por SINAL não é erro de sintaxe — a MESMA armadilha de `.6.10`,
+        # neste outro caminho (`.11.12`). Corrigir num lugar e deixar o irmão
+        # foi o que a medição pegou.
+        if p.morto_por_timeout or p.returncode < 0:
+            raise ErroLimite(
+                f"git config foi encerrado por sinal (rc={p.returncode})"
+                f"{' após o prazo' if p.morto_por_timeout else ''} — sem "
+                "resposta não dá para saber se `core.attributesFile` está "
+                "declarado, e seguir seria indexar sem conhecer a política")
         # rc=1 é "chave ausente", o caso normal. rc>1 é erro de verdade.
         if p.returncode not in (0, 1):
             erro = p.stderr.decode("utf-8", "replace")[:400]
@@ -1213,6 +1244,22 @@ class GitTreeAdapter(Adapter):
             erro = p.stderr.decode("utf-8", "replace")[:400]
             raise ErroInvalido(f"check-attr falhou (rc={p.returncode}): {erro}")
         supervisor.conferir_saida(p.stderr, "git-add")
+        # `conferir_saida` casa `^(error|fatal):` de propósito, e por isso NÃO
+        # vê `warning: unable to access '<...>/info/attributes'`. MEDIDO
+        # (`.2.15`): o check-attr saiu rc=0, com esse aviso no stderr, e o
+        # pedido de filtro tinha simplesmente sumido — o sinal existia e foi
+        # engolido, e o `git add` seguinte saiu rc=0 com stderr VAZIO.
+        #
+        # Aqui o aviso é FATAL por natureza: se o Git não conseguiu LER uma
+        # fonte de atributo, a resposta do `check-attr` é incompleta, e seguir
+        # com ela é indexar conteúdo cru sem saber que havia regra.
+        erro_txt = p.stderr.decode("utf-8", "replace")
+        if "unable to access" in erro_txt and "attributes" in erro_txt:
+            raise ErroSeguranca(
+                "o Git não conseguiu LER uma fonte de atributo dentro do "
+                f"sandbox: {erro_txt.strip()[:200]}. A resposta do `check-attr` "
+                "fica incompleta e o pedido de filtro desaparece em silêncio — "
+                "seguir indexaria o conteúdo CRU sem saber que havia regra")
 
         campos = p.stdout.decode("utf-8", "replace").split("\0")
         # `-z` emite trincas <caminho>\0<atributo>\0<valor>\0; a cauda depois do

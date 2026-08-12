@@ -323,3 +323,51 @@ def test_c2_14_check_attr_roda_sob_o_supervisor(cen):
     corpo = fonte.split("def _pedidos_de_filtro", 1)[1].split("\n    def ", 1)[0]
     assert "supervisor.executar" in corpo
     assert "subprocess" not in corpo
+
+
+def test_c2_15_fonte_de_atributo_do_COMMON_em_worktree_ligada(cen, tmp_path):
+    """`.2.15` (P0): a guarda conferia um arquivo que o Git NEM LÊ.
+
+    Em WORKTREE LIGADA o Git lê `info/attributes` do COMMON DIR — o
+    per-worktree é IGNORADO (medido em repo cru). A guarda de symlink só
+    conferia `<git_dir>/info/attributes`, então um link em
+    `<common>/info/attributes` fazia o pedido de filtro DESAPARECER: segredo EM
+    CLARO no índice e no store permanente, com `ok=True`, enquanto o git cru
+    redige.
+
+    Por que a suíte inteira não pegava: ela roda em repo SIMPLES, onde
+    `git_dir == common` e o furo é invisível — 15/15 verdes com ele presente.
+    """
+    principal = cen.repo
+    subprocess.run([GIT, "-C", str(principal), "add", "-A"],
+                   capture_output=True)
+    subprocess.run([GIT, "-C", str(principal), "commit", "-qm", "seed"],
+                   capture_output=True)
+    wt = tmp_path / "wtA"
+    r = subprocess.run([GIT, "-C", str(principal), "worktree", "add", "-q",
+                        str(wt), "-b", "b2"], capture_output=True, text=True)
+    if r.returncode != 0:
+        pytest.skip(f"worktree add indisponível: {r.stderr[:120]}")
+
+    fora = tmp_path / "attrs-de-fora"
+    fora.write_text("SEGREDO.txt filter=redator\n")
+    info = principal / ".git" / "info"
+    info.mkdir(parents=True, exist_ok=True)
+    (info / "attributes").unlink(missing_ok=True)
+    os.symlink(str(fora), str(info / "attributes"))
+    (wt / "SEGREDO.txt").write_text(SEGREDO)
+
+    rc = RegistroCapacidades(policy=PolicyEngine(tmp_path / "pol215.json"),
+                             approver=lambda *a, **k: True)
+    registrar_git_tree(rc, raizes=(str(principal.parent),))
+    ctx = CapabilityContext.de_registro(rc, "git-add", "runtime-governado",
+                                        raizes=(str(principal.parent),))
+    with pytest.raises(supervisor.ErroSeguranca, match="symlink"):
+        git_tree.GitTreeAdapter(registro=cen.registro()).executar(
+            CapabilityRequest(capacidade="git-add", alvo=str(wt),
+                              argumentos={"caminhos": ["SEGREDO.txt"]}), ctx)
+
+    indice = subprocess.run([GIT, "-C", str(wt), "show", ":SEGREDO.txt"],
+                            capture_output=True).stdout
+    assert b"hunter2" not in indice, (
+        "SILENT_FILTER_BYPASS pelo `info/attributes` do COMMON")

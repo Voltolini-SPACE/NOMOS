@@ -318,7 +318,12 @@ def _ler_ponto_git(base: Path) -> tuple[str, str]:
     """
     ponto = base / ".git"
     try:
-        fd = os.open(ponto, os.O_RDONLY | os.O_NOFOLLOW)
+        # `O_NONBLOCK` porque esta é a PRIMEIRA leitura de todas, e ela roda
+        # no supervisor ANTES de o prazo do nó existir. MEDIDO (`.9.04`): `.git`
+        # como FIFO sem escritor BLOQUEAVA PARA SEMPRE — nenhum timeout
+        # alcançava, porque o prazo só é calculado depois. O guard correto já
+        # existia no irmão `ler_controle_do_repo`; este ramo ficara de fora.
+        fd = os.open(ponto, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError as e:
         if e.errno in (errno.ELOOP, errno.EMLINK):
             # `.git` é SYMLINK. O destino segue sendo resolvido — o link é
@@ -331,10 +336,16 @@ def _ler_ponto_git(base: Path) -> tuple[str, str]:
             alvo = ponto.resolve()
             if alvo.is_dir():
                 return "link", ""
-            try:
-                return "link-arquivo", alvo.read_text("utf-8", "replace").strip()
-            except OSError:
+            # MEDIDO (`.9.11`): este ramo fazia `read_text()` SEM limite, sem
+            # `O_NONBLOCK` e sem `S_ISREG` — `.git` como symlink para um arquivo
+            # FORA das raízes era lido POR INTEIRO para dentro do processo do
+            # supervisor. Os dois ramos da mesma função tinham garantias
+            # OPOSTAS: o de arquivo regular limitava a 64 KiB, o de link não
+            # limitava nada. `ler_controle_do_repo` é o guard que já existe.
+            conteudo = ler_controle_do_repo(alvo, ".git (destino do symlink)")
+            if conteudo is None:
                 return "ausente", ""
+            return "link-arquivo", conteudo.strip()
         return "ausente", ""
     try:
         st = os.fstat(fd)

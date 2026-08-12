@@ -143,3 +143,53 @@ def test_c6_negacao_cobre_o_git_dir_INTEIRO_nao_so_tres_nomes(cen):
     assert f"{cen.repo}/.git" in negados, (
         "a negação não cobre o git dir inteiro; index, objects e refs ficariam "
         "graváveis pelo filtro")
+
+
+@pytest.mark.parametrize("rel", [
+    ".git/hooks/pre-commit", ".git/config", ".git/refs/heads/plantado",
+])
+def test_c6_git_ANINHADO_na_raiz_de_escrita_nao_e_gravavel(tmp_path, rel):
+    """`.11.10`/`.11.11` (P0): negar o NOME `.git` não bastava.
+
+    A negação por nome era emitida como `(deny file-write* (regex #"/\\.git$"))`
+    — ancorada no FIM. Isso nega o DIRETÓRIO `.git` e deixa TODO o conteúdo
+    gravável, porque `<raiz>/proj/.git/hooks/pre-commit` não termina em
+    `/.git`. O filtro instalava hook, reescrevia config e plantava ref dentro
+    de qualquer repositório aninhado na raiz de escrita.
+
+    Para `.gitattributes`, que é ARQUIVO, o `$` bastava; para `.git`, que é
+    DIRETÓRIO, não. Dois casos cobertos aqui: `write_roots` ANCESTRAL (o valor
+    natural quando o escopo do filtro é o workspace) e `write_roots=(repo,)` (o
+    valor que a própria suíte usa), porque o `.git` aninhado alcança os dois.
+    """
+    from nomos.adapters import filtro_governado as fg
+    from nomos.adapters import supervisor as sup
+
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    proj = raiz / "proj"
+    proj.mkdir()
+    subprocess.run(["/usr/bin/git", "init", "-q", "-b", "main", str(proj)],
+                   capture_output=True)
+    binario = tmp_path / "redator"
+    r = subprocess.run(["cc", "-O2", "-o", str(binario), str(FONTE_NATIVA)],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        pytest.skip(f"sem toolchain C: {r.stderr[:160]}")
+    art = fg.ArmazemDeExecutaveis(tmp_path / "store").importar(binario)
+
+    for escopo in (raiz, proj):
+        alvo = proj / rel
+        alvo.parent.mkdir(parents=True, exist_ok=True)
+        pol = fg.PoliticaDeFiltro(
+            filter_id="f", canonical_executable=str(binario),
+            managed_artifact=art, argv_policy=("--sonda-escrita", str(alvo)),
+            read_roots=(str(escopo),), write_roots=(str(escopo),))
+        sup.executar(pol.comando(), cwd=proj, env=pol.ambiente(), prazo=10.0,
+                     confinamento=pol.confinamento(),
+                     tipo=sup.TipoDeProcesso.FILTRO_GOVERNADO, entrada=b"")
+        plantou = alvo.exists() and alvo.read_bytes() == b"PLANTADO\n"
+        assert not plantou, (
+            f"o filtro plantou {rel} num `.git` ANINHADO com "
+            f"write_roots={escopo.name!r} — a negação por nome não cobre o "
+            "conteúdo do diretório")

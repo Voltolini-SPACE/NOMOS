@@ -488,7 +488,14 @@ def perfil(conf: Confinamento) -> str:
         # `.gitattributes` é criável em TODO diretório da working tree, e
         # enumerar os diretórios que existem hoje deixaria de fora os que o
         # próprio filtro criar durante a operação.
-        linhas.append(f'(deny file-write* (regex #"/{padrao}$"))')
+        #
+        # `(/|$)` e não `$`: MEDIDO (`.11.10` e `.11.11`) — ancorar só no fim
+        # nega o DIRETÓRIO `.git` e deixa TODO o conteúdo dele gravável, porque
+        # `<raiz>/proj/.git/hooks/pre-commit` não termina em `/.git`. O filtro
+        # instalava hook, reescrevia config e plantava ref dentro de qualquer
+        # repositório aninhado na raiz de escrita. Para `.gitattributes`, que é
+        # arquivo, o `$` bastava; para `.git`, que é diretório, não.
+        linhas.append(f'(deny file-write* (regex #"/{padrao}(/|$)"))')
     if conf.marca is not None:
         # POR ÚLTIMO: em SBPL a regra que casa por último vence, e o `deny` do
         # subdiretório precisa sobrepor o `allow` do diretório.
