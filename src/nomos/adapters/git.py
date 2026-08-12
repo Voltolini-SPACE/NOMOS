@@ -565,6 +565,17 @@ def conferir_alternates(repo: Path | str, raizes: tuple[str, ...],
 
     Lê tanto o git dir quanto o common dir: em worktree ligada os objetos vivem
     no common, e é lá que o `alternates` efetivo mora.
+
+    ## Por que a checagem é TRANSITIVA
+
+    MEDIDO (`.5.03`, P1): o Git segue a cadeia de alternates recursivamente — um
+    store alcançado por `objects/info/alternates` tem o SEU próprio
+    `info/alternates`, e o Git honra o próximo salto. Conferir só o primeiro
+    deixava um alternate DENTRO das raízes cujo próprio alternates saía delas:
+    com 2 saltos, `git-commit` devolveu ok=True e a história passou a depender
+    de um blob que só existe fora das raízes (`git fsck` acusa `missing blob`
+    quando o store estrangeiro some). A guarda tem de andar a cadeia inteira,
+    como o Git anda.
     """
     if not raizes:
         return
@@ -579,9 +590,17 @@ def conferir_alternates(repo: Path | str, raizes: tuple[str, ...],
     else:
         git_dir, common = diretorio_git(repo)
     reais = tuple(supervisor.canonicalizar(r) for r in raizes)
+
+    # BFS sobre a cadeia de stores de objetos. `fila` guarda diretórios
+    # `objects`; `vistos` corta ciclo (um alternate pode apontar de volta) e
+    # trabalho repetido. Limite defensivo: cadeia patológica não pode virar
+    # varredura ilimitada guiada pelo repositório.
+    fila = [str(Path(base) / "objects") for base in (git_dir, common)]
     vistos: set[str] = set()
-    for base in (git_dir, common):
-        arquivo = Path(base) / "objects" / "info" / "alternates"
+    MAX_SALTOS = 100
+    while fila and len(vistos) < MAX_SALTOS:
+        objects = fila.pop()
+        arquivo = Path(objects) / "info" / "alternates"
         try:
             bruto = arquivo.read_text("utf-8", "replace")
         except OSError:
@@ -589,14 +608,11 @@ def conferir_alternates(repo: Path | str, raizes: tuple[str, ...],
         for linha in bruto.splitlines():
             entrada = linha.strip()
             # Formato do Git: comentário com `#`, linha vazia ignorada. Caminho
-            # relativo é resolvido contra `<base>/objects`.
+            # relativo é resolvido contra o `objects` que declarou o alternate.
             if not entrada or entrada.startswith("#"):
                 continue
-            if entrada in vistos:
-                continue
-            vistos.add(entrada)
             alvo = (entrada if os.path.isabs(entrada)
-                    else str(Path(base) / "objects" / entrada))
+                    else str(Path(objects) / entrada))
             try:
                 resolvido = supervisor.canonicalizar(alvo)
             except OSError:
@@ -607,8 +623,11 @@ def conferir_alternates(repo: Path | str, raizes: tuple[str, ...],
                     f"{resolvido!r}, FORA das raízes aprovadas {reais}. O "
                     "arquivo `objects/info/alternates` é do repositório, e por "
                     "ele o Git lê — e um commit passa a depender de — um store "
-                    "que ninguém aprovou. Alternate legítimo mora dentro das "
-                    "raízes")
+                    "que ninguém aprovou. A cadeia é seguida transitivamente, "
+                    "como o Git faz. Alternate legítimo mora dentro das raízes")
+            if resolvido not in vistos:
+                vistos.add(resolvido)
+                fila.append(resolvido)      # o alternate tem SEU próprio salto
 
 
 def _dentro(caminho: str, raizes: tuple[str, ...]) -> bool:

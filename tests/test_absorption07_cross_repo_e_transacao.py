@@ -232,8 +232,17 @@ def test_filtro_com_gitdir_como_raiz_nao_escreve_estado_do_git(campo, rel):
     assert not escreveu, f"o filtro plantou estado do Git em {rel}"
 
 
-def test_filtro_com_gitdir_como_raiz_CONTROLE_area_concedida(campo):
-    """Controle: a sonda escreve onde a política REALMENTE concede."""
+def test_filtro_com_gitdir_como_raiz_NEGA_o_git_dir_INTEIRO(campo):
+    """A raiz de escrita que É um git dir é negada por INTEIRO.
+
+    A versão anterior deste teste era um CONTROLE que exigia a sonda escrevendo
+    em `<git dir>/saida-do-filtro.txt` — e isso encodava a VULNERABILIDADE: uma
+    lista de nomes negados nunca fecha (`sharedindex.<sha>`, `MERGE_HEAD`, o
+    próximo nome que o Git inventar), então o filtro sempre achava um lugar
+    gravável dentro do git dir. Um filtro de conteúdo lê stdin e escreve stdout;
+    não tem o que escrever num diretório Git. Quando a raiz É um git dir, ela é
+    negada inteira.
+    """
     repo = campo.repo(campo.raiz / "repo")
     gd = repo / ".git"
     binario = campo.tmp / "redator"
@@ -243,7 +252,7 @@ def test_filtro_com_gitdir_como_raiz_CONTROLE_area_concedida(campo):
         pytest.skip(f"sem toolchain C: {r.stderr[:160]}")
     art = fg.ArmazemDeExecutaveis(campo.tmp / "store").importar(binario)
 
-    alvo = gd / "saida-do-filtro.txt"
+    alvo = gd / "qualquer-nome-que-o-git-nunca-teve.txt"
     pol = fg.PoliticaDeFiltro(
         filter_id="f", canonical_executable=str(binario), managed_artifact=art,
         argv_policy=("--sonda-escrita", str(alvo)),
@@ -252,9 +261,38 @@ def test_filtro_com_gitdir_como_raiz_CONTROLE_area_concedida(campo):
                         confinamento=pol.confinamento(),
                         tipo=supervisor.TipoDeProcesso.FILTRO_GOVERNADO,
                         entrada=b"")
+    assert not (alvo.exists() and alvo.read_bytes() == b"PLANTADO\n"), (
+        "o filtro escreveu no git dir por um nome que a lista não previa — a "
+        "negação por nome nunca fecha; o git dir tem de ser negado inteiro")
+
+
+def test_filtro_com_working_tree_como_raiz_CONTROLE_area_concedida(campo):
+    """Controle honesto: a sonda escreve onde a política concede DE VERDADE.
+
+    A área concedida legítima de um filtro é uma área de conteúdo, não o git
+    dir. Aqui a raiz é a WORKING TREE, e a sonda tem de conseguir escrever nela
+    — senão os testes de recusa não distinguem contenção de sonda morta.
+    """
+    repo = campo.repo(campo.raiz / "repo")
+    binario = campo.tmp / "redator"
+    r = subprocess.run(["cc", "-O2", "-o", str(binario), str(FONTE_NATIVA)],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        pytest.skip(f"sem toolchain C: {r.stderr[:160]}")
+    art = fg.ArmazemDeExecutaveis(campo.tmp / "store").importar(binario)
+
+    alvo = repo / "saida-do-filtro.txt"
+    pol = fg.PoliticaDeFiltro(
+        filter_id="f", canonical_executable=str(binario), managed_artifact=art,
+        argv_policy=("--sonda-escrita", str(alvo)),
+        read_roots=(str(repo),), write_roots=(str(repo),))
+    supervisor.executar(pol.comando(), cwd=repo, env=pol.ambiente(), prazo=10.0,
+                        confinamento=pol.confinamento(),
+                        tipo=supervisor.TipoDeProcesso.FILTRO_GOVERNADO,
+                        entrada=b"")
     assert alvo.exists() and alvo.read_bytes() == b"PLANTADO\n", (
-        "a sonda não escreve nem na área concedida — os testes de recusa acima "
-        "não distinguem contenção de sonda morta")
+        "a sonda não escreve nem na área de conteúdo concedida — os testes de "
+        "recusa acima não distinguem contenção de sonda morta")
 
 
 # ═══════════ .7.13 — a auditoria nomeia a autoridade CONSUMIDA ═══════════════
@@ -396,3 +434,115 @@ def test_probe_hardlink_o_git_CRU_tambem_indexa(campo, tmp_path):
     assert r.returncode == 0, (
         "o git CRU passou a recusar hardlink — agora HÁ divergência a medir "
         "entre ele e o caminho governado, e `.9.08` deixa de ser probe inválido")
+
+
+# ═════ .6.09 / .11.07 — HEAD/refs/reflog como symlink ou FIFO ════════════════
+
+@pytest.mark.parametrize("rel", ["HEAD", "packed-refs", "ORIG_HEAD",
+                                 "refs/heads/main"])
+def test_ref_como_SYMLINK_para_fora_e_recusada(campo, tmp_path, rel):
+    """`_instantaneo_das_refs` lê no processo do supervisor, fora do sandbox.
+
+    Os nomes são do REPOSITÓRIO. Como symlink para fora, a leitura trazia
+    conteúdo de fora das raízes e o `os.replace` do rollback trocava o link por
+    arquivo regular. `lstat` + só arquivo regular fecha.
+    """
+    repo = campo.repo(campo.raiz / "repo")
+    vitima = tmp_path / "segredo-de-fora"
+    vitima.write_text("conteudo-de-fora\n")
+    alvo = repo / ".git" / rel
+    alvo.parent.mkdir(parents=True, exist_ok=True)
+    if alvo.exists():
+        alvo.unlink()
+    os.symlink(str(vitima), str(alvo))
+    antes = vitima.read_text()
+    (repo / "n.txt").write_text("n\n")
+
+    with pytest.raises(supervisor.ErroSeguranca):
+        campo.add(repo, "n.txt")
+    assert vitima.read_text() == antes, "a vítima de fora foi tocada"
+    assert alvo.is_symlink(), "o rollback trocou o link por arquivo regular"
+
+
+def test_ref_como_FIFO_nao_pendura_o_supervisor(campo):
+    """Mesma família do FIFO no índice: o `read` roda no pai."""
+    import signal
+    repo = campo.repo(campo.raiz / "repo")
+    alvo = repo / ".git" / "ORIG_HEAD"
+    if alvo.exists():
+        alvo.unlink()
+    os.mkfifo(alvo)
+    (repo / "n.txt").write_text("n\n")
+
+    def estourou(*_):
+        raise AssertionError("PENDUROU: o instantâneo de refs bloqueou no FIFO")
+
+    anterior = signal.signal(signal.SIGALRM, estourou)
+    signal.alarm(20)
+    try:
+        with pytest.raises(supervisor.ErroSeguranca, match="arquivo regular"):
+            campo.add(repo, "n.txt")
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, anterior)
+
+
+# ═════ .11.08 — nomes VARIÁVEIS que a lista de negados nunca fecha ═══════════
+
+@pytest.mark.parametrize("rel", ["sharedindex.abc123def", "MERGE_HEAD",
+                                 "objects/pack/plantado", "refs/heads/x",
+                                 "packed-refs.lock"])
+def test_filtro_gitdir_nega_nomes_variaveis(campo, rel):
+    """A negação por nome nunca fecha; o git dir inteiro é negado."""
+    repo = campo.repo(campo.raiz / "repo")
+    gd = repo / ".git"
+    binario = campo.tmp / "redator"
+    r = subprocess.run(["cc", "-O2", "-o", str(binario), str(FONTE_NATIVA)],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        pytest.skip(f"sem toolchain C: {r.stderr[:160]}")
+    art = fg.ArmazemDeExecutaveis(campo.tmp / "store").importar(binario)
+
+    alvo = gd / rel
+    alvo.parent.mkdir(parents=True, exist_ok=True)
+    pol = fg.PoliticaDeFiltro(
+        filter_id="f", canonical_executable=str(binario), managed_artifact=art,
+        argv_policy=("--sonda-escrita", str(alvo)),
+        read_roots=(str(gd),), write_roots=(str(gd),))
+    supervisor.executar(pol.comando(), cwd=repo, env=pol.ambiente(), prazo=10.0,
+                        confinamento=pol.confinamento(),
+                        tipo=supervisor.TipoDeProcesso.FILTRO_GOVERNADO,
+                        entrada=b"")
+    assert not (alvo.exists() and alvo.read_bytes() == b"PLANTADO\n"), (
+        f"o filtro plantou em {rel} — nome fora da lista, git dir não negado "
+        "por inteiro")
+
+
+# ═════ .5.03 — a cadeia de alternates é TRANSITIVA ══════════════════════════
+
+def test_alternates_TRANSITIVO_para_fora_e_recusado(campo):
+    """repo -> elo (DENTRO) -> externo (FORA): o Git segue a cadeia."""
+    repo = campo.repo(campo.raiz / "repo")
+    elo = campo.repo(campo.raiz / "elo")
+    externo = campo.repo(campo.tmp / "externo")
+    for base, alvo in ((repo, elo), (elo, externo)):
+        info = base / ".git" / "objects" / "info"
+        info.mkdir(parents=True, exist_ok=True)
+        (info / "alternates").write_text(f"{alvo / '.git' / 'objects'}\n")
+    (repo / "n.txt").write_text("n\n")
+
+    with pytest.raises(supervisor.ErroSeguranca, match="alternado"):
+        campo.add(repo, "n.txt")
+
+
+def test_alternates_CONTROLE_cadeia_toda_dentro_funciona(campo):
+    """Sem isto, o teste acima passaria com alternate legítimo quebrado."""
+    repo = campo.repo(campo.raiz / "repo")
+    vizinho = campo.repo(campo.raiz / "vizinho")
+    info = repo / ".git" / "objects" / "info"
+    info.mkdir(parents=True, exist_ok=True)
+    (info / "alternates").write_text(f"{vizinho / '.git' / 'objects'}\n")
+    (repo / "n.txt").write_text("n\n")
+
+    r = campo.add(repo, "n.txt")
+    assert r.efeito_aplicado, "alternate legítimo dentro das raízes foi recusado"

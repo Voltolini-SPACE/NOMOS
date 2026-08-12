@@ -480,10 +480,29 @@ def _instantaneo_das_refs(autoridade) -> dict[str, bytes | None]:
             if d.is_dir():
                 alvos.extend(p for p in d.rglob("*") if p.is_file())
         for alvo in alvos:
+            # `HEAD`, `packed-refs` e `ORIG_HEAD` são nomes que o REPOSITÓRIO
+            # controla, e esta leitura roda no processo do supervisor, fora do
+            # sandbox — a mesma exposição do `.git/index`. MEDIDO (`.6.09`,
+            # `.11.07`): como SYMLINK para fora, `read_bytes` trazia o conteúdo
+            # de fora das raízes e o `os.replace` do rollback substituía o link
+            # por arquivo regular; como FIFO, a leitura PENDURAVA o supervisor
+            # sem prazo. `lstat` + só arquivo regular fecha os dois, sem
+            # travar o caminho legítimo (refs e HEAD são sempre arquivos comuns).
+            try:
+                st = os.lstat(alvo)
+            except OSError:
+                estado[str(alvo)] = None      # ausente: restaurar = remover
+                continue
+            if not stat.S_ISREG(st.st_mode):
+                raise ErroSeguranca(
+                    f"{alvo} não é arquivo regular (modo {st.st_mode:o}) — "
+                    "HEAD/refs/reflog como symlink ou FIFO fariam o instantâneo "
+                    "ler fora das raízes ou pendurar o supervisor; nenhum deles "
+                    "é forma legítima de uma referência do Git")
             try:
                 estado[str(alvo)] = alvo.read_bytes()
             except OSError:
-                estado[str(alvo)] = None      # ausente: restaurar = remover
+                estado[str(alvo)] = None
     return estado
 
 
@@ -590,6 +609,7 @@ def _promover_quarentena(raiz: Path, reais: Path,
     que nenhum objeto fica VISÍVEL no store permanente quando a promoção não
     completa.
     """
+    permitida = ""
     if raiz_do_store:
         # O destino não pode ser escolhido pelo repositório. `.git/objects` como
         # SYMLINK apontando para fora fazia a promoção escrever fora do
@@ -632,7 +652,27 @@ def _promover_quarentena(raiz: Path, reais: Path,
                 f"quarentena contém {relativo!r}, que não tem forma de objeto "
                 "de Git — promover nome arbitrário deixaria o repositório "
                 "escrever caminho escolhido por ele dentro do store")
-        pendentes.append((origem, reais / relativo))
+        destino = reais / relativo
+        # O SUBDIRETÓRIO DE PREFIXO também é escolhido pelo repositório. MEDIDO
+        # (P0): canonicalizar só o diretório `objects` deixa `<objects>/<2hex>`
+        # livre — plantado como SYMLINK para fora, `mkdir(exist_ok=True)`,
+        # `mkstemp(dir=...)` e `os.replace` seguem o link e gravam o objeto FORA
+        # das raízes, no processo do supervisor, fora do sandbox. O irmão
+        # `.git/objects` como link já era recusado; este é o nível abaixo, e o
+        # ataque nem precisa prever o sha — 256 links de prefixo cobrem tudo.
+        #
+        # `canonicalizar` resolve os links do CAMINHO (existentes), então um
+        # prefixo-symlink para fora cai fora de `permitida`. O diretório final
+        # pode ainda não existir; o que importa é o link que já está no disco.
+        if permitida:
+            pai_real = supervisor.canonicalizar(str(destino.parent))
+            if os.path.commonpath([pai_real, permitida]) != permitida:
+                raise ErroSeguranca(
+                    f"o diretório de prefixo do objeto resolve para "
+                    f"{pai_real!r}, fora da raiz do store {permitida!r} — "
+                    "`<objects>/<2hex>` como symlink faria a promoção gravar o "
+                    "objeto fora das raízes, no processo do supervisor")
+        pendentes.append((origem, destino))
 
     criados: list[Path] = []
     try:

@@ -61,6 +61,17 @@ class ErroFiltro(ErroInvalido):
     """Pedido de filtro recusado. SEMPRE fail-closed."""
 
 
+def _parece_git_dir(caminho: str) -> bool:
+    """Heurística estável: um git dir tem `HEAD` e `objects`.
+
+    Não executa git nem lê config — só a presença dos dois nomes que TODO git
+    dir tem. Serve para decidir se uma raiz de ESCRITA do filtro é um diretório
+    Git e, portanto, tem de ser negada por inteiro.
+    """
+    return (os.path.exists(os.path.join(caminho, "HEAD"))
+            and os.path.isdir(os.path.join(caminho, "objects")))
+
+
 @dataclass(frozen=True)
 class PoliticaDeFiltro:
     """A autoridade completa de UM filtro governado. Vem do NOMOS, não do repo.
@@ -206,27 +217,22 @@ class PoliticaDeFiltro:
         proibidos: tuple[str, ...] = ()
         for raiz in self.write_roots:
             base = str(raiz).rstrip("/")
-            # `<raiz>/.git` cobre o caso normal (raiz = working tree). Os três
-            # nomes soltos cobrem a política que declara o git dir como raiz —
-            # aí não existe `.git` dentro dele para negar.
-            # Dois casos, e o segundo custou uma medição. Quando a raiz é a
-            # WORKING TREE, `<raiz>/.git` cobre tudo. Quando a raiz é o GIT DIR
-            # — forma de política que o comentário anterior dizia estar coberta
-            # pelos "três nomes soltos" — `<raiz>/.git` aponta para um caminho
-            # que NÃO EXISTE, e sobravam graváveis `refs/`, `HEAD`,
-            # `packed-refs`, `objects/`, `logs/` e `index`.
-            #
-            # MEDIDO: `PLANTADO` escrito em `.git/refs/heads/plantado`,
-            # `.git/packed-refs`, `.git/objects/plantado` e por cima de
-            # `.git/HEAD`, com a operação devolvendo ok=True. É o cenário que o
-            # próprio `test_c6_negacao_cobre_o_git_dir_INTEIRO` descreve como
-            # pior — lá o filtro planta OBJETO e REF, não só configuração.
+            # `<raiz>/.git` cobre o caso normal (raiz = working tree).
             proibidos += (f"{base}/.git",)
-            proibidos += tuple(
-                f"{base}/{nome}" for nome in
-                ("hooks", "config", "info", "refs", "objects", "logs",
-                 "worktrees", "modules", "HEAD", "packed-refs", "index",
-                 "ORIG_HEAD", "FETCH_HEAD", "shallow", "commondir"))
+            # E quando a RAIZ é o próprio git dir? Uma lista de nomes NUNCA
+            # fecha: `sharedindex.<sha>`, `MERGE_HEAD`, `packed-refs.lock` e o
+            # próximo nome que o Git inventar escapam por construção — foi
+            # medido, com o filtro plantando em `sharedindex.<sha>` e em
+            # `objects/<2hex>/<38hex>` depois de os 14 nomes cobrirem só o topo.
+            #
+            # Um filtro de CONTEÚDO lê stdin e escreve stdout; não tem o que
+            # escrever dentro de um diretório Git. Então quando a raiz de escrita
+            # É um git dir, ela é NEGADA INTEIRA — a única resposta que não
+            # depende de enumerar o que o Git escreve. Fail-closed: se a política
+            # declarou o git dir como área de escrita, ela declarou algo que um
+            # filtro de conteúdo não usa, e a escrita ali some.
+            if _parece_git_dir(base):
+                proibidos += (base,)
         # `.gitattributes` é FONTE DE ATRIBUTO, e mora em qualquer diretório da
         # working tree — inclusive num que o próprio filtro crie durante a
         # operação. MEDIDO: com `write_roots=(repo,)` o filtro gravou o arquivo

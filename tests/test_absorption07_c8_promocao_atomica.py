@@ -241,3 +241,61 @@ def test_c8_09_deduplicacao_nao_conta_como_criado(cen):
         cen.add(*cen.caminhos)
     assert cen.objetos_com_segredo() == antes, (
         "a dedup foi tratada como criação e o rollback apagou objeto do store")
+
+
+# ════════ .5.06 / .9.06b — o SUBDIRETÓRIO de prefixo também é do repo ════════
+
+def test_c8_10_prefixo_objects_2hex_como_SYMLINK_para_fora_e_recusado(cen,
+                                                                      tmp_path):
+    """P0: `<objects>/<2hex>` como symlink escapa o guard de `objects`.
+
+    O irmão `.git/objects` inteiro como link já era recusado (`test_c8_06`).
+    Este é o NÍVEL ABAIXO: canonicalizar só o diretório `objects` deixa o
+    subdiretório de prefixo livre. Plantado como symlink para fora,
+    `mkdir(exist_ok=True)`, `mkstemp` e `os.replace` seguem o link e gravam o
+    objeto FORA das raízes, no processo do supervisor. O ataque nem precisa
+    prever o sha — 256 links de prefixo cobrem qualquer conteúdo.
+    """
+    fora = tmp_path / "roubado"
+    fora.mkdir()
+    sha = subprocess.run([GIT, "-C", str(cen.repo), "hash-object", "f0.txt"],
+                         capture_output=True, text=True).stdout.strip()
+    prefixo = cen.repo / ".git" / "objects" / sha[:2]
+    if prefixo.exists():
+        import shutil
+        shutil.rmtree(prefixo)
+    os.symlink(str(fora), str(prefixo))
+
+    with pytest.raises(supervisor.ErroSeguranca, match="prefixo"):
+        cen.add("f0.txt")
+
+    vazados = [p for p in fora.rglob("*") if p.is_file()]
+    assert not vazados, f"objeto gravado FORA das raízes: {vazados}"
+
+
+def test_c8_11_prefixo_qualquer_2hex_linkado_e_recusado_sem_prever_sha(cen,
+                                                                       tmp_path):
+    """A forma REALISTA: 256 links de prefixo, sem prever o sha de nada."""
+    fora = tmp_path / "roubado2"
+    fora.mkdir()
+    objects = cen.repo / ".git" / "objects"
+    for n in range(256):
+        pref = objects / f"{n:02x}"
+        if pref.exists():
+            import shutil
+            shutil.rmtree(pref)
+        os.symlink(str(fora), str(pref))
+
+    with pytest.raises(supervisor.ErroSeguranca, match="prefixo"):
+        cen.add("f0.txt")
+    assert not [p for p in fora.rglob("*") if p.is_file()], (
+        "objeto gravado fora das raízes mesmo sem prever o sha")
+
+
+def test_c8_12_CONTROLE_promocao_legitima_ainda_grava_no_store(cen):
+    """Sem isto, os dois acima passariam com a promoção INTEIRA quebrada."""
+    r = cen.add("f0.txt")
+    assert r.efeito_aplicado
+    assert "f0.txt" in subprocess.run(
+        [GIT, "-C", str(cen.repo), "ls-files"],
+        capture_output=True, text=True).stdout
