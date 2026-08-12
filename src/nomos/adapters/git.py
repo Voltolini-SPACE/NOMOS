@@ -479,15 +479,79 @@ class AutoridadeDeRepo:
     git_dir: str
     common: str
 
+    # A IDENTIDADE, e não só o caminho. MEDIDO (`.7.14`, `N-A7-01`, `N-A7-02`,
+    # os três P0 da 4ª medição): ligar a autoridade como STRING fecha o TOCTOU
+    # entre CHAMADORES e deixa aberto o que vem DEPOIS dela — todo consumidor
+    # RE-RESOLVE o caminho na hora de agir:
+    #
+    #   supervisor.perfil()      canonicaliza `conf.escrita` ao emitir o SBPL
+    #   _gravar_atomico          mkstemp(dir=alvo.parent), por caminho
+    #   _restaurar_refs          mkdir(parents=True) + gravação, por caminho
+    #   _promover_quarentena     canonicaliza os DOIS lados pelo MESMO symlink
+    #
+    # Trocar `<repo>/.git` (diretório próprio, DENTRO das raízes) por SYMLINK
+    # para um git dir de FORA, depois da validação, bastava: 12/12 perfis do
+    # sandbox emitiram `(allow file-write* (subpath "<fora>/gd"))`; `git-tag`
+    # governado saiu `ok=True` criando ref no repositório de fora; `git-log`
+    # devolveu a história dele; e o SUPERVISOR (fora do sandbox) sobrescreveu
+    # índice e reflog de terceiro pelo DESFAZER, 20/20 — com o NOMOS relatando
+    # a operação como RECUSADA.
+    #
+    # `(st_dev, st_ino)` é a identidade que o caminho não carrega. Um symlink
+    # plantado no lugar do diretório resolve para outro inode, e a divergência
+    # é observável sem confiar em nenhuma releitura de conteúdo.
+    ident_git: tuple[int, int] = (-1, -1)
+    ident_common: tuple[int, int] = (-1, -1)
+
     @property
     def raizes_de_escrita(self) -> tuple[str, ...]:
         return ((self.git_dir,) if self.common == self.git_dir
                 else (self.git_dir, self.common))
 
+    def conferir_identidade(self, onde: str) -> None:
+        """O caminho ligado ainda aponta para o MESMO objeto? Ou recusa.
+
+        Chamada IMEDIATAMENTE antes de cada efeito que precisa cair no
+        repositório validado — emitir o perfil do sandbox, desfazer, promover.
+        Depois dela ainda resta janela (o `perfil()` re-resolve microssegundos
+        depois), e é por isso que a checagem fica o mais perto possível do uso:
+        o que ela elimina é a janela de MILISSEGUNDOS que a medição explorou,
+        não a de instruções.
+        """
+        if self.ident_git == (-1, -1):
+            return                       # autoridade construída sem identidade
+        for caminho, esperado, rotulo in (
+                (self.git_dir, self.ident_git, "git dir"),
+                (self.common, self.ident_common, "common dir")):
+            try:
+                st = os.stat(caminho)
+            except OSError as e:
+                raise supervisor.ErroSeguranca(
+                    f"o {rotulo} {caminho!r} ligado a esta operação sumiu antes "
+                    f"de {onde} ({type(e).__name__}). O repositório trocou o "
+                    "objeto depois da validação — recuso em vez de agir sobre "
+                    "o que estiver lá agora") from None
+            if (st.st_dev, st.st_ino) != esperado:
+                raise supervisor.ErroSeguranca(
+                    f"o {rotulo} {caminho!r} NÃO é mais o objeto validado "
+                    f"(inode {esperado} -> {(st.st_dev, st.st_ino)}) na hora de "
+                    f"{onde}. Trocar `.git` por symlink depois da validação move "
+                    "o efeito para um repositório que ninguém aprovou — medido "
+                    "com o sandbox recebendo raiz de escrita FORA das raízes e "
+                    "com o supervisor sobrescrevendo índice e reflog de terceiro")
+
 
 def autoridade_de(repo: Path | str, git_dir: str, common: str) -> AutoridadeDeRepo:
+    def ident(p: str) -> tuple[int, int]:
+        try:
+            st = os.stat(p)
+            return (st.st_dev, st.st_ino)
+        except OSError:
+            return (-1, -1)
     return AutoridadeDeRepo(repo=str(supervisor.existente(repo)),
-                            git_dir=git_dir, common=common)
+                            git_dir=git_dir, common=common,
+                            ident_git=ident(git_dir),
+                            ident_common=ident(common))
 
 
 def conferir_git_dir(repo: Path | str, raizes: tuple[str, ...]) -> tuple[str, str]:
@@ -896,6 +960,12 @@ def confinamento_de_leitura(repo: Path | str,
     # o confinamento usa AQUELA, em vez de reler `.git` do disco — que é
     # exatamente onde o escritor concorrente entra.
     if autoridade is not None:
+        # A IDENTIDADE, agora, e nao so o caminho ligado (`N-A7-01`, P0): o
+        # `perfil()` do supervisor RE-RESOLVE `conf.leitura` ao emitir o SBPL,
+        # entao a autoridade ligada como string nao alcanca o sandbox. MEDIDO:
+        # `git-log` governado devolveu, com ok=True, a historia de um repo de
+        # FORA das raizes (6/120).
+        autoridade.conferir_identidade("montar o confinamento de leitura")
         git_dir, comum = autoridade.git_dir, autoridade.common
     else:
         git_dir, comum = diretorio_git(repo)
@@ -938,6 +1008,11 @@ def confinamento_de_repo(repo: Path | str, rede: bool = False,
     # Ver `AutoridadeDeRepo`: com a autoridade ligada, esta função deixa de ser
     # mais um ponto de releitura de `.git`.
     if autoridade is not None:
+        # Idem para a ESCRITA (`.7.14` / `N-A7-01`, P0). 12/12 perfis emitiram
+        # `(allow file-write* (subpath "<fora das raizes>"))` depois de o
+        # repositorio trocar `.git` por symlink — e `git-tag` governado criou
+        # ref no repositorio de fora com ok=True.
+        autoridade.conferir_identidade("montar o confinamento de escrita")
         raizes = autoridade.raizes_de_escrita
     else:
         git_dir, common = diretorio_git(repo)

@@ -1028,6 +1028,23 @@ class GitTreeAdapter(Adapter):
             # processo lendo/limpando a lista uma da outra.
             falhas: list[str] = []
             terceiro: list[str] = []
+            # O DESFAZER GRAVA, e grava do processo do SUPERVISOR — fora do
+            # sandbox. MEDIDO (`N-A7-02`, P0, 20/20): com `.git` trocado por
+            # symlink depois do instantaneo, `_restaurar_indice` e
+            # `_restaurar_refs` reconstruiram indice, refs e reflog DENTRO do
+            # repositorio de terceiro (`ls-files` do git dir externo passou de
+            # `DA_VITIMA.txt` para `DO_HOSTIL.txt`), e o NOMOS relatou a
+            # operacao como RECUSADA. A recusa vinha DEPOIS do dano.
+            #
+            # Conferir a identidade antes de escrever transforma isso em
+            # recusa-sem-efeito: se o objeto nao e mais o validado, nao ha
+            # instantaneo que pertenca a ele, e desfazer seria escrever no
+            # repositorio errado.
+            if autoridade is not None:
+                try:
+                    autoridade.conferir_identidade("desfazer a operação")
+                except ErroSeguranca as troca:
+                    falhas.append(f"identidade: {troca}")
             # A quarentena some ANTES da montagem do aviso, para que um resíduo
             # entre no MESMO incidente. Deixá-la no `finally` fazia a limpeza
             # acontecer depois do `raise`, sem canal nenhum para relatar que o
@@ -1035,14 +1052,17 @@ class GitTreeAdapter(Adapter):
             residuo = _fechar_quarentena(raiz_q, fd_gd)
             depois = janela.get("idx_depois")
             antes = janela.get("idx_antes")
-            for etapa, fn in (("índice",
-                               lambda: _restaurar_indice(instantaneo, depois,
-                                                         antes)),
-                              ("split index", lambda: _restaurar_split(split)),
-                              ("refs",
-                               lambda: _restaurar_refs(
-                                   refs, janela.get("refs_antes"),
-                                   janela.get("refs_depois")))):
+            # Fila VAZIA quando a identidade mudou: nao ha desfazer possivel
+            # que caia no repositorio certo, e escrever seria o dano.
+            etapas = () if falhas else (
+                ("índice",
+                 lambda: _restaurar_indice(instantaneo, depois, antes)),
+                ("split index", lambda: _restaurar_split(split)),
+                ("refs",
+                 lambda: _restaurar_refs(refs, janela.get("refs_antes"),
+                                         janela.get("refs_depois"))),
+            )
+            for etapa, fn in etapas:
                 try:
                     # `índice` E `refs`: os dois desfazeres podem destruir
                     # trabalho de terceiro, e antes só o primeiro tinha canal —
