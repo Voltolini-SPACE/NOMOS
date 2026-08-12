@@ -643,8 +643,17 @@ def _conferir_titularidade(base: Path, git_dir: str) -> None:
     for linha in texto.splitlines():
         crua = linha.strip()
         if crua.startswith("["):
-            # `[core]` e `[core "sub"]`; o nome da seção é o primeiro token.
-            secao = crua[1:].split("]")[0].split()[0].strip('"').lower()
+            # A seção tem de ser EXATAMENTE `core`, sem subseção. MEDIDO
+            # (`.4.08`): o Git NÃO honra `[core "sub"] worktree`, e o parser
+            # anterior pegava o primeiro token e lia como `core` — aceitando
+            # como PROVA DE TITULARIDADE uma chave que o Git ignora. Prova
+            # forjada é pior que prova ausente: ela passa.
+            #
+            # E o nome é CASE-INSENSITIVE de verdade: medido, `[CORE]` e
+            # `[Core]` são honrados pelo Git. O `.lower()` fica; o que sai é
+            # aceitar subseção.
+            interno = crua[1:].split("]")[0].strip()
+            secao = interno.lower() if " " not in interno and '"' not in interno else ""
             continue
         chave, sep, valor = linha.partition("=")
         if not sep or secao != "core" or chave.strip().lower() != "worktree":

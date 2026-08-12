@@ -531,8 +531,22 @@ def _instantaneo_das_refs(autoridade) -> dict[str, bytes | None]:
         alvos = [raiz / "HEAD", raiz / "packed-refs", raiz / "ORIG_HEAD"]
         for sub in ("refs", "logs"):
             d = raiz / sub
-            if d.is_dir():
-                alvos.extend(p for p in d.rglob("*") if p.is_file())
+            # `lstat` no DIRETÓRIO, não `is_dir()`. MEDIDO
+            # (`.8.NEW-REFSDIR-SYMLINK`): com `<git_dir>/refs` plantado como
+            # SYMLINK DE DIRETÓRIO para fora das raízes, `is_dir()` e `rglob`
+            # SEGUEM o link e cada arquivo encontrado passa no `lstat` final
+            # (são arquivos regulares de verdade, lá fora). O guard do
+            # componente final nunca vê o link do meio — a mesma forma de
+            # `.2.14` e `.3.02`, num terceiro lugar.
+            try:
+                if not stat.S_ISDIR(os.lstat(d).st_mode):
+                    raise ErroSeguranca(
+                        f"{sub} do git dir não é diretório real (é link ou "
+                        "outra coisa): o instantâneo de refs leria e o rollback "
+                        "escreveria FORA das raízes, no processo do supervisor")
+            except FileNotFoundError:
+                continue
+            alvos.extend(p for p in d.rglob("*") if p.is_file())
         for alvo in alvos:
             # `HEAD`, `packed-refs` e `ORIG_HEAD` são nomes que o REPOSITÓRIO
             # controla, e esta leitura roda no processo do supervisor, fora do
@@ -963,6 +977,7 @@ class GitTreeAdapter(Adapter):
             env=self.ambiente(), prazo=prazo,
             confinamento=confinamento_de_repo(repo, autoridade=autoridade),
             arvore_de_trabalho=str(repo))
+        supervisor.conferir_sinal(p, "ls-files")
         if p.returncode != 0:
             raise ErroInvalido(
                 f"não consegui listar o índice (rc={p.returncode})")
@@ -1063,6 +1078,18 @@ class GitTreeAdapter(Adapter):
         # da AUTORIDADE, não do literal `<repo>/.git`: em worktree ligada e
         # submódulo o `info/attributes` efetivo mora noutro lugar, e conferir o
         # caminho errado é não conferir.
+        raizes_fontes = self._fontes_de_atributo(repo, caminhos, autoridade)
+        vistos: set[str] = set()
+        for base, componentes in raizes_fontes:
+            chave = str(base) + "/" + "/".join(componentes)
+            if chave in vistos:
+                continue
+            vistos.add(chave)
+            self._recusar_componente_link(base, componentes)
+
+    def _fontes_de_atributo(self, repo: Path, caminhos: list[str],
+                            autoridade=None) -> list[tuple[Path, list[str]]]:
+        """Toda fonte de atributo que o Git consultaria para estes caminhos."""
         raizes_fontes: list[tuple[Path, list[str]]] = []
         for caminho in caminhos:
             pai = PurePosixPath(caminho).parent
@@ -1083,14 +1110,48 @@ class GitTreeAdapter(Adapter):
         if autoridade is not None and autoridade.common != autoridade.git_dir:
             raizes_fontes.append((Path(autoridade.common),
                                   ["info", "attributes"]))
+        return raizes_fontes
 
-        vistos: set[str] = set()
-        for base, componentes in raizes_fontes:
-            chave = str(base) + "/" + "/".join(componentes)
-            if chave in vistos:
+    def _recusar_cancelamento_de_filtro(self, repo: Path, caminhos: list[str],
+                                        autoridade=None) -> None:
+        """Nenhuma fonte de atributo pode CANCELAR um filtro governado.
+
+        MEDIDO, e é a segunda forma do mesmo ataque: `-filter` faz `check-attr`
+        responder `unset`, e `!filter` faz responder `unspecified` — mas os DOIS
+        cancelam a regra de redação da fonte de menor precedência. Com a
+        cancelação, o índice fica `SENHA=hunter2`; sem ela, `SENHA=REDIGIDO`.
+
+        A defesa anterior tratava só `unset`, e por isso `!filter` a contornava
+        trocando um token por outro. E `unspecified` sozinho NÃO serve de
+        critério: ele também é a resposta legítima de "não há regra nenhuma".
+
+        Por que não voltar a interpretar padrão: essa é exatamente a classe de
+        divergência que `check-attr` veio eliminar. Aqui NÃO se decide a QUEM a
+        regra se aplica — recusa-se a EXISTÊNCIA de um cancelamento de filtro em
+        qualquer fonte que este repositório declare. Num repositório com filtro
+        governado, cancelar redação não é necessidade legítima; é o pedido para
+        publicar o segredo em claro.
+        """
+        for base, componentes in self._fontes_de_atributo(repo, caminhos,
+                                                          autoridade):
+            alvo = base.joinpath(*componentes)
+            try:
+                if not stat.S_ISREG(os.lstat(alvo).st_mode):
+                    continue
+                texto = alvo.read_text("utf-8", "replace")
+            except OSError:
                 continue
-            vistos.add(chave)
-            self._recusar_componente_link(base, componentes)
+            for linha in texto.splitlines():
+                corpo = linha.split("#", 1)[0]
+                if " -filter" in f" {corpo}" or " !filter" in f" {corpo}":
+                    raise ErroSeguranca(
+                        f"a fonte de atributo {alvo} CANCELA filtro "
+                        f"({linha.strip()!r}). `-filter` e `!filter` desligam a "
+                        "regra de redação declarada numa fonte de menor "
+                        "precedência, e o conteúdo seria indexado EM CLARO com "
+                        "rc=0. `check-attr` responde `unset` para o primeiro e "
+                        "`unspecified` para o segundo — o token muda, o efeito é "
+                        "o mesmo. Remova o cancelamento")
 
     def _recusar_componente_link(self, base: Path, componentes: list[str]) -> None:
         """Nenhum COMPONENTE do caminho da fonte pode ser symlink.
@@ -1228,6 +1289,7 @@ class GitTreeAdapter(Adapter):
         from nomos.adapters import filtro_governado as fg
 
         self._recusar_fonte_de_atributo_por_link(repo, caminhos, autoridade)
+        self._recusar_cancelamento_de_filtro(repo, caminhos, autoridade)
         self._recusar_fonte_de_atributo_externa(repo, prazo, autoridade)
 
         argv = self._base(repo) + ["check-attr", "-z", "filter", "--", *caminhos]
@@ -1351,6 +1413,7 @@ class GitTreeAdapter(Adapter):
             confinamento=confinamento_de_repo(repo, autoridade=autoridade),
             quarentena=quarentena,
             entrada=p.stdout, arvore_de_trabalho=str(repo))
+        supervisor.conferir_sinal(h, f"hash-object em {caminho}")
         if h.returncode != 0:
             erro = h.stderr.decode("utf-8", "replace")[:400]
             raise ErroInvalido(f"hash-object falhou em {caminho}: {erro}")
@@ -1373,6 +1436,7 @@ class GitTreeAdapter(Adapter):
             confinamento=confinamento_de_repo(repo, autoridade=autoridade),
             quarentena=quarentena,
             arvore_de_trabalho=str(repo))
+        supervisor.conferir_sinal(u, f"update-index em {caminho}")
         if u.returncode != 0:
             erro = u.stderr.decode("utf-8", "replace")[:400]
             raise ErroInvalido(f"update-index falhou em {caminho}: {erro}")

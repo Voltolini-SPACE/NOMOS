@@ -227,6 +227,32 @@ class ErroSeguranca(ErroInvalido):
 _MARCADOR_ERRO = re.compile(rb"^(?:error|fatal):", re.MULTILINE)
 
 
+def conferir_sinal(p, o_que: str) -> None:
+    """Morte por SINAL não é erro da ferramenta. Levanta `ErroLimite` se for.
+
+    Existe porque esta correção foi feita QUATRO vezes em call sites diferentes
+    antes de virar função: `symbolic-ref` (`.6.10`), `git config` (`.11.12`), e
+    depois `update-index`/`hash-object`/`ls-files`/`ls-remote`. Todos caíam no
+    mesmo ramo `rc != 0` e subiam como erro de sintaxe da ferramenta.
+
+    MEDIDO, e foi a bateria de CORRIDA que pegou: sob carga (duas suítes
+    completas concorrentes), o `update-index` foi morto e o adapter reportou
+    `ErroInvalido: update-index falhou em q26.txt:` — com stderr VAZIO, que é a
+    assinatura exata de sinal. Intermitente 1/16 sob carga, 0/58 isolado: um
+    "flake" que era classificação errada de um evento real.
+
+    `rc < 0` é a forma POSIX: `subprocess` devolve `-N` quando o processo morreu
+    com o sinal N. Stderr vazio junto com `rc != 0` não é diagnóstico — é a
+    ausência dele.
+    """
+    if getattr(p, "morto_por_timeout", False) or p.returncode < 0:
+        raise ErroLimite(
+            f"{o_que} foi encerrado por SINAL (rc={p.returncode})"
+            f"{' após o prazo' if getattr(p, 'morto_por_timeout', False) else ''}"
+            " — o processo morreu, não houve saída a interpretar. Sob carga "
+            "isto acontece sem que nada esteja errado com o repositório")
+
+
 def conferir_saida(stderr: bytes, operacao: str) -> None:
     """Recusa quando o Git relatou erro apesar de ter saído com rc=0.
 

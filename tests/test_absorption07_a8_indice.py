@@ -377,3 +377,37 @@ def test_a8_11_o_temporario_do_desfazer_NAO_e_escolhivel_pelo_repositorio(campo)
     for previsivel in (".index.nomos-rollback-", ".nomos-refs-"):
         assert previsivel not in fonte, (
             f"nome previsível {previsivel!r} voltou ao caminho de desfazer")
+
+
+def test_a8_12_morte_por_SINAL_nunca_vira_erro_da_ferramenta():
+    """ESTRUTURAL: a correção que foi feita QUATRO vezes vira invariante.
+
+    `symbolic-ref` (`.6.10`), `git config` (`.11.12`) e depois
+    `update-index`/`hash-object`/`ls-files`/`ls-remote`: todos caíam no ramo
+    `rc != 0` e subiam como erro de sintaxe da ferramenta.
+
+    Foi a bateria de CORRIDA que pegou. Sob carga — duas suítes completas
+    concorrentes — o `update-index` foi morto e o adapter reportou
+    `ErroInvalido: update-index falhou em q26.txt:` com stderr VAZIO, que é a
+    assinatura exata de sinal. Intermitente 1/16 sob carga e 0/58 isolado: um
+    "flake" que era classificação errada de um evento real. Não fosse a
+    investigação, teria sido descartado.
+
+    Este teste exige que TODO ramo `returncode != 0` nos adapters de Git tenha
+    a guarda de sinal por perto — a próxima adição herda a regra por falhar
+    aqui, em vez de por alguém lembrar.
+    """
+    from nomos.adapters import git, git_push, git_write
+
+    for modulo in (git_tree, git, git_push, git_write):
+        fonte = Path(modulo.__file__).read_text("utf-8").splitlines()
+        for i, linha in enumerate(fonte):
+            if "returncode != 0" not in linha and "returncode not in" not in linha:
+                continue
+            janela = "\n".join(fonte[max(0, i - 8):i + 1])
+            assert ("conferir_sinal" in janela
+                    or "morto_por_timeout" in janela
+                    or "returncode < 0" in janela), (
+                f"{modulo.__name__}:{i + 1} decide por `returncode` sem antes "
+                "distinguir morte por SINAL — sob carga isso reporta um "
+                "processo morto como erro de sintaxe da ferramenta")

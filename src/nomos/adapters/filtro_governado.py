@@ -46,6 +46,7 @@ import shutil
 import stat
 import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from nomos.adapters.contrato import ErroInvalido
 
@@ -80,6 +81,41 @@ def _parece_git_dir(caminho: str) -> bool:
                             or tem("commondir") or tem("gitdir")
                             or tem("packed-refs")
                             or os.path.isdir(os.path.join(caminho, "refs")))
+
+
+def _git_dirs_aninhados(raiz: str, profundidade: int = 4) -> list[str]:
+    """Git dirs DENTRO da raiz cujo nome não é `.git`.
+
+    Existe por `--separate-git-dir`: o git dir pode se chamar qualquer coisa, e
+    aí a negação por NOME (`\.git`) não o alcança. Procurar é o único jeito —
+    o nome é escolhido por quem criou o repositório, não por nós.
+
+    A profundidade é limitada de propósito: a raiz vem da POLÍTICA, e varrer
+    sem teto transformaria uma raiz ampla em custo ilimitado a cada operação.
+    Quatro níveis cobrem os layouts reais (workspace/projeto/gitdir) sem isso.
+    """
+    achados: list[str] = []
+    base = Path(raiz)
+    if not base.is_dir():
+        return achados
+    pilha = [(base, 0)]
+    while pilha:
+        atual, nivel = pilha.pop()
+        if nivel > profundidade:
+            continue
+        try:
+            for filho in atual.iterdir():
+                if not filho.is_dir() or filho.is_symlink():
+                    continue
+                if filho.name == ".git":
+                    continue          # já coberto pela negação por NOME
+                if _parece_git_dir(str(filho)):
+                    achados.append(str(filho))
+                    continue          # não desce: o diretório inteiro é negado
+                pilha.append((filho, nivel + 1))
+        except OSError:
+            continue
+    return achados
 
 
 @dataclass(frozen=True)
@@ -243,6 +279,18 @@ class PoliticaDeFiltro:
             # filtro de conteúdo não usa, e a escrita ali some.
             if _parece_git_dir(base):
                 proibidos += (base,)
+            # E os git dirs ANINHADOS que não se chamam `.git`. MEDIDO
+            # (`.11.13`): um repositório criado com `--separate-git-dir` tem git
+            # dir cujo caminho NÃO contém o componente `.git`, então a negação
+            # por NOME não o alcança — o filtro gravava hook, config,
+            # info/attributes, ref e objeto lá dentro, instalando o PRÓXIMO.
+            #
+            # Negação por nome nunca fecha esta forma: o nome é escolhido por
+            # quem criou o repositório. O que fecha é PROCURAR os git dirs
+            # dentro da raiz concedida e negá-los por caminho. A varredura é
+            # limitada em profundidade porque a raiz vem da política, não do
+            # repositório — e uma raiz enorme não pode virar custo ilimitado.
+            proibidos += tuple(_git_dirs_aninhados(base))
         # `.gitattributes` é FONTE DE ATRIBUTO, e mora em qualquer diretório da
         # working tree — inclusive num que o próprio filtro crie durante a
         # operação. MEDIDO: com `write_roots=(repo,)` o filtro gravou o arquivo

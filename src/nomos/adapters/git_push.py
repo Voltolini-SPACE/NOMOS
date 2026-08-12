@@ -156,6 +156,7 @@ class GitPushAdapter(Adapter):
                                 prazo=15.0,
                                 confinamento=confinamento_de_repo(
                                     repo, autoridade=autoridade))
+        supervisor.conferir_sinal(p, "ls-remote --get-url")
         if p.returncode != 0:
             raise ErroRemoto("não consegui resolver a URL efetiva do destino")
         return p.stdout.decode("utf-8", "replace").strip()
@@ -177,6 +178,7 @@ class GitPushAdapter(Adapter):
                                 prazo=15.0,
                                 confinamento=confinamento_de_repo(
                                     repo, autoridade=autoridade))
+        supervisor.conferir_sinal(p, "git config --get-regexp")
         if p.returncode not in (0, 1):     # 1 = nenhuma chave, normal
             raise ErroRemoto("não consegui inspecionar regras de reescrita")
         return [linha for linha in p.stdout.decode("utf-8", "replace").splitlines()
