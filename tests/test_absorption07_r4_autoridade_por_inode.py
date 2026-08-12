@@ -31,6 +31,7 @@ de instruções exigiria I/O relativo a descritor em toda a cadeia.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -212,3 +213,162 @@ def test_r4_07_autoridade_SEM_identidade_nao_quebra_o_caminho_legitimo():
     """
     a = git.AutoridadeDeRepo(repo="/x", git_dir="/x/.git", common="/x/.git")
     a.conferir_identidade("teste")
+
+
+# ═══ `.2` da 4ª medição — o cancelamento de filtro, por TOKEN e com TETO ═════
+
+_FONTE_NATIVA = Path(__file__).parent / "fixtures_nativas" / "redator.c"
+
+
+@pytest.fixture
+def governado(tmp_path):
+    """Redator APROVADO. Sem filtro real não há `hunter2` vs `REDIGIDO`."""
+    if not os.path.exists(supervisor.SANDBOX):
+        pytest.skip("sem sandbox-exec não há execução supervisionada")
+    from nomos.adapters import filtro_governado as fg
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    repo = _init(raiz / "repo")
+    binario = tmp_path / "redator"
+    r = subprocess.run(["cc", "-O2", "-o", str(binario), str(_FONTE_NATIVA)],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        pytest.skip(f"sem toolchain C: {r.stderr[:160]}")
+    art = fg.ArmazemDeExecutaveis(tmp_path / "store").importar(binario)
+    reg = fg.RegistroDeFiltros()
+    reg.registrar("redator", fg.PoliticaDeFiltro(
+        filter_id="redator", canonical_executable=str(binario),
+        managed_artifact=art, read_roots=(str(repo),), write_roots=(str(repo),)))
+
+    class Cen:
+        def __init__(self):
+            self.raiz, self.repo, self.reg, self.tmp = raiz, repo, reg, tmp_path
+
+        def add(self, *caminhos):
+            from nomos.adapters import git_tree
+            from nomos.adapters.contrato import (CapabilityContext,
+                                                 CapabilityRequest)
+            from nomos.adapters.wiring import registrar_git_tree
+            from nomos.kernel.policy import PolicyEngine
+            from nomos.orquestracao.registro import RegistroCapacidades
+            rc = RegistroCapacidades(policy=PolicyEngine(tmp_path / "p.json"),
+                                     approver=lambda *a, **k: True)
+            registrar_git_tree(rc, raizes=(str(raiz),))
+            ctx = CapabilityContext.de_registro(rc, "git-add",
+                                                "runtime-governado",
+                                                raizes=(str(raiz),))
+            return git_tree.GitTreeAdapter(registro=reg).executar(
+                CapabilityRequest(capacidade="git-add", alvo=str(repo),
+                                  argumentos={"caminhos": list(caminhos)}), ctx)
+
+        def cru_no_store(self) -> bool:
+            saida = subprocess.run(
+                [GIT, "-C", str(self.repo), "cat-file",
+                 "--batch-all-objects", "--batch"], capture_output=True).stdout
+            return b"hunter2" in saida
+
+    return Cen()
+
+
+@pytest.mark.parametrize("separador,token", [
+    ("\t", "!filter"), ("\t", "-filter"),
+    (" ", "!filter"), (" ", "-filter"),
+    ("  \t ", "!filter"),
+])
+def test_r4_10_cancelamento_por_QUALQUER_espaco_e_recusa(governado, separador,
+                                                          token):
+    """`.2.N1-TAB-BANG-FILTER` (P0): o Git separa por QUALQUER `isspace()`.
+
+    O conserto da rodada anterior buscava a substring `" !filter"` — espaço mais
+    token. MEDIDO 8/8: `SEGREDO.txt\\t!filter` cancela a redação exatamente
+    igual e a substring não vê. A varredura passa a ser por TOKEN, que é a
+    mesma regra do Git.
+    """
+    cen = governado
+    (cen.repo / ".gitattributes").write_text(
+        f"*.txt filter=redator\nsegredo.txt{separador}{token}\n")
+    (cen.repo / "segredo.txt").write_text("SENHA=hunter2\n")
+
+    with pytest.raises(supervisor.ErroSeguranca):
+        cen.add("segredo.txt")
+    assert not cen.cru_no_store(), (
+        f"`{token}` separado por {separador!r} desligou a redação e o conteúdo "
+        "cru chegou ao store")
+
+
+@pytest.mark.parametrize("atributo", ["-filterset", "-filtered", "-filtro"])
+def test_r4_11_atributo_PARECIDO_nao_e_cancelamento(governado, atributo):
+    """`.2.N6` (P2, direção oposta): a substring não tinha fim de token.
+
+    `-filterset` desliga um atributo CHAMADO `filterset`, sem nenhuma relação
+    com `filter`, e a operação inteira era recusada. Recusa falsa treina quem
+    lê a suíte a contornar a guarda.
+    """
+    cen = governado
+    (cen.repo / ".gitattributes").write_text(
+        f"*.txt filter=redator\nsegredo.txt {atributo}\n")
+    (cen.repo / "segredo.txt").write_text("SENHA=hunter2\n")
+
+    r = cen.add("segredo.txt")
+    assert r.efeito_aplicado, f"recusa FALSA por causa de {atributo!r}"
+    assert not cen.cru_no_store(), "o filtro deixou de rodar"
+
+
+def test_r4_12_fonte_de_atributo_acima_do_teto_do_GIT_e_recusa(governado):
+    """`.2.N9` (P0): acima de 100 MiB o Git IGNORA a fonte, com rc=0.
+
+    MEDIDO no 2.50.1: `warning: ignoring overly large gitattributes file` —
+    mensagem que o guard de `.2.15` não casa (exige "unable to access") e que
+    `conferir_saida` não vê (casa `^(error|fatal):`). Discriminante medido:
+    99 MiB REDIGE, 101 MiB entra EM CLARO. O repositório escolhia o TAMANHO, e
+    com ele escolhia se a redação acontecia.
+
+    O teste usa `truncate` (arquivo esparso) para não gastar 100 MiB de disco
+    real: o que a guarda lê é `st_size`, que é o mesmo que o Git lê.
+    """
+    from nomos.adapters import git_tree
+    cen = governado
+    attrs = cen.repo / ".gitattributes"
+    attrs.write_text("*.txt filter=redator\n")
+    with open(attrs, "r+b") as fh:
+        fh.truncate(git_tree.ATTR_MAX_GIT + 1)
+    (cen.repo / "segredo.txt").write_text("SENHA=hunter2\n")
+
+    with pytest.raises(supervisor.ErroSeguranca, match="teto do próprio Git"):
+        cen.add("segredo.txt")
+    assert not cen.cru_no_store()
+
+
+def test_r4_13_CONTROLE_fonte_grande_mas_ABAIXO_do_teto_continua_valendo(
+        governado):
+    """Sem este controle, o de cima passaria num sistema que recusa por tamanho.
+
+    Logo abaixo do teto o Git HONRA a fonte, então o NOMOS também tem de honrar
+    — e a redação tem de acontecer.
+    """
+    from nomos.adapters import git_tree
+    cen = governado
+    attrs = cen.repo / ".gitattributes"
+    attrs.write_text("*.txt filter=redator\n")
+    with open(attrs, "r+b") as fh:
+        fh.truncate(git_tree.ATTR_MAX_GIT - 1)
+    (cen.repo / "segredo.txt").write_text("SENHA=hunter2\n")
+
+    r = cen.add("segredo.txt")
+    assert r.efeito_aplicado
+    assert not cen.cru_no_store()
+
+
+def test_r4_14_CONTROLE_sem_cancelamento_o_filtro_roda(governado):
+    """O controle positivo de todos os acima: o caminho legítimo funciona."""
+    cen = governado
+    (cen.repo / ".gitattributes").write_text("*.txt filter=redator\n")
+    (cen.repo / "segredo.txt").write_text("SENHA=hunter2\n")
+    r = cen.add("segredo.txt")
+    assert r.efeito_aplicado
+    sha = subprocess.run([GIT, "-C", str(cen.repo), "ls-files", "-s", "--",
+                          "segredo.txt"], capture_output=True,
+                        text=True).stdout.split()[1]
+    corpo = subprocess.run([GIT, "-C", str(cen.repo), "cat-file", "-p", sha],
+                           capture_output=True).stdout
+    assert corpo == b"SENHA=REDIGIDO\n"

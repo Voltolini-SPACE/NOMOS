@@ -110,6 +110,11 @@ CAPACIDADES = ("git-add", "git-commit")
 # `ok=True`.
 MAX_ATRIBUTOS = 500
 MAX_CONTEUDO = 64 * 1024 * 1024
+# `ATTR_MAX_FILE_SIZE` do Git (attr.c). Acima dele o Git IGNORA a fonte de
+# atributo com um `warning:` e rc=0 — MEDIDO no 2.50.1, discriminante 99 MiB
+# redige e 101 MiB não. Serve para DUAS coisas: recusar a fonte que o Git
+# ignoraria, e limitar a leitura que o supervisor faz dela.
+ATTR_MAX_GIT = 100 * 1024 * 1024
 
 TIMEOUT_S = 60.0
 MAX_CAMINHOS = 100
@@ -1313,14 +1318,49 @@ class GitTreeAdapter(Adapter):
                                                           autoridade):
             alvo = base.joinpath(*componentes)
             try:
-                if not stat.S_ISREG(os.lstat(alvo).st_mode):
+                st = os.lstat(alvo)
+                if not stat.S_ISREG(st.st_mode):
                     continue
-                texto = alvo.read_text("utf-8", "replace")
+                # TETO DE 100 MiB, e ele é do GIT (`.2.N9-ATTRS-ACIMA-DO-TETO`,
+                # P0). MEDIDO no Git 2.50.1: uma fonte de atributo acima de
+                # `ATTR_MAX_FILE_SIZE` é IGNORADA em silêncio, com
+                # `warning: ignoring overly large gitattributes file` e rc=0 —
+                # mensagem que o guard de `.2.15` não casa (ele exige "unable
+                # to access") e que `conferir_saida` não vê (casa `^(error|
+                # fatal):`). Discriminante: 99 MiB -> REDIGIDO, 101 MiB -> EM
+                # CLARO. O repositório escolhe o TAMANHO, e com ele escolhe se
+                # a redação acontece.
+                if st.st_size > ATTR_MAX_GIT:
+                    raise ErroSeguranca(
+                        f"a fonte de atributo {alvo} tem {st.st_size} bytes, "
+                        f"acima do teto do próprio Git ({ATTR_MAX_GIT}). Acima "
+                        "dele o Git IGNORA o arquivo com um `warning:` e rc=0 — "
+                        "toda regra de redação declarada ali desaparece em "
+                        "silêncio, e o conteúdo entra EM CLARO no índice")
+                # E o teto DESTA leitura, que roda no processo do SUPERVISOR,
+                # fora do sandbox (`.2.N8` / `.9.NOVO-ATTR-ILIMITADA`): antes era
+                # `read_text()` sem limite nenhum, guiado pelo repositório. O
+                # contraste estava no mesmo arquivo — o conteúdo FILTRADO já tem
+                # `MAX_CONTEUDO`. Os dois ramos da mesma função com garantias
+                # opostas é a forma exata de `.9.11`.
+                with open(alvo, "rb") as fh:
+                    texto = fh.read(ATTR_MAX_GIT).decode("utf-8", "replace")
             except OSError:
                 continue
             for linha in texto.splitlines():
                 corpo = linha.split("#", 1)[0]
-                if " -filter" in f" {corpo}" or " !filter" in f" {corpo}":
+                # POR TOKEN, e não por substring (`.2.N1` P0 e `.2.N6` P2).
+                # MEDIDO: o Git separa atributo por QUALQUER `isspace()`, então
+                # `SEGREDO.txt\t!filter` cancela igual — e a busca por
+                # `" !filter"` (espaço + token) não via. Na direção oposta,
+                # `" -filter"` casava `-filterset`, um atributo SEM relação com
+                # `filter`, e recusava a operação inteira.
+                #
+                # `split()` sem argumento separa por qualquer espaço em branco,
+                # que é a mesma regra do Git. O primeiro token é o PADRÃO; os
+                # demais são atributos.
+                tokens = corpo.split()
+                if any(t in ("-filter", "!filter") for t in tokens[1:]):
                     raise ErroSeguranca(
                         f"a fonte de atributo {alvo} CANCELA filtro "
                         f"({linha.strip()!r}). `-filter` e `!filter` desligam a "
