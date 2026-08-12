@@ -135,11 +135,28 @@ def test_a8_03_rollback_DETECTA_escritor_concorrente(campo):
     O que resolve é a DETECÇÃO: se o índice mudou entre o instantâneo e o
     desfazer, o incidente sobe anexado ao erro.
     """
-    fonte = Path(git_tree.__file__).read_text("utf-8")
-    corpo = fonte.split("def _restaurar_indice", 1)[1].split("\ndef ", 1)[0]
-    assert "_TERCEIRO_DETECTADO" in corpo, (
-        "o desfazer deixou de detectar escritor concorrente — a perda de "
-        "trabalho de terceiro volta a ser silenciosa")
+    # COMPORTAMENTAL, não grep. MEDIDO (`.11.11`): a versão anterior procurava
+    # o identificador `_TERCEIRO_DETECTADO` no corpo da função — e passava
+    # porque o nome aparecia no PRÓPRIO COMENTÁRIO que explicava tê-lo
+    # removido. Teste que mede o texto do código, e não o que ele faz, protege
+    # a área com sinal falso.
+    repo = campo.repo
+    _git("-C", str(repo), "add", "a.txt")
+    inst = git_tree._instantaneo_do_indice(repo)
+
+    # Um terceiro escreve o índice depois do instantâneo.
+    (repo / "de_outro.txt").write_text("trabalho alheio\n")
+    _git("-C", str(repo), "add", "de_outro.txt")
+
+    detectou = git_tree._restaurar_indice(inst)
+    assert detectou is True, (
+        "o desfazer não detectou o escritor concorrente — a perda de trabalho "
+        "de terceiro volta a ser silenciosa")
+
+    # E o CONTROLE: sem terceiro, não pode acusar (`.11.09`).
+    inst2 = git_tree._instantaneo_do_indice(repo)
+    assert git_tree._restaurar_indice(inst2) is False, (
+        "acusou terceiro sem terceiro — falso positivo destrói o sinal")
 
 
 def test_a8_04_rollback_nao_pendura_se_o_lock_esta_preso(campo):

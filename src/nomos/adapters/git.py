@@ -628,6 +628,7 @@ def _conferir_titularidade(base: Path, git_dir: str) -> None:
     # inspeção de git e mesmo assim decide a titularidade.
     texto = ler_controle_do_repo(gd / "config", "<git_dir>/config") or ""
     secao = ""
+    ultimo: str | None = None
     for linha in texto.splitlines():
         crua = linha.strip()
         if crua.startswith("["):
@@ -638,16 +639,25 @@ def _conferir_titularidade(base: Path, git_dir: str) -> None:
         if not sep or secao != "core" or chave.strip().lower() != "worktree":
             continue
         v = valor.strip()
-        if not v:
-            continue
-        caminho = v if os.path.isabs(v) else str(gd / v)
+        if v:
+            # ÚLTIMA declaração vence, como no Git. MEDIDO (`.4.08`): com DOIS
+            # `core.worktree` no mesmo `[core]`, o Git honra o ÚLTIMO e este
+            # parser aceitava baseado no PRIMEIRO — a prova de titularidade
+            # olhava uma chave que o Git ignora. É a mesma classe de divergência
+            # que `filter=passa filter=redator` já tinha custado no
+            # `.gitattributes`: quem decide a semântica é o Git, e um parser que
+            # para na primeira ocorrência lê outro arquivo que não o efetivo.
+            ultimo = v
+    if ultimo is not None:
+        caminho = ultimo if os.path.isabs(ultimo) else str(gd / ultimo)
         try:
             dono = supervisor.canonicalizar(caminho)
         except OSError:
-            continue
-        if dono != alvo:
-            recusar(dono, "core.worktree")
-        return
+            dono = None
+        if dono is not None:
+            if dono != alvo:
+                recusar(dono, "core.worktree")
+            return
 
     # 3) NENHUM registro de dono. Aqui entra a decisão de dono
     #    `UNPROVABLE_GITDIR_OWNERSHIP = REFUSE`, e ela é o ponto todo desta

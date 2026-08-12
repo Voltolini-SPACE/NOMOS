@@ -1231,10 +1231,32 @@ class GitTreeAdapter(Adapter):
         pedidos: dict[str, str] = {}
         for i in range(0, len(campos), 3):
             caminho, _atributo, valor = campos[i], campos[i + 1], campos[i + 2]
-            # `unspecified` = sem regra; `unset`/`set` = o atributo existe mas
-            # não nomeia driver. Nenhum dos três é pedido de filtro.
-            if valor in ("unspecified", "unset", "set"):
+            # `unspecified` = NÃO HÁ regra. `set` = o atributo existe sem nomear
+            # driver. Nenhum dos dois é pedido de filtro, e nenhum dos dois
+            # exige decisão.
+            if valor in ("unspecified", "set"):
                 continue
+            # `unset` é DIFERENTE, e a diferença é o achado (`.2.13`): ele só
+            # existe porque alguém escreveu `-filter` — um CANCELAMENTO
+            # EXPLÍCITO. Uma fonte de atributo de precedência maior (o
+            # `.gitattributes` de um subdiretório, ou `.git/info/attributes`)
+            # cancela a regra da raiz, e o segredo entra EM CLARO no índice com
+            # `ok=True` e sem nenhum sinal ao operador.
+            #
+            # Não há divergência contra o git cru — ele faz o mesmo — mas a
+            # propriedade que esta série sustenta não é paridade com o Git, é
+            # "o repositório não escolhe se o segredo é redigido". Tratar
+            # cancelamento explícito como ausência de regra é a mesma falha
+            # silenciosa de `core.attributesFile`, e a resposta é a mesma:
+            # recusar em vez de ignorar em silêncio.
+            if valor == "unset":
+                raise ErroSeguranca(
+                    f"o repositório CANCELA o filtro de {caminho!r} com "
+                    "`-filter` numa fonte de atributo de precedência maior. "
+                    "Cancelamento explícito não é ausência de regra: seguir "
+                    "indexaria o conteúdo EM CLARO com rc=0, e quem aprovou a "
+                    "operação não saberia. Remova o `-filter` ou declare o "
+                    "filtro governado que deve valer")
             if caminho not in caminhos:
                 raise ErroSeguranca(
                     f"check-attr respondeu sobre {caminho!r}, que não está "

@@ -280,6 +280,36 @@ def test_hooks_08_a_neutralizacao_sozinha_NAO_muda_add_commit(bancada,
     executar, porque a allowlist de exec já o impede. Um teste comportamental
     que dissesse provar essa neutralização estaria provando a allowlist.
     """
+    # AS DUAS listas. MEDIDO (`.3.03`): monkeypatchar só `_NEUTRALIZAR_TREE`
+    # não removia a defesa — `_base()` emite `*_NEUTRALIZAR, *_NEUTRALIZAR_TREE`
+    # e `_NEUTRALIZAR` (de git.py) carrega o MESMO `core.hooksPath=/dev/null`.
+    # O argv real do processo continuava com a flag, 1x. Um teste que se
+    # apresenta como "o contrafactual sem a neutralização" e nunca a remove
+    # passa por construção — a vacuidade que este módulo declara ter eliminado.
+    from nomos.adapters import git as _git_mod
+
+    def sem_flag(lista, valor):
+        """Remove o PAR `-c <valor>`, não só o valor.
+
+        As listas são planas e alternadas; tirar só o valor deixa um `-c` órfão
+        e o Git morre com `key does not contain a section: -c` — o teste
+        passaria a medir argv inválido, não ausência de defesa.
+        """
+        fora = []
+        pular = False
+        for i, item in enumerate(lista):
+            if pular:
+                pular = False
+                continue
+            if item == "-c" and i + 1 < len(lista) and lista[i + 1] == valor:
+                pular = True
+                continue
+            fora.append(item)
+        return fora
+
+    sem_base = sem_flag(_git_mod._NEUTRALIZAR, "core.hooksPath=/dev/null")
+    monkeypatch.setattr(_git_mod, "_NEUTRALIZAR", sem_base)
+    monkeypatch.setattr(git_tree, "_NEUTRALIZAR", sem_base)
     sem = [x for x in git_tree._NEUTRALIZAR_TREE
            if x != "core.hooksPath=/dev/null"]
     sem = [x for i, x in enumerate(sem)
