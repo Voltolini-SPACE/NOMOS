@@ -255,3 +255,46 @@ def test_filtro_com_gitdir_como_raiz_CONTROLE_area_concedida(campo):
     assert alvo.exists() and alvo.read_bytes() == b"PLANTADO\n", (
         "a sonda não escreve nem na área concedida — os testes de recusa acima "
         "não distinguem contenção de sonda morta")
+
+
+# ═══════════ .7.13 — a auditoria nomeia a autoridade CONSUMIDA ═══════════════
+
+def test_auditoria_registra_o_git_dir_EFETIVO_nao_so_o_alvo(campo):
+    """O operador nomeia a working tree; o efeito cai no git dir/common.
+
+    MEDIDO: o registro trazia só `alvo`. Numa worktree ligada LEGÍTIMA o objeto
+    foi para o COMMON DIR, e quem lê a auditoria via `alvo=<raizes>/wt` sem ter
+    como saber onde o efeito caiu. Combinado com confusão cross-repo, o registro
+    apontava para o repositório do ATACANTE — errado exatamente no caso em que
+    ele mais importa.
+    """
+    principal = campo.repo(campo.raiz / "principal", nome="a.txt")
+    wt = campo.raiz / "wt"
+    _git("-C", str(principal), "worktree", "add", "-q", str(wt), "-b", "b2")
+    (wt / "novo.txt").write_text("novo\n")
+
+    registros = []
+
+    class Espia:
+        def append(self, evento, **campos):
+            registros.append((evento, campos))
+
+    rc = RegistroCapacidades(policy=PolicyEngine(campo.tmp / "aud.json"),
+                             approver=lambda *a, **k: True)
+    registrar_git_tree(rc, raizes=(str(campo.raiz),))
+    ctx = CapabilityContext.de_registro(rc, "git-add", "runtime-governado",
+                                        raizes=(str(campo.raiz),),
+                                        audit=Espia())
+    git_tree.GitTreeAdapter().executar(
+        CapabilityRequest(capacidade="git-add", alvo=str(wt),
+                          argumentos={"caminhos": ["novo.txt"]}), ctx)
+
+    assert registros, "nenhum evento de auditoria foi emitido"
+    _evento, campos = registros[-1]
+    gd = _git("-C", str(wt), "rev-parse", "--absolute-git-dir").stdout.strip()
+    comum = _git("-C", str(wt), "rev-parse", "--git-common-dir").stdout.strip()
+    valores = " ".join(str(v) for v in campos.values())
+    assert gd in valores, (
+        f"a auditoria não nomeia o git dir EFETIVO ({gd}); campos={sorted(campos)}")
+    assert Path(comum).name and str(Path(comum).resolve()) in valores or comum in valores, (
+        f"a auditoria não nomeia o common dir EFETIVO ({comum})")

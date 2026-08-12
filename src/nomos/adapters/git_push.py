@@ -316,6 +316,7 @@ class GitPushAdapter(Adapter):
         # publicação que não publicou não pode virar sucesso auditado.
         supervisor.conferir_saida(p.stderr, "push")
         self._auditar(ctx, "git.push", alvo=supervisor.canonicalizar(repo),
+                      git_dir=autoridade.git_dir, common_dir=autoridade.common,
                       remote_id=destino.remote_id, url=destino.url,
                       origem=origem, destino=alvo_branch, sandbox=True,
                       rede=not self._local(destino),

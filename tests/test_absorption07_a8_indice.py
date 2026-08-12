@@ -177,3 +177,101 @@ def test_a8_05_add_concorrente_com_rc0_nao_e_apagado_pelo_rollback(campo):
         assert "concorrente.txt" in _git("-C", str(campo.repo),
                                          "ls-files").stdout, (
             "o rollback apagou um `git add` concorrente que saiu com rc=0")
+
+
+# ═══════════════ .8.01 / .8.03 / .8.06 — o resto do bolsão ═══════════════════
+
+def _com_filtro_desconhecido(campo, nome="zz.txt"):
+    """Gatilho de recusa que exercita o caminho de DESFAZER inteiro."""
+    from nomos.adapters import filtro_governado as fg
+    (campo.repo / nome).write_text("x\n")
+    (campo.repo / ".gitattributes").write_text(f"{nome} filter=NAOEXISTE\n")
+    rc = RegistroCapacidades(policy=PolicyEngine(campo.tmp / "p8.json"),
+                             approver=lambda *a, **k: True)
+    registrar_git_tree(rc, raizes=(str(campo.raiz),))
+    ctx = CapabilityContext.de_registro(rc, "git-add", "runtime-governado",
+                                        raizes=(str(campo.raiz),))
+    return git_tree.GitTreeAdapter(registro=fg.RegistroDeFiltros()).executar(
+        CapabilityRequest(capacidade="git-add", alvo=str(campo.repo),
+                          argumentos={"caminhos": [nome]}), ctx)
+
+
+def test_a8_06_split_index_operacao_recusada_deixa_o_repo_UTILIZAVEL(campo):
+    """O estado do índice mora em DOIS arquivos quando o repo liga split index.
+
+    `core.splitIndex` e `splitIndex.sharedIndexExpire` são config do
+    REPOSITÓRIO. O Git apaga o `sharedindex` durante a operação, e o rollback
+    devolvia um `.git/index` apontando para arquivo inexistente — `ls-files`,
+    `status` e `commit` saindo rc=128 num repositório cuja operação foi
+    RECUSADA, levando junto o trabalho legítimo já estagiado.
+    """
+    for k, v in (("core.splitIndex", "true"),
+                 ("splitIndex.sharedIndexExpire", "now"),
+                 ("splitIndex.maxPercentChange", "0")):
+        _git("-C", str(campo.repo), "config", k, v)
+    _git("-C", str(campo.repo), "add", "a.txt")
+
+    with pytest.raises(Exception):                       # noqa: B017
+        _com_filtro_desconhecido(campo)
+
+    assert _git("-C", str(campo.repo), "ls-files").returncode == 0, (
+        "`git ls-files` parou de funcionar depois de uma operação RECUSADA")
+    assert _git("-C", str(campo.repo), "status", "--porcelain").returncode == 0
+    assert "a.txt" in _git("-C", str(campo.repo), "ls-files").stdout, (
+        "o trabalho legítimo que já estava estagiado foi perdido")
+
+
+def test_a8_07_falha_no_DESFAZER_nao_mascara_o_ErroSeguranca(campo):
+    """Mascarar a recusa é pior que a falha do rollback.
+
+    MEDIDO: com o temporário do rollback inutilizável, o `IsADirectoryError`
+    subia NO LUGAR do `ErroSeguranca` — `isinstance(e, ErroSeguranca)` virava
+    False, e qualquer chamador que classifique incidente de segurança por tipo
+    deixava de ver o incidente, que ficava só em `__context__`.
+    """
+    # O índice tem de EXISTIR: sem ele o desfazer é um `unlink`, não usa
+    # temporário, e a armadilha não é sequer tocada — o teste passaria por
+    # não medir nada.
+    _git("-C", str(campo.repo), "add", "a.txt")
+    armadilha = (campo.repo / ".git"
+                 / f".index.nomos-rollback-{os.getpid()}")
+    armadilha.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(supervisor.ErroSeguranca) as exc:
+        _com_filtro_desconhecido(campo)
+
+    assert "INCIDENTE NO DESFAZER" in str(exc.value), (
+        "a falha do desfazer não foi reportada — some em silêncio")
+
+
+def test_a8_08_escritor_concorrente_nao_tem_o_trabalho_destruido(campo):
+    """O `git add` de terceiro que sai rc=0 não pode sumir sem sinal.
+
+    MEDIDO 5/5 antes: o concorrente saía rc=0, era visto no índice, e o rollback
+    restaurava os bytes antigos APAGANDO o trabalho aceito — o chamador só via o
+    erro sobre o próprio caminho, e nada indicava a perda.
+    """
+    (campo.repo / "concorrente.txt").write_text("trabalho de outro\n")
+    resultado = {}
+
+    def concorrente():
+        time.sleep(0.08)
+        resultado["rc"] = _git("-C", str(campo.repo),
+                               "add", "concorrente.txt").returncode
+
+    t = threading.Thread(target=concorrente, daemon=True)
+    t.start()
+    erro = ""
+    try:
+        _com_filtro_desconhecido(campo)
+    except Exception as e:                               # noqa: BLE001
+        erro = str(e)
+    t.join(timeout=15)
+
+    if resultado.get("rc") != 0:
+        pytest.skip("o concorrente não chegou a ser aceito nesta execução")
+    sobreviveu = "concorrente.txt" in _git("-C", str(campo.repo),
+                                           "ls-files").stdout
+    assert sobreviveu or "OUTRO processo" in erro, (
+        "o trabalho do concorrente foi destruído E o incidente não foi "
+        "reportado — perda de dado silenciosa")

@@ -718,6 +718,7 @@ class GitAdapter(Adapter):
         argv = self._argv(pedido, repo)
         saida, r = self._rodar(argv, repo, ctx, autoridade)
         self._auditar(ctx, f"git.{pedido.capacidade[4:]}",
+                      git_dir=autoridade.git_dir, common_dir=autoridade.common,
                       alvo=supervisor.canonicalizar(repo), bytes=len(saida),
                       sandbox=True, rede=False,
                       classificacao=r.classificacao,

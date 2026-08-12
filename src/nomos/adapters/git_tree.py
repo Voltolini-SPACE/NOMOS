@@ -350,12 +350,71 @@ def _instantaneo_do_indice(repo: Path, autoridade=None,
     return alvo, alvo.read_bytes(), st.st_mode
 
 
+# Preenchido por `_restaurar_indice` quando o índice mudou entre o instantâneo e
+# o rollback — isto é, quando OUTRO processo escreveu nele. Lido em `executar`,
+# que anexa o aviso ao erro. Lista de módulo porque `_restaurar_indice` é
+# chamada de um `except` e não tem canal de retorno.
+_TERCEIRO_DETECTADO: list[str] = []
+
+
+def _instantaneo_do_split(autoridade) -> dict[str, bytes]:
+    """Bytes dos `sharedindex.<sha>`, que o índice pode REFERENCIAR.
+
+    MEDIDO: com `core.splitIndex=true` e `splitIndex.sharedIndexExpire=now` —
+    ambos config do REPOSITÓRIO — o estado real do índice mora em DOIS arquivos.
+    O Git apaga o `sharedindex` antigo durante a operação, e o rollback devolvia
+    um `.git/index` apontando para um arquivo que não existe mais: `ls-files`,
+    `status` e `commit` passavam todos a sair rc=128, num repositório cuja
+    operação foi RECUSADA. O trabalho legítimo que já estava estagiado ia junto.
+
+    Guardar os bytes dos dois é a mesma decisão do índice: estado, não semântica.
+    """
+    estado: dict[str, bytes] = {}
+    for base in {autoridade.git_dir, autoridade.common}:
+        for p in Path(base).glob("sharedindex.*"):
+            try:
+                estado[str(p)] = p.read_bytes()
+            except OSError:
+                continue
+    return estado
+
+
+def _restaurar_split(estado: dict[str, bytes]) -> None:
+    """Recria os `sharedindex` que a operação apagou. Best-effort por arquivo."""
+    for caminho, dados in estado.items():
+        alvo = Path(caminho)
+        if alvo.exists():
+            continue
+        try:
+            tmp = alvo.with_name(f".{alvo.name}.nomos-{os.getpid()}")
+            tmp.write_bytes(dados)
+            os.replace(tmp, alvo)
+        except OSError:
+            continue
+
+
 def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> None:
     """Devolve o índice ao estado do instantâneo, atomicamente."""
     alvo, dados, modo = inst
     if dados is None:
         alvo.unlink(missing_ok=True)
         return
+
+    # ESCRITOR DE TERCEIRO. MEDIDO 5/5: um `git add` concorrente saía com rc=0,
+    # era visto no índice, e o rollback restaurava os bytes antigos APAGANDO o
+    # trabalho aceito — sem sinal nenhum para quem o fez. O `index.lock`
+    # serializa a escrita, mas não desfaz a corrida: o concorrente venceu ANTES.
+    #
+    # Aqui a operação já está sendo recusada, então o índice PRECISA voltar (o
+    # conteúdo recusado não pode ficar estagiado). O que não pode é a destruição
+    # ser SILENCIOSA — por isso o incidente é registrado no próprio texto do
+    # erro que sobe.
+    try:
+        atual = alvo.read_bytes()
+    except OSError:
+        atual = None
+    if atual is not None and atual != dados:
+        _TERCEIRO_DETECTADO.append(str(alvo))
     # Escrever direto em `index` deixaria uma janela com arquivo truncado, que
     # o Git leria como índice corrompido. `os.replace` no MESMO diretório é
     # rename atômico: ou o índice antigo, ou o restaurado, nunca um meio-termo.
@@ -396,6 +455,26 @@ def _restaurar_indice(inst: tuple[Path, bytes | None, int | None]) -> None:
             os.close(fd_lock)
             with contextlib.suppress(OSError):
                 lock.unlink()
+
+
+def _campos_de_autoridade(autoridade) -> dict[str, str]:
+    """Os campos que dizem ONDE o efeito realmente caiu.
+
+    MEDIDO: o registro trazia só `alvo` — a working tree que o OPERADOR nomeou.
+    Num layout com indireção o efeito cai em outro lugar, e o registro não o
+    nomeava em campo nenhum: numa worktree ligada legítima o objeto foi para o
+    COMMON DIR, e quem lê a auditoria via `alvo=<raizes>/wt` sem ter como saber.
+
+    Combinado com confusão cross-repo, a auditoria registrava o repositório do
+    ATACANTE enquanto o segredo entrava na história da VÍTIMA — o registro
+    apontava para o lugar errado exatamente no caso em que ele mais importa.
+
+    A `AutoridadeDeRepo` já carrega os dois resolvidos e VALIDADOS; emiti-los é
+    registrar a autoridade que o efeito consumiu, não a que o plano pediu.
+    """
+    if autoridade is None:
+        return {}
+    return {"git_dir": autoridade.git_dir, "common_dir": autoridade.common}
 
 
 def _instantaneo_das_refs(autoridade) -> dict[str, bytes | None]:
@@ -698,16 +777,47 @@ class GitTreeAdapter(Adapter):
         # Restaurar o índice não alcançava isso: índice e refs são estados
         # diferentes, e a transação só cobria o primeiro.
         refs = _instantaneo_das_refs(autoridade)
+        split = _instantaneo_do_split(autoridade)
         quarentena, reais = _abrir_quarentena(repo, autoridade)
         raiz_q = Path(quarentena.diretorio)
+        del _TERCEIRO_DETECTADO[:]
         try:
             r = self._confirmar(pedido, ctx, repo, argv, descricao, prazo,
                                 quarentena, governados, autoridade)
-        except BaseException:
+        except BaseException as original:
             # BaseException, não Exception: KeyboardInterrupt e SystemExit
             # também não podem deixar segredo estagiado nem objeto no store.
-            _restaurar_indice(instantaneo)
-            _restaurar_refs(refs)
+            #
+            # O desfazer NÃO pode substituir o erro que o causou. MEDIDO: com o
+            # temporário do rollback inutilizável, o `IsADirectoryError` subia no
+            # lugar do `ErroSeguranca`, e `isinstance(e, ErroSeguranca)` virava
+            # False — qualquer chamador que classifique incidente de segurança
+            # por tipo deixava de ver o incidente, que ficava só em
+            # `__context__`. Mascarar a recusa é pior que a falha do rollback.
+            falhas: list[str] = []
+            for etapa, fn in (("índice", lambda: _restaurar_indice(instantaneo)),
+                              ("split index", lambda: _restaurar_split(split)),
+                              ("refs", lambda: _restaurar_refs(refs))):
+                try:
+                    fn()
+                except Exception as e:               # noqa: BLE001
+                    falhas.append(f"{etapa}: {type(e).__name__}: {e}")
+            if falhas or _TERCEIRO_DETECTADO:
+                aviso = []
+                if falhas:
+                    aviso.append("o DESFAZER falhou em " + "; ".join(falhas)
+                                 + " — o repositório pode ter ficado com o "
+                                 "conteúdo recusado estagiado")
+                if _TERCEIRO_DETECTADO:
+                    aviso.append(
+                        "o índice foi escrito por OUTRO processo entre o "
+                        "instantâneo e o desfazer, e o rollback sobrepôs esse "
+                        f"trabalho ({', '.join(_TERCEIRO_DETECTADO)}) — "
+                        "trabalho de terceiro foi perdido")
+                    del _TERCEIRO_DETECTADO[:]
+                raise ErroSeguranca(
+                    f"{original}\n\nINCIDENTE NO DESFAZER: " + " | ".join(aviso)
+                ) from original
             raise
         finally:
             # A quarentena some nos DOIS caminhos. No sucesso ela já foi
@@ -996,6 +1106,7 @@ class GitTreeAdapter(Adapter):
             # aplicada.
             self._auditar(ctx, "git.add",
                           alvo=supervisor.canonicalizar(repo),
+                          **_campos_de_autoridade(autoridade),
                           detalhe=descricao, sandbox=True, rede=False,
                           classificacao="EXIT_OK", morto_por_timeout=False)
             _promover_quarentena(Path(quarentena.diretorio),
@@ -1025,6 +1136,7 @@ class GitTreeAdapter(Adapter):
         supervisor.conferir_saida(p.stderr, pedido.capacidade)
         self._auditar(ctx, f"git.{pedido.capacidade[4:]}",
                       alvo=supervisor.canonicalizar(repo), detalhe=descricao,
+                      **_campos_de_autoridade(autoridade),
                       sandbox=True, rede=False,
                       classificacao=p.classificacao,
                       morto_por_timeout=p.morto_por_timeout)

@@ -142,6 +142,7 @@ class GitTagAdapter(Adapter):
             raise ErroInvalido(f"git tag falhou (rc={p.returncode}): {erro}")
         supervisor.conferir_saida(p.stderr, "git tag")
         self._auditar(ctx, "git.tag", alvo=supervisor.canonicalizar(repo),
+                      git_dir=autoridade.git_dir, common_dir=autoridade.common,
                       tag=nome, target=alvo_ref, sandbox=True, rede=False,
                       classificacao=p.classificacao,
                       morto_por_timeout=p.morto_por_timeout)
