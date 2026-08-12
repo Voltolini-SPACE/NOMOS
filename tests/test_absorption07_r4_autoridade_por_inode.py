@@ -584,3 +584,109 @@ def test_r4_33_CONTROLE_refs_PROFUNDAS_e_legitimas_continuam_valendo(
     (cen.repo / "b.txt").write_text("b\n")
     r = cen.add("b.txt")
     assert r.efeito_aplicado
+
+
+# ═══ `.1.N1` (P1) — `.git` AUTO-REFERENTE: o git dir É a working tree ═══════
+
+def _repo_auto_referente(raiz: Path, ponteiro: str) -> Path:
+    """Monta o layout auto-certificante: git dir == working tree.
+
+    A "prova" de titularidade (`[core] worktree`) mora em `<repo>/config`, que
+    é um arquivo da própria working tree — escrito por quem a prova deveria
+    autenticar.
+    """
+    repo = raiz / "hostil"
+    repo.mkdir()
+    (repo / "objects").mkdir()
+    (repo / "refs" / "heads").mkdir(parents=True)
+    (repo / "HEAD").write_text("ref: refs/heads/main\n")
+    (repo / "config").write_text(
+        "[core]\n\trepositoryformatversion = 0\n\tbare = false\n"
+        f"\tworktree = {repo}\n")
+    (repo / ".git").write_text(f"gitdir: {ponteiro}\n")
+    (repo / "ARQUIVO_DO_PROJETO.txt").write_text("intacto\n")
+    return repo
+
+
+@pytest.mark.parametrize("ponteiro", [".", "./", "sub/..", "ABSOLUTO"])
+def test_r4_40_gitdir_auto_referente_e_recusado(tmp_path, ponteiro):
+    """MEDIDO: a raiz de ESCRITA deixava de ser o git dir e virava o repo INTEIRO.
+
+    Contraste no mesmo processo — repo normal: `escrita = ('<repo>/.git',)`;
+    repo hostil: `escrita = ('<repo>',)`. Isso revoga a invariante que
+    `confinamento_de_repo` declara e justifica com medição ("a escrita para no
+    DIRETÓRIO GIT"), cujo motivo é que com o repo inteiro liberado um
+    `filter.clean` hostil SOBRESCREVEU arquivo do projeto durante o `git add`.
+
+    Quatro grafias do MESMO objeto: comparar texto de caminho deixaria três
+    passando. A comparação é por inode.
+    """
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    repo = _repo_auto_referente(raiz, "PLACEHOLDER")
+    alvo = str(repo) if ponteiro == "ABSOLUTO" else ponteiro
+    if ponteiro == "sub/..":
+        (repo / "sub").mkdir(exist_ok=True)
+    (repo / ".git").write_text(f"gitdir: {alvo}\n")
+
+    with pytest.raises(supervisor.ErroSeguranca, match="própria working tree"):
+        git.conferir_git_dir(str(repo), (str(raiz),))
+
+
+def test_r4_41_a_working_tree_nao_vira_raiz_de_escrita(tmp_path):
+    """O critério é o EFEITO: nenhum confinamento com o repo inteiro gravável.
+
+    Sem este teste, `test_r4_40` passaria numa implementação que recusa por
+    outro motivo e ainda emitisse o confinamento errado onde a recusa não
+    dispara.
+    """
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    repo = _repo_auto_referente(raiz, ".")
+    try:
+        gd, cm = git.conferir_git_dir(str(repo), (str(raiz),))
+        aut = git.autoridade_de(str(repo), gd, cm)
+        conf = git.confinamento_de_repo(str(repo), autoridade=aut)
+    except supervisor.ErroSeguranca:
+        return
+    canon = supervisor.canonicalizar(str(repo))
+    pytest.fail(f"não recusou, e a escrita concedida foi {conf.escrita} — "
+                f"a working tree {canon!r} inteira ficou gravável")
+
+
+@pytest.mark.parametrize("layout", ["repo-comum", "worktree-ligada", "submodulo"])
+def test_r4_42_CONTROLE_layouts_que_o_GIT_produz_seguem_aceitos(tmp_path,
+                                                                 layout):
+    """Nenhum layout real do Git tem git dir == working tree.
+
+    Repo comum tem `.git/` DENTRO da working tree (inodes distintos); worktree
+    ligada e submódulo apontam para fora dela; bare não tem working tree. Sem
+    este controle, a invariante nova seria indistinguível de "recuse tudo".
+    """
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    p = _init(raiz / "principal")
+    (p / "a").write_text("a\n")
+    _git("-C", str(p), "add", "a")
+    _git("-C", str(p), "commit", "-qm", "x")
+
+    if layout == "repo-comum":
+        alvo = p
+    elif layout == "worktree-ligada":
+        alvo = raiz / "ligada"
+        r = _git("-C", str(p), "worktree", "add", "-q", str(alvo))
+        assert r.returncode == 0, r.stderr
+    else:
+        sup = _init(raiz / "super")
+        r = _git("-C", str(sup), "-c", "protocol.file.allow=always",
+                 "submodule", "add", "-q", str(p), "vendor")
+        if r.returncode != 0:
+            pytest.skip(f"submódulo por file:// bloqueado: {r.stderr[:100]}")
+        alvo = sup / "vendor"
+
+    gd, cm = git.conferir_git_dir(str(alvo), (str(raiz),))
+    aut = git.autoridade_de(str(alvo), gd, cm)
+    conf = git.confinamento_de_repo(str(alvo), autoridade=aut)
+    canon = supervisor.canonicalizar(str(alvo))
+    assert canon not in conf.escrita, (
+        f"a working tree {canon!r} virou raiz de escrita em layout legítimo")

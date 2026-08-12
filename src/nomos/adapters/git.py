@@ -609,6 +609,54 @@ def conferir_git_dir(repo: Path | str, raizes: tuple[str, ...]) -> tuple[str, st
                 "que o repositório escreve — aceitá-lo deixaria o repositório "
                 "escolher onde o NOMOS grava")
 
+    # O GIT DIR NUNCA É A PRÓPRIA WORKING TREE (`.1.N1`, P1).
+    #
+    # MEDIDO: `<repo>/.git` = arquivo `gitdir: .` (ou `./`, ou o caminho
+    # absoluto do próprio repo) faz o git dir resolver para a WORKING TREE. O
+    # layout é AUTO-CERTIFICANTE: a prova de titularidade exigida
+    # (`[core] worktree`) é lida de `<gd>/config` = `<repo>/config`, um arquivo
+    # da working tree — escrito pelo próprio atacante. `_conferir_titularidade`
+    # aceita porque dono == alvo, e a prova é produzida por quem ela deveria
+    # autenticar.
+    #
+    # A consequência não é fuga de raiz (o alvo continua dentro delas): é
+    # EXPANSÃO DE AUTORIDADE DENTRO das raízes, escolhida pelo repositório.
+    # Contraste medido no mesmo processo:
+    #
+    #     repo normal   confinamento_de_repo().escrita = ('<repo>/.git',)
+    #     repo hostil   confinamento_de_repo().escrita = ('<repo>',)   <-- TUDO
+    #
+    # Isso revoga a invariante que `confinamento_de_repo` declara e justifica
+    # com medição — "a escrita para no DIRETÓRIO GIT, a working tree fica fora",
+    # cujo motivo é que "com o repo inteiro liberado, um `filter.clean` hostil
+    # SOBRESCREVEU um arquivo do projeto durante o `git add`". É a negação exata
+    # de REPOSITORY_CANNOT_EXPAND_NOMOS_AUTHORITY.
+    #
+    # Por INODE e não por texto: `gitdir: .`, `gitdir: ./`, `gitdir: <abs>` e
+    # `gitdir: sub/..` são o mesmo objeto por caminhos diferentes, e comparar
+    # strings deixaria as variantes passando. Nenhum layout que o Git produz tem
+    # git dir == working tree: repo comum tem `.git/` DENTRO da working tree
+    # (inodes distintos), worktree ligada e submódulo apontam para fora dela, e
+    # repo BARE não tem working tree para confundir.
+    try:
+        st_base = os.stat(supervisor.existente(repo))
+        st_gd = os.stat(git_dir)
+    except OSError as e:
+        raise supervisor.ErroSeguranca(
+            f"não consegui confrontar git dir e working tree ({type(e).__name__})"
+            " — sem essa comparação um `.git` auto-referente passa despercebido"
+        ) from None
+    if (st_base.st_dev, st_base.st_ino) == (st_gd.st_dev, st_gd.st_ino):
+        raise supervisor.ErroSeguranca(
+            f"o git dir de {str(repo)!r} É a própria working tree (mesmo inode) "
+            "— layout AUTO-CERTIFICANTE: a prova de titularidade "
+            "(`[core] worktree`) sai de um arquivo que a working tree contém, "
+            "logo é escrita por quem ela deveria autenticar. Aceitá-lo faz a "
+            "raiz de ESCRITA do sandbox deixar de ser o git dir e passar a ser "
+            "o repositório INTEIRO, e um `filter.clean` hostil sobrescreve "
+            "arquivo do projeto durante o `git add`. Nenhum layout que o Git "
+            "produz tem git dir igual à working tree")
+
     # Confusão CROSS-REPO, e ela sobra mesmo com o git dir DENTRO das raízes.
     # MEDIDO: um repo `hostil` cujo `.git` é o arquivo `gitdir: <vitima>/.git`
     # faz `git-add` sobre `hostil` estagiar no índice de `vitima` — os dois
