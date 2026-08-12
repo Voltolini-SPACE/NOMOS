@@ -1370,6 +1370,17 @@ class GitTreeAdapter(Adapter):
                                     repo, autoridade=autoridade),
                                 quarentena=quarentena,
                                 arvore_de_trabalho=str(repo))
+        # O índice LOGO APÓS o exec, e ANTES de qualquer `raise`. MEDIDO
+        # (`.6.N1`): capturar depois do check de `returncode` deixava o baseline
+        # VAZIO justamente nas recusas — o git rodou, reescreveu o índice, e
+        # falhou. Aí o detector caía de volta no instantâneo e acusava
+        # "trabalho de terceiro foi perdido" sem terceiro nenhum. Basta o
+        # repositório plantar `.git/refs/heads` como symlink de diretório para
+        # provocar um INCIDENTE FORENSE FALSO, sozinho e sem concorrência.
+        alvo_idx = Path(autoridade.git_dir) / "index" if autoridade else None
+        if pos_exec is not None and alvo_idx is not None and alvo_idx.exists():
+            with contextlib.suppress(OSError):
+                pos_exec.append(alvo_idx.read_bytes())
         if p.morto_por_timeout:
             # O filtro do repositório pendura o processo — medido, não suposto.
             # A árvore inteira já morreu; o que resta é recusar.
@@ -1383,12 +1394,6 @@ class GitTreeAdapter(Adapter):
         # `git add` é a ÚNICA capacidade que roda programa do repositório (o
         # filtro). É também onde o rc=0 mente com mais consequência: filtro
         # quebrado indexa o conteúdo cru. Aqui a mentira para.
-        # O índice LOGO APÓS o nosso exec: é o baseline que separa "o meu
-        # próprio filho reescreveu" de "outro processo escreveu" (`.11.09`).
-        alvo_idx = Path(autoridade.git_dir) / "index" if autoridade else None
-        if alvo_idx is not None and alvo_idx.exists():
-            with contextlib.suppress(OSError):
-                pos_exec.append(alvo_idx.read_bytes()) if pos_exec is not None else None
         supervisor.conferir_saida(p.stderr, pedido.capacidade)
         if pedido.capacidade == "git-add":
             self._conferir_escopo_estagiado(repo, estagiados_antes, aprovados,
@@ -1493,6 +1498,18 @@ class GitTreeAdapter(Adapter):
                 "governado atualiza um branch sob refs/heads/; HEAD destacado "
                 "grava um commit que nenhum branch alcança — e é a forma que o "
                 "symlink de HEAD escolhido pelo repositório assume")
+        # Morte por SINAL não é erro de sintaxe. MEDIDO (`.6.10`): `rc=-9`
+        # (SIGKILL, inclusive o do prazo) caía no mesmo ramo de um HEAD
+        # malformado e subia como `ErroInvalido('symbolic-ref HEAD falhou')`.
+        # Fecha igual — não há efeito no disco — mas a CLASSIFICAÇÃO mente, e é
+        # dela que a auditoria e o operador vivem. Os demais caminhos do módulo
+        # já consultam `morto_por_timeout` e mapeiam para `ErroLimite`; este
+        # ficara de fora.
+        if p.morto_por_timeout or p.returncode < 0:
+            raise ErroLimite(
+                f"symbolic-ref HEAD foi encerrado por sinal (rc={p.returncode})"
+                f"{' após o prazo' if p.morto_por_timeout else ''} — a árvore "
+                "de processos foi morta, não houve resposta a interpretar")
         if p.returncode != 0:
             erro = p.stderr.decode("utf-8", "replace")[:400]
             raise ErroInvalido(f"symbolic-ref HEAD falhou (rc={p.returncode}): {erro}")

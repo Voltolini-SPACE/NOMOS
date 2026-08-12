@@ -200,17 +200,67 @@ def test_c1_ambiente_nao_herda_nada_do_host(monkeypatch):
     assert env["GIT_OPTIONAL_LOCKS"] == "0"
 
 
-def test_c1_env_hostil_do_host_nao_muda_a_execucao(amb, monkeypatch, tmp_path):
-    """A prova pela execução, não pelo dicionário."""
+def test_c1_env_hostil_do_host_nao_muda_a_execucao(amb, monkeypatch, tmp_path,
+                                                   espiao_nativo):
+    """A prova pela execução — e o que ela pode e NÃO pode provar aqui.
+
+    MEDIDO (`.3.05`): a versão anterior era VÁCUA nas duas metades que P0.1 já
+    tinha corrigido em c2a/c2b — espião `#!/bin/sh` (que não executa sob a
+    allowlist de exec: o kernel precisa do interpretador) e canário em
+    `tmp_path`. Pior que no caso original: as capacidades de LEITURA rodam com
+    `escrita=()` e `declara_sem_escrita=True`, então NÃO EXISTE caminho gravável
+    de dentro do confinamento — nem o git dir, nem a working tree. O
+    `not canario.exists()` era verdade POR CONSTRUÇÃO.
+
+    Como não há onde gravar, a asserção comportamental não consegue distinguir
+    contenção de impossibilidade. O que este teste passa a provar são as duas
+    coisas que de fato distinguem:
+
+        CONTROLE POSITIVO   o cenário é REAL — o git CRU, com as mesmas
+                            variáveis, EXECUTA o espião e grava o canário
+        ESTRUTURAL          o confinamento da leitura não concede escrita
+                            nenhuma, então execução de código não persiste nada
+
+    Espião BINÁRIO NATIVO tira o interpretador da equação.
+    """
     rt, _ws, repo, _ = amb
     canario = tmp_path / "CANARIO-ENV"
-    espiao = tmp_path / "espiao.sh"
-    espiao.write_text(f"#!/bin/sh\ntouch {canario}\n")
-    espiao.chmod(0o755)
+    espiao = espiao_nativo(tmp_path, canario)
+
+    # CONTROLE POSITIVO, e ele mudou de CAPACIDADE por medição. `git show` NÃO
+    # invoca `GIT_EXTERNAL_DIFF` nem os pagers (sem TTY, `GIT_PAGER` nem é
+    # consultado): medido, nenhuma das quatro variáveis dispara ali. A versão
+    # anterior deste teste apontava para `git-show` e por isso era vácua também
+    # nessa dimensão — não havia como o vetor ocorrer, com ou sem NOMOS.
+    # `git diff <a> <b>` é onde `GIT_EXTERNAL_DIFF` de fato executa.
+    # Duas revisões: sem diferença não há diff, e sem diff o `GIT_EXTERNAL_DIFF`
+    # não é invocado nem pelo git cru — o controle mediria a ausência de
+    # conteúdo, não a de execução.
+    (repo / "delta.txt").write_text("mudou\n")
+    _git(repo, "add", "delta.txt")
+    _git(repo, "commit", "-qm", "delta")
+
+    env_hostil = {**os.environ, "GIT_EXTERNAL_DIFF": str(espiao)}
+    subprocess.run([GIT, "-C", str(repo), "diff", "HEAD~1", "HEAD"],
+                   capture_output=True, env=env_hostil)
+    assert canario.exists(), (
+        "CONTROLE POSITIVO FALHOU: nem o git cru executou o espião — a "
+        "asserção de ausência abaixo não mediria contenção nenhuma")
+    canario.unlink()
+
     for var in ("GIT_EXTERNAL_DIFF", "GIT_PAGER", "PAGER", "GIT_EDITOR"):
         monkeypatch.setenv(var, str(espiao))
-    assert _plano(rt, "git-show", alvo=str(repo), ref="HEAD").ok
+    assert _plano(rt, "git-diff", alvo=str(repo), ref_a="HEAD~1",
+                  ref_b="HEAD").ok
     assert not canario.exists(), "variável do HOST executou programa no git"
+
+    # ESTRUTURAL: a ausência acima é garantida, não sorteada.
+    from nomos.adapters.git import confinamento_de_leitura
+    conf = confinamento_de_leitura(repo)
+    assert conf.escrita == () and conf.declara_sem_escrita, (
+        "a capacidade de leitura passou a conceder escrita — a partir daí a "
+        "asserção de canário volta a ser comportamental, e este teste tem de "
+        "ser reescrito para medir de novo")
 
 
 # ============================================ o repositório HOSTIL
