@@ -298,3 +298,101 @@ def test_auditoria_registra_o_git_dir_EFETIVO_nao_so_o_alvo(campo):
         f"a auditoria não nomeia o git dir EFETIVO ({gd}); campos={sorted(campos)}")
     assert Path(comum).name and str(Path(comum).resolve()) in valores or comum in valores, (
         f"a auditoria não nomeia o common dir EFETIVO ({comum})")
+
+
+# ══════ .4.07 — a allowlist do push cobre o transporte, e ainda CONTÉM ═══════
+
+def test_push_allowlist_inclui_helpers_de_transporte():
+    """REGRESSION de caso LEGÍTIMO, medida: `git-remote-http` não é o `git`.
+
+    O docstring da allowlist afirmava que os helpers compartilham o inode do
+    `git` e concluía que "dois literais já cobrem os helpers". Vale para
+    `git-receive-pack`/`git-upload-pack` (hardlink), e é FALSO para o transporte
+    remoto — inodes medidos distintos. Com só os dois literais, TODO push
+    http/https morria em `cannot exec 'git-remote-http'`.
+    """
+    from nomos.adapters import git as gmod
+    helpers = gmod.helpers_de_transporte()
+    if not helpers:
+        pytest.skip("host sem helpers de transporte do Git")
+    assert any("git-remote-http" in h for h in helpers)
+
+
+def test_push_allowlist_AINDA_CONTEM_apesar_dos_helpers(campo):
+    """Alargar a allowlist não pode devolver a execução arbitrária.
+
+    Este é o controle que impede a correção de `.4.07` de virar o defeito que
+    C13 fechou: o shell está na lista, os helpers estão na lista, e mesmo assim
+    um binário de fora dela não executa.
+    """
+    from nomos.adapters import git as gmod
+    from nomos.adapters import git_push
+    repo = campo.repo(campo.raiz / "repo")
+    bare = campo.raiz / "cofre.git"
+    _git("init", "-q", "--bare", str(bare))
+    d = git_push.DestinoGovernado(remote_id="o", url=f"file://{bare}",
+                                  branch_destino="main")
+    conf = git_push.GitPushAdapter(destinos={"o": d}).confinamento(repo, d)
+
+    p = supervisor.executar(["/bin/sh", "-c", "/usr/bin/id"], cwd=repo,
+                            env=gmod.ambiente_minimo(), prazo=15.0,
+                            confinamento=conf)
+    assert p.returncode != 0, (
+        "o shell da allowlist executou /usr/bin/id — a contenção de C13 "
+        "regrediu ao acrescentar os helpers de transporte")
+
+
+# ═════ probes reclassificados: o CONTROLE POSITIVO falha, não há vetor ══════
+
+def test_probe_ref_symlink_NAO_e_canal_de_escrita_para_fora(campo, tmp_path):
+    """`.6.08` era INVALID_PROBE, e este teste PRENDE a razão.
+
+    A premissa era: `refs/heads/main` como symlink faria o commit escrever o
+    novo sha ATRAVÉS do link, fora das raízes. MEDIDO no git CRU: não escreve —
+    o Git SUBSTITUI o symlink por arquivo regular e o alvo de fora fica intacto.
+
+    Sem efeito hostil no controle positivo não há vetor a fechar, e classificar
+    como CLOSED seria creditar ao NOMOS uma defesa que é do Git. Se um dia o Git
+    mudar, este teste falha e o vetor volta a ser real — que é exatamente o
+    serviço que um probe inválido deve prestar depois de reclassificado.
+    """
+    repo = campo.repo(campo.raiz / "repo")
+    fora = tmp_path / "branch-roubado"
+    fora.write_text("0" * 40 + "\n")
+    antes = fora.read_text()
+
+    ref = repo / ".git" / "refs" / "heads" / "main"
+    ref.unlink(missing_ok=True)
+    os.symlink(str(fora), str(ref))
+
+    (repo / "n.txt").write_text("n\n")
+    _git("-C", str(repo), "add", "n.txt")
+    _git("-C", str(repo), "commit", "-qm", "cru")
+
+    assert fora.read_text() == antes, (
+        "o Git passou a escrever ATRAVÉS do symlink de ref — a premissa de "
+        "`.6.08` voltou a valer e o vetor precisa ser reavaliado")
+
+
+def test_probe_hardlink_o_git_CRU_tambem_indexa(campo, tmp_path):
+    """`.9.08` era INVALID_PROBE, e a razão fica presa aqui.
+
+    Um hardlink dentro da raiz para um inode de fora faz o conteúdo chegar ao
+    índice — mas o git CRU faz o MESMO. Não há divergência: hardlink não é
+    indireção que o NOMOS possa resolver (o arquivo É o inode, não há link a
+    canonicalizar), e negá-lo exigiria comparar inodes contra todo o disco.
+
+    O invariante que sustenta essa aceitação é `C6` — nenhuma capacidade
+    governada CRIA hardlink —, e ele tem teste próprio. Aqui prende-se só a
+    premissa: se o git cru passar a recusar, a divergência nasce e o vetor
+    volta.
+    """
+    repo = campo.repo(campo.raiz / "repo")
+    segredo = tmp_path / "seg.pem"
+    segredo.write_text("AWS_SECRET_ACCESS_KEY=abc123\n")
+    os.link(str(segredo), str(repo / "vaza.txt"))
+
+    r = _git("-C", str(repo), "add", "--no-all", "--", "vaza.txt")
+    assert r.returncode == 0, (
+        "o git CRU passou a recusar hardlink — agora HÁ divergência a medir "
+        "entre ele e o caminho governado, e `.9.08` deixa de ser probe inválido")

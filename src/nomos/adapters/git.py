@@ -211,6 +211,43 @@ def executaveis_de_git() -> tuple[str, ...]:
     return ("/usr/bin/git", xcode_git)
 
 
+def helpers_de_transporte() -> tuple[str, ...]:
+    """Os binários que o Git usa para falar HTTP(S), e que NÃO são o `git`.
+
+    MEDIDO, e desmente a suposição que a allowlist de `push` nasceu com: o
+    docstring dizia que os helpers compartilham o inode do `git` e que "dois
+    literais já cobrem os helpers". É verdade para `git-receive-pack` e
+    `git-upload-pack` (hardlink do mesmo inode), e FALSO para o transporte
+    remoto — neste host:
+
+        /usr/bin/git                          inode 1152921500312567503
+        <exec-path>/git-remote-http           inode 413740063
+
+    Com só os dois literais de git, TODO push http/https morria em
+    `fatal: cannot exec 'git-remote-http': Operation not permitted`, sem chegar
+    a abrir conexão. Fail-closed, mas quebrando o caso legítimo — e um contrato
+    que só funciona para `file://` não é o contrato que `git-push` promete.
+
+    Derivado em runtime pelo mesmo motivo de `executaveis_de_git`: fixar o
+    caminho do Xcode quebraria depois de `xcode-select -s`. Ausência não é erro
+    — um host sem os helpers simplesmente não faz push http, e a allowlist sai
+    menor em vez de mais permissiva.
+    """
+    dev = os.path.realpath("/var/select/developer_dir")
+    base = os.path.join(dev, "usr", "libexec", "git-core")
+    achados: list[str] = []
+    for nome in ("git-remote-http", "git-remote-https", "git-remote-ftp",
+                 "git-remote-ftps"):
+        caminho = os.path.join(base, nome)
+        if os.path.exists(caminho):
+            # `realpath`: `git-remote-https` é symlink para `git-remote-http`, e
+            # o sandbox casa o caminho REAL.
+            real = os.path.realpath(caminho)
+            if real not in achados:
+                achados.append(real)
+    return tuple(achados)
+
+
 def diretorio_git(repo: Path | str) -> tuple[str, str]:
     """`(git_dir, common_dir)` canônicos, SEM executar git.
 

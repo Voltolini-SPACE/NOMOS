@@ -53,6 +53,7 @@ from nomos.adapters import supervisor
 from nomos.adapters.git import (
     _NEUTRALIZAR, ambiente_minimo, confinamento_de_repo, conferir_alternates,
     autoridade_de, conferir_git_dir, executaveis_de_git,
+    helpers_de_transporte,
 )
 
 CAPACIDADES = ("git-push",)
@@ -243,6 +244,13 @@ class GitPushAdapter(Adapter):
 
         `/bin/bash` entra junto porque `/bin/sh` reexecuta o bash como variante
         — sem ele a contenção falharia por um caminho que ninguém veria.
+
+        E os HELPERS DE TRANSPORTE entram por medição, não por suposição: ver
+        `helpers_de_transporte`. `git-remote-http` NÃO compartilha o inode do
+        `git` (ao contrário de `git-receive-pack`/`git-upload-pack`), então sem
+        ele todo push http/https morria em `cannot exec 'git-remote-http'`.
+        Uma allowlist que só deixa `file://` funcionar não é a allowlist desta
+        capacidade.
         """
         local = self._local(destino)
         raizes = [autoridade.repo if autoridade is not None
@@ -251,7 +259,8 @@ class GitPushAdapter(Adapter):
             raizes.append(supervisor.existente(local))
         return supervisor.Confinamento(
             escrita=tuple(raizes), rede=not local,
-            exec_permitido=executaveis_de_git() + ("/bin/sh", "/bin/bash"))
+            exec_permitido=(executaveis_de_git() + ("/bin/sh", "/bin/bash")
+                            + helpers_de_transporte()))
 
     # ------------------------------------------------------------- execução
 

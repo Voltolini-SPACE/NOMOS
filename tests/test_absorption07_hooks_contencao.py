@@ -28,26 +28,34 @@ Não é a que o nome sugere. Medido, por capacidade:
            profundidade), e removê-lo NÃO muda o comportamento
 
     git-push
-        exec allowlist = `(allow process-exec process-fork)` AMPLO
-        -> a contenção vem do par `--no-verify` + `core.hooksPath=/dev/null`
+        exec allowlist POR LITERAL (C13 fechado) + `--no-verify` +
+        `core.hooksPath=/dev/null` — TRÊS defesas, não duas
 
-E o par se MASCARA mutuamente. Tabela medida, hook nativo, canário gravável:
+A tabela abaixo é HISTÓRICA e NÃO reproduz mais. Ela foi medida quando o push
+rodava com `(allow process-exec process-fork)` AMPLO:
 
-    hooksPath   --no-verify   HOOK EXECUTOU
+    hooksPath   --no-verify   HOOK EXECUTOU      (quando o exec era AMPLO)
     SIM         SIM           não
     NÃO         SIM           não
     SIM         NÃO           não
-    NÃO         NÃO           SIM      <- a célula que prova que nenhum dos
-                                          dois é decorativo
+    NÃO         NÃO           SIM      <- a célula que provava que nenhum dos
+                                          dois flags era decorativo
 
-Isso é MASCARAMENTO (A8): nenhum dos dois flags, sozinho, tem teste
-comportamental capaz de matá-lo, porque o outro segura. A consequência honesta
-é que a regressão de cada flag só pode ser presa ESTRUTURALMENTE — e é o que
-`test_hooks_09` e `test_hooks_10` fazem, dizendo por quê.
+RE-MEDIDO depois do fechamento de C13: a última célula passou a dar **não**. Com
+os dois flags comprovadamente ausentes do argv, o hook não executa — nem nativo,
+nem em shell, mesmo com `/bin/sh` na allowlist do push. A causa é a TERCEIRA
+defesa que a tabela não contabilizava: a allowlist de exec por literal, que o
+hook não satisfaz.
 
-Registrar isso importa mais que escondê-lo: o dia em que a allowlist de exec do
-push for reduzida (achado C13), o `--no-verify` deixa de ser mascarado e passa a
-ter prova comportamental própria.
+Manter a tabela sem esta nota seria pior que apagá-la: ela AFIRMA como medida
+uma célula que hoje é falsa, e uma tabela desatualizada num docstring de
+segurança vira premissa de quem lê depois.
+
+O que a mudança significa para o MASCARAMENTO (A8): o par `--no-verify` +
+`hooksPath` continua se mascarando mutuamente, e agora os dois estão também
+mascarados pela allowlist. A regressão de cada um segue presa ESTRUTURALMENTE —
+`test_hooks_09` e `test_hooks_10` —, e é por isso que eles existem. O que mudou
+é que hoje há uma defesa a mais entre o repositório e a execução, não a menos.
 """
 from __future__ import annotations
 
