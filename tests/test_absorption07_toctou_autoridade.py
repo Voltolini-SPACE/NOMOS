@@ -208,3 +208,74 @@ def test_toctou_03_troca_de_git_dir_DURANTE_a_operacao_nao_move_o_efeito(campo):
     assert not [p for p in objetos if p.is_file()
                 and "info" not in str(p) and "pack" not in str(p)], (
         "objeto promovido para o store de fora das raízes")
+
+
+def test_toctou_04_troca_de_FORMA_de_git_entre_as_duas_leituras(campo):
+    """`.7.14`: o TOCTOU tinha MUDADO DE LUGAR, não fechado.
+
+    `AutoridadeDeRepo` eliminou as releituras ENTRE chamadores. Sobrou uma
+    DENTRO de `conferir_git_dir`: leitura #1 em `diretorio_git` resolvia o git
+    dir, leitura #2 num `os.lstat` decidia se o gate de titularidade dispara.
+    Trocando `.git` de ARQUIVO para DIRETÓRIO entre as duas, o git dir resolvido
+    era o da VÍTIMA — dentro das raízes, então `_dentro` passa — enquanto o gate
+    via `dentro_do_repo=True` e PULAVA a titularidade por completo. A raiz de
+    escrita do sandbox virava `<vitima>/.git`.
+
+    O conserto tem a MESMA forma do original: uma leitura alimenta as duas
+    decisões (`_ler_ponto_git` devolve forma e conteúdo do MESMO descritor).
+    """
+    vitima = campo.repo(campo.raiz / "vitima", arquivo="ok.txt")
+    _git("-C", str(vitima), "add", "ok.txt")
+    _git("-C", str(vitima), "commit", "-qm", "seed")
+    antes = subprocess.run([GIT, "-C", str(vitima), "ls-files"],
+                           capture_output=True, text=True).stdout
+
+    hostil = campo.raiz / "hostil"
+    hostil.mkdir()
+    ponto = hostil / ".git"
+    ponto.write_text(f"gitdir: {vitima / '.git'}\n")
+    (hostil / "segredo.txt").write_text("AWS_SECRET_ACCESS_KEY=NUNCA\n")
+
+    parar = threading.Event()
+
+    def alternar():
+        real_dir = hostil / ".git-real"
+        real_dir.mkdir(exist_ok=True)
+        while not parar.is_set():
+            try:
+                ponto.unlink(missing_ok=True)
+                os.symlink(str(real_dir), str(ponto))   # vira "diretório"
+                ponto.unlink(missing_ok=True)
+                ponto.write_text(f"gitdir: {vitima / '.git'}\n")
+            except OSError:
+                pass
+
+    t = threading.Thread(target=alternar, daemon=True)
+    t.start()
+    try:
+        for _ in range(40):
+            with contextlib.suppress(Exception):
+                campo.add(hostil, "segredo.txt")
+    finally:
+        parar.set()
+        t.join(timeout=10)
+
+    depois = subprocess.run([GIT, "-C", str(vitima), "ls-files"],
+                            capture_output=True, text=True).stdout
+    assert depois == antes, (
+        "AUTHORITY_DRIFT: a troca de FORMA de `.git` pulou a titularidade e o "
+        "efeito caiu no índice da vítima")
+
+
+def test_toctou_05_a_FORMA_e_o_git_dir_vem_da_MESMA_leitura(campo):
+    """Estrutural: prende o desenho, porque a corrida é probabilística.
+
+    Se alguém voltar a decidir o gate com um `stat` próprio, o teste de corrida
+    acima pode passar por sorte numa execução — este não passa.
+    """
+    fonte = Path(git.__file__).read_text("utf-8")
+    corpo = fonte.split("def conferir_git_dir", 1)[1].split("\ndef ", 1)[0]
+    assert "os.lstat" not in corpo, (
+        "`conferir_git_dir` voltou a fazer um `stat` próprio de `.git` — a "
+        "forma tem de vir da mesma leitura que resolveu o git dir")
+    assert "_diretorio_git_com_forma" in corpo

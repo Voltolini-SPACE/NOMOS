@@ -46,6 +46,7 @@ hostil com essas chaves e prova que nenhuma delas executa.
 """
 from __future__ import annotations
 
+import errno
 import os
 import re
 import stat
@@ -248,6 +249,72 @@ def helpers_de_transporte() -> tuple[str, ...]:
     return tuple(achados)
 
 
+def _ler_ponto_git(base: Path) -> tuple[str, str]:
+    """A FORMA de `.git` e seu conteúdo, de UM único descritor.
+
+    MEDIDO (`.7.14`), e é a razão de esta função existir: `conferir_git_dir` lia
+    `.git` DUAS vezes — uma em `diretorio_git` (para resolver o git dir) e outra
+    num `os.lstat` (para decidir se o gate de titularidade dispara). Trocando
+    `.git` de ARQUIVO para DIRETÓRIO entre as duas, o git dir resolvido era o da
+    VÍTIMA (passa `_dentro`, pois está dentro das raízes) e o gate via
+    `dentro_do_repo=True`, PULANDO a titularidade por completo. A raiz de escrita
+    do sandbox virava `<vitima>/.git` e o segredo era promovido ao store
+    permanente dela.
+
+    `AutoridadeDeRepo` fechou o TOCTOU ENTRE chamadores; este fecha o que sobrou
+    DENTRO de uma única chamada. A forma do conserto é a mesma: uma leitura
+    alimenta todas as decisões.
+
+    `O_NOFOLLOW` recusa `.git` como symlink no próprio open — a forma-link é
+    tratada como indireção não-titular pelo chamador, que não a resolve às
+    cegas. O `fstat` vem do descritor JÁ aberto, então forma e conteúdo
+    descrevem o MESMO objeto, não dois instantes diferentes.
+    """
+    ponto = base / ".git"
+    try:
+        fd = os.open(ponto, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as e:
+        if e.errno in (errno.ELOOP, errno.EMLINK):
+            # `.git` é SYMLINK. O destino segue sendo resolvido — o link é
+            # layout que o Git aceita, e recusá-lo aqui trocaria a recusa
+            # informativa ("git dir FORA das raízes") por um "não é repositório
+            # git" que esconde a causa. O que NÃO pode é a forma-link contar
+            # como `dir`: era exatamente assim que o gate de titularidade era
+            # pulado. Devolver "link" garante que o chamador exija titularidade,
+            # e a conferência de raízes continua valendo sobre o destino.
+            alvo = ponto.resolve()
+            if alvo.is_dir():
+                return "link", ""
+            try:
+                return "link-arquivo", alvo.read_text("utf-8", "replace").strip()
+            except OSError:
+                return "ausente", ""
+        return "ausente", ""
+    try:
+        st = os.fstat(fd)
+        if stat.S_ISDIR(st.st_mode):
+            return "dir", ""
+        if not stat.S_ISREG(st.st_mode):
+            return "ausente", ""
+        if st.st_size > 64 * 1024:
+            raise ErroInvalido(
+                f"arquivo .git de {base} tem {st.st_size} bytes — recuso em vez "
+                "de ler entrada ilimitada vinda do repositório")
+        return "arquivo", os.read(fd, st.st_size).decode("utf-8", "replace").strip()
+    finally:
+        os.close(fd)
+
+
+def _resolver_git_dir(repo: Path | str) -> tuple[str, str, str]:
+    """`(git_dir, common, forma_do_ponto_git)` — a forma vem da MESMA leitura.
+
+    Existe para que `conferir_git_dir` decida o gate de titularidade com o
+    resultado que JÁ resolveu o git dir, em vez de um segundo `stat` que o
+    repositório pode ter trocado no meio (`.7.14`).
+    """
+    return _diretorio_git_com_forma(repo)
+
+
 def diretorio_git(repo: Path | str) -> tuple[str, str]:
     """`(git_dir, common_dir)` canônicos, SEM executar git.
 
@@ -261,12 +328,18 @@ def diretorio_git(repo: Path | str) -> tuple[str, str]:
     `<repo>/.git` cegamente daria um caminho que não existe nesses dois casos, e
     a política sairia apontando para o lugar errado.
     """
+    return _diretorio_git_com_forma(repo)[:2]
+
+
+def _diretorio_git_com_forma(repo: Path | str) -> tuple[str, str, str]:
     base = Path(supervisor.existente(repo))
-    ponto = base / ".git"
-    if ponto.is_dir():
-        git_dir = supervisor.existente(ponto)
-    elif ponto.is_file():
-        texto = ponto.read_text("utf-8", "replace").strip()
+    forma, texto = _ler_ponto_git(base)
+    if forma in ("dir", "link"):
+        # `link` = `.git` é symlink para um DIRETÓRIO git. Resolve normalmente;
+        # o que muda é que o chamador NÃO o trata como `dir` para efeito de
+        # titularidade (ver `conferir_git_dir`).
+        git_dir = supervisor.existente(base / ".git")
+    elif forma in ("arquivo", "link-arquivo"):
         if not texto.startswith("gitdir:"):
             raise ErroInvalido(f"arquivo .git ilegível em {base}")
         alvo = texto.split(":", 1)[1].strip()
@@ -284,7 +357,7 @@ def diretorio_git(repo: Path | str) -> tuple[str, str]:
             bruto if os.path.isabs(bruto) else str(Path(git_dir) / bruto))
     else:
         common = git_dir
-    return git_dir, common
+    return git_dir, common, forma
 
 
 @dataclass(frozen=True)
@@ -356,7 +429,7 @@ def conferir_git_dir(repo: Path | str, raizes: tuple[str, ...]) -> tuple[str, st
     cada chamada relia `.git` do disco, um escritor concorrente podia trocar o
     destino entre a validação e o uso.
     """
-    git_dir, common = diretorio_git(repo)
+    git_dir, common, forma = _diretorio_git_com_forma(repo)
     if not raizes:
         # Sem raízes, esta função não tem contra o que conferir — e a versão
         # anterior RETORNAVA sem conferir, "corrija o chamador". MEDIDO (`.7.03`):
@@ -395,18 +468,17 @@ def conferir_git_dir(repo: Path | str, raizes: tuple[str, ...]) -> tuple[str, st
     # Worktree ligada (`.git/worktrees/<n>`), submódulo (`.git/modules/<n>`) e
     # `--separate-git-dir <x>` nunca têm o git dir chamado `.git`, então passam.
     base = Path(supervisor.existente(repo))
-    ponto = base / ".git"
-    # `lstat`, NUNCA `is_dir()`: `is_dir()` SEGUE symlink, e com `.git` sendo um
-    # link para o git dir de OUTRO repositório ele devolvia True — o gate não
-    # disparava e a checagem de titularidade nunca rodava. MEDIDO: `git-add`
-    # estagiou no índice da VÍTIMA e `git-commit` AVANÇOU `refs/heads/main` dela
-    # para um commit com `AWS_SECRET_ACCESS_KEY`, com a auditoria registrando o
-    # repositório do atacante como alvo.
-    try:
-        st = os.lstat(ponto)
-        dentro_do_repo = stat.S_ISDIR(st.st_mode)
-    except OSError:
-        dentro_do_repo = False
+    # A FORMA de `.git` vem da MESMA leitura que resolveu o git dir logo acima
+    # (`_ler_ponto_git`), e não de um segundo `stat`. MEDIDO (`.7.14`): com duas
+    # leituras, trocar `.git` de ARQUIVO para DIRETÓRIO entre elas fazia o git
+    # dir resolvido ser o da VÍTIMA — dentro das raízes, então `_dentro` passa —
+    # enquanto o gate via `dentro_do_repo=True` e PULAVA a titularidade. O
+    # sandbox passava a escrever no `.git` da vítima e o segredo era promovido
+    # ao store permanente dela.
+    #
+    # `link` conta como indireção: `.git` como symlink é destino escolhido pelo
+    # repositório, e tem de provar titularidade como qualquer outra indireção.
+    dentro_do_repo = forma == "dir"
     if not dentro_do_repo:
         _conferir_titularidade(base, git_dir)
 

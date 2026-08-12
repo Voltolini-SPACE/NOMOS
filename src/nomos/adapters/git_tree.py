@@ -799,11 +799,11 @@ class GitTreeAdapter(Adapter):
         # programa nesta série roda com prazo — inclusive a que só lê.
         prazo = min(TIMEOUT_S, ctx.restante() or TIMEOUT_S)
         if pedido.capacidade == "git-add":
-            argv, descricao, governados = self._add(pedido, repo, prazo,
-                                                    autoridade)
+            argv, descricao, governados, aprovados = self._add(
+                pedido, repo, prazo, autoridade)
         elif pedido.capacidade == "git-commit":
             argv, descricao = self._commit(pedido, repo, prazo, autoridade)
-            governados = {}
+            governados, aprovados = {}, []
         else:
             raise ErroInvalido(f"operação desconhecida: {pedido.capacidade}")
 
@@ -822,13 +822,21 @@ class GitTreeAdapter(Adapter):
         #
         # Restaurar o índice não alcançava isso: índice e refs são estados
         # diferentes, e a transação só cobria o primeiro.
+        # Os caminhos JÁ estagiados, para a pós-condição de escopo distinguir
+        # "o índice ganhou algo que ninguém aprovou" de "já estava lá".
+        estagiados_antes = None
+        if pedido.capacidade == "git-add":
+            with contextlib.suppress(Exception):
+                estagiados_antes = self._caminhos_estagiados(repo, prazo,
+                                                             autoridade)
         refs = _instantaneo_das_refs(autoridade)
         split = _instantaneo_do_split(autoridade)
         quarentena, reais = _abrir_quarentena(repo, autoridade)
         raiz_q = Path(quarentena.diretorio)
         try:
             r = self._confirmar(pedido, ctx, repo, argv, descricao, prazo,
-                                quarentena, governados, autoridade)
+                                quarentena, governados, autoridade,
+                                estagiados_antes, aprovados)
         except BaseException as original:
             # BaseException, não Exception: KeyboardInterrupt e SystemExit
             # também não podem deixar segredo estagiado nem objeto no store.
@@ -900,6 +908,72 @@ class GitTreeAdapter(Adapter):
 
     # ------------------------------------------------- A5.7 filtro governado
 
+    def _caminhos_estagiados(self, repo: Path, prazo: float,
+                             autoridade) -> set[str]:
+        """Os caminhos que o índice tem AGORA, pelo próprio Git.
+
+        Medir antes e depois com a MESMA pergunta evita reimplementar o formato
+        do índice — e `GIT_INDEX_FILE` não serve para reler o instantâneo: a
+        variável está em `PROIBIDAS_NO_AMBIENTE` (o supervisor recusa qualquer
+        ambiente que a traga), justamente porque ela redireciona o índice.
+        """
+        p = supervisor.executar(
+            self._base(repo) + ["ls-files", "-z"], cwd=repo,
+            env=self.ambiente(), prazo=prazo,
+            confinamento=confinamento_de_repo(repo, autoridade=autoridade),
+            arvore_de_trabalho=str(repo))
+        if p.returncode != 0:
+            raise ErroInvalido(
+                f"não consegui listar o índice (rc={p.returncode})")
+        return {c for c in p.stdout.decode("utf-8", "replace").split("\0") if c}
+
+    def _conferir_escopo_estagiado(self, repo: Path, antes: set, aprovados,
+                                   prazo: float, autoridade) -> None:
+        """Pós-condição: o índice só pode ter ganhado o que foi APROVADO.
+
+        MEDIDO (`.4.05b`), e é a razão de a checagem ser POSTERIOR: um
+        pré-check nunca vence a corrida. `_recusar_diretorio` faz `os.lstat` no
+        caminho, e o `git add` o REABRE PELO NOME muitos ms depois — trocar o
+        arquivo por um DIRETÓRIO entre os dois fazia o Git expandir para tudo
+        que estivesse dentro. 3/3 vitórias do atacante. É o mesmo
+        resolve→valida→descarta→resolve-de-novo que `AutoridadeDeRepo` fechou
+        em outro lugar; aqui o alvo é o NOME, que não dá para ligar a um
+        descritor porque quem reabre é o Git.
+
+        O que se pode amarrar é o EFEITO: comparar o índice antes e depois e
+        exigir que todo caminho novo esteja na lista aprovada. A operação é
+        transacional, então recusar aqui desfaz tudo — o escopo maior nunca
+        chega a existir para o chamador.
+        """
+        if not aprovados or antes is None:
+            return
+        agora = self._caminhos_estagiados(repo, prazo, autoridade)
+        candidatos = agora - antes - set(aprovados)
+
+        # DISCRIMINADOR, e ele é o ponto: nem todo caminho novo é escopo maior.
+        # MEDIDO — a primeira versão desta pós-condição recusava qualquer novo, e
+        # com isso DESTRUÍA o trabalho de um `git add` concorrente que saiu com
+        # rc=0 (o rollback o desfazia), quebrando exatamente a propriedade que
+        # `.8.06` exige preservar. Duas exigências reais em conflito, resolvidas
+        # pela ASSINATURA de cada uma:
+        #
+        #   expansão de diretório  -> o extra é DESCENDENTE de um aprovado
+        #                             (`dir` vira `dir/x`, `dir/y`)
+        #   escritor concorrente   -> o extra não tem relação com o aprovado
+        #
+        # Recusar só o primeiro contém o `-A` disfarçado sem destruir trabalho
+        # de terceiro. O segundo já tem tratamento próprio: a detecção em
+        # `_restaurar_indice`, que reporta o incidente em vez de silenciá-lo.
+        prefixos = tuple(f"{a}/" for a in aprovados)
+        novos = {c for c in candidatos if c.startswith(prefixos)}
+        if novos:
+            raise ErroSeguranca(
+                f"a operação estagiou caminho que NÃO foi aprovado: "
+                f"{sorted(novos)[:5]} — o operador aprovou {sorted(aprovados)}. "
+                "Um caminho que era arquivo na validação e virou DIRETÓRIO "
+                "antes do `git add` faz o Git expandir para tudo que estiver "
+                "dentro; a transação recusa e desfaz")
+
     def _recusar_diretorio(self, repo: Path, caminhos: list[str]) -> None:
         """Um DIRETÓRIO na lista é o `-A` disfarçado que este módulo proíbe.
 
@@ -930,7 +1004,8 @@ class GitTreeAdapter(Adapter):
                     "nomeie cada um")
 
     def _recusar_fonte_de_atributo_por_link(self, repo: Path,
-                                            caminhos: list[str]) -> None:
+                                            caminhos: list[str],
+                                            autoridade=None) -> None:
         """Nenhuma fonte de atributo do repositório pode ser SYMLINK.
 
         MEDIDO (C2.11): com `.gitattributes` apontando para fora das raízes, a
@@ -943,28 +1018,75 @@ class GitTreeAdapter(Adapter):
         Recusar é estreito e correto: symlink não é forma legítima de declarar
         atributo, e a mensagem diz o que fazer (arquivo regular).
         """
-        fontes = [Path(".git") / "info" / "attributes"]
+        # Fontes na WORKING TREE (relativas ao repo) e no GIT DIR. O git dir vem
+        # da AUTORIDADE, não do literal `<repo>/.git`: em worktree ligada e
+        # submódulo o `info/attributes` efetivo mora noutro lugar, e conferir o
+        # caminho errado é não conferir.
+        raizes_fontes: list[tuple[Path, list[str]]] = []
         for caminho in caminhos:
             pai = PurePosixPath(caminho).parent
             partes = [] if str(pai) == "." else list(pai.parts)
             for i in range(len(partes) + 1):
-                fontes.append(Path(*partes[:i]) / ".gitattributes")
+                raizes_fontes.append((repo, [*partes[:i], ".gitattributes"]))
+        gd = Path(autoridade.git_dir) if autoridade is not None else repo / ".git"
+        raizes_fontes.append((gd, ["info", "attributes"]))
+
         vistos: set[str] = set()
-        for rel in fontes:
-            if str(rel) in vistos:
+        for base, componentes in raizes_fontes:
+            chave = str(base) + "/" + "/".join(componentes)
+            if chave in vistos:
                 continue
-            vistos.add(str(rel))
-            try:
-                st = os.lstat(repo / rel)
-            except OSError:
-                continue
-            if stat.S_ISLNK(st.st_mode):
-                raise ErroSeguranca(
-                    f"{rel} é um symlink, e fonte de atributo não pode ser "
-                    "link: quem escolhe o destino escolhe a política de filtro, "
-                    "e um destino fora das raízes o Git nem consegue ler dentro "
-                    "do sandbox — o pedido de filtro sumiria e o conteúdo seria "
-                    "indexado EM CLARO com rc=0")
+            vistos.add(chave)
+            self._recusar_componente_link(base, componentes)
+
+    def _recusar_componente_link(self, base: Path, componentes: list[str]) -> None:
+        """Nenhum COMPONENTE do caminho da fonte pode ser symlink.
+
+        MEDIDO (`.2.14`, P0), e é o furo que o `lstat` do último componente não
+        via: trocando o DIRETÓRIO `.git/info` por um symlink para fora das
+        raízes de LEITURA do sandbox, `os.lstat('.git/info/attributes')`
+        atravessa o `info` do meio e enxerga arquivo REGULAR — a guarda não
+        dispara. Dentro do sandbox o Git não consegue ler o destino, então o
+        pedido de filtro DESAPARECE e o segredo entra EM CLARO no índice com
+        `ok=True`, enquanto o git cru continua redigindo. Divergência a MENOS de
+        segurança que o Git, que é exatamente o que a bateria C2 existe para
+        impedir.
+
+        Descer com `openat`/`O_NOFOLLOW` a cada componente é a mesma técnica de
+        `_abrir_sem_atravessar_link` — e pela mesma razão: `O_NOFOLLOW` protege
+        só o último nome.
+        """
+        try:
+            fd = os.open(base, os.O_RDONLY | os.O_DIRECTORY)
+        except OSError:
+            return
+        try:
+            for i, nome in enumerate(componentes):
+                ultimo = i == len(componentes) - 1
+                flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+                if not ultimo:
+                    flags |= os.O_DIRECTORY
+                try:
+                    proximo = os.open(nome, flags, dir_fd=fd)
+                except OSError as e:
+                    if e.errno in (errno.ELOOP, errno.EMLINK, errno.ENOTDIR):
+                        rel = "/".join(componentes[:i + 1])
+                        raise ErroSeguranca(
+                            f"{rel} é um symlink, e fonte de atributo não pode "
+                            "ser link: quem escolhe o destino escolhe a política "
+                            "de filtro, e um destino fora das raízes o Git nem "
+                            "consegue ler dentro do sandbox — o pedido de filtro "
+                            "sumiria e o conteúdo seria indexado EM CLARO com "
+                            "rc=0") from None
+                    return          # ausente: não há fonte a conferir
+                if ultimo:
+                    os.close(proximo)
+                    return
+                os.close(fd)
+                fd = proximo
+        finally:
+            with contextlib.suppress(OSError):
+                os.close(fd)
 
     def _recusar_fonte_de_atributo_externa(self, repo: Path, prazo: float,
                                            autoridade) -> None:
@@ -1043,7 +1165,7 @@ class GitTreeAdapter(Adapter):
         """
         from nomos.adapters import filtro_governado as fg
 
-        self._recusar_fonte_de_atributo_por_link(repo, caminhos)
+        self._recusar_fonte_de_atributo_por_link(repo, caminhos, autoridade)
         self._recusar_fonte_de_atributo_externa(repo, prazo, autoridade)
 
         argv = self._base(repo) + ["check-attr", "-z", "filter", "--", *caminhos]
@@ -1091,7 +1213,8 @@ class GitTreeAdapter(Adapter):
 
     def _aplicar_filtro_governado(self, repo: Path, caminho: str,
                                   filter_id: str, prazo: float,
-                                  quarentena: supervisor.Quarentena) -> str:
+                                  quarentena: supervisor.Quarentena,
+                                  autoridade=None) -> str:
         """PEDIDO → política → artefato → argv → sandbox → stdin → índice.
 
         Devolve o sha do blob TRANSFORMADO, já gravado na quarentena. Nada aqui
@@ -1125,7 +1248,8 @@ class GitTreeAdapter(Adapter):
         h = supervisor.executar(
             self._base(repo) + ["hash-object", "-w", "--no-filters", "--stdin"],
             cwd=repo, env=self.ambiente(), prazo=prazo,
-            confinamento=confinamento_de_repo(repo), quarentena=quarentena,
+            confinamento=confinamento_de_repo(repo, autoridade=autoridade),
+            quarentena=quarentena,
             entrada=p.stdout, arvore_de_trabalho=str(repo))
         if h.returncode != 0:
             erro = h.stderr.decode("utf-8", "replace")[:400]
@@ -1139,14 +1263,15 @@ class GitTreeAdapter(Adapter):
         return sha
 
     def _estagiar(self, repo: Path, caminho: str, sha: str, prazo: float,
-                  quarentena: supervisor.Quarentena) -> None:
+                  quarentena: supervisor.Quarentena, autoridade=None) -> None:
         """Põe o blob transformado no índice, sem passar pela working tree."""
         modo = "100755" if os.access(repo / caminho, os.X_OK) else "100644"
         u = supervisor.executar(
             self._base(repo) + ["update-index", "--add", "--cacheinfo",
                                 f"{modo},{sha},{caminho}"],
             cwd=repo, env=self.ambiente(), prazo=prazo,
-            confinamento=confinamento_de_repo(repo), quarentena=quarentena,
+            confinamento=confinamento_de_repo(repo, autoridade=autoridade),
+            quarentena=quarentena,
             arvore_de_trabalho=str(repo))
         if u.returncode != 0:
             erro = u.stderr.decode("utf-8", "replace")[:400]
@@ -1157,7 +1282,8 @@ class GitTreeAdapter(Adapter):
                    descricao: str, prazo: float,
                    quarentena: supervisor.Quarentena,
                    governados: dict[str, str],
-                   autoridade) -> CapabilityResult:
+                   autoridade, estagiados_antes=None,
+                   aprovados: list[str] | None = None) -> CapabilityResult:
         """Executa e valida. Qualquer saída por exceção desfaz o índice.
 
         A promoção dos objetos acontece DEPOIS de todas as verificações: um
@@ -1167,8 +1293,8 @@ class GitTreeAdapter(Adapter):
         """
         for caminho, filter_id in governados.items():
             sha = self._aplicar_filtro_governado(repo, caminho, filter_id,
-                                                 prazo, quarentena)
-            self._estagiar(repo, caminho, sha, prazo, quarentena)
+                                                 prazo, quarentena, autoridade)
+            self._estagiar(repo, caminho, sha, prazo, quarentena, autoridade)
         if governados and not argv:
             # TODOS os caminhos eram governados: não sobrou `git add` para
             # rodar, e inventar um rodaria o Git sobre a working tree CRUA —
@@ -1204,6 +1330,9 @@ class GitTreeAdapter(Adapter):
         # filtro). É também onde o rc=0 mente com mais consequência: filtro
         # quebrado indexa o conteúdo cru. Aqui a mentira para.
         supervisor.conferir_saida(p.stderr, pedido.capacidade)
+        if pedido.capacidade == "git-add":
+            self._conferir_escopo_estagiado(repo, estagiados_antes, aprovados,
+                                            prazo, autoridade)
         self._auditar(ctx, f"git.{pedido.capacidade[4:]}",
                       alvo=supervisor.canonicalizar(repo), detalhe=descricao,
                       **_campos_de_autoridade(autoridade),
@@ -1261,8 +1390,8 @@ class GitTreeAdapter(Adapter):
                 if restantes else [])
         if governados:
             return argv, (f"add {len(caminhos)} caminho(s) "
-                          f"({len(governados)} por filtro governado)"), governados
-        return argv, f"add {len(caminhos)} caminho(s)", governados
+                          f"({len(governados)} por filtro governado)"), governados, caminhos
+        return argv, f"add {len(caminhos)} caminho(s)", governados, caminhos
 
     def _conferir_head(self, repo: Path, prazo: float, autoridade) -> None:
         """`HEAD` tem de apontar para um BRANCH, e o repositório escreve `HEAD`.

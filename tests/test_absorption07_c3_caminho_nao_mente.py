@@ -33,6 +33,8 @@ erro de caminho do usuário — e é do registro que a auditoria vive.
 """
 from __future__ import annotations
 
+import contextlib
+import shutil
 import os
 import signal
 import subprocess
@@ -122,7 +124,12 @@ def test_c3_01_symlink_de_DIRETORIO_no_meio_do_caminho(cen, tmp_path):
     os.symlink(str(fora), str(cen.repo / "sub"))
     (cen.repo / ".gitattributes").write_text("sub/hosts filter=redator\n")
 
-    with pytest.raises(supervisor.ErroSeguranca, match="symlink de diretório"):
+    # DUAS guardas independentes recusam este cenário, e a ordem entre elas é
+    # detalhe de implementação: a de FONTE DE ATRIBUTO (que passou a conferir
+    # cada componente, por causa de `.2.14`) roda antes da de LEITURA DO ALVO.
+    # Prender a mensagem de uma delas faria este teste falhar por refatoração
+    # legítima; o que ele mede é o EFEITO, e esse não mudou.
+    with pytest.raises(supervisor.ErroSeguranca, match="symlink"):
         cen.add("sub/hosts")
     assert cen.indice("sub/hosts") == b"<AUSENTE>", (
         "conteúdo de FORA do repositório foi indexado pelo caminho governado")
@@ -219,3 +226,51 @@ def test_c3_06_o_git_cru_tambem_recusa_o_traversal(cen, tmp_path):
                         "sub2/hosts"], capture_output=True, text=True)
     assert r.returncode != 0
     assert "beyond a symbolic link" in r.stderr
+
+
+def test_c3_07_caminho_que_vira_DIRETORIO_na_corrida_nao_expande(cen):
+    """`.4.05b`: o pré-check não vence a corrida — a pós-condição vence.
+
+    `_recusar_diretorio` faz `os.lstat` no caminho, e o `git add` o REABRE PELO
+    NOME muitos ms depois. Trocando o arquivo por um DIRETÓRIO entre os dois, o
+    Git expandia para tudo que estivesse dentro — o `-A` disfarçado que o guard
+    existe para proibir. 3/3 vitórias do atacante antes do conserto.
+
+    O nome não dá para amarrar a um descritor, porque quem reabre é o Git. O que
+    se amarra é o EFEITO: `_conferir_escopo_estagiado` compara o índice antes e
+    depois e recusa qualquer caminho novo fora da lista aprovada. Como a
+    operação é transacional, a recusa desfaz — o escopo maior nunca existe.
+    """
+    import threading
+    alvo = cen.repo / "alvo"
+    alvo.write_text("arquivo\n")
+    parar = threading.Event()
+
+    def alternar():
+        while not parar.is_set():
+            try:
+                if alvo.is_dir():
+                    shutil.rmtree(alvo)
+                    alvo.write_text("arquivo\n")
+                else:
+                    alvo.unlink()
+                    alvo.mkdir()
+                    (alvo / "NAO_APROVADO.txt").write_text("AKIA-SEGREDO\n")
+            except OSError:
+                pass
+
+    t = threading.Thread(target=alternar, daemon=True)
+    t.start()
+    try:
+        for _ in range(12):
+            with contextlib.suppress(Exception):
+                cen.add("alvo", com_registro=False)
+    finally:
+        parar.set()
+        t.join(timeout=10)
+
+    estagiados = subprocess.run([GIT, "-C", str(cen.repo), "ls-files"],
+                                capture_output=True, text=True).stdout
+    assert "NAO_APROVADO" not in estagiados, (
+        "ESCOPO_MAIOR_QUE_O_APROVADO: a troca arquivo->diretório fez o `git "
+        "add` expandir e a pós-condição não pegou")

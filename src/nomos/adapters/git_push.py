@@ -142,7 +142,7 @@ class GitPushAdapter(Adapter):
                 "declarados na política, não no repositório nem no plano")
         return d
 
-    def url_efetiva(self, repo, url_autorizada: str) -> str:
+    def url_efetiva(self, repo, url_autorizada: str, autoridade=None) -> str:
         """A URL que o Git REALMENTE usaria para esta, após reescritas.
 
         `url.<base>.insteadOf` do repositório reescreve qualquer URL, inclusive
@@ -154,12 +154,13 @@ class GitPushAdapter(Adapter):
                 "ls-remote", "--get-url", url_autorizada]
         p = supervisor.executar(argv, cwd=repo, env=ambiente_minimo(),
                                 prazo=15.0,
-                                confinamento=confinamento_de_repo(repo))
+                                confinamento=confinamento_de_repo(
+                                    repo, autoridade=autoridade))
         if p.returncode != 0:
             raise ErroRemoto("não consegui resolver a URL efetiva do destino")
         return p.stdout.decode("utf-8", "replace").strip()
 
-    def regras_de_reescrita(self, repo) -> list[str]:
+    def regras_de_reescrita(self, repo, autoridade=None) -> list[str]:
         """Qualquer `url.*.insteadOf` / `pushInsteadOf` declarada no repo.
 
         `ls-remote --get-url` mostra a reescrita de FETCH; `pushInsteadOf`
@@ -174,22 +175,24 @@ class GitPushAdapter(Adapter):
                 r"^url\..*\.(insteadof|pushinsteadof)$"]
         p = supervisor.executar(argv, cwd=repo, env=ambiente_minimo(),
                                 prazo=15.0,
-                                confinamento=confinamento_de_repo(repo))
+                                confinamento=confinamento_de_repo(
+                                    repo, autoridade=autoridade))
         if p.returncode not in (0, 1):     # 1 = nenhuma chave, normal
             raise ErroRemoto("não consegui inspecionar regras de reescrita")
         return [linha for linha in p.stdout.decode("utf-8", "replace").splitlines()
                 if linha.strip()]
 
-    def conferir_destino(self, repo, destino: DestinoGovernado) -> str:
+    def conferir_destino(self, repo, destino: DestinoGovernado,
+                         autoridade=None) -> str:
         """Recusa se o repositório redirecionar a URL autorizada."""
-        regras = self.regras_de_reescrita(repo)
+        regras = self.regras_de_reescrita(repo, autoridade)
         if regras:
             raise ErroRemoto(
                 "o repositório declara regra de REESCRITA de URL "
                 f"({len(regras)}: {regras[0][:80]}). Publicação com destino "
                 "governado não convive com reescrita — o destino aprovado "
                 "deixaria de ser o destino efetivo")
-        efetiva = self.url_efetiva(repo, destino.url)
+        efetiva = self.url_efetiva(repo, destino.url, autoridade)
         if efetiva != destino.url:
             raise ErroRemoto(
                 f"o repositório REDIRECIONA o destino autorizado: "
@@ -298,7 +301,7 @@ class GitPushAdapter(Adapter):
 
         # SEGUNDA resolução, imediatamente antes do efeito. Entre a autorização
         # e esta linha, `.git/config` pode ter mudado.
-        self.conferir_destino(repo, destino)
+        self.conferir_destino(repo, destino, autoridade)
 
         refspec = f"refs/heads/{origem}:refs/heads/{alvo_branch}"
         argv = [self._git, "-C", str(repo), "--no-pager",
