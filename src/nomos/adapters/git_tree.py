@@ -436,7 +436,8 @@ def _restaurar_split(estado: dict[str, bytes]) -> None:
 
 
 def _restaurar_indice(inst: tuple[Path, bytes | None, int | None],
-                      depois_do_exec: bytes | None = None) -> bool:
+                      depois_do_exec: bytes | None = None,
+                      antes_do_exec: bytes | None = None) -> bool:
     """Devolve o índice ao estado do instantâneo. Retorna se detectou terceiro.
 
     O retorno substitui a lista de MÓDULO que existia aqui. MEDIDO (`.8.07`):
@@ -475,6 +476,19 @@ def _restaurar_indice(inst: tuple[Path, bytes | None, int | None],
         atual = None
     esperado = depois_do_exec if depois_do_exec is not None else dados
     terceiro = atual is not None and atual != esperado
+    # ...mas `depois_do_exec` só enxerga a janela EXEC→DESFAZER. MEDIDO
+    # (`.8.05-08`, REGRESSION, 12/12): um `git add` de terceiro que entra entre
+    # o INSTANTÂNEO e o nosso exec já está DENTRO de `depois_do_exec` — o
+    # detector compara duas fotos que ambas o contêm, conclui "igual", e o
+    # rollback apaga o trabalho aceito sem emitir nada. O conserto de `.11.09`
+    # fechou o falso positivo e abriu este falso NEGATIVO, que é o pior dos
+    # dois: silêncio sobre destruição real.
+    #
+    # A foto tirada IMEDIATAMENTE ANTES do exec fecha a janela cega. Antes do
+    # exec não existe efeito nosso a descontar, então qualquer divergência do
+    # instantâneo é, por construção, de outro processo.
+    if antes_do_exec is not None and antes_do_exec != dados:
+        terceiro = True
     # Escrever direto em `index` deixaria uma janela com arquivo truncado, que
     # o Git leria como índice corrompido. `os.replace` no MESMO diretório é
     # rename atômico: ou o índice antigo, ou o restaurado, nunca um meio-termo.
@@ -574,12 +588,57 @@ def _instantaneo_das_refs(autoridade) -> dict[str, bytes | None]:
     return estado
 
 
-def _restaurar_refs(estado: dict[str, bytes | None]) -> bool:
+def _refs_agora(autoridade) -> dict[str, bytes | None]:
+    """Foto BARATA das refs, para DISCRIMINAR autoria — não para restaurar.
+
+    Não repete a validação de `_instantaneo_das_refs` (essa já rodou, e é ela
+    que decide se a operação prossegue): aqui só se quer saber QUAIS arquivos
+    de ref existiam num instante. Por isso nada levanta — o que não é arquivo
+    regular simplesmente não entra, e a ausência de discriminador degrada para
+    o lado conservador (relatar incidente), nunca para o de destruir calado.
+    """
+    estado: dict[str, bytes | None] = {}
+    if autoridade is None:
+        return estado
+    for base in {autoridade.git_dir, autoridade.common}:
+        raiz = Path(base)
+        alvos = [raiz / "HEAD", raiz / "packed-refs", raiz / "ORIG_HEAD"]
+        for sub in ("refs", "logs"):
+            d = raiz / sub
+            with contextlib.suppress(OSError):
+                if stat.S_ISDIR(os.lstat(d).st_mode):
+                    alvos.extend(d.rglob("*"))
+        for alvo in alvos:
+            with contextlib.suppress(OSError):
+                if stat.S_ISREG(os.lstat(alvo).st_mode):
+                    estado[str(alvo)] = alvo.read_bytes()
+    return estado
+
+
+def _restaurar_refs(estado: dict[str, bytes | None],
+                    antes_do_exec: dict[str, bytes | None] | None = None,
+                    depois_do_exec: dict[str, bytes | None] | None = None,
+                    ) -> bool:
     """Devolve refs, HEAD e reflog ao estado do instantâneo.
 
     Best-effort por arquivo: uma falha isolada não pode impedir a restauração
     dos outros, senão um erro no meio do desfazer deixaria o repositório PIOR
     que se nada tivesse sido tentado.
+
+    ## O discriminador de AUTORIA, que não existia (`.11.09`, P1)
+
+    O conserto de `.11.09` foi aplicado só ao índice. Aqui o laço abaixo tratava
+    como TERCEIRO toda ref fora do instantâneo — inclusive `refs/heads/main` e o
+    reflog que o `git commit` do PRÓPRIO NOMOS acabou de criar. Ou seja: um
+    incidente forense que dispara SOZINHO, sem concorrência nenhuma, em toda
+    recusa de `git-commit`. Sinal que dispara sempre não é sinal — ele torna
+    inútil a única evidência que `.8.03` construiu.
+
+    As duas fotos delimitam as três janelas e cada uma tem dono diferente:
+
+        instantâneo ─(A)─ antes_do_exec ─(B: NOSSO exec)─ depois ─(C)─ desfazer
+
+    (A) e (C) são de outro processo — incidente. (B) é nosso — silêncio.
     """
     for caminho, dados in estado.items():
         alvo = Path(caminho)
@@ -600,6 +659,12 @@ def _restaurar_refs(estado: dict[str, bytes | None]) -> bool:
     # (`.8.NEW-REFS-TERCEIRO`, `.6.N2`): destruição real, e SEM sinal, porque só
     # `_restaurar_indice` tinha canal de incidente. A simetria estava faltando.
     terceiro = False
+    # Uma ref MODIFICADA por terceiro na janela (A) já foi sobrescrita pelo laço
+    # acima; sem a foto pré-exec isso some calado. Com ela, vira incidente.
+    if antes_do_exec is not None:
+        for caminho, dados in estado.items():
+            if caminho in antes_do_exec and antes_do_exec[caminho] != dados:
+                terceiro = True
     for caminho in list(estado):
         raiz = Path(caminho)
         if raiz.name == "HEAD":
@@ -608,10 +673,19 @@ def _restaurar_refs(estado: dict[str, bytes | None]) -> bool:
                 if not d.is_dir():
                     continue
                 for p in list(d.rglob("*")):
-                    if p.is_file() and str(p) not in estado:
+                    if not p.is_file() or str(p) in estado:
+                        continue
+                    # NOSSO se apareceu entre as duas fotos do exec. Sem as
+                    # fotos não há como distinguir, e aí o conservador é acusar
+                    # — perder trabalho calado é o defeito maior.
+                    nosso = (antes_do_exec is not None
+                             and depois_do_exec is not None
+                             and str(p) not in antes_do_exec
+                             and str(p) in depois_do_exec)
+                    if not nosso:
                         terceiro = True
-                        with contextlib.suppress(OSError):
-                            p.unlink()
+                    with contextlib.suppress(OSError):
+                        p.unlink()
     return terceiro
 
 
@@ -883,10 +957,10 @@ class GitTreeAdapter(Adapter):
         quarentena, reais = _abrir_quarentena(repo, autoridade)
         raiz_q = Path(quarentena.diretorio)
         try:
-            pos_exec: list[bytes] = []
+            janela: dict = {}
             r = self._confirmar(pedido, ctx, repo, argv, descricao, prazo,
                                 quarentena, governados, autoridade,
-                                estagiados_antes, aprovados, pos_exec)
+                                estagiados_antes, aprovados, janela)
         except BaseException as original:
             # BaseException, não Exception: KeyboardInterrupt e SystemExit
             # também não podem deixar segredo estagiado nem objeto no store.
@@ -902,18 +976,23 @@ class GitTreeAdapter(Adapter):
             # não estado de módulo: `.8.07` mediu duas operações no mesmo
             # processo lendo/limpando a lista uma da outra.
             falhas: list[str] = []
-            terceiro = False
-            depois = pos_exec[-1] if pos_exec else None
+            terceiro: list[str] = []
+            depois = janela.get("idx_depois")
+            antes = janela.get("idx_antes")
             for etapa, fn in (("índice",
-                               lambda: _restaurar_indice(instantaneo, depois)),
+                               lambda: _restaurar_indice(instantaneo, depois,
+                                                         antes)),
                               ("split index", lambda: _restaurar_split(split)),
-                              ("refs", lambda: _restaurar_refs(refs))):
+                              ("refs",
+                               lambda: _restaurar_refs(
+                                   refs, janela.get("refs_antes"),
+                                   janela.get("refs_depois")))):
                 try:
                     # `índice` E `refs`: os dois desfazeres podem destruir
                     # trabalho de terceiro, e antes só o primeiro tinha canal —
                     # refs de outro processo sumiam em SILÊNCIO (`.6.N2`).
                     if fn() and etapa in ("índice", "refs"):
-                        terceiro = True
+                        terceiro.append(etapa)
                 except Exception as e:               # noqa: BLE001
                     falhas.append(f"{etapa}: {type(e).__name__}: {e}")
             if falhas or terceiro:
@@ -923,10 +1002,15 @@ class GitTreeAdapter(Adapter):
                                  + " — o repositório pode ter ficado com o "
                                  "conteúdo recusado estagiado")
                 if terceiro:
+                    # QUAL estado, e não "o índice" para os dois: quem vai
+                    # recuperar o trabalho perdido precisa saber onde procurar,
+                    # e um aviso que diz "índice" quando o que sumiu foi uma
+                    # REF manda a pessoa para o lugar errado.
                     aviso.append(
-                        "o índice foi escrito por OUTRO processo entre o "
-                        "instantâneo e o desfazer, e o rollback sobrepôs esse "
-                        "trabalho — trabalho de terceiro foi perdido")
+                        f"{' e '.join(terceiro)} — escrito por OUTRO processo "
+                        "entre o instantâneo e o desfazer, e o rollback "
+                        "sobrepôs esse trabalho: trabalho de terceiro foi "
+                        "perdido")
                 # O TIPO do erro original é preservado, e isso é o ponto.
                 # A primeira versão desta correção levantava `ErroSeguranca`
                 # sempre — o que consertava o mascaramento medido em `.8.03` e
@@ -1448,7 +1532,7 @@ class GitTreeAdapter(Adapter):
                    governados: dict[str, str],
                    autoridade, estagiados_antes=None,
                    aprovados: list[str] | None = None,
-                   pos_exec: list | None = None) -> CapabilityResult:
+                   janela: dict | None = None) -> CapabilityResult:
         """Executa e valida. Qualquer saída por exceção desfaz o índice.
 
         A promoção dos objetos acontece DEPOIS de todas as verificações: um
@@ -1475,12 +1559,25 @@ class GitTreeAdapter(Adapter):
                                  raiz_do_store=autoridade.common)
             return CapabilityResult.sucesso(descricao, efeito_aplicado=True)
 
+        # As fotos que DELIMITAM o nosso efeito. A de ANTES tem de ser a última
+        # coisa antes do `executar`: tudo o que ela ainda não vê e o desfazer
+        # encontra é nosso; tudo o que ela JÁ vê divergindo do instantâneo é de
+        # outro processo (`.8.05-08`).
+        alvo_idx = Path(autoridade.git_dir) / "index" if autoridade else None
+        if janela is not None:
+            janela["refs_antes"] = _refs_agora(autoridade)
+            if alvo_idx is not None and alvo_idx.exists():
+                with contextlib.suppress(OSError):
+                    janela["idx_antes"] = alvo_idx.read_bytes()
+
         p = supervisor.executar(argv, cwd=repo, env=self.ambiente(),
                                 prazo=prazo,
                                 confinamento=confinamento_de_repo(
                                     repo, autoridade=autoridade),
                                 quarentena=quarentena,
                                 arvore_de_trabalho=str(repo))
+        if janela is not None:
+            janela["refs_depois"] = _refs_agora(autoridade)
         # O índice LOGO APÓS o exec, e ANTES de qualquer `raise`. MEDIDO
         # (`.6.N1`): capturar depois do check de `returncode` deixava o baseline
         # VAZIO justamente nas recusas — o git rodou, reescreveu o índice, e
@@ -1488,10 +1585,9 @@ class GitTreeAdapter(Adapter):
         # "trabalho de terceiro foi perdido" sem terceiro nenhum. Basta o
         # repositório plantar `.git/refs/heads` como symlink de diretório para
         # provocar um INCIDENTE FORENSE FALSO, sozinho e sem concorrência.
-        alvo_idx = Path(autoridade.git_dir) / "index" if autoridade else None
-        if pos_exec is not None and alvo_idx is not None and alvo_idx.exists():
+        if janela is not None and alvo_idx is not None and alvo_idx.exists():
             with contextlib.suppress(OSError):
-                pos_exec.append(alvo_idx.read_bytes())
+                janela["idx_depois"] = alvo_idx.read_bytes()
         if p.morto_por_timeout:
             # O filtro do repositório pendura o processo — medido, não suposto.
             # A árvore inteira já morreu; o que resta é recusar.

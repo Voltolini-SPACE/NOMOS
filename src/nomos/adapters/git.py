@@ -701,6 +701,13 @@ def _conferir_titularidade(base: Path, git_dir: str) -> None:
         "tree o git dir pertence")
 
 
+# Teto de STORES visitados na cadeia de alternates. Constante de MÓDULO, e não
+# local, porque a propriedade que importa é o COMPORTAMENTO AO ESTOURAR — e
+# medi-la com o valor real exigiria construir mil repositórios, que é custo sem
+# informação nova. Assim o teste baixa o teto e mede a recusa.
+MAX_STORES = 1000
+
+
 def conferir_alternates(repo: Path | str, raizes: tuple[str, ...],
                         autoridade: "AutoridadeDeRepo | None" = None) -> None:
     """Nenhum store de objetos ALTERNADO pode sair das raízes aprovadas.
@@ -750,11 +757,36 @@ def conferir_alternates(repo: Path | str, raizes: tuple[str, ...],
     # `objects`; `vistos` corta ciclo (um alternate pode apontar de volta) e
     # trabalho repetido. Limite defensivo: cadeia patológica não pode virar
     # varredura ilimitada guiada pelo repositório.
+    #
+    # ## O teto é FAIL-CLOSED, e antes era uma PORTA (`.5.08`, P1)
+    #
+    # A condição vivia no `while` e `vistos` crescia por ENTRADA lida. MEDIDO:
+    # com 120 alternates de 1º nível TODOS dentro das raízes, `vistos` satura
+    # ainda dentro do PRIMEIRO arquivo, o laço termina com a fila cheia e a
+    # função RETORNA — sem nunca abrir o `info/alternates` de nenhum deles. Com
+    # um 2º salto saindo das raízes: guarda=ACEITOU, e `git cat-file -t` provou
+    # que o Git alcança o objeto estrangeiro. Com N=3, a MESMA cadeia é
+    # RECUSADA. O bypass não era o conteúdo — era a LARGURA, e quem escolhe a
+    # largura é quem escreve o arquivo.
+    #
+    # Estourar o teto passa a ser RECUSA: se resta fila, a contenção da cadeia
+    # não foi provada, e não provar é o mesmo que não conter. Um repositório
+    # legítimo tem punhado de alternates; quem chega a mil está construindo
+    # exatamente esta saída.
     fila = [str(Path(base) / "objects") for base in (git_dir, common)]
     vistos: set[str] = set()
-    MAX_SALTOS = 100
-    while fila and len(vistos) < MAX_SALTOS:
+    while fila:
         objects = fila.pop()
+        if objects in vistos:
+            continue
+        if len(vistos) >= MAX_STORES:
+            raise supervisor.ErroSeguranca(
+                f"a cadeia de `objects/info/alternates` passa de {MAX_STORES} "
+                "stores e não terminou. A varredura para aqui por defesa, e "
+                "parar não prova contenção: o resto da cadeia pode sair das "
+                f"raízes {reais}. Cadeia desse tamanho não é repositório de "
+                "trabalho")
+        vistos.add(objects)
         arquivo = Path(objects) / "info" / "alternates"
         bruto = ler_controle_do_repo(arquivo, "objects/info/alternates")
         if bruto is None:
@@ -780,7 +812,6 @@ def conferir_alternates(repo: Path | str, raizes: tuple[str, ...],
                     "que ninguém aprovou. A cadeia é seguida transitivamente, "
                     "como o Git faz. Alternate legítimo mora dentro das raízes")
             if resolvido not in vistos:
-                vistos.add(resolvido)
                 fila.append(resolvido)      # o alternate tem SEU próprio salto
 
 
