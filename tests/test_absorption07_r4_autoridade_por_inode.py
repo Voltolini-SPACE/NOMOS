@@ -1384,3 +1384,72 @@ def test_r4_111_CONTROLE_repo_normal_nao_e_afetado_pela_guarda(tmp_path):
         CapabilityRequest(capacidade="git-add", alvo=str(repo),
                           argumentos={"caminhos": ["x.txt"]}), ctx)
     assert r.efeito_aplicado
+
+
+# ═══ INFO da 4ª medição — classificação com PROVA, não com silêncio ═════════
+
+def test_r4_120_erro_do_filesystem_nao_atravessa_a_fronteira(tmp_path):
+    """`N-A7-04`: `NotADirectoryError` CRU escapava da capacidade governada.
+
+    Fail-closed (nenhum efeito, nenhum resíduo), mas o TIPO do erro é
+    load-bearing nesta série: `.8.03` mediu que trocar o tipo faz o chamador
+    que classifica por `except ErroSeguranca` deixar de ver o incidente. Um
+    `OSError` cru é a mesma perda, na entrada em vez de na saída.
+    """
+    from nomos.adapters import git_tree
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    repo = _init(raiz / "r")
+    gd, cm = git.conferir_git_dir(str(repo), (str(raiz),))
+    aut = git.autoridade_de(str(repo), gd, cm)
+    # O repositório troca a FORMA do caminho depois da validação.
+    shutil.rmtree(repo / ".git")
+    (repo / ".git").write_text("nao sou diretorio\n")
+
+    with pytest.raises(supervisor.ErroSeguranca):
+        git_tree._instantaneo_das_refs(aut)
+
+
+def test_r4_121_leitura_nao_declara_store_estrangeiro(tmp_path):
+    """`.5.NOVO-LEITURA-SEM-CONFERIR-ALTERNATES`: CONTIDO, por outro mecanismo.
+
+    `GitAdapter` (git-log/show/diff) não chama `conferir_alternates`. Quem
+    impede servir conteúdo de store estrangeiro é a RAIZ DE LEITURA declarada
+    em `confinamento_de_leitura` — o sandbox, não uma checagem de conteúdo.
+
+    Registrado como teste porque a contenção depende de uma propriedade que
+    ninguém afirmava: se a leitura passar a declarar mais raízes, o alternate
+    de fora vira legível e o achado deixa de ser INFO sem que nada avise.
+    """
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    fora = tmp_path / "fora"
+    fora.mkdir()
+    vit = _init(raiz / "r")
+    est = _init(fora / "e")
+    info = vit / ".git" / "objects" / "info"
+    info.mkdir(parents=True, exist_ok=True)
+    (info / "alternates").write_text(str(est / ".git" / "objects") + "\n")
+
+    conf = git.confinamento_de_leitura(str(vit))
+    assert conf.escrita == ()
+    assert not any(str(fora) in str(x) for x in conf.leitura), (
+        f"a leitura declara caminho FORA das raízes: {conf.leitura}")
+
+
+def test_r4_122_separate_git_dir_sem_titularidade_segue_RECUSADO(tmp_path):
+    """`.7.18`: a recusa é DELIBERADA — decisão de dono, não defeito.
+
+    `UNPROVABLE_GITDIR_OWNERSHIP = REFUSE`, regra `PROVABLE_OWNERSHIP_OR_REFUSE`.
+    Este teste existe para que a recusa não seja "consertada" por alguém que a
+    encontre e a leia como bug: ela é o contrato, e os layouts com titularidade
+    demonstrável (repo comum, worktree ligada, submódulo) continuam aceitos —
+    `test_r4_42` prova isso.
+    """
+    raiz = tmp_path / "raizes"
+    trab, gdx = raiz / "t", raiz / "gd"
+    trab.mkdir(parents=True)
+    subprocess.run([GIT, "init", "-q", "--separate-git-dir", str(gdx),
+                    str(trab)], check=True, capture_output=True)
+    with pytest.raises(supervisor.ErroSeguranca):
+        git.conferir_git_dir(str(trab), (str(raiz),))

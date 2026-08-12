@@ -600,9 +600,20 @@ def _descer_refs(raiz: Path, estrito: bool) -> list[Path]:
             modo = os.lstat(d).st_mode
         except FileNotFoundError:
             continue
-        except OSError:
+        except OSError as e:
+            # TIPADO, e não `raise` cru (`N-A7-04`). MEDIDO: com `.git` deixando
+            # de ser diretório entre a validação e o instantâneo, um
+            # `NotADirectoryError` ESCAPAVA da capacidade governada. É
+            # fail-closed (nenhum efeito, nenhum resíduo), mas o TIPO do erro é
+            # load-bearing nesta série: `.8.03` mediu que trocar o tipo faz o
+            # chamador que classifica por `except ErroSeguranca` deixar de ver
+            # o incidente. Um OSError cru é a mesma perda, na entrada.
             if estrito:
-                raise
+                raise ErroSeguranca(
+                    f"não consegui inspecionar {d} ({type(e).__name__}): o "
+                    "repositório trocou a forma do caminho durante a operação. "
+                    "Recuso em vez de deixar um erro do sistema de arquivos "
+                    "atravessar a fronteira da capacidade") from None
             continue
         if not stat.S_ISDIR(modo):
             if estrito:
