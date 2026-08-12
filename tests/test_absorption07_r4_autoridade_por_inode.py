@@ -690,3 +690,62 @@ def test_r4_42_CONTROLE_layouts_que_o_GIT_produz_seguem_aceitos(tmp_path,
     canon = supervisor.canonicalizar(str(alvo))
     assert canon not in conf.escrita, (
         f"a working tree {canon!r} virou raiz de escrita em layout legítimo")
+
+
+# ═══ `.11.13` (P1) — o teto era de PROFUNDIDADE, e ela é escolha do atacante ══
+
+@pytest.mark.parametrize("prof", [3, 5, 6, 8])
+def test_r4_50_git_dir_aninhado_e_achado_em_QUALQUER_profundidade(tmp_path,
+                                                                   prof):
+    """MEDIDO 8/8 a prof 6 e 8/8 a prof 8: escapava e o filtro gravava dentro.
+
+    `--separate-git-dir` dá ao git dir um nome que a negação por NOME (`\\.git`)
+    não alcança, então a varredura é o único jeito. Com teto de profundidade 4,
+    bastava criar o repositório um nível mais fundo. Quem escolhe o nível é
+    quem cria o repositório — não o "layout real" que o comentário citava.
+    """
+    from nomos.adapters import filtro_governado as fg
+    raiz = tmp_path / "raizes"
+    d = raiz
+    for i in range(prof):
+        d = d / f"n{i}"
+    d.mkdir(parents=True)
+    trab, gd = d / "proj", d / "deposito"
+    trab.mkdir()
+    r = subprocess.run([GIT, "init", "-q", "--separate-git-dir", str(gd),
+                        str(trab)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+    achados = fg._git_dirs_aninhados(str(raiz))
+    canon = str(gd.resolve())
+    assert any(str(Path(a).resolve()) == canon for a in achados), (
+        f"git dir a profundidade {prof} escapou da varredura: {achados}")
+
+
+def test_r4_51_estourar_o_ORCAMENTO_e_recusa_e_nao_silencio(tmp_path):
+    """Teto que apenas SILENCIA é porta — a mesma forma de `.5.08`.
+
+    Não terminar a varredura não prova ausência de git dir aninhado, e não
+    provar é o mesmo que não conter. O orçamento real (20 mil diretórios) é
+    forçado para 5 aqui: medir a PROPRIEDADE (fail-closed ao estourar) não
+    exige construir vinte mil diretórios.
+    """
+    from nomos.adapters import filtro_governado as fg
+    raiz = tmp_path / "raizes"
+    for i in range(30):
+        (raiz / f"d{i}").mkdir(parents=True)
+    with pytest.raises(fg.ErroFiltro, match="não terminou"):
+        fg._git_dirs_aninhados(str(raiz), teto=5)
+
+
+def test_r4_52_CONTROLE_arvore_normal_nao_estoura_nem_custa(tmp_path):
+    """Sem este controle, o de cima passaria numa implementação que recusa tudo.
+
+    400 diretórios rasos — mais que qualquer workspace real por nível — passam
+    sem recusa. O teto é para árvore patológica, não para trabalho.
+    """
+    from nomos.adapters import filtro_governado as fg
+    raiz = tmp_path / "raizes"
+    for i in range(400):
+        (raiz / f"d{i}").mkdir(parents=True)
+    assert fg._git_dirs_aninhados(str(raiz)) == []

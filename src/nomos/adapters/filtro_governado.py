@@ -83,26 +83,53 @@ def _parece_git_dir(caminho: str) -> bool:
                             or os.path.isdir(os.path.join(caminho, "refs")))
 
 
-def _git_dirs_aninhados(raiz: str, profundidade: int = 4) -> list[str]:
+# Orçamento de DIRETÓRIOS VISITADOS na varredura por git dirs aninhados. É teto
+# de TRABALHO, não de profundidade — ver `_git_dirs_aninhados`. Medido: uma raiz
+# com 400 diretórios rasos custa ~13 ms, então 20 mil nós é folgado para layout
+# real e ainda impede que a raiz vire custo ilimitado.
+MAX_NOS_VARREDURA = 20_000
+
+
+def _git_dirs_aninhados(raiz: str, teto: int = MAX_NOS_VARREDURA) -> list[str]:
     """Git dirs DENTRO da raiz cujo nome não é `.git`.
 
     Existe por `--separate-git-dir`: o git dir pode se chamar qualquer coisa, e
     aí a negação por NOME (`\.git`) não o alcança. Procurar é o único jeito —
     o nome é escolhido por quem criou o repositório, não por nós.
 
-    A profundidade é limitada de propósito: a raiz vem da POLÍTICA, e varrer
-    sem teto transformaria uma raiz ampla em custo ilimitado a cada operação.
-    Quatro níveis cobrem os layouts reais (workspace/projeto/gitdir) sem isso.
+    ## O teto era de PROFUNDIDADE, e profundidade é escolha do atacante
+
+    MEDIDO (`.11.13`, P1): com `profundidade=4`, um git dir criado por
+    `--separate-git-dir` a partir do 5º nível ESCAPA da varredura — 8/8 a prof 6
+    e 8/8 a prof 8, com o filtro governado gravando hook, config, ref e objeto
+    lá dentro. O comentário anterior dizia que "quatro níveis cobrem os layouts
+    reais", e cobrem mesmo — mas quem escolhe o nível é quem cria o repositório,
+    não o layout real. Teto que apenas SILENCIA é porta, exatamente como o
+    `MAX_SALTOS` da cadeia de alternates (`.5.08`).
+
+    A troca é teto de TRABALHO com FAIL-CLOSED: varre sem limite de
+    profundidade, conta diretórios visitados, e se o orçamento acabar com fila
+    pendente RECUSA — porque não terminar a varredura não prova ausência de git
+    dir aninhado, e não provar é o mesmo que não conter. O custo continua
+    limitado (a raiz vem da POLÍTICA e não pode virar custo ilimitado por
+    operação), só que agora estourar é audível.
     """
     achados: list[str] = []
     base = Path(raiz)
     if not base.is_dir():
         return achados
-    pilha = [(base, 0)]
+    pilha = [base]
+    vistos = 0
     while pilha:
-        atual, nivel = pilha.pop()
-        if nivel > profundidade:
-            continue
+        if vistos >= teto:
+            raise ErroFiltro(
+                f"a varredura por git dirs aninhados em {raiz!r} passou de "
+                f"{teto} diretórios e não terminou. Parar aqui não prova que "
+                "não existe git dir aninhado no resto da árvore, e um git dir "
+                "que a varredura não vê é gravável pelo filtro — que instala o "
+                "PRÓXIMO. Árvore desse tamanho não é raiz de trabalho")
+        atual = pilha.pop()
+        vistos += 1
         try:
             for filho in atual.iterdir():
                 if not filho.is_dir() or filho.is_symlink():
@@ -112,7 +139,7 @@ def _git_dirs_aninhados(raiz: str, profundidade: int = 4) -> list[str]:
                 if _parece_git_dir(str(filho)):
                     achados.append(str(filho))
                     continue          # não desce: o diretório inteiro é negado
-                pilha.append((filho, nivel + 1))
+                pilha.append(filho)
         except OSError:
             continue
     return achados
