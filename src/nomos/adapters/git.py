@@ -792,6 +792,42 @@ def conferir_git_dir(repo: Path | str, raizes: tuple[str, ...]) -> tuple[str, st
     return git_dir, common
 
 
+def _valor_de_config(bruto: str) -> str:
+    """Desfaz a citação que o PRÓPRIO `git config` escreve (`.4.N4`, P2).
+
+    MEDIDO: com a working tree em `proj#hash`, `git config core.worktree <p>`
+    grava `worktree = "<p>"` — ENTRE ASPAS, porque `#` iniciaria comentário. O
+    parser comparava o valor cru, com as aspas, contra o caminho real e não
+    casava: RECUSA FALSA de um layout que o Git acabou de criar. Com espaço no
+    nome o Git não cita, e por isso o caso passava despercebido.
+
+    Fora das aspas, `#` e `;` iniciam comentário; dentro, são literais. É a
+    mesma regra que o Git aplica, e implementá-la aqui é obrigatório porque
+    esta função decide TITULARIDADE — recusa falsa aqui quebra submódulo e
+    worktree legítimos.
+    """
+    texto = bruto.strip()
+    if texto.startswith('"'):
+        fim = 1
+        saida = []
+        while fim < len(texto):
+            c = texto[fim]
+            if c == "\\" and fim + 1 < len(texto):
+                saida.append(texto[fim + 1])
+                fim += 2
+                continue
+            if c == '"':
+                break
+            saida.append(c)
+            fim += 1
+        return "".join(saida)
+    # Sem aspas: comentário começa no primeiro `#` ou `;`.
+    for marca in ("#", ";"):
+        if marca in texto:
+            texto = texto.split(marca, 1)[0]
+    return texto.strip()
+
+
 def _conferir_titularidade(base: Path, git_dir: str) -> None:
     """O git dir alheio tem de PROVAR que pertence a esta working tree.
 
@@ -887,7 +923,7 @@ def _conferir_titularidade(base: Path, git_dir: str) -> None:
         chave, sep, valor = linha.partition("=")
         if not sep or secao != "core" or chave.strip().lower() != "worktree":
             continue
-        v = valor.strip()
+        v = _valor_de_config(valor)
         if v:
             # ÚLTIMA declaração vence, como no Git. MEDIDO (`.4.08`): com DOIS
             # `core.worktree` no mesmo `[core]`, o Git honra o ÚLTIMO e este
@@ -1149,7 +1185,17 @@ def confinamento_de_repo(repo: Path | str, rede: bool = False,
     # Sem isto, um filtro contido nesta execução ainda podia INSTALAR o
     # próximo: a contenção valeria uma vez só.
     proibidos = tuple(f"{raiz}/{nome}" for raiz in raizes
-                      for nome in ("hooks", "info", "config"))
+                      for nome in ("hooks", "info", "config",
+                                   # `config.worktree` (`.4.N3`, P2): o Git o
+                                   # LE como config quando
+                                   # `extensions.worktreeConfig` esta ligada —
+                                   # e essa extensao e do PROPRIO repositorio.
+                                   # MEDIDO: `filter.evil.clean` declarado la
+                                   # foi devolvido por `git config --get`.
+                                   # Negar so o literal `config` deixava o
+                                   # filtro instalar o PROXIMO por um nome de
+                                   # arquivo vizinho.
+                                   "config.worktree"))
     # C3 — A LEITURA AINDA NÃO É DECLARADA, e isso é um ACHADO ABERTO, não um
     # esquecimento. Sem `leitura`, `_bloco_de_leitura` emite `(allow file-read*)`
     # GLOBAL: o processo do Git lê o disco inteiro durante `add`/`commit`.

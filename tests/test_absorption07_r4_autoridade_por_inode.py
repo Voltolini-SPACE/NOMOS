@@ -1180,3 +1180,124 @@ def test_r4_96_CONTROLE_alternates_LEGITIMO_continua_valendo(tmp_path):
     gd, cm = git.conferir_git_dir(str(repo), raizes)
     aut = git.autoridade_de(str(repo), gd, cm)
     git.conferir_alternates(str(repo), raizes, autoridade=aut)
+
+
+# ═══ `.4.N3` (P2) — `config.worktree` é config, e não estava negado ══════════
+
+@pytest.mark.parametrize("rel", ["config", "config.worktree",
+                                  "hooks/pre-commit", "info/attributes"])
+def test_r4_97_filtro_nao_grava_em_NENHUMA_fonte_de_config(tmp_path, rel):
+    """MEDIDO: `git config --get filter.evil.clean` devolveu o valor plantado.
+
+    A negação de A6 enumerava `hooks`, `info` e `config` — o literal. Mas o Git
+    lê `<gd>/config.worktree` como config quando `extensions.worktreeConfig`
+    está ligada, e essa extensão é declarada pelo PRÓPRIO repositório. Um nome
+    de arquivo vizinho bastava para o filtro instalar o PRÓXIMO, que é a
+    propriedade exata que A6 existe para negar.
+    """
+    if not os.path.exists(supervisor.SANDBOX):
+        pytest.skip("sem sandbox-exec não há execução supervisionada")
+    from nomos.adapters import filtro_governado as fg
+    repo = _init(tmp_path / "repo")
+    binario = tmp_path / "redator"
+    r = subprocess.run(["cc", "-O2", "-o", str(binario), str(_FONTE_NATIVA)],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        pytest.skip(f"sem toolchain C: {r.stderr[:120]}")
+    art = fg.ArmazemDeExecutaveis(tmp_path / "store").importar(binario)
+
+    alvo = repo / ".git" / rel
+    alvo.parent.mkdir(parents=True, exist_ok=True)
+    pol = fg.PoliticaDeFiltro(
+        filter_id="f", canonical_executable=str(binario), managed_artifact=art,
+        argv_policy=("--sonda-escrita", str(alvo)),
+        read_roots=(str(repo),), write_roots=(str(repo),))
+    supervisor.executar(pol.comando(), cwd=repo, env=pol.ambiente(), prazo=10.0,
+                        confinamento=pol.confinamento(),
+                        tipo=supervisor.TipoDeProcesso.FILTRO_GOVERNADO,
+                        entrada=b"")
+
+    plantou = alvo.exists() and alvo.read_bytes() == b"PLANTADO\n"
+    assert not plantou, (
+        f"o filtro governado gravou em .git/{rel} — o Git lê essa fonte como "
+        "config/atributo e a contenção passaria a valer por UMA execução")
+
+
+def test_r4_98_config_worktree_esta_na_negacao_dos_DOIS_confinamentos(tmp_path):
+    """Estrutural: `git-add`/`commit` E `push` precisam da mesma negação.
+
+    Corrigir um confinamento e deixar o irmão foi o defeito que esta missão
+    mediu cinco vezes. Aqui a asserção é sobre os dois.
+    """
+    raiz = tmp_path / "raizes"
+    raiz.mkdir()
+    repo = _init(raiz / "r")
+    gd, cm = git.conferir_git_dir(str(repo), (str(raiz),))
+    aut = git.autoridade_de(str(repo), gd, cm)
+    neg = {Path(x).name for x in
+           git.confinamento_de_repo(str(repo), autoridade=aut).negacao_de_escrita}
+    assert {"hooks", "info", "config", "config.worktree"} <= neg, neg
+
+
+# ═══ `.4.N4` (P2) — o próprio `git config` CITA o valor, e o parser não desfazia ═
+
+@pytest.mark.parametrize("nome_wt", ["proj", "proj#hash", "proj com espaco",
+                                      "proj;ponto"])
+def test_r4_99_titularidade_concorda_com_o_git_mesmo_com_valor_CITADO(tmp_path,
+                                                                       nome_wt):
+    """MEDIDO: com `#` no caminho, o Git grava `worktree = "<p>"` — COM ASPAS.
+
+    O parser comparava o valor cru (aspas incluídas) contra o caminho real e
+    não casava: RECUSA FALSA de um layout que o `git config` acabou de criar.
+    Com espaço no nome o Git NÃO cita, e por isso o caso passava despercebido —
+    a citação só aparece quando o valor tem `#` ou `;`, que fora das aspas
+    iniciariam comentário.
+
+    A expectativa não é minha: cada caso pergunta ao `git config --get` qual é
+    o valor efetivo e exige que a guarda aceite exatamente quando ele aponta
+    para a working tree.
+    """
+    raiz = tmp_path / "raizes"
+    trab, gd = raiz / nome_wt, raiz / "gd"
+    trab.mkdir(parents=True)
+    r = subprocess.run([GIT, "init", "-q", "--separate-git-dir", str(gd),
+                        str(trab)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    subprocess.run([GIT, "-C", str(trab), "config", "core.worktree", str(trab)],
+                   check=True, capture_output=True)
+
+    efetivo = subprocess.run([GIT, "-C", str(trab), "config", "--get",
+                              "core.worktree"], capture_output=True,
+                             text=True).stdout.strip()
+    dono_certo = efetivo == str(trab)
+
+    if dono_certo:
+        git.conferir_git_dir(str(trab), (str(raiz),))
+    else:
+        with pytest.raises(supervisor.ErroSeguranca):
+            git.conferir_git_dir(str(trab), (str(raiz),))
+
+
+def test_r4_100_ultima_declaracao_vence_mesmo_citada(tmp_path):
+    """O par: desfazer aspas não pode afrouxar a regra da ÚLTIMA declaração.
+
+    Duas `core.worktree`, a última citada e apontando para FORA. O Git honra a
+    última (`/tmp/x`), que não é a working tree — recusar é o correto, e o
+    conserto de `.4.N4` não pode ter transformado isso em aceitação.
+    """
+    raiz = tmp_path / "raizes"
+    trab, gd = raiz / "proj", raiz / "gd"
+    trab.mkdir(parents=True)
+    subprocess.run([GIT, "init", "-q", "--separate-git-dir", str(gd), str(trab)],
+                   check=True, capture_output=True)
+    subprocess.run([GIT, "-C", str(trab), "config", "core.worktree", str(trab)],
+                   check=True, capture_output=True)
+    cfg = gd / "config"
+    cfg.write_text(cfg.read_text() + '\n[core]\n\tworktree = "/tmp/x" ; c\n')
+
+    efetivo = subprocess.run([GIT, "-C", str(trab), "config", "--get",
+                              "core.worktree"], capture_output=True,
+                             text=True).stdout.strip()
+    assert efetivo == "/tmp/x", f"premissa mudou neste host: {efetivo!r}"
+    with pytest.raises(supervisor.ErroSeguranca):
+        git.conferir_git_dir(str(trab), (str(raiz),))

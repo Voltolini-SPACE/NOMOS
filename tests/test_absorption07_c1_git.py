@@ -265,6 +265,13 @@ def test_c1_env_hostil_do_host_nao_muda_a_execucao(amb, monkeypatch, tmp_path,
 
 # ============================================ o repositório HOSTIL
 
+def espiao_do_repo(repo) -> str:
+    """O caminho que a config hostil do repositório declara como executável."""
+    r = subprocess.run([GIT, "-C", str(repo), "config", "--get", "core.pager"],
+                       capture_output=True, text=True)
+    return r.stdout.strip()
+
+
 @pytest.fixture()
 def repo_hostil(amb, tmp_path):
     """Repo cuja PRÓPRIA configuração tenta executar programa.
@@ -307,10 +314,42 @@ def test_c1_config_do_repo_nao_executa_programa(repo_hostil, cap, extra):
     Ler um repositório desconhecido não pode ser executar código dele.
     """
     rt, repo, canario = repo_hostil
+
+    # CONTROLE POSITIVO (`.3.05`): sem ele, `not canario.exists()` é verdade
+    # POR CONSTRUÇÃO — `confinamento_de_leitura` não concede escrita NENHUMA,
+    # então o canário não teria onde ser gravado mesmo que o espião rodasse.
+    # A escada de mutação mediu: o teste ficava VERDE com todas as defesas
+    # removidas. O git CRU, com a MESMA config hostil, tem de executar.
+    subprocess.run([GIT, "-C", str(repo), "diff", "HEAD~1", "HEAD"],
+                   capture_output=True)
+    assert canario.exists(), (
+        "CONTROLE POSITIVO FALHOU: nem o git CRU executou o espião com esta "
+        "config hostil — a asserção de ausência abaixo não mediria contenção")
+    canario.unlink()
+
     rt.rodar("c1", passos=[{"id": "p", "ferramenta": cap,
                             "params": {"alvo": str(repo), **extra}}])
     assert not canario.exists(), (
         f"{cap} executou programa vindo da configuração do REPOSITÓRIO")
+
+    # ESTRUTURAL, e é ele que MORDE (`.3.05`). MEDIDO com ablação: a asserção
+    # comportamental acima fica VERDE mesmo com `_NEUTRALIZAR = []`, porque
+    # `confinamento_de_leitura` não concede escrita NENHUMA — o canário não
+    # teria onde ser gravado nem se o espião rodasse. Ela não distingue "não
+    # executou" de "executou e não pôde gravar". Por construção.
+    #
+    # As duas afirmações que de fato distinguem são o CONTROLE POSITIVO acima
+    # (o cenário é real: o git cru executa e grava) e esta. É o mesmo par que
+    # `test_c1_variavel_do_host_nao_executa` já usava — o padrão existia no
+    # arquivo e não tinha sido aplicado a ESTE vetor.
+    from nomos.adapters import git as _g
+    conf = _g.confinamento_de_leitura(repo)
+    assert conf.escrita == () and conf.declara_sem_escrita, (
+        "a leitura passou a conceder escrita: o canário volta a poder ser "
+        f"gravado e a asserção acima deixa de ser conservadora. {conf.escrita}")
+    assert espiao_do_repo(repo) not in conf.exec_permitido, (
+        "o espião declarado na config do REPOSITÓRIO entrou na allowlist de "
+        "exec — o repositório escolheria o que executa")
 
 
 def test_c1_alias_hostil_nao_e_alcancavel(repo_hostil):

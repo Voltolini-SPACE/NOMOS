@@ -277,7 +277,17 @@ class GitPushAdapter(Adapter):
         # Confinamento à mão tinha deixado `hooks/`, `config` e `info/`
         # graváveis justamente na única capacidade com egresso de rede.
         proibidos = tuple(f"{raiz}/{nome}" for raiz in raizes
-                          for nome in ("hooks", "info", "config"))
+                          for nome in ("hooks", "info", "config",
+                                   # `config.worktree` (`.4.N3`, P2): o Git o
+                                   # LE como config quando
+                                   # `extensions.worktreeConfig` esta ligada —
+                                   # e essa extensao e do PROPRIO repositorio.
+                                   # MEDIDO: `filter.evil.clean` declarado la
+                                   # foi devolvido por `git config --get`.
+                                   # Negar so o literal `config` deixava o
+                                   # filtro instalar o PROXIMO por um nome de
+                                   # arquivo vizinho.
+                                   "config.worktree"))
         return supervisor.Confinamento(
             escrita=tuple(raizes), rede=not local,
             negacao_de_escrita=proibidos,
