@@ -4,6 +4,377 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (C8 — promoção PARCIAL deixava segredo legível numa operação RECUSADA)
+A0.3 põe os objetos em quarentena e só os promove ao store permanente no ponto
+de commit. A promoção em si era um laço de `os.replace`: cada movimento atômico
+sozinho, o CONJUNTO não.
+
+MEDIDO, com `ENOSPC` injetado no sexto de doze objetos:
+
+    operação RECUSADA (OSError), índice restaurado byte a byte
+    5 blobs com `AWS_SECRET_ACCESS_KEY=...` LEGÍVEIS no store permanente,
+    confirmados como `dangling blob` pelo `git fsck`
+
+O rollback do índice funcionava — e mascarava o vazamento. Objeto inalcançável
+não é objeto ausente: continua legível por `git cat-file` até um `gc`, que é
+exatamente o resíduo que A0.3 existe para impedir. A bateria A5.8 não pegava
+porque injetava a falha ANTES da promoção inteira, e esse caminho nunca produz
+estado parcial.
+
+Correção — a promoção CRIA o destino sem destruir a origem, então desfazer é
+apagar os destinos criados e a quarentena segue intacta para o `rmtree` do
+chamador. Cada objeto é publicado atomicamente (cópia para temporário no MESMO
+diretório, depois `os.replace`): sem isso um destino parcialmente escrito ficaria
+visível com nome de objeto válido, e objeto truncado é corrupção silenciosa.
+
+**A primeira implementação usava `os.link`, e um invariante congelado a
+reprovou.** `test_c6_nenhuma_capacidade_governada_cria_hardlink` varre
+`adapters/` por `os.link` — e está certo: aquele invariante é a PREMISSA que
+torna aceitável a leitura por hardlink dentro da raiz. Enfraquecê-lo para
+economizar uma cópia trocaria garantia de fronteira por I/O de objeto solto. O
+mecanismo mudou; o invariante ficou.
+
+Três validações novas no mesmo ponto, porque o destino também não é escolhido
+pelo repositório: `reais` canonicalizado e recusado fora do git dir
+(`.git/objects` como symlink escrevia FORA do confinamento — e essa escrita
+acontece no processo do supervisor, que o sandbox não vê); nomes aceitos só na
+forma de objeto (`<2hex>/<38+hex>` ou `pack/*.{pack,idx,rev}`); e `lstat` em vez
+de `is_file()`, que SEGUE o link e promoveria o destino dele para dentro do
+store.
+
+Prova em `tests/test_absorption07_c8_promocao_atomica.py` (9 casos), com falha
+injetada no 1º, no 6º e no penúltimo objeto de doze — doze porque com um só
+"parcial" não existe como estado. A dedup é tratada separadamente de "criado":
+sem essa distinção, um rollback apagaria do store um objeto legítimo que não veio
+desta operação — corrupção causada pelo próprio desfazer.
+
+### Fixed (P0.2 — `git-add`/`git-commit` eram INALCANÇÁVEIS pelo runtime)
+Medição que reabriu A5. `RuntimeGovernado` registrava `fs-*`, `git-diff`,
+`git-log`, `git-show` e `git-tag` — e mais nada. **Nenhum caminho do runtime
+chamava `registrar_git_tree`.** Toda a maquinaria de A0.1 (índice transacional),
+A0.3 (quarentena) e A5.2–A5.9 (filtro governado) existia como BIBLIOTECA com
+testes verdes, e era inalcançável pelo produto: os testes instanciavam o adapter
+diretamente.
+
+É a forma mais silenciosa de falso fechamento desta série — nada quebra, nada
+avisa, e o gate parece fechado. O achado original (`registrar_git_tree` não
+propagava o `RegistroDeFiltros`) era a ponta menor do mesmo problema.
+
+Correção: `git_tree=` e `filtros_governados=` no composition root, propagados
+até `GitTreeAdapter(registro=...)`. A classificação passa a distinguir
+`A5.7_IMPLEMENTATION` de `A5.7_RUNTIME_REACHABILITY`.
+
+O registry obedece a quatro propriedades, cada uma com teste próprio porque cada
+uma é uma forma diferente de o repositório ou o host recuperarem a decisão que
+A5.2 tirou deles: **injetado explicitamente** (parâmetro do composition root, e
+nada mais), **não singleton global** (dois runtimes têm registries
+independentes, e há teste estrutural contra instância de módulo), **não vem do
+repositório** (o repo PEDE por id; registrar é do NOMOS), **não vem do
+ambiente** — este último por AST, não por substring: `environment_allowlist` é
+campo legítimo, e `PoliticaDeFiltro.ambiente()` lê `os.environ` de propósito
+para materializar a allowlist que a política nomeou. O teste fixa a lista de
+funções autorizadas a ler o ambiente, então qualquer função nova aparece e exige
+decisão.
+
+Prova em `tests/test_absorption07_a57_runtime.py` (10 casos), com os três
+caminhos exercidos pelo RUNTIME real: id aprovado → alcançável e transforma
+(`SENHA=hunter2` → `SENHA=REDIGIDO`, com o segredo ausente de todo objeto do
+store); id desconhecido → DENY; `filter.<id>.clean` do repositório → DENY, com
+canário provando que o programa do repo não executou.
+
+### Fixed (P0.1 — a evidência de contenção de hook era VÁCUA)
+As asserções de hook em C2a/C2b não provavam nada, por duas razões medidas que
+se somavam: o canário morava em `tmp_path`, **fora da raiz de escrita do
+sandbox**, e o espião era `#!/bin/sh`, que **não executa** sob a allowlist de
+exec (o kernel precisa do interpretador, e `/bin/sh` ainda reexecuta `/bin/bash`
+como variante). Com as duas juntas, `not canario.exists()` era verdade por
+construção.
+
+Correção do ARNÊS, não do produto: canário no GIT DIR (a raiz de escrita
+concedida) e espião BINÁRIO NATIVO, com controle positivo provando que o hook
+executa e que o canário é gravável ali. A fábrica do espião vive em
+`conftest.py` como fixture — importar um teste a partir de outro depende de o
+rootdir estar em `sys.path`, frágil demais para a suíte de segurança.
+
+**E o que a medição revelou sobre qual defesa realmente segura** (registrado em
+`tests/test_absorption07_hooks_contencao.py`, 10 casos): não é a que o nome
+sugere. Em `add`/`commit`/`tag` a allowlist de exec impede o hook de ser
+exec'ed, e `-c core.hooksPath=/dev/null` é REDUNDANTE — removê-lo não muda o
+comportamento. Em `push` a allowlist é AMPLA (`(allow process-exec
+process-fork)`, achado C13), e a contenção vem do par `--no-verify` +
+`core.hooksPath`, que se mascaram mutuamente. Tabela medida com hook nativo e
+canário gravável:
+
+    hooksPath   --no-verify   HOOK EXECUTOU
+    SIM         SIM           não
+    NÃO         SIM           não
+    SIM         NÃO           não
+    NÃO         NÃO           SIM      <- prova que nenhum dos dois é decorativo
+
+Isso é MASCARAMENTO (A8): nenhum dos dois flags tem prova comportamental
+possível enquanto o outro segurar. A regressão de cada um fica presa
+ESTRUTURALMENTE, com o teste dizendo por quê — em vez de um teste comportamental
+que alegasse medir o que na verdade mede o vizinho. Os três mutantes
+(`hooksPath` fora de `git.py`, fora de `git_tree.py`, `--no-verify` fora do
+push) MORREM.
+
+### Fixed (A2-REPO — o repositório escolhia onde o NOMOS grava)
+Três vetores de EXPANSÃO DE AUTORIDADE, medidos e fechados. A propriedade
+`REPOSITORY_CANNOT_EXPAND_NOMOS_AUTHORITY` estava **falsa**.
+
+**1. Git dir escolhido pelo repositório.** `resolver()` valida o diretório de
+TRABALHO contra as raízes aprovadas — e mais nada. `diretorio_git()` então segue
+duas indireções que o repositório escreve (`.git` como arquivo `gitdir: …` e
+`<git_dir>/commondir`) e devolvia o destino sem confrontá-lo com as raízes. Como
+`confinamento_de_repo()` usa esse git dir como RAIZ DE ESCRITA do sandbox, o
+repositório escolhia onde o NOMOS grava. Reproduzido ponta a ponta: `git-add`
+devolveu `efeito_aplicado=True` e escreveu o índice fora de toda raiz aprovada.
+Correção: `conferir_git_dir(repo, raizes)`, chamado pelos quatro adapters junto
+do `resolver`. Contenção por `os.path.commonpath` — comparação por COMPONENTE,
+nunca por prefixo de string, que aceitaria `/raiz-do-atacante` dentro de `/raiz`.
+
+**2. Working tree escolhida pelo repositório.** Escape INDEPENDENTE do anterior,
+e por isso a correção acima não o alcança: com `core.worktree=/etc` no
+`.git/config`, o git dir continua dentro das raízes e é a working tree que sai.
+`git-add -- hosts` indexou `/etc/hosts`. Correção: `GIT_WORK_TREE` pinado no repo
+já validado, injetado pelo supervisor como parâmetro tipado — o mesmo padrão da
+`Quarentena`, DEPOIS de `conferir_ambiente`, porque herdar do host segue proibido.
+MEDIDO e decisivo para o mecanismo: `-c core.worktree=<repo>` **não vence** a
+chave do `.git/config` (o Git segue reportando `/private/etc`), então a
+neutralização por linha de comando — que funciona para todas as outras chaves —
+aqui seria um no-op silencioso. Um teste prende essa medição.
+
+**3. Leitura do processo PAI seguindo symlink (defeito do próprio A5.7).** O
+caminho governado lia o alvo com `Path.read_bytes()`, no processo do supervisor,
+fora do sandbox. Um repositório com `vaza.txt -> /etc/passwd` mais
+`.gitattributes` pedindo filtro fez o NOMOS ler e indexar `/etc/passwd` — todo o
+confinamento de A5.5 é irrelevante quando quem lê é o pai. Junto vinha um erro
+mais silencioso: o modo saía `100644`, isto é, o link virava arquivo regular com
+o conteúdo do destino, mudando a semântica do Git sem ninguém pedir. Correção:
+`_ler_alvo_do_filtro` com `lstat` + `O_NOFOLLOW` + `fstat` pelo descritor já
+aberto (fecha a corrida entre checar e abrir), só arquivo regular, leitura
+incremental limitada. FIFO e device passam a ser recusados — penduravam a
+leitura do supervisor sem prazo nenhum.
+
+Bateria: `tests/test_absorption07_a2repo_escopo.py`, 14 casos. Quatro controles
+existem para impedir que a bateria vire "negue tudo": `.git` como arquivo é o
+mecanismo NORMAL de worktree ligada e submódulo (o próprio repositório desta
+missão usa isso), e os testes 05, 10, 11 e 13 exigem que o caminho legítimo
+continue funcionando — inclusive que symlink pelo caminho NÃO governado continue
+sendo gravado como link (`120000`).
+
+**A2-REPO NÃO está PASS.** Estes são 3 de 64 achados materiais medidos em 230
+vetores por 11 áreas de ataque. O catálogo completo está em
+`A2REPO_ACHADOS.md`; entre os que seguem ABERTOS: `confinamento_de_repo` não
+declara raízes de leitura (o perfil emite `(allow file-read*)` global),
+`_promover_quarentena` não é tudo-ou-nada, `_pedidos_de_filtro` lê só o
+`.gitattributes` da raiz enquanto o Git lê três fontes com precedência
+diferente, `refs/replace` do repo falsifica a leitura governada, e as asserções
+de hook em `c2a`/`c2b` são VÁCUAS (o canário mora fora da área de escrita, então
+não distingue "hook bloqueado" de "hook rodou e não conseguiu escrever").
+
+### Added (A5.8 + A5.9 — a transação com o filtro dentro, e os ataques COMBINADOS)
+**A5.8** liga as peças que já tinham sido medidas sozinhas — índice transacional
+(A0.1), quarentena de objetos (A0.3), registry (A5.2), artefato (A5.3), argv
+(A5.4), sandbox (A5.5), ciclo de vida (A5.6) e o filtro legítimo (A5.7) — e
+exige, depois de falha em QUALQUER ponto:
+
+    INDEX_BYTES_AFTER == INDEX_BYTES_BEFORE     PERMANENT_SECRET_OBJECTS   = 0
+    ORPHAN_PROCESS    = 0                       UNREACHABLE_SECRET_OBJECTS = 0
+    PARTIAL_PROMOTION = 0
+
+12 casos, com falha injetada antes do filtro, durante o filtro, em `rc != 0`, no
+prazo, depois do filtro (`hash-object`), no estagiamento (`update-index`), na
+auditoria, por sinal, na pré-condição de promoção, com artefato trocado, e com
+índice JÁ POVOADO — este último é o caso que `git reset` estragaria, e por isso o
+rollback restaura BYTES.
+
+Todos os testes de falha usam DOIS caminhos, e o primeiro sempre funciona: com um
+caminho só, "falhou, nada promovido" é quase automático. É o lote que morde — se
+a promoção fosse incremental, o blob do primeiro já estaria no store permanente,
+promoção PARCIAL de uma operação recusada.
+
+**A5.9** combina, em vez de repetir controles isolados. Sistema seguro por peça e
+inseguro por composição é o padrão, não a exceção: o atacante não escolhe UMA
+fronteira, escolhe a costura entre duas. 10 casos: exfiltração de rede e de
+arquivo **com o segredo na entrada do filtro**; escopo legítimo ainda gravável
+(o controle que impede os dois anteriores de passarem por um sandbox
+simplesmente quebrado); argv hostil recusado na construção da política; artefato
+trocado + `git add`; repositório hostil declarando `clean` E pedindo o id
+aprovado ao mesmo tempo; prazo estourando com stdin em voo; fork do filtro
+durante a transação (árvore morre E índice volta, as duas na mesma saída);
+registry sob contenção de 12 threads; e substituição do artefato ENTRE dois
+`add`, que a revalidação por uso pega.
+
+A diferença para A5.5 é a carga: lá o filtro foi medido VAZIO tentando alcançar
+rede e disco. Aqui ele está SEGURANDO O SEGREDO quando tenta vazar — contenção
+medida sem carga não demonstrou nada sobre o caso com carga. Todo alvo de
+exfiltração tem controle positivo: o mesmo binário, a mesma entrada, sem
+sandbox, CONSEGUE (o listener recebe `hunter2`).
+
+Sondas novas em `redator.c`: `--sonda-exfil-rede` e `--sonda-exfil-arquivo`.
+
+### Added (A5.7 — o filtro governado LEGÍTIMO, dentro do `git add`)
+A5 fechou o caminho padrão, e a negação é definitiva. Mas um sistema que só sabe
+negar não substitui o que proibiu: redator de segredo, normalizador e LFS são
+casos reais. A5.7 devolve o caso legítimo **sem devolver a autoridade**:
+
+    git add + filtro declarado PELO REPOSITÓRIO     -> DENY  (inalterado)
+    git add + filtro governado com id APROVADO      -> ALLOW, e transforma
+    git add + filtro governado com id DESCONHECIDO  -> DENY
+
+**Quem aplica o filtro é o NOMOS, não o Git**, e isso não é detalhe de
+implementação. Se o Git aplicasse, o binário do filtro precisaria entrar na
+allowlist de exec DO PROCESSO DO GIT — e a partir daí quem escolhe o que roda
+volta a ser a config do repositório, que é exatamente a autoridade que A5 tirou
+dele. Aplicando no adapter, a máquina de filtros do Git continua desligada
+(`hash-object --no-filters`, explícito) e o conteúdo transformado entra no índice
+por `update-index --cacheinfo`.
+
+A cadeia inteira, com cada elo já congelado antes:
+
+    .gitattributes  -> id (o PEDIDO)     única coisa que o repositório fornece
+    registry        -> política          autoridade do NOMOS        (A5.2)
+    artefato        -> o que executa     identidade imutável        (A5.3)
+    argv_policy     -> quais argumentos  fixo na política           (A5.4)
+    confinamento    -> com que autoridade sandbox dedicado          (A5.5)
+    supervisor      -> stdin/stdout, prazo, árvore                  (S2, A5.6)
+
+`filter=<id>` é entrada NÃO CONFIÁVEL e passa por `conferir_id` antes de virar
+consulta: um id que pareça caminho (`../../etc/passwd`) é recusado na gramática,
+sem nunca chegar perto de algo que resolva caminho. Registry **ausente** é
+diferente de registry **vazio** — sem registry o `.gitattributes` é ignorado
+(comportamento histórico); com registry vazio, o pedido é recusado por nome.
+Ausência de política nunca vira fallback permissivo.
+
+`governados` viaja como ARGUMENTO até `_confirmar`, e não guardado no adapter:
+estado de operação em `self` faria duas operações simultâneas no mesmo adapter
+trocarem de plano no meio — a `add` de um repositório aplicando o filtro
+escolhido para outro.
+
+Prova em `tests/test_absorption07_a57_filtro_legitimo.py`, 11 casos:
+`SENHA=hunter2` → `SENHA=REDIGIDO` no índice e no commit, com o segredo em claro
+na working tree como CONTROLE POSITIVO e ausente de **todo** objeto do store
+(`cat-file --batch-all-objects`, em bytes) — verificar só a presença de
+"REDIGIDO" aceitaria um filtro que concatenasse a redação ao segredo. Mais: a
+config do repo apontando `filter.redator.clean` para um hostil não muda o que
+executa (canário não dispara); lote misto não transforma o arquivo que ninguém
+pediu; conteúdo binário atravessa byte a byte.
+
+### Fixed (A5.6 — sair por EXCEÇÃO era um caminho mais permissivo que o prazo)
+Achado da bateria de ciclo de vida, e não de inspeção: `_matar_arvore` e a
+pós-condição de resíduo ficavam DEPOIS do `proc.wait()`, no corpo, e não num
+`finally`. Qualquer exceção que atravessasse a espera — um `KeyboardInterrupt`
+de operador é o caso óbvio — pulava o encerramento da árvore INTEIRO. E o
+`finally` que existia ainda apagava o diretório-nonce, destruindo a marca de
+sandbox que é o único jeito de reencontrar os sobreviventes depois.
+
+MEDIDO, com controle positivo: cancelando a espera de um filtro que havia
+forkado, **4 descendentes** ficaram vivos (pids lidos do disco, confirmados
+respondendo a `kill(pid, 0)`); no caso de três gerações, **3**. Pelo prazo, os
+mesmos cenários deixavam zero. Bastava cancelar para transformar contenção em
+vazamento.
+
+Correção: o trecho do processo nascido até o `Resultado` virou `_acompanhar()`,
+cercado por `except BaseException` que chama `_encerrar_a_forca()` — mata a
+árvore e roda `processos.exterminar` também no caminho de exceção. Se sobrar
+processo, vira `ErroSeguranca` **encadeada na causa original**: as duas
+informações importam, o que interrompeu e o que ficou vivo. O `Ctrl-C` continua
+chegando ao chamador como `KeyboardInterrupt` — a troca só acontece quando há
+resíduo REAL, isto é, quando o estado deixou de ser o que o cancelamento
+prometia.
+
+Bateria: `tests/test_absorption07_a56_ciclo_de_vida.py`, 16 casos, **16 verdes**
+— saída normal; prazo no pai, no filho e no neto; descendente que faz `setsid()`
+e some do `killpg`; SIGTERM e SIGINT ignorados por `SIG_IGN`; cancelamento antes
+de ler, com stdin em voo, depois de forkar, e junto com o prazo; pai que sai com
+SUCESSO deixando filho; 8 forks de uma vez; saída não-zero; kill externo do
+processo principal; e exceção injetada no próprio reaping.
+
+Todo descendente GRAVA UM MARCADOR com o próprio pid antes de dormir, e cada
+teste de kill exige `PROCESS_ACTUALLY_EXISTED=TRUE` antes de aceitar
+`ORPHAN_PROCESS=0` — "não sobrou processo" é indistinguível de "nunca houve
+processo". O guard não é decorativo: ele reprovou a PRIMEIRA versão dos testes
+de cancelamento, que interrompiam a espera antes de os filhos existirem.
+
+Sondas nativas novas em `tests/fixtures_nativas/redator.c` (`--sonda-filho`,
+`--sonda-neto`, `--sonda-solta`, `--sonda-forks`, `--sonda-teimosa`,
+`--sonda-rc`, `--sonda-dorme`). Descendente é sempre por `fork`, nunca por exec:
+a allowlist de exec do filtro tem UM literal, o próprio artefato.
+
+### Changed (S1+S2 — o supervisor vira fronteira de execução, e não wrapper de Git)
+O supervisor é a fronteira ÚNICA por onde processo externo executa, mas duas
+coisas ainda tinham a forma de quando ele existia só para o Git. As duas foram
+MEDIDAS como bloqueio de A5.6 antes de qualquer linha ser escrita:
+
+- **`supervisor.executar()` não alimentava stdin** (`stdin=DEVNULL` fixo). Um
+  `filter.clean` do Git RECEBE o conteúdo do arquivo por STDIN e devolve o
+  transformado por STDOUT — é a interface, não uma conveniência. Sem isso, um
+  filtro governado não funciona por mais aprovado (A5.2), íntegro (A5.3), com
+  argv fixo (A5.4) e confinado (A5.5) que esteja. Agora existe `entrada:
+  bytes | None`, alimentada por thread própria. `entrada=None` mantém
+  `DEVNULL` byte a byte — nenhum caller do Git muda de semântica.
+  A escrita é em THREAD, e não inline, por medição: um processo que não lê
+  stdin enche o buffer do pipe (64 KiB) e a escrita inline bloquearia ANTES do
+  `proc.wait(timeout=prazo)` — o prazo deixaria de existir exatamente no caso
+  em que ele é mais necessário. `str` é RECUSADO: aceitar texto obrigaria o
+  supervisor a escolher um encoding, e essa escolha mudaria os bytes que o
+  filtro recebe.
+- **`conferir_ambiente` exigia as 4 neutralizações de Git de TODO processo.**
+  Correto quando supervisor = Git; errado para um filtro, cujo ambiente mínimo
+  é `{LANG, LC_ALL}` (A5.5). As duas regras estão certas isoladamente e são
+  incompatíveis se aplicadas globalmente. A exigência virou **por tipo de
+  processo** (`TipoDeProcesso.GIT` / `FILTRO_GOVERNADO`), sem afrouxar nada: as
+  4 variáveis do Git seguem idênticas em conteúdo e em efeito, e as proibições
+  universais (`HOME`, `DYLD_*`, `LD_*`) valem para os dois tipos. O filtro
+  ganhou uma proibição a mais — nenhuma variável `GIT_*` —, porque autoridade
+  não atravessa fronteira de tipo.
+  O tipo é **enum explícito**, nunca deduzido do argv ou do nome do binário;
+  há teste estrutural contra heurística de string. O default é `GIT` porque é a
+  regra mais ESTRITA: quem esquecer de declarar o tipo recebe RECUSA
+  (`neutralização obrigatória ausente`), nunca autoridade a mais.
+
+Prova: `tests/test_absorption07_s1s2_supervisor_generalizado.py` (42 casos),
+com controle NEGATIVO pareado — `test_s2_11` mostra que o mesmo filtro sem
+`entrada` devolve vazio, então o verde de `test_s2_10`
+(`SENHA=hunter2` → `SENHA=REDIGIDO`) não é vácuo. Mutação dirigida: 9 mutantes
+plausíveis (tipo ignorado, env de Git opcional, filtro herdando env de Git,
+fronteira de tipo decorativa, DEVNULL apesar da entrada, entrada nunca
+alimentada, stdin nunca fechado, pós-condição de resíduo pulada, `str` aceito)
+— **9 mortos, 0 sobreviventes**.
+
+### Fixed (A5.3 — teste intermitente trocado por três deterministas)
+`test_20_tamper_concorrente_nunca_executa_codigo_nao_aprovado` falhava **2 em
+10** execuções sob carga, com o produto intacto. A causa foi medida: o tamper
+eram 80 reescritas de arquivo (microssegundos) contra 60 execuções de processo
+(~45 ms), então a thread atacante terminava INTEIRA antes de a primeira
+execução sair do lugar, e o próprio guard de vácuo do teste (`detectou > 0`)
+disparava. Teste intermitente é pior que teste ausente: ensina a ignorar
+vermelho e envenena tudo que classifica por resultado — mutação, corrida e caos
+atribuiriam a flutuação ao mutante.
+
+Amarrar o tamper à mesma condição de parada trocou a intermitência por uma
+falha DETERMINÍSTICA e mais informativa. Medido com contadores, 5 rodadas de 60
+execuções: com tamper contínuo no ARTEFATO, `HOSTIL=2..10/60` e canário
+presente em **5/5**. Ou seja, o verificar-e-depois-executar é vencido por quem
+reescreve o artefato em laço — que é exatamente a conclusão de A5.3.1, a razão
+de a corrida ter sido tirada do caminho de execução em vez de disputada.
+
+O que decide se isso é brecha ou fronteira é uma pergunta de alcançabilidade
+que os 22 testes de A5.5 não faziam: **o atacante do modelo — o repositório,
+agindo pelo processo do filtro — alcança o armazém?** Medido com controle
+positivo por alvo: **não**. O artefato próprio e o armazém são NEGADOS sob
+sandbox e ALCANÇADOS sem ele; o escopo legítimo do filtro segue acessível (é o
+controle que impede as duas primeiras linhas de serem vácuo). Só um processo de
+mesmo uid FORA do sandbox alcança — o lado confiável, onde o dono da máquina já
+pode trocar o próprio NOMOS.
+
+O bloco virou três testes que afirmam o que é verdade e provável:
+`test_20a` (o atacante do modelo, a origem externa, nunca executa — canário),
+`test_20b` (o filtro confinado não alcança o armazém — a razão), e
+`test_20c` (artefato divergente é DETECTADO, com corrida real e sem vácuo).
+Determinismo medido: **12/12** execuções verdes, contra 8/10 antes.
+
 ### Fixed (números desatualizados nas superfícies públicas)
 - **Hero do site** anunciava `1.800+` testes e o **README** "mais de 1.800",
   números de antes das últimas missões. Corrigidos para `1.900+`, que é o

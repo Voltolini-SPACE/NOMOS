@@ -55,3 +55,11 @@ exclude = ["src/nomos/conectores/mcp/.*/servidor\\.py"]
 [tool.setuptools.package-data]
 "nomos.agents" = ["oficiais/*.json"]
 "nomos.conectores" = ["mcp/_comum.py", "mcp/*/manifesto.json", "mcp/*/servidor.py", "mcp/*/README.md"]
+
+[tool.pytest.ini_options]
+# `slow` marca as baterias de CORRIDA (A9) e CAOS (A10): 12×30 iterações e
+# injeção de falha em cada ponto. Ficam na suíte (não são opt-out), e o marcador
+# só existe para permitir `-m "not slow"` num ciclo rápido de desenvolvimento.
+markers = [
+    "slow: bateria longa (corrida/caos) — roda por padrão, filtrável com -m 'not slow'",
+]

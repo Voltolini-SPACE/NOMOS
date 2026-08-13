@@ -129,16 +129,17 @@ def _sugerir_agente_conversa(ctx, texto: str):
 
 def _usar_agente_conversa(ctx, mf, ferramenta: str, alvo: str, aprovador,
                           router) -> tuple[bool, str]:
-    """Executa ferramenta de agente a partir da conversa: o MESMO
-    AgentToolBoundary + agents.execucao usados por `nomos agentes usar`
-    (nenhum caminho de autorização novo)."""
-    from nomos.agents.boundary import AgentToolBoundary
-    from nomos.agents.execucao import ferramentas_wired
-    boundary = AgentToolBoundary(mf, ctx["policy"], aprovador, audit=ctx.get("audit"))
-    wired = ferramentas_wired(ctx, alvo=alvo, aprovador=aprovador, router=router)
-    if ferramenta not in wired:
-        return False, f"'{ferramenta}' não está disponível nesta versão."
-    ok, resultado = boundary.usar_ferramenta(ferramenta, wired[ferramenta], alvo=alvo)
+    """Executa ferramenta de agente a partir da conversa.
+
+    ABSORPTION-02/FASE 1: era boundary-only (gate A0–A6, mas sem token
+    assinado, escopo, TTL, nonce ou anti-replay). Agora usa exatamente o mesmo
+    caminho governado de `nomos agentes usar` e do runtime —
+    registry → PDP → PEP → AgentToolBoundary → adapter. Nenhuma política
+    própria: a conversa não é uma porta mais fraca que o CLI.
+    """
+    from nomos.runtime.governado import usar_ferramenta_governada
+    ok, resultado = usar_ferramenta_governada(
+        ctx, mf, ferramenta, alvo=alvo, aprovador=aprovador, router=router)
     return ok, str(resultado)
 
 

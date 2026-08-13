@@ -3,8 +3,10 @@
 O que o NOMOS não tinha: sobreviver a falha transiente sem operador. Regras
 (todas fail-closed; hardening da ETAPA 12 da missão NH):
 
-- retry SÓ para nó declarado `idempotente=True` — repetir efeito colateral às
-  cegas é pior que falhar; não-idempotente falha na 1ª tentativa;
+- retry SÓ quando o REGISTRO de capacidades diz que a ferramenta é idempotente
+  (parâmetro `idempotente=`, autoritativo; ABSORPTION-01) — repetir efeito
+  colateral às cegas é pior que falhar; não-idempotente falha na 1ª tentativa.
+  O campo `no.idempotente` NÃO é consultado aqui: plano não decide risco;
 - backoff exponencial com teto (relógio injetável: teste não dorme);
 - circuit-breaker POR FERRAMENTA: N falhas consecutivas abrem o circuito;
   chamada com circuito aberto falha imediatamente (sem tempestade de retry);
@@ -50,8 +52,17 @@ class GerenciadorRecuperacao:
         return (self._falhas_consecutivas.get(ferramenta, 0)
                 >= self.politica.circuito_limite)
 
-    def executar(self, no, executor: Callable, params: dict):
-        """(ok, resultado|motivo, tentativas) — contrato do Orquestrador._rodar."""
+    def executar(self, no, executor: Callable, params: dict,
+                 *, idempotente: bool | None = None):
+        """(ok, resultado|motivo, tentativas) — contrato do Orquestrador._rodar.
+
+        `idempotente` é AUTORITATIVO e vem do registro de capacidades
+        (ABSORPTION-01). Deliberadamente NÃO se lê `no.idempotente`: o nó é
+        dado de plano, e plano não decide o próprio risco. Ausente ⇒ False
+        (fail-closed): perder um retry é seguro, repetir efeito colateral
+        não autorizado não é.
+        """
+        idempotente = bool(idempotente)
         ferramenta = no.ferramenta
         if self._circuito_aberto(ferramenta):
             self._auditar("recuperacao.circuito.rejeitou", no=no.id,
@@ -64,7 +75,7 @@ class GerenciadorRecuperacao:
                           orcamento=self.politica.orcamento_missao)
             return False, ("orçamento de tentativas da missão esgotado "
                            f"({self.politica.orcamento_missao})"), 0
-        maximo = self.politica.max_tentativas if no.idempotente else 1
+        maximo = self.politica.max_tentativas if idempotente else 1
         tentativas = 0
         ultimo_motivo = ""
         while tentativas < maximo:
@@ -92,7 +103,7 @@ class GerenciadorRecuperacao:
                 if falhas == self.politica.circuito_limite:
                     self._auditar("recuperacao.circuito.aberto",
                                   ferramenta=ferramenta, falhas=falhas)
-                if not no.idempotente:
+                if not idempotente:
                     self._auditar("recuperacao.sem_retry", no=no.id,
                                   ferramenta=ferramenta,
                                   motivo="nó não idempotente")
@@ -103,7 +114,7 @@ class GerenciadorRecuperacao:
                     pausa = min(self.politica.backoff_base * (2 ** (tentativas - 1)),
                                 self.politica.backoff_teto)
                     self.dormir(pausa)
-        if tentativas >= maximo and no.idempotente:
+        if tentativas >= maximo and idempotente:
             motivo = f"tentativas esgotadas ({tentativas}): {ultimo_motivo}"
         else:
             motivo = ultimo_motivo or "falha sem execução (orçamento/circuito)"

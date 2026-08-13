@@ -108,7 +108,18 @@ def _quem_importa_qualquer(pasta: Path, proibidos: set[str],
 
 ALLOWLIST_IMPORTA_EXECUCAO = {
     (SRC / "cli.py").resolve(),
-    (SRC / "simple" / "amigavel.py").resolve(),
+    # ABSORPTION-02/FASE 1: `simple/amigavel.py` SAIU desta lista — a conversa
+    # não alcança mais `agents.execucao` por conta própria; ela delega a
+    # `runtime.governado.usar_ferramenta_governada`, que atravessa
+    # registry → PDP → PEP → boundary. Menos rotas até o adapter é o
+    # resultado desejado, não uma frouxidão.
+    # ABSORPTION-01: o runtime governado precisa do wiring das 8 ferramentas
+    # para orquestrar. Entra na allowlist porque NÃO chama o executor direto:
+    # `executores_nativos` embrulha cada ferramenta num AgentToolBoundary com
+    # manifesto explícito, de modo que o gate acontece por nó, dentro do
+    # adapter. O teste seguinte (`..._de_fato_usam_agenttoolboundary`) é o que
+    # mantém essa promessa verificada em vez de confiada.
+    (SRC / "runtime" / "governado.py").resolve(),
 }
 
 

@@ -470,9 +470,9 @@ def cmd_agentes(ctx, args) -> int:
 
 def cmd_agente_usar(ctx, args) -> int:
     from nomos.simple.erros import fmt
-    from nomos.agents.boundary import AgentToolBoundary
     from nomos.agents.execucao import ferramentas_wired
     from nomos.agents.manifest import FERRAMENTAS
+    from nomos.runtime.governado import usar_ferramenta_governada
     reg = _agent_registry(ctx)
     mf = reg.obter(args.nome)
     if not mf:
@@ -510,12 +510,15 @@ def cmd_agente_usar(ctx, args) -> int:
             print(fmt("E003", f"'{args.ferramenta}' não é uma ferramenta "
                               "conhecida"), file=sys.stderr)
         return EXIT_ERROR
-    # o MESMO AgentToolBoundary testado no Horizonte 1/2 — nenhum caminho de
-    # autorização novo; fora do manifesto ou sem aprovação => negado.
-    boundary = AgentToolBoundary(mf, ctx["policy"], aprovador, audit=ctx["audit"])
-    ok, resultado = boundary.usar_ferramenta(args.ferramenta,
-                                             wired[args.ferramenta],
-                                             alvo=args.alvo or "")
+    # ABSORPTION-02/FASE 1: esta rota era boundary-only — gate A0–A6 sim, mas
+    # sem token assinado, escopo, TTL, nonce ou anti-replay. Agora atravessa a
+    # MESMA cadeia governada do runtime: registry → PDP → PEP → boundary →
+    # adapter. Nenhuma política nova; `usar_ferramenta_governada` reusa a
+    # `sessao_pdp` do runtime e o boundary continua lá dentro.
+    ok, resultado = usar_ferramenta_governada(
+        ctx, mf, args.ferramenta, alvo=args.alvo or "",
+        conteudo=getattr(args, "conteudo", "") or "",
+        aprovador=aprovador, router=router, sem_motor=sem_motor)
     if not ok:
         print(resultado, file=sys.stderr)
         return EXIT_DENIED
@@ -1507,6 +1510,297 @@ def cmd_conselho(ctx, args) -> int:
     return route_conselho(list(getattr(args, "resto", []) or []))
 
 
+def _passos_de_json(texto: str):
+    """Lê passos de um JSON. Qualquer anomalia ⇒ None (fail-closed no chamador).
+
+    Passa por `orquestracao.entrada`, não por `json.loads` direto: é ali que
+    chave duplicada e alias de autoridade são recusados. `json.loads` sozinho
+    aceitaria `{"alvo":"A","alvo":"B"}` e deixaria a última vencer em silêncio —
+    depois disso o `dict` tem um valor só e a ambiguidade é indetectável.
+    """
+    from nomos.orquestracao.entrada import ErroEntrada, carregar_plano
+    try:
+        dados = carregar_plano(texto)
+    except ErroEntrada as exc:
+        print(f"plano recusado: {exc}", file=sys.stderr)
+        return None
+    except (TypeError, ValueError):
+        return None
+    return dados if isinstance(dados, list) else None
+
+
+def cmd_orquestrar(ctx, args) -> int:
+    """Runtime governado (ABSORPTION-01): intenção → plano → grafo → execução.
+
+    Este é o caller de produção do pacote `orquestracao`. Cada nó passa pelo
+    MESMO gate A0–A6 do kernel; a categoria e a idempotência vêm do registro
+    de capacidades, nunca do plano. `--dry-run` (padrão) só planeja.
+    """
+    from nomos.simple.erros import fmt
+    from nomos.runtime.governado import RuntimeGovernado
+
+    passos = None
+    if getattr(args, "passos", ""):
+        passos = _passos_de_json(args.passos)
+        if passos is None:
+            print(fmt("E010", "--passos precisa ser um JSON de lista de objetos"),
+                  file=sys.stderr)
+            return EXIT_ERROR
+
+    aprovador = _approver_for(ctx, args)
+    raizes = tuple(getattr(args, "raiz", None) or ())
+    usar_adapters = bool(getattr(args, "adapters", False))
+    if usar_adapters and not raizes:
+        # fail-closed: capacidade mutante de filesystem sem escopo seria MENOS
+        # confinada que a ferramenta nativa que substitui
+        print(fmt("E010", "--adapters exige pelo menos um --raiz "
+                          "(escopo de caminho das capacidades de arquivo)"),
+              file=sys.stderr)
+        return EXIT_ERROR
+    executaveis = tuple(getattr(args, "executavel", None) or ())
+    usar_scheduler = bool(getattr(args, "scheduler", False))
+    if executaveis and not usar_adapters:
+        print(fmt("E010", "--executavel exige --adapters: `script-rodar` é "
+                          "registrado junto com as capacidades de arquivo"),
+              file=sys.stderr)
+        return EXIT_ERROR
+    if (executaveis or usar_scheduler) and not raizes:
+        print(fmt("E010", "--executavel/--scheduler exigem pelo menos um "
+                          "--raiz (escopo de caminho)"), file=sys.stderr)
+        return EXIT_ERROR
+    scheduler = None
+    if usar_scheduler:
+        # CALLER DE PRODUÇÃO do scheduler. O registro acontece DENTRO da
+        # construção do runtime — registrar depois deixava a capacidade fora do
+        # mapa protegido por PEP e fora da autorização assinada, e ela caía no
+        # fallback do Orquestrador direto para a ponte crua (achado do censo).
+        from nomos.runtime.agendador import AgendadorGovernado, ConfigAgendador
+        try:
+            scheduler = AgendadorGovernado(ctx, aprovador, ConfigAgendador(
+                raizes=raizes, executaveis=executaveis)).scheduler
+        except Exception as exc:
+            print(fmt("E010", f"scheduler não pôde ser montado: {exc}"),
+                  file=sys.stderr)
+            return EXIT_ERROR
+    try:
+        rt = RuntimeGovernado(ctx, aprovador,
+                              sem_motor=getattr(args, "sem_motor", False),
+                              caminhos=raizes, adapters=usar_adapters,
+                              executaveis=executaveis, scheduler=scheduler)
+    except ValueError as exc:
+        print(fmt("E010", str(exc)), file=sys.stderr)
+        return EXIT_ERROR
+
+    if usar_adapters and rt.capacidades_adapter:
+        print(f"capacidades de arquivo ligadas: "
+              f"{', '.join(rt.capacidades_adapter)}")
+        print(f"escopo: {', '.join(raizes)}")
+    plano = rt.planejar(args.objetivo, passos=passos)
+
+    print(f"objetivo: {plano.objetivo}")
+    if plano.rejeitados:
+        print(f"passos rejeitados ({len(plano.rejeitados)}):")
+        for r in plano.rejeitados:
+            print(f"  ✗ {r.get('id', '?')}: {r.get('motivo', '')}")
+    if not plano.ok:
+        print(fmt("E003", plano.motivo or "nenhum passo válido"), file=sys.stderr)
+        return EXIT_DENIED
+    print(f"plano: {len(plano.passos)} passo(s) · risco {plano.risco}"
+          f"{' · exige aprovação' if plano.exige_aprovacao else ''}")
+    for p in plano.passos:
+        dep = f" ← {', '.join(p.depende_de)}" if p.depende_de else ""
+        print(f"  · {p.id}: {p.ferramenta} ({p.categoria.value}){dep}")
+
+    if not getattr(args, "executar", False):
+        print("\n(dry-run — nada executado; use --executar para valer)")
+        return EXIT_OK
+
+    resultado = rt.executar(plano)
+    print()
+    for no_id in (resultado.missao.ordem if resultado.missao else ()):
+        r = resultado.missao.nos[no_id]
+        marca = {"OK": "✅", "NEGADO": "⛔", "BLOQUEADO": "⏸", "FALHOU": "❌"}.get(r.status, "·")
+        detalhe = f" — {r.detalhe}" if r.detalhe else ""
+        print(f"  {marca} {no_id}: {r.status}{detalhe}")
+    if not resultado.ok:
+        print(fmt("E003", resultado.motivo or "missão não concluiu"), file=sys.stderr)
+        return EXIT_DENIED
+    print("\nmissão concluída — todos os nós OK")
+    return EXIT_OK
+
+
+def _intervalo_valido(bruto) -> float:
+    """`--intervalo 0` virava 1.0 em silêncio (0.0 é falsy) — achado do censo.
+    Zero é busy-loop; recusar é melhor que corrigir sem avisar."""
+    try:
+        valor = float(bruto if bruto is not None else 1.0)
+    except (TypeError, ValueError):
+        raise ValueError(f"--intervalo inválido: {bruto!r}") from None
+    if valor <= 0:
+        raise ValueError("--intervalo precisa ser > 0 (zero seria busy-loop)")
+    return valor
+
+
+def _catchup_valido(bruto):
+    """`--catch-up` do operador → política do ticker, sem fallback calado.
+
+    Um valor desconhecido não pode virar o padrão: quem escreveu `--catch-up
+    todas` (em vez de `all`) receberia SKIP e descobriria pelas ocorrências que
+    não rodaram. Recusa explícita.
+    """
+    from nomos.adapters.ticker import CatchUp
+    tabela = {"skip": CatchUp.SKIP, "once": CatchUp.RUN_ONCE,
+              "all": CatchUp.RUN_ALL_BOUNDED}
+    chave = str(bruto or "once").strip().lower()
+    if chave not in tabela:
+        raise ValueError(f"--catch-up inválido: {bruto!r} "
+                         f"(use {', '.join(sorted(tabela))})")
+    return tabela[chave]
+
+
+def cmd_scheduler(ctx, args) -> int:
+    """CALLER DE PRODUÇÃO do Ticker (ABSORPTION-05 / FASE 3).
+
+    `Ticker` existia como classe testável sem chamador. Aqui ele ganha
+    entrypoint operacional em foreground. O autorizador é o do
+    `AgendadorGovernado` — obrigatório por construção, nunca None.
+    """
+    from nomos.simple.erros import fmt
+    from nomos.runtime.agendador import AgendadorGovernado, ConfigAgendador
+
+    sub = getattr(args, "scheduler_cmd", None)
+    raizes = tuple(getattr(args, "raiz", None) or ())
+    executaveis = tuple(getattr(args, "executavel", None) or ())
+    if not raizes:
+        print(fmt("E010", "scheduler exige pelo menos um --raiz (escopo de "
+                          "caminho das capacidades executadas pelos jobs)"),
+              file=sys.stderr)
+        return EXIT_ERROR
+
+    aprovador = _approver_for(ctx, args)
+    try:
+        catchup = _catchup_valido(getattr(args, "catch_up", "once"))
+        ag = AgendadorGovernado(ctx, aprovador, ConfigAgendador(
+            raizes=raizes, executaveis=executaveis,
+            catchup=catchup,
+            catchup_max=max(1, int(getattr(args, "catch_up_max", 10) or 10)),
+            intervalo_s=_intervalo_valido(getattr(args, "intervalo", 1.0))))
+        nomes = ag.preparar()
+    except ValueError as exc:
+        print(fmt("E010", str(exc)), file=sys.stderr)
+        return EXIT_ERROR
+    except Exception as exc:
+        print(fmt("E010", f"scheduler não pôde ser preparado: {exc}"),
+              file=sys.stderr)
+        return EXIT_DENIED
+
+    if sub == "listar":
+        # Passa pela capacidade governada, não por `ag.scheduler.listar()`.
+        # Ler o armazém direto era o atalho que mantinha a CLI fora da cadeia
+        # — e um caminho fora da cadeia não deixa de existir só porque hoje é
+        # leitura: ele é o precedente que a próxima operação copia.
+        ok, jobs, motivo = ag.operar("sched-listar")
+        if not ok:
+            print(fmt("E010", f"listar recusado: {motivo}"), file=sys.stderr)
+            return EXIT_DENIED
+        if not jobs:
+            print("nenhum job agendado.")
+            return EXIT_OK
+        for j in jobs:
+            quando = (j["expression"] or (f"{j['intervalo_s']}s"
+                                          if j["intervalo_s"] else "uma vez"))
+            print(f"  {j['job_id']}: {j['capacidade']} · {j['kind']} "
+                  f"({quando}, {j['tz']}) · {j['estado']} · "
+                  f"próximo {j['proximo_em']}")
+        return EXIT_OK
+
+    if sub in ("criar", "cancelar", "apagar"):
+        job_id = str(getattr(args, "job_id", "") or "")
+        if not job_id:
+            print(fmt("E010", f"scheduler {sub} exige --job-id"), file=sys.stderr)
+            return EXIT_ERROR
+        if sub != "criar":
+            ok, valor, motivo = ag.operar(f"sched-{sub}", job_id=job_id)
+        else:
+            capacidade = str(getattr(args, "capacidade", "") or "")
+            if not capacidade:
+                print(fmt("E010", "scheduler criar exige --capacidade (o que o "
+                                  "job executa)"), file=sys.stderr)
+                return EXIT_ERROR
+            params = {"job_id": job_id, "capacidade": capacidade,
+                      "tz": str(getattr(args, "tz", "UTC") or "UTC")}
+            alvo_job = str(getattr(args, "alvo_job", "") or "")
+            if alvo_job:
+                params["alvo_job"] = alvo_job
+            # A agenda vai EXPLÍCITA. Sem `--cron` e sem `--intervalo-job` o
+            # job é ONE_SHOT porque foi isso que se pediu — não porque a flag
+            # se perdeu no caminho. Rebaixamento silencioso CRON→ONE_SHOT foi
+            # exatamente o defeito que a 04 corrigiu na persistência e a 06
+            # encontrou de volta na camada do caller.
+            if getattr(args, "cron", ""):
+                params["cron"] = str(args.cron)
+            elif getattr(args, "intervalo_job", None) is not None:
+                # `is not None`: `--intervalo-job 0` tem de CHEGAR à validação
+                # que o recusa. Com teste de verdade, o zero sumia aqui e o
+                # operador recebia um ONE_SHOT sem nunca saber.
+                params["intervalo_s"] = int(args.intervalo_job)
+            ok, valor, motivo = ag.operar("sched-criar", **params)
+        if not ok:
+            print(fmt("E010", f"scheduler {sub} recusado: {motivo}"),
+                  file=sys.stderr)
+            return EXIT_DENIED
+        print(f"{sub}: {valor}")
+        return EXIT_OK
+
+    if sub == "rodar":
+        max_ticks = getattr(args, "max_ticks", None)
+        print(f"capacidades de agendamento: {', '.join(nomes)}")
+        print(f"armazém: {ag.armazem.caminho}")
+        print(f"ticker em foreground (intervalo {ag.config.intervalo_s}s) — "
+              f"Ctrl+C encerra.")
+        ticker = ag.ticker()
+        import signal as _sig
+
+        def _parar(_s, _f):
+            print("\nencerrando (shutdown limpo)…")
+            ticker.parar()
+
+        for numero in (_sig.SIGINT, _sig.SIGTERM):
+            try:
+                _sig.signal(numero, _parar)
+            except (ValueError, OSError, AttributeError) as exc:
+                # thread secundária ou SO sem esse sinal: segue sem handler,
+                # mas o operador fica sabendo por que Ctrl+C pode não parar
+                print(f"aviso: sem handler para sinal {numero} "
+                      f"({type(exc).__name__}) — use --max-ticks")
+        resultados = ticker.rodar_ate(max_ticks=max_ticks)
+        total = sum(r.executadas for r in resultados)
+        falhas = sum(r.falhas for r in resultados)
+        negadas = sum(r.negadas for r in resultados)
+        puladas = sum(r.puladas for r in resultados)
+        print(f"ticks: {len(resultados)} · executadas: {total} · "
+              f"negadas: {negadas} · falhas: {falhas} · puladas: {puladas}")
+        # Sair OK com ocorrências NEGADAS era o sinal invertido que o censo
+        # achou: uma passada 100% recusada devolvia EXIT_OK e imprimia
+        # "falhas: 0". Negação é decisão de segurança e o operador precisa
+        # vê-la no código de saída, não só numa linha de texto.
+        if falhas:
+            return EXIT_DENIED
+        return EXIT_OK if negadas == 0 else EXIT_DENIED
+
+    print("uso: nomos scheduler listar   --raiz <dir>\n"
+          "     nomos scheduler criar    --raiz <dir> --job-id ID --capacidade C\n"
+          "                              [--alvo-job P] [--cron 'M H D M W' |\n"
+          "                               --intervalo-job N] [--tz IANA]\n"
+          "     nomos scheduler cancelar --raiz <dir> --job-id ID\n"
+          "     nomos scheduler apagar   --raiz <dir> --job-id ID\n"
+          "     nomos scheduler rodar    --raiz <dir> [--intervalo N] "
+          "[--max-ticks N]\n"
+          "                              [--catch-up skip|once|all] "
+          "[--catch-up-max N]")
+    return EXIT_OK
+
+
 def cmd_missao(ctx, args) -> int:
     """Executor de missões (MC32/P1): plano → aprovação explícita → evidência."""
     from nomos.kernel import missao as ms
@@ -2291,6 +2585,85 @@ def build_parser() -> argparse.ArgumentParser:
     losub.add_parser("on").set_defaults(fn=cmd_local)
     losub.add_parser("off").set_defaults(fn=cmd_local)
     lo.set_defaults(fn=cmd_local, local_cmd=None)
+    orq = sub.add_parser("orquestrar",
+                         help="runtime governado: intenção → plano → grafo → "
+                              "execução, com o gate A0–A6 em cada passo")
+    orq.add_argument("objetivo")
+    orq.add_argument("--passos", default="",
+                     help='JSON de passos: [{"id":"a","ferramenta":"arquivo_ler",'
+                          '"params":{"alvo":"..."},"depende_de":[]}]')
+    orq.add_argument("--executar", action="store_true",
+                     help="executa de verdade (sem isto, só planeja)")
+    orq.add_argument("--panel", action="store_true",
+                     help="aprova via painel local em vez de terminal")
+    orq.add_argument("--sem-motor", action="store_true", dest="sem_motor",
+                     help="arquivo_resumir: só heurística local, sem motor de IA")
+    orq.add_argument("--raiz", action="append", default=[],
+                     help="raiz autorizada para as capacidades de arquivo "
+                          "(pode repetir); ativa o escopo de caminho do PDP")
+    orq.add_argument("--adapters", action="store_true",
+                     help="registra as capacidades de arquivo (fs-ler, "
+                          "fs-escrever, fs-editar, …) — exige --raiz")
+    orq.add_argument("--executavel", action="append", default=[],
+                     help="binário autorizado para script-rodar (pode repetir); "
+                          "sem isto a capacidade de script NÃO é registrada")
+    orq.add_argument("--scheduler", action="store_true",
+                     help="registra as capacidades de agendamento "
+                          "(sched-criar, sched-listar, …) — exige --raiz")
+    orq.set_defaults(fn=cmd_orquestrar)
+
+    sch = sub.add_parser("scheduler",
+                         help="agendador governado: lista jobs e roda o ticker "
+                              "em foreground (não instala serviço)")
+    schsub = sch.add_subparsers(dest="scheduler_cmd")
+    for nome_s in ("listar", "rodar", "criar", "cancelar", "apagar"):
+        sc = schsub.add_parser(nome_s)
+        sc.add_argument("--raiz", action="append", default=[],
+                        help="raiz autorizada (pode repetir) — obrigatório")
+        sc.add_argument("--executavel", action="append", default=[],
+                        help="binário autorizado para script-rodar (pode repetir)")
+        sc.add_argument("--intervalo", type=float, default=1.0,
+                        help="segundos entre passadas do ticker")
+        sc.add_argument("--max-ticks", type=int, dest="max_ticks", default=None,
+                        help="para após N passadas (útil para operação pontual)")
+        sc.add_argument("--panel", action="store_true",
+                        help="aprova via painel local em vez de terminal")
+        if nome_s in ("criar", "cancelar", "apagar"):
+            sc.add_argument("--job-id", dest="job_id", default="",
+                            help="identificador do job — obrigatório")
+        if nome_s == "criar":
+            sc.add_argument("--capacidade", default="",
+                            help="capacidade governada que o job executa")
+            sc.add_argument("--alvo-job", dest="alvo_job", default="",
+                            help="alvo passado à capacidade (dentro de --raiz)")
+            # As três agendas são MUTUAMENTE EXCLUSIVAS na própria CLI: sem
+            # nenhuma ⇒ ONE_SHOT explícito. Deixar o argparse recusar a
+            # combinação evita que o operador descubra o conflito só depois,
+            # pelo DENY do adapter.
+            ag_grp = sc.add_mutually_exclusive_group()
+            ag_grp.add_argument("--cron", default="",
+                                help="expressão cron de 5 campos (agenda CRON)")
+            ag_grp.add_argument("--intervalo-job", dest="intervalo_job",
+                                type=int, default=None,
+                                help="segundos entre execuções (agenda INTERVAL)")
+            sc.add_argument("--tz", default="UTC",
+                            help="timezone IANA aplicada à agenda (padrão UTC)")
+        if nome_s == "rodar":
+            # Catch-up é política do TICKER, não do job: descreve o que fazer
+            # com ocorrências vencidas quando o processo volta. Ficava só no
+            # `ConfigAgendador`, inalcançável por operador.
+            sc.add_argument("--catch-up", dest="catch_up", default="once",
+                            choices=("skip", "once", "all"),
+                            help="ocorrências vencidas: pular, rodar uma, "
+                                 "ou rodar todas até o teto")
+            sc.add_argument("--catch-up-max", dest="catch_up_max", type=int,
+                            default=10,
+                            help="teto de ocorrências recuperadas por passada "
+                                 "(limita a tempestade após uma parada longa)")
+        sc.set_defaults(fn=cmd_scheduler)
+    sch.set_defaults(fn=cmd_scheduler, scheduler_cmd=None, raiz=[],
+                     executavel=[], intervalo=1.0, max_ticks=None)
+
     mip = sub.add_parser("missao",
                          help="missões que FAZEM: plano → sua aprovação → evidência")
     misub = mip.add_subparsers(dest="missao_cmd")
