@@ -833,6 +833,33 @@ def _abrir_quarentena(repo: Path, autoridade=None,
             reais, fd)
 
 
+def _apagar_arvore_por_fd(nome: str, dir_fd: int) -> None:
+    """`rmtree` relativo a descritor — compatível com Python 3.10+.
+
+    `shutil.rmtree(..., dir_fd=)` só existe em 3.12, e o projeto declara
+    `requires-python = ">=3.10"`: em 3.10/3.11 a chamada levantava
+    `TypeError` e derrubava 22 testes no CI (invisível no macOS local, que
+    roda 3.14). Reimplementado com as primitivas disponíveis desde a 3.3,
+    preservando a propriedade que importa e que motivou o `dir_fd`: TUDO
+    relativo a descritor e sem seguir symlink — uma renomeação do git dir no
+    meio não redireciona a remoção para outra árvore. Caminho ÚNICO em todas
+    as versões, de propósito: bifurcar por versão deixaria um dos ramos sem
+    exercício real.
+    """
+    fd = os.open(nome, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                 dir_fd=dir_fd)
+    try:
+        with os.scandir(fd) as entradas:
+            for entrada in entradas:
+                if entrada.is_dir(follow_symlinks=False):
+                    _apagar_arvore_por_fd(entrada.name, fd)
+                else:
+                    os.unlink(entrada.name, dir_fd=fd)
+    finally:
+        os.close(fd)
+    os.rmdir(nome, dir_fd=dir_fd)
+
+
 def _fechar_quarentena(raiz_q: Path, fd_git_dir: int) -> str:
     """Apaga a quarentena PELO DESCRITOR e PROVA que ela sumiu.
 
@@ -843,7 +870,7 @@ def _fechar_quarentena(raiz_q: Path, fd_git_dir: int) -> str:
     nome = raiz_q.name
     try:
         try:
-            shutil.rmtree(nome, dir_fd=fd_git_dir)
+            _apagar_arvore_por_fd(nome, fd_git_dir)
         except FileNotFoundError:
             pass
         except OSError as e:
