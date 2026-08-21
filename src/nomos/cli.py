@@ -1440,8 +1440,15 @@ def cmd_chat(ctx, args) -> int:
         out = router.chat(messages, prefer_cloud=args.cloud, passphrase=pw)
         print(out.text)
         if out.ok:
-            mem.remember("user", user_text)
-            mem.remember("assistant", out.text)
+            from nomos.cognition.memory import MemoriaRecusada
+            try:
+                mem.remember("user", user_text)
+                mem.remember("assistant", out.text)
+            except MemoriaRecusada:
+                # NH-005 P1: a resposta do chat NUNCA quebra por recusa de
+                # memória — o dono é avisado e a conversa segue sem guardar
+                print("(não guardei esta troca: conteúdo com padrão de "
+                      "segredo/dado sensível)", file=sys.stderr)
             # P2-1 (auditoria de 2026-07-17): produtor real da fila de
             # revisão de memória (ISSUE-020) — antes, propor_candidata()
             # nunca era chamado por nenhum fluxo real, só em teste.
@@ -2500,6 +2507,36 @@ def cmd_memoria(ctx, args) -> int:
     from nomos.cognition.memory import Memory
     mem = Memory(ctx["home"] / "memory.db")
     sub = getattr(args, "memoria_cmd", None)
+    if sub == "importar-mc28":
+        # NH-005 P2: consolidação de menor risco — memory.db é a fonte;
+        # o memory.jsonl do MC28 fica INTACTO (byte-idêntico) e o rollback
+        # é completo (--desfazer apaga exatamente fonte='mc28').
+        from nomos.memory import ponte
+        from nomos.memory.store import MemoryStore
+        if getattr(args, "desfazer", False):
+            n = ponte.desfazer(mem)
+            ctx["audit"].append("memoria.importacao.desfeita", removidas=n)
+            print(f"desfeito: {n} memória(s) importada(s) removida(s) — a "
+                  "origem MC28 nunca foi tocada.")
+            return EXIT_OK
+        seco = bool(getattr(args, "dry_run", False))
+        r = ponte.importar(MemoryStore(), mem, dry_run=seco)
+        modo = "(simulação — nada gravado) " if seco else ""
+        print(f"{modo}importadas: {r.importadas} · duplicadas: "
+              f"{r.duplicadas} · rejeitadas pela política: "
+              f"{r.rejeitadas_politica} · PULADAS por hash inválido: "
+              f"{r.puladas_hash}")
+        if not seco:
+            ctx["audit"].append("memoria.importacao.mc28",
+                                importadas=r.importadas,
+                                puladas_hash=r.puladas_hash,
+                                rejeitadas_pii=r.rejeitadas_politica)
+        if not r.ok:
+            print("ATENÇÃO: entrada(s) com hash inválido foram PULADAS — "
+                  "adulteração na origem exige a SUA decisão antes de "
+                  "qualquer nova importação.", file=sys.stderr)
+            return EXIT_ERROR
+        return EXIT_OK
     # sem subcomando = o default útil (mesmo padrão de `nomos motores`):
     # o site ensina `nomos memoria` pelado — não pode terminar em erro de uso
     if sub in (None, "candidatas"):
@@ -2996,6 +3033,13 @@ def build_parser() -> argparse.ArgumentParser:
     memc.add_argument("--json", action="store_true")
     memc.set_defaults(fn=cmd_memoria)
     memsub.add_parser("revisar").set_defaults(fn=cmd_memoria)
+    memi = memsub.add_parser("importar-mc28",
+                             help="importa o histórico do motor MC28 "
+                                  "(memory.jsonl) para o memory.db — origem "
+                                  "fica byte-idêntica; rollback: --desfazer")
+    memi.add_argument("--dry-run", action="store_true", dest="dry_run")
+    memi.add_argument("--desfazer", action="store_true")
+    memi.set_defaults(fn=cmd_memoria)
     memp.set_defaults(fn=cmd_memoria, memoria_cmd=None)
     evd = sub.add_parser("evidencia",
                          help="pacote de evidências auditável (criar/verificar, local)")

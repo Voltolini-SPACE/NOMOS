@@ -91,8 +91,13 @@ def test_memoria_buscar_sucesso_e_redige_segredo(nomos_home, capsys):
     # um formato de chave real reconhecido para testar a redação de verdade.
     from nomos.cognition.memory import Memory
     _ativar("pesquisador-local")
+    # dado LEGADO pré-gate (NH-005 P1): semeia por INSERT direto — a escrita
+    # governada agora RECUSA segredo; a redação na LEITURA continua sendo a
+    # defesa para o que JÁ estava no banco antes do gate existir.
     mem = Memory(nomos_home / "memory.db")
-    mem.remember("user", "minha chave de wifi/API é sk-abcdefgh12345678")
+    mem.conn.execute("INSERT INTO memories(ts, role, text) VALUES (1, 'user', "
+                     "'minha chave de wifi/API é sk-abcdefgh12345678')")
+    mem.conn.commit()
     mem.close()
     rc = cli.main(["agentes", "usar", "pesquisador-local", "memoria_buscar",
                    "--alvo", "wifi"])

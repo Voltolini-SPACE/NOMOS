@@ -17,6 +17,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+class MemoriaRecusada(ValueError):
+    """NH-005 P1: a política de admissão recusou o texto (segredo/PII).
+
+    Recusa de escrita é RESULTADO, não crash de fluxo — quem chama decide
+    se avisa e segue (chat) ou se propaga (demais callers)."""
+
+
 @dataclass(frozen=True)
 class MemoryItem:
     id: int
@@ -107,9 +114,22 @@ class Memory:
             "text TEXT NOT NULL, fonte TEXT DEFAULT '')")
 
     # ---------- escrita ----------
+    def _gate_de_admissao(self, text: str) -> None:
+        """NH-005 P1: NENHUM texto entra no memory.db sem passar pela
+        política de admissão do MC28 (`memory/policy.evaluate`, fail-closed).
+        Antes, `remember` gravava qualquer coisa — inclusive segredo. A
+        recusa é VISÍVEL (exceção), nunca silenciosa."""
+        from nomos.memory import policy as politica
+        decisao = politica.evaluate(text)
+        if not decisao.allowed:
+            raise MemoriaRecusada(
+                f"memória recusada ({decisao.reason}): o texto contém padrão "
+                "de segredo/dado sensível — não guardei")
+
     def remember(self, role: str, text: str) -> int:
         if role not in {"user", "assistant", "system", "note"}:
             raise ValueError(f"role inválido: {role!r}")
+        self._gate_de_admissao(text)
         cur = self.conn.execute(
             "INSERT INTO memories(ts, role, text) VALUES (?, ?, ?)",
             (time.time(), role, text),
@@ -131,6 +151,7 @@ class Memory:
                     "decisao", "regra", "conversa"}
         if tipo not in tipos_ok:
             raise ValueError(f"tipo de memória inválido: {tipo!r}")
+        self._gate_de_admissao(text)
         cur = self.conn.execute(
             "INSERT INTO memories(ts, role, text, tipo, fonte, confianca) "
             "VALUES (?, 'note', ?, ?, ?, ?)",

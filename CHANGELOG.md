@@ -4,6 +4,27 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (Missão B — OPERACAO-01: NH-019 + NH-017 + NH-018 + NH-005)
+- **`nomos motores uso`** (NH-019): medição LOCAL de uso de motor (jsonl
+  0600, rotação 5 MiB) — só metadados, nunca conteúdo; tokens quando o
+  backend devolve. Paridade com o `model-usage` do OpenClaw aposentado.
+- **`nomos approvals sugerir` / `testar`** (NH-017): mineração da trilha
+  que PROPÕE política (nunca aplica — por construção dupla) e dry-run de
+  veredito; **disjuntor anti-fadiga** de negações consecutivas (só converte
+  perguntar→negar, jamais →permitir) no CLI e no agendador.
+- **Scheduler com estado por job** (NH-018): notepad durável com quotas e
+  `redact_text`; capacidades `job-nota-ler/escrever` com posse cravada na
+  closure, existentes SÓ dentro da execução do próprio job;
+  `--continuidade` (resumo determinístico da ocorrência N entregue à N+1);
+  `--monitorar` (supressão por hash de CONTEÚDO; mtime não engana);
+  `scheduler notas`. `salvar` com lista explícita de colunas.
+- **Memória rumo a 1 store** (NH-005, GO condicionado — ver
+  `docs/adr/ADR-memoria-1-store.md`): gate de admissão no `memory.db`
+  (segredo/PII recusado com `MemoriaRecusada` VISÍVEL; o chat avisa e
+  segue); `nomos memoria importar-mc28` com hash validado por entrada,
+  tripwire de adulteração (exit≠0), origem byte-idêntica e `--desfazer`
+  completo; sentinelas mecânicas de fronteira.
+
 ### Added (Missão A — RUNTIME-01: NH-026 + NH-014)
 - **`nomos pausar` / `nomos retomar`** (NH-026): freio gracioso da autonomia
   agendada — a ocorrência em andamento termina, nenhuma nova começa (ticker e
