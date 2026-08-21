@@ -1867,6 +1867,50 @@ def cmd_scheduler(ctx, args) -> int:
     return EXIT_OK
 
 
+def cmd_servico(ctx, args) -> int:
+    """NH-014 — runtime persistente governado (`runtime/servico.py`)."""
+    from nomos.runtime import servico as sv
+    from nomos.simple.erros import fmt
+    sub = getattr(args, "servico_cmd", None)
+    if sub == "status":
+        return sv.status(ctx)
+    if sub == "remover":
+        # gate A1 SEMPRE interativo — mexer no launchd exige o dono no teclado
+        return sv.remover(ctx, interactive_approver,
+                          simular=bool(getattr(args, "simular", False)))
+    raizes = tuple(getattr(args, "raiz", None) or ())
+    if sub in ("rodar", "instalar"):
+        if not raizes:
+            print(fmt("E010", f"servico {sub} exige pelo menos um --raiz "
+                              "(escopo de caminho dos jobs)"), file=sys.stderr)
+            return EXIT_ERROR
+        try:
+            catchup = _catchup_valido(getattr(args, "catch_up", "once"))
+        except ValueError as exc:
+            print(fmt("E010", str(exc)), file=sys.stderr)
+            return EXIT_ERROR
+        config = sv.ConfigServico(
+            raizes=raizes,
+            intervalo_s=float(getattr(args, "intervalo", 1.0) or 1.0),
+            catchup=catchup,
+            catchup_max=int(getattr(args, "catch_up_max", 10) or 10),
+            painel=bool(getattr(args, "painel", False)))
+        if sub == "rodar":
+            return sv.rodar_servico(ctx, config,
+                                    max_ticks=getattr(args, "max_ticks", None))
+        # instalar: gate A5 SEMPRE interativo (por isso não existe --panel
+        # nesta superfície — autonomia persistente exige o dono no teclado)
+        return sv.instalar(ctx, config, interactive_approver,
+                           simular=bool(getattr(args, "simular", False)))
+    print("uso: nomos servico rodar    --raiz <dir> [--intervalo N] "
+          "[--catch-up skip|once|all] [--painel] [--max-ticks N]\n"
+          "     nomos servico instalar --raiz <dir> [--intervalo N] "
+          "[--painel] [--simular]\n"
+          "     nomos servico remover  [--simular]\n"
+          "     nomos servico status", file=sys.stderr)
+    return EXIT_ERROR
+
+
 def cmd_missao(ctx, args) -> int:
     """Executor de missões (MC32/P1): plano → aprovação explícita → evidência."""
     from nomos.kernel import missao as ms
@@ -2731,6 +2775,43 @@ def build_parser() -> argparse.ArgumentParser:
         sc.set_defaults(fn=cmd_scheduler)
     sch.set_defaults(fn=cmd_scheduler, scheduler_cmd=None, raiz=[],
                      executavel=[], intervalo=1.0, max_ticks=None)
+
+    srv = sub.add_parser("servico",
+                         help="runtime persistente governado: o mesmo ticker "
+                              "de sempre, supervisionado pelo launchd")
+    srvsub = srv.add_subparsers(dest="servico_cmd")
+    srv_r = srvsub.add_parser("rodar",
+                              help="o processo que o launchd supervisiona "
+                                   "(também roda em foreground); aprovações "
+                                   "sensíveis esperam humano no painel e "
+                                   "EXPIRAM NEGADAS no TTL")
+    srv_i = srvsub.add_parser("instalar",
+                              help="escreve o LaunchAgent e carrega no "
+                                   "launchd — aprovação A5 no teclado, você "
+                                   "aprova o plist na íntegra")
+    for srv_p in (srv_r, srv_i):
+        srv_p.add_argument("--raiz", action="append", default=[],
+                           help="raiz autorizada (pode repetir) — obrigatório")
+        srv_p.add_argument("--intervalo", type=float, default=1.0,
+                           help="segundos entre passadas do ticker")
+        srv_p.add_argument("--painel", action="store_true",
+                           help="sobe junto o painel local de aprovações")
+    srv_r.add_argument("--catch-up", default="once", dest="catch_up",
+                       help="skip|once|all — ocorrências perdidas no downtime")
+    srv_r.add_argument("--catch-up-max", type=int, default=10,
+                       dest="catch_up_max",
+                       help="teto do catch-up 'all'")
+    srv_r.add_argument("--max-ticks", type=int, dest="max_ticks", default=None,
+                       help="para após N passadas (operação pontual/teste)")
+    srv_i.add_argument("--simular", action="store_true",
+                       help="imprime plist+argv; zero escrita, zero launchctl")
+    srv_rm = srvsub.add_parser("remover",
+                               help="bootout + apaga o plist (só se o Label "
+                                    "for o nosso)")
+    srv_rm.add_argument("--simular", action="store_true")
+    srvsub.add_parser("status", help="instalado? vivo? batimento? pausa? "
+                                     "problemas?")
+    srv.set_defaults(fn=cmd_servico, servico_cmd=None)
 
     mip = sub.add_parser("missao",
                          help="missões que FAZEM: plano → sua aprovação → evidência")
