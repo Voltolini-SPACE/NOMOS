@@ -78,14 +78,20 @@ class Execucao:
                  str(helper), str(self.marcador)],
                 capture_output=True, timeout=30, stdin=subprocess.DEVNULL)
             limite = time.monotonic() + 10
+            conteudo = ""
             while time.monotonic() < limite:
+                # Esperar CONTEÚDO, não existência: o marcador aparece antes do
+                # write terminar e `int('')` explodia sob carga concorrente
+                # (TOCTOU do arnês, visto com duas suítes em paralelo).
                 if self.marcador.exists():
-                    break
+                    conteudo = self.marcador.read_text().strip()
+                    if conteudo:
+                        break
                 time.sleep(0.05)
         finally:
             os.unlink(sb)
-        assert self.marcador.exists(), f"{self.nome} não chegou ao regime permanente"
-        self.pid = int(self.marcador.read_text().strip())
+        assert conteudo, f"{self.nome} não chegou ao regime permanente"
+        self.pid = int(conteudo)
         return self.pid
 
     def vivo(self, espera: float = 0.6) -> bool:
