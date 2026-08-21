@@ -81,13 +81,14 @@ def minerar(caminho_audit: Path, janela_dias: int = 30) -> list[EstatisticaAlvo]
                         "approval.expirada") or ts < corte:
             continue
         rid = str(ev.get("id", ""))
-        chave = solicitadas.get(rid)
-        if chave is None:
+        achada = solicitadas.get(rid)
+        if achada is None:
             # decisão sem solicitação rastreável: categoria/alvo do próprio
             # evento quando existirem; sem eles não há o que agregar
-            chave = (str(ev.get("category", "")), str(ev.get("target", "")))
-            if chave == ("", ""):
+            achada = (str(ev.get("category", "")), str(ev.get("target", "")))
+            if achada == ("", ""):
                 continue
+        chave = achada
         st = porta.setdefault(chave, {
             "aprovadas": 0, "negadas": 0, "expiradas": 0,
             "primeira": ts, "ultima": ts})
