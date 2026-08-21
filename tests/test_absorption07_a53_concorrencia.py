@@ -194,6 +194,17 @@ def test_05a07_origem_mutando_durante_o_import(armazem, tmp_path, modo):
                 resultados.append(armazem.importar(origem))
             except ErroFiltro:
                 pass                      # recusa é desfecho legítimo
+            except FileNotFoundError:
+                # Mesma classe de desfecho legítimo, pelo mesmo contrato: no
+                # modo `symlink` (e no `unlink_recreate`) o atacante faz
+                # unlink→symlink_to, e ENTRE os dois a origem simplesmente
+                # não existe. Cair nessa janela é a corrida acontecendo, não
+                # defeito — o que o teste mede é que nada PARCIAL fica
+                # publicado (`_integros` abaixo). Sem este ramo o teste
+                # falhava por sorteio no CI (visto em ubuntu py3.11/3.12 e
+                # macOS py3.12, passando no re-run) e mantinha o CI vermelho
+                # de forma intermitente.
+                pass
     finally:
         parar.set()
         t.join(timeout=15)
