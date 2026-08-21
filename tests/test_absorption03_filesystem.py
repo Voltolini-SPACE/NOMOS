@@ -263,7 +263,12 @@ def test_n9_arquivo_inexistente(ctx_fabrica, raiz):
         _exec("fs-ler", str(raiz / "nao-existe.txt"), ctx=ctx_fabrica("fs-ler"))
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root ignora permissões")
+# `os.geteuid` é POSIX-only: chamá-lo no DECORATOR (nível de módulo) fazia a
+# coleta inteira do pytest abortar no Windows com AttributeError — 1 módulo
+# derrubava a suíte toda do runner. `getattr` mantém a intenção (root ignora
+# permissão) e degrada para "não é root" onde a função não existe.
+@pytest.mark.skipif(getattr(os, "geteuid", lambda: 1)() == 0,
+                    reason="root ignora permissões")
 def test_n10_permissao_negada(ctx_fabrica, raiz):
     """[N10] erro TIPADO, não vazamento de stacktrace."""
     p = raiz / "sem-permissao.txt"
