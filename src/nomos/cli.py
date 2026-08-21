@@ -2570,7 +2570,18 @@ def cmd_memoria(ctx, args) -> int:
             print(f"\n({c.get('tipo', 'fato')}) {c['text']}")
             resp = input("guardar para sempre? [s]im / [n]ão / [p]ular> ").strip().lower()
             if resp == "s":
-                mem.aprovar_candidata(c["id"])
+                from nomos.cognition.memory import MemoriaRecusada
+                try:
+                    mem.aprovar_candidata(c["id"])
+                except MemoriaRecusada:
+                    # candidata LEGADA (pré-gate NH-005) com segredo: não
+                    # promove e NÃO aborta a revisão — o dono decide se
+                    # descarta. Antes, a exceção matava o loop inteiro e a
+                    # candidata envenenada travava o 's' para sempre.
+                    print("  não guardei: esta candidata tem padrão de "
+                          "segredo/dado sensível (recuse com [n] para "
+                          "tirá-la da fila).")
+                    continue
                 aprovadas += 1
             elif resp == "n":
                 mem.descartar_candidata(c["id"])

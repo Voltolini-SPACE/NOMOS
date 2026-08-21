@@ -220,3 +220,63 @@ def test_kernel_nao_importa_memory():
             assert not ("from nomos.memory" in limpa
                         or "import nomos.memory" in limpa), \
                 f"{py.name}: kernel não pode importar memory ({linha.strip()})"
+
+
+# ------------------- achados da revisão adversarial (Missão B, 21/08) -------
+
+def test_propor_candidata_gateia_segredo(tmp_path):
+    """NO-GO #4 do ADR: `mem_candidatas` é tabela DO memory.db — sem gate, o
+    segredo que `remember` recusava entrava em claro pela fila de revisão."""
+    mem = Memory(tmp_path / "memory.db")
+    with pytest.raises(MemoriaRecusada):
+        mem.propor_candidata(SEGREDO)
+    assert mem.candidatas() == []
+    assert SEGREDO.encode() not in (tmp_path / "memory.db").read_bytes()
+
+
+def test_propor_candidatas_do_texto_pula_suja_e_nao_derruba(tmp_path):
+    """No MESMO turno em que `remember` recusa, a fila não pode aceitar."""
+    mem = Memory(tmp_path / "memory.db")
+    texto = ("não posso esquecer de rotacionar o token: minha api_key = "
+             + "sk-" + "a" * 24)
+    assert mem.propor_candidatas_do_texto(texto) == []
+    assert mem.candidatas() == []
+    assert b"sk-" + b"a" * 24 not in (tmp_path / "memory.db").read_bytes()
+
+
+def test_consolidar_pula_nota_suja_e_grava_as_limpas(tmp_path):
+    """Uma nota LEGADA com segredo não pode abortar o lote inteiro."""
+    mem = Memory(tmp_path / "memory.db")
+    for texto in ("meu email é fulano@x.com e a senha = hunter2segredo",
+                  "meu telefone é 11999998888"):
+        mem.conn.execute("INSERT INTO memories(ts, role, text) "
+                         "VALUES (1, 'user', ?)", (texto,))
+    mem.conn.commit()
+    criadas = mem.consolidar()          # não pode levantar
+    assert all("hunter2segredo" not in n for n in criadas)
+
+
+def test_chat_amigavel_sobrevive_a_segredo_digitado(tmp_path, monkeypatch):
+    """`nomos start`: recusa avisa e SEGUE — a sessão não pode morrer."""
+    from nomos.cognition.router import ChatOutcome
+    from nomos.kernel.policy import PolicyEngine
+    from nomos.simple import amigavel
+
+    class _Router:
+        def chat(self, messages, prefer_cloud=False, passphrase=None):
+            return ChatOutcome(True, "local", "ok", "embutido", "fake")
+
+        def chat_stream(self, messages, on_token):
+            on_token("ok")
+            return ChatOutcome(True, "local", "ok", "embutido", "fake")
+
+    monkeypatch.setenv("NOMOS_HOME", str(tmp_path))
+    tela = []
+    entradas = iter(["minha senha = hunter2segredo", "/sair"])
+    rc = amigavel.iniciar_chat(
+        {"home": tmp_path, "policy": PolicyEngine(tmp_path / "p.json")},
+        {"agent_name": "Luna"}, router=_Router(),
+        ask=lambda _p: next(entradas), say=tela.append, colorido=False,
+        aprovador=lambda d: True)
+    assert rc == 0, "sessão não pode morrer por recusa de memória"
+    assert any("não guardei" in linha for linha in tela)

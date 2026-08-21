@@ -10,7 +10,7 @@ from nomos.kernel import localidade
 from nomos.simple import doutor as doutor_mod
 from nomos.simple import tema as tema_mod
 from nomos.simple import chaves as chaves_mod
-from nomos.cognition.memory import Memory
+from nomos.cognition.memory import Memory, MemoriaRecusada
 from nomos.cognition.providers import OllamaProvider, ProviderUnavailable
 from nomos.kernel.policy import gate as _gate
 from nomos.simple.traducao import aprovador_amigavel, cor
@@ -148,6 +148,21 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
     c = lambda n, t: cor(n, t, colorido)
     nome = perfil.get("agent_name", "Agente")
     mem = Memory(ctx["home"] / "memory.db")
+
+    def _lembrar(role: str, texto: str) -> None:
+        """NH-005 P1: guardar é conveniência; recusa NUNCA derruba a sessão.
+
+        O gate de admissão do `memory.db` levanta `MemoriaRecusada` quando o
+        texto tem padrão de segredo/PII. No `nomos chat` isso já era tratado;
+        aqui (modo amigável, `nomos start`) as 13 chamadas eram cruas e a
+        exceção subia até o handler genérico, matando a conversa inteira.
+        """
+        try:
+            mem.remember(role, texto)
+        except MemoriaRecusada:
+            say(c("fraco", "(não guardei isso: conteúdo com padrão de "
+                           "segredo/dado sensível)"))
+
     aprovador = aprovador or aprovador_amigavel(perfil.get("agent_name", "Agente"),
                                                 ask=ask, say=say)
     tobj = tema_mod.carregar(perfil)
@@ -265,8 +280,8 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
             out = router.chat(msgs, prefer_cloud=True, passphrase=senha)
             if out.ok:
                 say(f"{nome} (nuvem): {out.text}")
-                mem.remember("user", pergunta)
-                mem.remember("assistant", out.text)
+                _lembrar("user", pergunta)
+                _lembrar("assistant", out.text)
             else:
                 say(f"{nome}: não consegui usar a nuvem — {out.reason}")
             continue
@@ -349,8 +364,8 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                     [{"role": "system", "content": sistema},
                      {"role": "user", "content": pedido}])
                 say(f"{nome} [{modelo}]:\n{r.text}")
-                mem.remember("user", f"/cod {pedido}")
-                mem.remember("assistant", r.text)
+                _lembrar("user", f"/cod {pedido}")
+                _lembrar("assistant", r.text)
             except ProviderUnavailable as exc:
                 say(f"{nome}: o motor de código não respondeu ({exc}).")
             continue
@@ -369,7 +384,7 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
             if estado.get("resumo") or estado.get("pontos"):
                 say(_arq.render_resultado(caminho, estado))
                 say(c("fraco", f"({resultado.explicacao})"))
-                mem.remember("note", f"resumi o arquivo {caminho}")
+                _lembrar("note", f"resumi o arquivo {caminho}")
             else:
                 say(f"{nome}: não consegui extrair nada útil — {resultado.motivo}")
             continue
@@ -388,12 +403,12 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
             resumo = _arq.resumir_com_motor(transcricao, router)
             if resumo:
                 say(f"resumo: {resumo}")
-                mem.remember("note", f"áudio {caminho}: {resumo}")
+                _lembrar("note", f"áudio {caminho}: {resumo}")
             else:
                 for p in _arq.extrair_pontos(transcricao, 5):
                     say(f"  · {p}")
                 say(c("fraco", "(sem cérebro para resumo completo — guardei os pontos)"))
-                mem.remember("note", f"áudio {caminho}: " +
+                _lembrar("note", f"áudio {caminho}: " +
                              "; ".join(_arq.extrair_pontos(transcricao, 3)))
             continue
         if linha.startswith("/skills usar"):
@@ -501,7 +516,7 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
             try:
                 descricao = _vis.descrever(caminho, m["detalhe"])
                 say(f"{nome} (visão local): {descricao}")
-                mem.remember("note", f"imagem {caminho}: {descricao[:120]}")
+                _lembrar("note", f"imagem {caminho}: {descricao[:120]}")
             except _vis.VisaoError as exc:
                 say(f"{nome}: {exc}")
             continue
@@ -552,7 +567,7 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
             partes = linha.split(maxsplit=2)
             sub = partes[1] if len(partes) > 1 else "recentes"
             if sub == "anotar" and len(partes) > 2:
-                mem.remember("note", partes[2])
+                _lembrar("note", partes[2])
                 say(f"{nome}: anotado! ({mem.count()} lembranças no total)")
             elif sub == "buscar" and len(partes) > 2:
                 achados = mem.recall_hibrido(partes[2])
@@ -567,12 +582,12 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
         # conversa de verdade
         if demo:
             if parece_lembrete(linha):
-                mem.remember("note", linha)
+                _lembrar("note", linha)
                 say(f"{nome}: anotado! vou lembrar disso pra você. "
                     f"(veja tudo com /memoria)")
             else:
                 say(resposta_demo(linha, nome))
-                mem.remember("user", linha)
+                _lembrar("user", linha)
             continue
         from nomos.cognition.prompt_guard import texto_confiavel
         from nomos.ext import skill_intencao as intencao
@@ -595,7 +610,7 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                 ok, msg = _rodar_skill_conversa(ctx, sugestao["name"], None,
                                                 aprovador, origem="oferta")
                 say(f"{nome}: {msg}")
-                mem.remember("note", f"skill {sugestao['name']} usada na conversa")
+                _lembrar("note", f"skill {sugestao['name']} usada na conversa")
                 continue
             say(c("fraco", "(ok, sigo eu mesmo)"))
         else:
@@ -619,7 +634,7 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                     ok, msg = _usar_agente_conversa(ctx, mf_ag, ferramenta_ag,
                                                     texto_digitado, aprovador, motor)
                     say(f"{nome}: {msg}")
-                    mem.remember("note",
+                    _lembrar("note",
                                 f"agente {mf_ag.name} ({ferramenta_ag}) usado na conversa")
                     continue
                 say(c("fraco", "(ok, sigo eu mesmo)"))
@@ -672,8 +687,8 @@ def iniciar_chat(ctx, perfil: dict, router, ask=input, say=print, colorido: bool
                 say(f"{nome}: {out.text}")
         if out.ok:
             ultima_rota["motor"] = out.provider or out.route
-            mem.remember("user", linha)
-            mem.remember("assistant", out.text)
+            _lembrar("user", linha)
+            _lembrar("assistant", out.text)
             conv_store.add_turno(conversa_id, "user", linha)
             conv_store.add_turno(conversa_id, "assistant", out.text)
             if n_lembrancas:
