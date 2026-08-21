@@ -312,3 +312,32 @@ def test_diagnostico_batimento_forjado_nao_prova_vida(tmp_path):
     d = sv.diagnostico(ctx)
     assert d["batimento_fresco"] is True
     assert d["rodando"] is False
+
+
+def test_flock_ocupado_ve_dono_vivo(tmp_path):
+    """Mata o mutante `return False` na sonda (SOBREVIVEU à primeira rodada —
+    só o lado False estava assertado): com a trava SEGURA, a sonda tem de
+    dizer OCUPADO, senão o status mente 'parado' com serviço vivo."""
+    caminho = tmp_path / "s.lock"
+    t = sv.TravaInstancia(caminho)
+    assert t.adquirir()
+    try:
+        assert sv._flock_ocupado(caminho) is True
+    finally:
+        t.liberar()
+    assert sv._flock_ocupado(caminho) is False, \
+        "trava liberada ⇒ sonda tem de dizer LIVRE (e não pode ser destrutiva)"
+
+
+def test_diagnostico_rodando_com_flock_e_batimento_fresco(tmp_path):
+    """O lado True do veredito 'rodando' (flock ocupado E batimento fresco)."""
+    ctx = _ctx(tmp_path)
+    sv.escrever_batimento(ctx["home"], ticks=1, intervalo_s=999.0)
+    t = sv.TravaInstancia(sv._dir(ctx["home"]) / "servico.lock")
+    assert t.adquirir()
+    try:
+        d = sv.diagnostico(ctx)
+        assert d["flock_ocupado"] is True
+        assert d["rodando"] is True
+    finally:
+        t.liberar()

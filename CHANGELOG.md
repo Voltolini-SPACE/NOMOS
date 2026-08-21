@@ -4,6 +4,28 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (Missão A — RUNTIME-01: NH-026 + NH-014)
+- **`nomos pausar` / `nomos retomar`** (NH-026): freio gracioso da autonomia
+  agendada — a ocorrência em andamento termina, nenhuma nova começa (ticker e
+  rotinas). Pausar não tem gate (freio não tem fricção); retomar passa pelo
+  gate A1 (religar autonomia exige o dono presente). `panic` agora também
+  pausa; `nomos retomar` NÃO desfaz o resto do pânico. `pausa.json` ilegível
+  conta como PAUSADO (freio nunca é fail-open).
+- **`nomos servico rodar|instalar|remover|status`** (NH-014): runtime
+  persistente governado. `rodar` é o mesmo ticker de sempre (autoridade POR
+  OCORRÊNCIA), supervisionado pelo launchd com KeepAlive; uma instância só
+  (flock com anti-troca de inode); batimento observacional em
+  `NOMOS_HOME/servico/batimento.json` (nenhuma decisão o lê); preflight
+  fail-closed recusa subir com `policy.json` corrompida. `instalar` exige
+  aprovação A5 no teclado com o plist impresso na íntegra + SHA-256, e o boot
+  confere o SHA a cada subida (plist adulterado = não sobe). Aprovador do
+  serviço é SEMPRE o painel local: sensível sem humano expira NEGADO.
+
+### Changed
+- `--executavel` agora é negado NA PORTA do CLI com a verdade do selamento
+  (`script-rodar` segue INDISPONÍVEL; ver `adapters/script.py`) em vez de
+  atravessar até um `ErroRuntime` tardio (FIX-03).
+
 ### Fixed (CI vermelho desde o merge do GATE_A — duas causas independentes)
 O CI está vermelho desde `2bda7b0` (13/08). O último verde foi `1636241`
 (11/08). Não era uma falha: eram duas, e a maior não tinha nada a ver com

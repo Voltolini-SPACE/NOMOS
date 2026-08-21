@@ -103,6 +103,19 @@ LEGADO_COM_SUBPROCESS = {
     "conectores/mcp/signal/servidor.py",
 }
 
+# Exceções NOVAS admitidas conscientemente — critério (todos obrigatórios):
+# argv LITERAL de constantes (nada do usuário/plano entra), gate humano
+# INTERATIVO antes da chamada, rc conferido com rollback, e motivo técnico
+# para NÃO passar pelo supervisor. Cada entrada nomeia o motivo.
+EXCECOES_GOVERNADAS_COM_SUBPROCESS = {
+    # NH-014: `launchctl bootstrap/bootout` precisa falar com o launchd via
+    # mach — o perfil deny-default do supervisor quebraria a operação. A
+    # fronteira aqui é o GATE A5 interativo (o dono aprova o plist na íntegra
+    # + SHA-256), não o sandbox. Argv golden-testado em
+    # tests/test_nh014_servico.py::test_instalar_argv_golden_e_registro.
+    "runtime/servico.py",
+}
+
 
 def test_p1_o_legado_com_subprocess_nao_cresceu():
     """Trava de crescimento. `adapters/script.py` continua no disco mesmo com
@@ -111,7 +124,7 @@ def test_p1_o_legado_com_subprocess_nao_cresceu():
              if p.name != "supervisor.py"
              and ("subprocess.Popen" in p.read_text()
                   or "subprocess.run" in p.read_text())}
-    novos = atual - LEGADO_COM_SUBPROCESS
+    novos = atual - LEGADO_COM_SUBPROCESS - EXCECOES_GOVERNADAS_COM_SUBPROCESS
     assert novos == set(), f"execução de processo NOVA fora do supervisor: {novos}"
 
 
