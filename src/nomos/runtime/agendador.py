@@ -77,7 +77,13 @@ class AgendadorGovernado:
                 "agendador exige aprovador: registrar capacidade é ato "
                 "sensível (A5) e não pode acontecer sem gate")
         self.ctx = ctx
-        self.aprovador = aprovador
+        # NH-017c: o disjuntor vive AQUI (uma instância por agendador) e
+        # atravessa as ocorrências do processo do ticker — o cenário real de
+        # fadiga. Envolver no RuntimeGovernado não funcionaria: o agendador
+        # constrói um runtime NOVO por ocorrência, memória zero.
+        from nomos.kernel.disjuntor import DisjuntorAprovacoes
+        self.aprovador = DisjuntorAprovacoes(
+            audit=ctx.get("audit")).envolver(aprovador)
         self.config = config or ConfigAgendador()
         self._agora = agora_fn
         self.audit = ctx.get("audit")

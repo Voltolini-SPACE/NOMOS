@@ -1294,10 +1294,16 @@ def _queue(ctx):
 
 
 def _approver_for(ctx, args):
+    from nomos.kernel.disjuntor import DisjuntorAprovacoes
     if getattr(args, "panel", False):
         from nomos.kernel.approvals import panel_approver
-        return panel_approver(_queue(ctx))
-    return interactive_approver
+        base = panel_approver(_queue(ctx))
+    else:
+        base = interactive_approver
+    # NH-017c: anti-fadiga — N negações da MESMA (categoria, alvo) na janela
+    # ⇒ para de perguntar e nega direto (nunca o contrário). Uma instância
+    # por comando: cobre fluxos com muitas solicitações (orquestrar, missão).
+    return DisjuntorAprovacoes(audit=ctx["audit"]).envolver(base)
 
 
 def cmd_approvals(ctx, args) -> int:
@@ -1329,6 +1335,55 @@ def cmd_approvals(ctx, args) -> int:
             print(f"[{a.id}] {rotulo_categoria(a.category)} "
                   f"alvo={a.target} motivo={a.reason}")
         return EXIT_OK
+    if args.appr_cmd == "sugerir":
+        # NH-017a: minera a trilha e PROPÕE — nunca aplica (por construção:
+        # o PolicyEngine decide por categoria; não há onde aplicar por alvo).
+        from nomos.kernel import sugestor_aprovacoes as sug
+        stats = sug.minerar(ctx["home"] / "logs" / "audit.jsonl",
+                            janela_dias=int(getattr(args, "dias", 30) or 30))
+        sugestoes = sug.sugerir(stats)
+        if getattr(args, "json", False):
+            import dataclasses as _dc
+            print(json.dumps([{**_dc.asdict(s),
+                               "evidencia": _dc.asdict(s.evidencia)}
+                              for s in sugestoes],
+                             ensure_ascii=False, indent=2))
+        elif not sugestoes:
+            print("sem histórico de aprovações suficiente na janela — "
+                  "nada a sugerir.")
+        else:
+            for s in sugestoes:
+                print(f"[{s.acao}] {s.categoria} alvo={s.alvo}")
+                print(f"    {s.explicacao}")
+        caminho = sug.gravar_proposta(ctx["home"], sugestoes, ctx["audit"])
+        print(f"\nproposta gravada (LEITURA para decisão humana): {caminho}")
+        return EXIT_OK
+    if args.appr_cmd == "testar":
+        # NH-017b: dry-run do veredito — consulta, não gate. Nada é criado
+        # na fila, nada executa; a sondagem fica visível na trilha.
+        from nomos.kernel.policy import rotulo_categoria
+        try:
+            categoria = Category(args.categoria)
+        except ValueError:
+            decision = ctx["policy"].decide(args.categoria, target=args.alvo)
+            print(f"categoria desconhecida {args.categoria!r} ⇒ "
+                  f"{decision.effect.value} (fail-closed).", file=sys.stderr)
+            print("categorias válidas: "
+                  + ", ".join(c.value for c in Category), file=sys.stderr)
+            ctx["audit"].append("approvals.teste", categoria=args.categoria,
+                                alvo=args.alvo, efeito=decision.effect.value)
+            return EXIT_DENIED
+        decision = ctx["policy"].decide(categoria, target=args.alvo)
+        efeito = decision.effect.value
+        ctx["audit"].append("approvals.teste", categoria=categoria.value,
+                            alvo=args.alvo, efeito=efeito)
+        print(f"{rotulo_categoria(categoria.value)} · alvo={args.alvo}")
+        print(f"veredito: {efeito}" + (f" — {decision.reason}"
+                                       if decision.reason else ""))
+        if efeito == "REQUIRE_APPROVAL":
+            print("na prática: pediria a SUA aprovação; sem aprovador "
+                  "presente, o gate NEGA (fail-closed).")
+        return EXIT_DENIED if efeito == "DENY" else EXIT_OK
     return EXIT_ERROR
 
 
@@ -3076,6 +3131,16 @@ def build_parser() -> argparse.ArgumentParser:
     aps.add_argument("--port", type=int, default=0)
     aps.set_defaults(fn=cmd_approvals)
     ap.add_parser("list").set_defaults(fn=cmd_approvals)
+    apg = ap.add_parser("sugerir", help="minera a trilha e PROPÕE política "
+                                        "(nunca aplica)")
+    apg.add_argument("--dias", type=int, default=30)
+    apg.add_argument("--json", action="store_true")
+    apg.set_defaults(fn=cmd_approvals)
+    apt = ap.add_parser("testar", help="dry-run do veredito da política "
+                                       "(nada entra na fila, nada executa)")
+    apt.add_argument("categoria", help="ex.: A2_NET_EGRESS")
+    apt.add_argument("alvo")
+    apt.set_defaults(fn=cmd_approvals)
 
     ch = sub.add_parser("chat", help="conversa com o agente no terminal")
     ch.add_argument("prompt", nargs="*")
