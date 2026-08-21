@@ -280,3 +280,32 @@ def test_chat_amigavel_sobrevive_a_segredo_digitado(tmp_path, monkeypatch):
         aprovador=lambda d: True)
     assert rc == 0, "sessão não pode morrer por recusa de memória"
     assert any("não guardei" in linha for linha in tela)
+
+
+def test_cli_importar_dry_run_com_desfazer_recusa_sem_apagar(tmp_path,
+                                                             monkeypatch,
+                                                             capsys):
+    """A flag que promete NÃO escrever executava o rollback REAL."""
+    _povoar_mc28(tmp_path, monkeypatch, ["fato que deve sobreviver"])
+    assert cli.main(["memoria", "importar-mc28"]) == cli.EXIT_OK
+    mem = Memory(tmp_path / "memory.db")
+    antes = mem.count()
+    assert antes == 1
+    mem.close()
+    rc = cli.main(["memoria", "importar-mc28", "--dry-run", "--desfazer"])
+    assert rc == cli.EXIT_ERROR
+    assert "contraditório" in capsys.readouterr().err
+    assert Memory(tmp_path / "memory.db").count() == antes, \
+        "simulação NÃO pode apagar nada"
+
+
+def test_cli_importar_tripwire_hash_invalido_sai_diferente_de_zero(
+        tmp_path, monkeypatch, capsys):
+    """MUTANTE sem teste: o exit≠0 do tripwire no CLI não era coberto."""
+    store = _povoar_mc28(tmp_path, monkeypatch, ["fato integro"])
+    entrada = json.loads(store.paths.raw.read_text().splitlines()[0])
+    entrada["content"] = "ADULTERADO"
+    store.paths.raw.write_text(json.dumps(entrada, ensure_ascii=False) + "\n")
+    rc = cli.main(["memoria", "importar-mc28"])
+    assert rc == cli.EXIT_ERROR, "adulteração tem de sair com exit≠0"
+    assert "ATENÇÃO" in capsys.readouterr().err

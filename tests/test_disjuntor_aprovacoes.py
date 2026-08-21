@@ -51,7 +51,7 @@ def test_disjuntor_abre_apos_n_negacoes_na_janela():
     assert aprovador(dec) is False, "aberto nega direto"
     assert len(chamadas) == 3, "a 4ª solicitação NEM chama o humano"
     abertos = [e for e, _c in audit.eventos
-               if e == "aprovacao.disjuntor.aberto"]
+               if e == "approvals.disjuntor.aberto"]
     assert len(abertos) == 1
 
 
@@ -84,7 +84,7 @@ def test_disjuntor_rearma_fora_da_janela_e_zera_na_aprovacao():
     assert aprovador(dec) is True, "meia-abertura: volta a perguntar"
     assert len(chamadas) == 4
     rearmados = [c for e, c in audit.eventos
-                 if e == "aprovacao.disjuntor.rearmado"]
+                 if e == "approvals.disjuntor.rearmado"]
     assert len(rearmados) == 1 and rearmados[0]["suprimidas"] == 1
     # aprovação zerou: a próxima negação é a PRIMEIRA da nova contagem
     assert aprovador(dec) is False
@@ -99,12 +99,12 @@ def test_disjuntor_um_evento_por_abertura_e_total_no_rearme():
     for _ in range(10):
         aprovador(dec)                    # 10 supressões silenciosas
     abertos = [e for e, _c in audit.eventos
-               if e == "aprovacao.disjuntor.aberto"]
+               if e == "approvals.disjuntor.aberto"]
     assert len(abertos) == 1, "10 supressões = 1 evento (DoS de trilha)"
     relogio.t += 301
     aprovador(dec)                        # rearme reporta o total
     (rearme,) = [c for e, c in audit.eventos
-                 if e == "aprovacao.disjuntor.rearmado"]
+                 if e == "approvals.disjuntor.rearmado"]
     assert rearme["suprimidas"] == 10
 
 

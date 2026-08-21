@@ -63,7 +63,7 @@ class DisjuntorAprovacoes:
                     est["suprimidas"] += 1
                     return False          # aberto: nega SEM perguntar
                 # janela venceu: rearma e volta a perguntar
-                self._auditar("aprovacao.disjuntor.rearmado",
+                self._auditar("approvals.disjuntor.rearmado",
                               categoria=chave[0], alvo=chave[1],
                               suprimidas=est["suprimidas"])
                 est.update(negacoes=[], aberto_em=None, suprimidas=0)
@@ -75,7 +75,7 @@ class DisjuntorAprovacoes:
             est["negacoes"].append(agora)
             if len(est["negacoes"]) >= self.limite:
                 est["aberto_em"] = agora
-                self._auditar("aprovacao.disjuntor.aberto",
+                self._auditar("approvals.disjuntor.aberto",
                               categoria=chave[0], alvo=chave[1],
                               negacoes=len(est["negacoes"]),
                               janela_s=self.janela_s)

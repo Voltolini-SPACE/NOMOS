@@ -511,6 +511,18 @@ sensível sem humano no painel EXPIRA NEGADO — nunca se auto-aprova</pre></fig
                 <figure class="demo"><p class="cmd">$ nomos pausar --motivo "fim de semana"</p><pre>freio gracioso: a ocorrência atual termina, nenhuma nova começa
 pausar nunca pede aprovação — freio não tem fricção
 nomos retomar religa (aí sim, com o seu ok no teclado)</pre></figure>
+                <figure class="demo"><p class="cmd">$ nomos motores uso --dias 7</p><pre>quanto cada motor trabalhou: chamadas, tempo, tokens quando o backend informa
+só METADADOS — nenhum pedaço de prompt ou resposta vai para o disco
+arquivo 0600 no seu home; nada sai da máquina</pre></figure>
+                <figure class="demo"><p class="cmd">$ nomos approvals sugerir</p><pre>lê a sua trilha e PROPÕE política — nunca aplica nada sozinho
+A5/A6 (executar, instalar, destruir) ficam fora da sugestão, sempre
+`nomos approvals testar A2_NET_EGRESS api.exemplo` responde sem executar</pre></figure>
+                <figure class="demo"><p class="cmd">$ nomos scheduler criar --raiz ~/trabalho --job-id vigia --capacidade fs-listar --monitorar ~/trabalho/entrada --continuidade</p><pre>--monitorar: só dispara quando o CONTEÚDO muda (mtime não engana)
+--continuidade: a próxima execução recebe o resumo da anterior
+`nomos scheduler notas vigia` mostra o bloco de notas do job</pre></figure>
+                <figure class="demo"><p class="cmd">$ nomos memoria importar-mc28 --dry-run</p><pre>traz o histórico do motor de memória antigo para a memória principal
+valida o hash de cada entrada — adulterada é PULADA e o comando falha
+origem fica byte-idêntica; --desfazer reverte por inteiro</pre></figure>
             </div>
 
             <h3 class="slots-h">Clipes do sistema <span class="soon">— gravações reais entram aqui (solte seus arquivos em <code>site/assets/media/</code>)</span></h3>

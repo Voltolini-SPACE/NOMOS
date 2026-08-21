@@ -1342,7 +1342,11 @@ def cmd_approvals(ctx, args) -> int:
         stats = sug.minerar(ctx["home"] / "logs" / "audit.jsonl",
                             janela_dias=int(getattr(args, "dias", 30) or 30))
         sugestoes = sug.sugerir(stats)
-        if getattr(args, "json", False):
+        modo_json = bool(getattr(args, "json", False))
+        if modo_json:
+            # `--json` imprime SÓ JSON no stdout (a prosa e o caminho da
+            # proposta vão para o stderr) — saída de máquina tem de ser
+            # parseável, como no resto da CLI
             import dataclasses as _dc
             print(json.dumps([{**_dc.asdict(s),
                                "evidencia": _dc.asdict(s.evidencia)}
@@ -1356,7 +1360,11 @@ def cmd_approvals(ctx, args) -> int:
                 print(f"[{s.acao}] {s.categoria} alvo={s.alvo}")
                 print(f"    {s.explicacao}")
         caminho = sug.gravar_proposta(ctx["home"], sugestoes, ctx["audit"])
-        print(f"\nproposta gravada (LEITURA para decisão humana): {caminho}")
+        aviso = f"proposta gravada (LEITURA para decisão humana): {caminho}"
+        if modo_json:
+            print(aviso, file=sys.stderr)
+        else:
+            print(f"\n{aviso}")
         return EXIT_OK
     if args.appr_cmd == "testar":
         # NH-017b: dry-run do veredito — consulta, não gate. Nada é criado
@@ -2513,13 +2521,23 @@ def cmd_memoria(ctx, args) -> int:
         # é completo (--desfazer apaga exatamente fonte='mc28').
         from nomos.memory import ponte
         from nomos.memory.store import MemoryStore
+        from nomos.simple.erros import fmt
+        seco_pedido = bool(getattr(args, "dry_run", False))
         if getattr(args, "desfazer", False):
+            if seco_pedido:
+                # achado da revisão: `--dry-run --desfazer` executava o
+                # rollback REAL durante a "simulação" — a flag que promete
+                # não escrever apagava dados. Recusa explícita.
+                print(fmt("E010", "--dry-run com --desfazer é contraditório: "
+                                  "o rollback é escrita. Rode um OU outro."),
+                      file=sys.stderr)
+                return EXIT_ERROR
             n = ponte.desfazer(mem)
             ctx["audit"].append("memoria.importacao.desfeita", removidas=n)
             print(f"desfeito: {n} memória(s) importada(s) removida(s) — a "
                   "origem MC28 nunca foi tocada.")
             return EXIT_OK
-        seco = bool(getattr(args, "dry_run", False))
+        seco = seco_pedido
         r = ponte.importar(MemoryStore(), mem, dry_run=seco)
         modo = "(simulação — nada gravado) " if seco else ""
         print(f"{modo}importadas: {r.importadas} · duplicadas: "
