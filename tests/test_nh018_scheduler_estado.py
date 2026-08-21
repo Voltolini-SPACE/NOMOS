@@ -340,3 +340,75 @@ def test_monitor_fora_do_escopo_negado_na_criacao(tmp_path):
                                   monitorar_alvo=str(fora))
     assert ok is False and "monitorar_alvo" in str(motivo), \
         "PDP confere monitorar_alvo contra o escopo de DADOS na criação"
+
+
+# ------------------ achados da revisão adversarial (Missão B, 21/08) --------
+
+def test_monitor_nao_segue_symlink_do_alvo(tmp_path):
+    """Escape de escopo: link plantado depois da criação tornaria o ticker
+    leitor — e oráculo de mudança — de qualquer arquivo do sistema."""
+    fora = tmp_path / "fora.txt"
+    fora.write_text("segredo de fora")
+    link = tmp_path / "link.txt"
+    link.symlink_to(fora)
+    with pytest.raises(ErroInvalido):
+        hash_alvo(link)
+
+
+def test_monitor_symlink_na_arvore_nao_le_destino(tmp_path):
+    """Dentro do diretório monitorado, o link é hasheado pelo DESTINO
+    TEXTUAL — mudar o arquivo externo não pode mexer no hash."""
+    fora = tmp_path / "fora.txt"
+    fora.write_text("v1")
+    d = tmp_path / "obs"
+    d.mkdir()
+    (d / "normal.txt").write_text("conteudo")
+    (d / "atalho").symlink_to(fora)
+    h1 = hash_alvo(d)
+    fora.write_text("v2 COMPLETAMENTE DIFERENTE")
+    assert hash_alvo(d) == h1, "conteúdo FORA do escopo não pode mudar o hash"
+    (d / "atalho").unlink()
+    (d / "atalho").symlink_to(tmp_path / "outro-destino")
+    assert hash_alvo(d) != h1, "trocar o DESTINO do link é mudança visível"
+
+
+def test_monitor_hash_isento_da_quota_de_notas(tmp_path):
+    """Quota cheia não pode impedir o scheduler de gravar `__monitor_hash`
+    (senão: efeito aplicado + FAILED falso + re-execução para sempre)."""
+    az = ArmazemJobs(tmp_path / "j.db")
+    for i in range(az.NOTA_CHAVES_MAX):
+        az.nota_escrever("j1", f"chave{i}", "v")
+    with pytest.raises(ErroInvalido):
+        az.nota_escrever("j1", "mais_uma_do_usuario", "v")
+    az.nota_escrever("j1", "__monitor_hash", "abc123")     # não pode levantar
+    assert az.nota_ler("j1", "__monitor_hash") == "abc123"
+
+
+def test_monitor_falha_DO_EFEITO_nao_avanca_hash(tmp_path):
+    """MUTANTE que sobreviveu: mover o persist do hash para ANTES do efeito
+    passava 16/16 — nenhum teste cobria falha DO EFEITO com monitor ligado.
+    Com a falha real, o hash TEM de continuar no valor antigo (a mudança
+    não pode ser perdida em silêncio)."""
+    from nomos.runtime.governado import ErroRuntime
+    ctx, ws = _amb(tmp_path)
+    alvo = ws / "obs.txt"
+    alvo.write_text("v1")
+    ag = AgendadorGovernado(ctx, lambda d: True,
+                            ConfigAgendador(raizes=(str(ws),)),
+                            agora_fn=lambda: T0)
+    ag.preparar()
+    d = ag.scheduler.criar("j1", "suj", "fs-listar", alvo=str(ws),
+                           primeiro_em=T0, monitorar_alvo=str(alvo))
+    inst = type("I", (), {"ocorrencia": "o1"})()
+    rt = ag.autorizador(d, inst)
+
+    class _Falha:
+        ok = False
+        motivo = "efeito falhou de propósito"
+        missao = None
+
+    rt.rodar = lambda obj, passos: _Falha()
+    with pytest.raises(ErroRuntime):
+        ag._executar_ocorrencia(d, inst, credencial=rt)
+    assert ag.armazem.nota_ler("j1", "__monitor_hash") is None, \
+        "falha DO EFEITO não pode avançar o hash — a mudança seria perdida"

@@ -252,7 +252,15 @@ class ArmazemJobs:
         with self._lock, self._conn() as c:
             existentes = {r[0] for r in c.execute(
                 "SELECT chave FROM job_notas WHERE job_id=?", (job_id,))}
-            if chave not in existentes and len(existentes) >= self.NOTA_CHAVES_MAX:
+            # Chaves de SISTEMA (`__*`) são ISENTAS da quota (achado da
+            # revisão adversarial): com as 32 chaves do job ocupadas, o
+            # `__monitor_hash` estourava a quota DEPOIS do efeito aplicado —
+            # a ocorrência saía FAILED com efeito real feito, o hash nunca
+            # persistia e TODO tick re-executava o efeito para sempre. A
+            # quota existe para conter o JOB, não para calar o scheduler.
+            de_usuario = {k for k in existentes if not k.startswith("__")}
+            if (not chave.startswith("__") and chave not in de_usuario
+                    and len(de_usuario) >= self.NOTA_CHAVES_MAX):
                 raise ErroInvalido(
                     f"job '{job_id}' já tem {self.NOTA_CHAVES_MAX} notas — "
                     "apague antes de criar novas")
