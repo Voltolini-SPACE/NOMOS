@@ -248,9 +248,12 @@ class AgendadorGovernado:
         if not self._preparado:
             raise RuntimeError("chame `preparar()` antes de montar o ticker")
         extra = {} if dormir is None else {"dormir": dormir}
+        from nomos.kernel import pausa
         return Ticker(self.scheduler, self.autorizador, audit=self.audit,
                       alert_sink=AuditAlertSink(self.audit) if self.audit else None,
                       catchup=self.config.catchup,
                       catchup_max=self.config.catchup_max,
                       intervalo_s=self.config.intervalo_s,
-                      agora_fn=self._agora, **extra)
+                      agora_fn=self._agora,
+                      pausado_fn=lambda: pausa.esta_pausado(self.ctx["home"]),
+                      **extra)

@@ -157,18 +157,63 @@ def cmd_panic(ctx, args) -> int:
     # localidade de volta a LIGADO (egress volta a ser bloqueado mesmo que
     # você tivesse destravado antes). Continua sem gate/aprovação — pânico
     # tem que ser instantâneo, sem fricção.
+    from nomos.kernel import pausa
     ctx["consent"].panic()
     negadas = _queue(ctx).deny_all()
     localidade.definir(ctx["home"], True)
+    # NH-026: pânico também PAUSA a autonomia agendada (ticker + rotinas).
+    # `nomos retomar` religa SÓ o agendador — não desfaz o resto do pânico.
+    pausa.pausar(ctx["home"], motivo="panic", origem="panic")
     ctx["audit"].append(
         "panic.executado",
-        efeito="consentimentos revogados; aprovações pendentes negadas; localidade travada",
+        efeito="consentimentos revogados; aprovações pendentes negadas; "
+               "localidade travada; autonomia pausada",
         aprovacoes_negadas=negadas,
+        pausa_ativada=True,
     )
     print(
         "PÂNICO: microfone, câmera e tela revogados; "
-        f"{negadas} aprovação(ões) pendente(s) negada(s); modo só-local travado."
+        f"{negadas} aprovação(ões) pendente(s) negada(s); modo só-local "
+        "travado; autonomia agendada PAUSADA."
     )
+    return EXIT_OK
+
+
+def cmd_pausar(ctx, args) -> int:
+    """NH-026 — freio gracioso, sem gate (freio não tem fricção)."""
+    from nomos.kernel import pausa
+    est = pausa.pausar(ctx["home"], motivo=getattr(args, "motivo", "") or "")
+    ctx["audit"].append("pausa.ativada", motivo=est["motivo"], origem="cli")
+    sufixo = f" — motivo: {est['motivo']}" if est["motivo"] else ""
+    print(f"PAUSA ativa desde {est['desde']}{sufixo}")
+    print("a ocorrência em andamento termina; nenhuma nova começa. "
+          "religar: `nomos retomar` (pede aprovação).")
+    return EXIT_OK
+
+
+def cmd_retomar(ctx, args) -> int:
+    """NH-026 — religar a autonomia exige o dono presente (gate A1)."""
+    from nomos.kernel import pausa
+    est = pausa.estado(ctx["home"])
+    if not est["pausado"]:
+        print("pausa já estava inativa — nada a fazer.")
+        return EXIT_OK
+    decision = ctx["policy"].decide(Category.WRITE_LOCAL,
+                                    target="pausa:retomar")
+    if not gate(decision, _approver_for(ctx, args)):
+        ctx["audit"].append("pausa.retomada.negada",
+                            origem_anterior=est["origem"])
+        from nomos.simple.erros import fmt
+        print(fmt("E002", "retomar não aprovado (fail-closed)."),
+              file=sys.stderr)
+        return EXIT_DENIED
+    pausa.retomar(ctx["home"])
+    ctx["audit"].append("pausa.retomada", origem_anterior=est["origem"])
+    print("pausa desativada — a autonomia agendada volta a rodar.")
+    if est["origem"] == "panic":
+        print("ATENÇÃO: o pânico NÃO foi desfeito — consentimentos seguem "
+              "revogados e a localidade segue travada. Isto religa só o "
+              "agendador.")
     return EXIT_OK
 
 
@@ -1450,6 +1495,15 @@ def cmd_status(ctx, args) -> int:
     print("política: read-only por padrão, fail-closed ativo")
     for dev, ok in ctx["consent"].status().items():
         print(f"consentimento {dev}: {'CONCEDIDO' if ok else 'desligado'}")
+    from nomos.kernel import pausa
+    est_pausa = pausa.estado(ctx["home"])
+    if est_pausa["pausado"] and est_pausa["ilegivel"]:
+        print("pausa: ATIVA (pausa.json ilegível → fail-closed)")
+    elif est_pausa["pausado"]:
+        motivo = est_pausa["motivo"] or "—"
+        print(f"pausa: ATIVA desde {est_pausa['desde']} (motivo: {motivo})")
+    else:
+        print("pausa: inativa")
     from nomos.ext import skills as skills_mod
     print(f"skills instaladas: {len(skills_mod.list_installed(ctx['skills']))}")
     print(f"auditoria: {auditoria_txt}")
@@ -2871,6 +2925,16 @@ def build_parser() -> argparse.ArgumentParser:
     rv.set_defaults(fn=cmd_consent)
 
     sub.add_parser("panic", help="botão de pânico: revoga consentimentos e tranca tudo").set_defaults(fn=cmd_panic)
+    pz = sub.add_parser("pausar", help="freio gracioso: a ocorrência atual "
+                                       "termina, nenhuma nova começa")
+    pz.add_argument("--motivo", default="",
+                    help="anotação livre (vai para a auditoria)")
+    pz.set_defaults(fn=cmd_pausar)
+    rt = sub.add_parser("retomar", help="religa a autonomia agendada "
+                                        "(pede aprovação)")
+    rt.add_argument("--panel", action="store_true",
+                    help="aprova via painel local em vez do terminal")
+    rt.set_defaults(fn=cmd_retomar)
 
     rn = sub.add_parser("run", help="executa uma ação governada (passa pelo gate A0–A6)")
     rn.add_argument("cmd")
