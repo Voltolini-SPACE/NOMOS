@@ -1800,6 +1800,22 @@ def cmd_scheduler(ctx, args) -> int:
     from nomos.runtime.agendador import AgendadorGovernado, ConfigAgendador
 
     sub = getattr(args, "scheduler_cmd", None)
+    if sub == "notas":
+        # NH-018a: visibilidade do OPERADOR sobre o próprio home (A0, mesma
+        # classe do `approvals list`) — sem furar a posse da capacidade
+        # governada, que continua só existindo dentro da execução do job.
+        from nomos.adapters.scheduler import ArmazemJobs
+        from nomos.runtime.agendador import caminho_do_armazem
+        notas = ArmazemJobs(caminho_do_armazem(ctx["home"])).notas_de(
+            str(args.job_id))
+        if not notas:
+            print(f"job '{args.job_id}': nenhuma nota.")
+            return EXIT_OK
+        for chave, valor in notas.items():
+            marca = " (sistema)" if chave.startswith("__") else ""
+            print(f"  {chave}{marca}: {len(valor)} byte(s)")
+            print(f"    {valor[:160]}")
+        return EXIT_OK
     raizes = tuple(getattr(args, "raiz", None) or ())
     executaveis = tuple(getattr(args, "executavel", None) or ())
     if executaveis:
@@ -1882,6 +1898,10 @@ def cmd_scheduler(ctx, args) -> int:
                 # que o recusa. Com teste de verdade, o zero sumia aqui e o
                 # operador recebia um ONE_SHOT sem nunca saber.
                 params["intervalo_s"] = int(args.intervalo_job)
+            if getattr(args, "continuidade", False):
+                params["continuidade"] = True
+            if getattr(args, "monitorar", ""):
+                params["monitorar_alvo"] = str(args.monitorar)
             ok, valor, motivo = ag.operar("sched-criar", **params)
         if not ok:
             print(fmt("E010", f"scheduler {sub} recusado: {motivo}"),
@@ -2830,6 +2850,12 @@ def build_parser() -> argparse.ArgumentParser:
             ag_grp.add_argument("--intervalo-job", dest="intervalo_job",
                                 type=int, default=None,
                                 help="segundos entre execuções (agenda INTERVAL)")
+            sc.add_argument("--continuidade", action="store_true",
+                            help="a ocorrência N+1 recebe resumo compacto do "
+                                 "fim da N (params['resumo_anterior'])")
+            sc.add_argument("--monitorar", default="",
+                            help="só dispara quando o CONTEÚDO deste caminho "
+                                 "muda (hash; mtime não engana)")
             sc.add_argument("--tz", default="UTC",
                             help="timezone IANA aplicada à agenda (padrão UTC)")
         if nome_s == "rodar":
@@ -2845,6 +2871,10 @@ def build_parser() -> argparse.ArgumentParser:
                             help="teto de ocorrências recuperadas por passada "
                                  "(limita a tempestade após uma parada longa)")
         sc.set_defaults(fn=cmd_scheduler)
+    scn = schsub.add_parser("notas", help="notas duráveis de um job "
+                                          "(leitura do operador, A0)")
+    scn.add_argument("job_id")
+    scn.set_defaults(fn=cmd_scheduler)
     sch.set_defaults(fn=cmd_scheduler, scheduler_cmd=None, raiz=[],
                      executavel=[], intervalo=1.0, max_ticks=None)
 

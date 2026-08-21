@@ -473,12 +473,19 @@ def _ponte_sched(scheduler, nome: str, registro):
                 # ONE_SHOT explícito: assim a tz é validada aqui também, em vez
                 # de só quando `Scheduler.criar` monta o spec padrão.
                 schedule = ScheduleSpec(kind=TipoAgenda.ONE_SHOT, timezone=tz)
+            continuidade = params.get("continuidade", False)
+            if not isinstance(continuidade, bool):
+                # booleano ESTRITO: "false" (string) virando True é o tipo de
+                # rebaixamento silencioso que esta ponte existe para recusar
+                raise ErroInvalido("`continuidade` precisa ser booleano")
             d = scheduler.criar(
                 job_id, str(params.get("sujeito", "runtime-governado")),
                 str(params.get("capacidade", "")),
                 argumentos=params.get("argumentos") or {},
                 alvo=str(params.get("alvo_job", "") or ""),
-                intervalo_s=intervalo, tz=tz, schedule=schedule)
+                intervalo_s=intervalo, tz=tz, schedule=schedule,
+                continuidade=continuidade,
+                monitorar_alvo=str(params.get("monitorar_alvo", "") or ""))
             return d.job_id
         if nome == "sched-habilitar":
             return scheduler.habilitar(job_id).estado.value
@@ -507,6 +514,61 @@ def registrar_scheduler(registro, scheduler, *, apenas_leitura: bool = False) ->
                                _ponte_sched(scheduler, nome, registro),
                                origem="adapters.scheduler",
                                idempotente=nome in IDEMPOTENTES_SCHED)
+            registrados.append(nome)
+        except ErroRegistro as exc:
+            if "já registrada" in str(exc):
+                registrados.append(nome)
+                continue
+            raise
+    return registrados
+
+
+# -------------------------------------------------------- notas de job (NH-018)
+
+def registrar_notas_job(registro, armazem, job_id: str) -> list[str]:
+    """Registra `job-nota-ler`/`job-nota-escrever` com o job_id CRAVADO.
+
+    Posse por CONSTRUÇÃO (precedente `_ponte_script`: a allowlist é fixada
+    no registro, não vem do chamador): o executor captura `job_id` na
+    closure — plano nenhum lê/escreve nota de OUTRO job, nem via params.
+    Fora da execução de um job estas capacidades nem existem no registro.
+    Chaves `__*` são do sistema (`__resumo_anterior`, `__monitor_hash`) e
+    são recusadas aqui — job nenhum forja o próprio passado.
+    """
+    from nomos.orquestracao.registro import ErroRegistro
+
+    def _chave_valida(params) -> str:
+        if "_sujeito" in params:
+            raise ErroInvalido(
+                "'_sujeito' não é aceito: a identidade do sujeito vem do "
+                "contexto autorizado, nunca do plano")
+        chave = str(params.get("chave", "") or "")
+        if not chave:
+            raise ErroInvalido("nota exige `chave`")
+        if chave.startswith("__"):
+            raise ErroInvalido(
+                f"chave {chave!r} é do SISTEMA — job não forja o próprio "
+                "passado (resumo/hash são gravados pelo scheduler)")
+        return chave
+
+    def _ler(**params):
+        return armazem.nota_ler(job_id, _chave_valida(params))
+
+    def _escrever(**params):
+        chave = _chave_valida(params)
+        armazem.nota_escrever(job_id, chave, str(params.get("valor", "")))
+        return chave
+
+    _ler.__name__ = _ler.__qualname__ = "adapter_job_nota_ler"
+    _escrever.__name__ = _escrever.__qualname__ = "adapter_job_nota_escrever"
+    registrados = []
+    for nome, categoria, executor, idem in (
+            ("job-nota-ler", Category.READ_LOCAL, _ler, True),
+            ("job-nota-escrever", Category.WRITE_LOCAL, _escrever, False)):
+        try:
+            registro.registrar(nome, categoria, executor,
+                               origem="adapters.scheduler.notas",
+                               idempotente=idem)
             registrados.append(nome)
         except ErroRegistro as exc:
             if "já registrada" in str(exc):

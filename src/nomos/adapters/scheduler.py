@@ -108,6 +108,11 @@ class JobDefinition:
     # `intervalo_s` continua no dataclass só para não quebrar quem já grava
     # nesse formato — `agenda()` normaliza os dois.
     schedule: ScheduleSpec | None = None
+    # NH-018 (ambos opt-in; default = comportamento clássico):
+    # continuidade: a ocorrência N+1 recebe resumo compacto do fim da N;
+    # monitorar_alvo: só dispara efeito quando o hash do alvo muda.
+    continuidade: bool = False
+    monitorar_alvo: str = ""
 
     def agenda(self) -> ScheduleSpec:
         """A agenda efetiva. Nunca INFERE cron de string arbitrária."""
@@ -173,6 +178,19 @@ class ArmazemJobs:
             cols = [r[1] for r in c.execute("PRAGMA table_info(jobs)")]
             if "schedule" not in cols:
                 c.execute("ALTER TABLE jobs ADD COLUMN schedule TEXT")
+            # NH-018: colunas aditivas (mesmo padrão provado do `schedule`)
+            if "continuidade" not in cols:
+                c.execute("ALTER TABLE jobs ADD COLUMN "
+                          "continuidade INTEGER DEFAULT 0")
+            if "monitorar_alvo" not in cols:
+                c.execute("ALTER TABLE jobs ADD COLUMN "
+                          "monitorar_alvo TEXT DEFAULT ''")
+            # NH-018: notepad durável por job — quota por chave, verificável
+            # linha a linha; expurgo junto com o job (nota órfã = vazamento)
+            c.execute("""CREATE TABLE IF NOT EXISTS job_notas (
+                job_id TEXT NOT NULL, chave TEXT NOT NULL,
+                valor TEXT NOT NULL, atualizado_em TEXT NOT NULL,
+                PRIMARY KEY(job_id, chave))""")
             # PRIMARY KEY na chave da ocorrência: o INSERT duplicado FALHA.
             # É o dedup — e ele acontece ANTES do efeito, não depois.
             c.execute("""CREATE TABLE IF NOT EXISTS ocorrencias (
@@ -196,8 +214,16 @@ class ArmazemJobs:
     # ------------------------------------------------------------ definições
 
     def salvar(self, d: JobDefinition) -> None:
+        # Lista EXPLÍCITA de colunas (achado do juiz da OPERACAO-01): o
+        # `INSERT ... VALUES (?,...)` posicional quebrava em runtime na
+        # primeira coluna nova de migração aditiva — a tabela crescia e o
+        # INSERT continuava contando 11.
         with self._lock, self._conn() as c:
-            c.execute("""INSERT OR REPLACE INTO jobs VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            c.execute("""INSERT OR REPLACE INTO jobs
+                (job_id, sujeito, capacidade, argumentos, alvo, intervalo_s,
+                 proximo_em, estado, criado_em, tz, schedule,
+                 continuidade, monitorar_alvo)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                       (d.job_id, d.sujeito, d.capacidade,
                        json.dumps(d.argumentos, ensure_ascii=False), d.alvo,
                        d.intervalo_s,
@@ -205,7 +231,53 @@ class ArmazemJobs:
                        d.estado.value,
                        (d.criado_em or datetime.now(timezone.utc)).isoformat(),
                        d.tz,
-                       json.dumps(d.agenda().dict(), ensure_ascii=False)))
+                       json.dumps(d.agenda().dict(), ensure_ascii=False),
+                       1 if d.continuidade else 0,
+                       d.monitorar_alvo or ""))
+
+    # ------------------------------------------------------- notepad (NH-018)
+
+    NOTA_CHAVE_MAX = 64
+    NOTA_VALOR_MAX = 4096          # bytes utf-8; nunca trunca — recusa
+    NOTA_CHAVES_MAX = 32           # por job
+
+    def nota_escrever(self, job_id: str, chave: str, valor: str) -> None:
+        from nomos.kernel.audit import redact_text
+        if not chave or len(chave.encode()) > self.NOTA_CHAVE_MAX:
+            raise ErroInvalido(f"chave de nota inválida (1..{self.NOTA_CHAVE_MAX} bytes)")
+        if len(str(valor).encode()) > self.NOTA_VALOR_MAX:
+            raise ErroInvalido(
+                f"valor de nota excede {self.NOTA_VALOR_MAX} bytes — "
+                "recusado (nunca truncado em silêncio)")
+        with self._lock, self._conn() as c:
+            existentes = {r[0] for r in c.execute(
+                "SELECT chave FROM job_notas WHERE job_id=?", (job_id,))}
+            if chave not in existentes and len(existentes) >= self.NOTA_CHAVES_MAX:
+                raise ErroInvalido(
+                    f"job '{job_id}' já tem {self.NOTA_CHAVES_MAX} notas — "
+                    "apague antes de criar novas")
+            c.execute("""INSERT OR REPLACE INTO job_notas
+                         (job_id, chave, valor, atualizado_em)
+                         VALUES (?,?,?,?)""",
+                      (job_id, chave, redact_text(str(valor)),
+                       datetime.now(timezone.utc).isoformat()))
+
+    def nota_ler(self, job_id: str, chave: str) -> str | None:
+        with self._lock, self._conn() as c:
+            r = c.execute("SELECT valor FROM job_notas WHERE job_id=? AND chave=?",
+                          (job_id, chave)).fetchone()
+        return r[0] if r else None
+
+    def notas_de(self, job_id: str) -> dict[str, str]:
+        with self._lock, self._conn() as c:
+            return {r[0]: r[1] for r in c.execute(
+                "SELECT chave, valor FROM job_notas WHERE job_id=? "
+                "ORDER BY chave", (job_id,))}
+
+    def notas_apagar(self, job_id: str) -> int:
+        with self._lock, self._conn() as c:
+            cur = c.execute("DELETE FROM job_notas WHERE job_id=?", (job_id,))
+            return cur.rowcount
 
     def obter(self, job_id: str) -> JobDefinition | None:
         with self._lock, self._conn() as c:
@@ -252,6 +324,8 @@ class ArmazemJobs:
     def apagar(self, job_id: str) -> None:
         with self._lock, self._conn() as c:
             c.execute("DELETE FROM jobs WHERE job_id=?", (job_id,))
+            # NH-018: nota órfã é vazamento de quota e de dado
+            c.execute("DELETE FROM job_notas WHERE job_id=?", (job_id,))
 
     # ------------------------------------------------------------ ocorrências
 
@@ -306,7 +380,11 @@ def _linha_para_def(r) -> JobDefinition:
         proximo_em=datetime.fromisoformat(r[6]) if r[6] else None,
         estado=JobState(r[7]),
         criado_em=datetime.fromisoformat(r[8]) if r[8] else None, tz=r[9],
-        schedule=schedule)
+        schedule=schedule,
+        # NH-018: guarda posicional como a do `schedule` — banco antigo
+        # (linha curta) lê com os defaults, sem quebrar
+        continuidade=bool(r[11]) if len(r) > 11 and r[11] else False,
+        monitorar_alvo=(r[12] or "") if len(r) > 12 else "")
 
 
 class ErroScheduler(ErroConflito):
@@ -343,7 +421,9 @@ class Scheduler:
     def criar(self, job_id: str, sujeito: str, capacidade: str, *,
               argumentos=None, alvo: str = "", intervalo_s: int | None = None,
               primeiro_em: datetime | None = None, tz: str = "UTC",
-              schedule: ScheduleSpec | None = None) -> JobDefinition:
+              schedule: ScheduleSpec | None = None,
+              continuidade: bool = False,
+              monitorar_alvo: str = "") -> JobDefinition:
         if not job_id or not isinstance(job_id, str) or len(job_id) > _ID_MAX:
             raise ErroInvalido(f"job_id inválido: {job_id!r}")
         if self.armazem.obter(job_id) is not None:
@@ -361,12 +441,18 @@ class Scheduler:
         # pela metade.
         if schedule.kind is TipoAgenda.CRON:
             primeiro_em = primeiro_em or schedule.proximo(agora)
+        if monitorar_alvo:
+            # NH-018c: valida o alvo NA CRIAÇÃO (teto de arquivos, hash
+            # computável) — recusa aqui, não degradação na milésima ocorrência
+            from nomos.adapters.monitor import hash_alvo
+            hash_alvo(monitorar_alvo)
         d = JobDefinition(
             job_id=job_id, sujeito=sujeito, capacidade=capacidade,
             argumentos=dict(argumentos or {}), alvo=alvo,
             intervalo_s=intervalo_s, proximo_em=primeiro_em or agora,
             estado=JobState.SCHEDULED, criado_em=agora, tz=tz,
-            schedule=schedule)
+            schedule=schedule, continuidade=bool(continuidade),
+            monitorar_alvo=str(monitorar_alvo or ""))
         self.armazem.salvar(d)
         self._auditar("scheduler.job.criado", job=job_id, capacidade=capacidade,
                       recorrente=d.recorrente(), tz=tz)
@@ -507,6 +593,22 @@ class Scheduler:
     def _encerrar(self, d: JobDefinition, inst: JobInstance, agora: datetime,
                   final: JobState, detalhe: str, efeito: bool) -> JobExecution:
         """O único fim. Estado, reagendamento e trilha acontecem AQUI."""
+        if d.continuidade:
+            # NH-018b: resumo compacto e determinístico da ocorrência que
+            # terminou — cobre sucesso E falha (é o único fim, por desenho).
+            # `redact_text` no detalhe: exceção pode ecoar segredo.
+            from nomos.kernel.audit import redact_text
+            resumo = json.dumps({
+                "ocorrencia": inst.ocorrencia, "estado": final.value,
+                "efeito": bool(efeito),
+                "detalhe": redact_text(str(detalhe or ""))[:200],
+                "concluida_em": agora.isoformat(),
+            }, ensure_ascii=False, sort_keys=True)
+            try:
+                self.armazem.nota_escrever(d.job_id, "__resumo_anterior",
+                                           resumo)
+            except ErroInvalido:
+                pass          # quota estourada não pode impedir o encerramento
         self._transicao_tolerante(d.job_id, final)
         self._reagendar(d, agora, final)
         self._auditar("scheduler.execucao.fim", job=d.job_id,

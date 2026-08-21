@@ -136,7 +136,7 @@ class AgendadorGovernado:
                               armazem=str(self.armazem.caminho))
         return list(self.capacidades)
 
-    def _runtime(self):
+    def _runtime(self, job_id: str | None = None):
         """Um `RuntimeGovernado` NOVO — autoridade fresca, sempre.
 
         Construir de novo a cada ocorrência é o que faz política, registro e
@@ -147,6 +147,11 @@ class AgendadorGovernado:
         dentro da autorização assinada. Registrar depois da construção foi o
         bypass da ABSORPTION-05; registrar num runtime descartado foi o buraco
         que o sucedeu.
+
+        `job_id` (NH-018a): SÓ a execução de uma ocorrência o passa — é o que
+        faz `job-nota-ler/escrever` existirem apenas dentro do próprio job,
+        com a posse cravada na closure. `operar()` não passa ⇒ fora de
+        execução a capacidade é desconhecida para o PDP.
         """
         from nomos.runtime.governado import RuntimeGovernado
         return RuntimeGovernado(
@@ -154,7 +159,8 @@ class AgendadorGovernado:
             caminhos=self.config.raizes,
             adapters=bool(self.config.raizes),
             executaveis=self.config.executaveis,
-            scheduler=self.scheduler)
+            scheduler=self.scheduler,
+            notas_job=(self.armazem, job_id) if job_id else None)
 
     # ------------------------------------------------------------- operação
 
@@ -191,7 +197,7 @@ class AgendadorGovernado:
         registro mudou desde a criação do job, isto é onde se descobre.
         """
         try:
-            rt = self._runtime()
+            rt = self._runtime(job_id=definicao.job_id)
         except Exception:
             return None                       # sem runtime não há autoridade
         if not rt.registro.conhecida(definicao.capacidade):
@@ -221,6 +227,22 @@ class AgendadorGovernado:
             raise ErroRuntime(
                 "ocorrência sem autoridade: o agendador não executa sem "
                 "runtime governado (fail-closed)")
+        hash_atual = None
+        if definicao.monitorar_alvo:
+            # NH-018c: supressão por CONTEÚDO. O hash é computado ANTES do
+            # efeito e só é persistido APÓS sucesso — falha re-tenta, mudança
+            # durante o efeito re-dispara (duplicar é possível; PERDER, não).
+            from nomos.adapters.monitor import hash_alvo
+            hash_atual = hash_alvo(definicao.monitorar_alvo)
+            anterior = self.armazem.nota_ler(definicao.job_id,
+                                             "__monitor_hash")
+            if hash_atual == anterior:
+                if self.audit is not None:
+                    self.audit.append("scheduler.monitor.suprimida",
+                                      job=definicao.job_id,
+                                      ocorrencia=instancia.ocorrencia,
+                                      hash=hash_atual[:16])
+                return type("R", (), {"efeito_aplicado": False})()
         passos = [{
             "id": "job",
             "ferramenta": definicao.capacidade,
@@ -228,12 +250,25 @@ class AgendadorGovernado:
         }]
         if definicao.alvo:
             passos[0]["params"].setdefault("alvo", definicao.alvo)
+        if definicao.continuidade:
+            # NH-018b: a ocorrência N+1 RECEBE o resumo da N como dado.
+            # Opt-in explícito: quem liga --continuidade declara que a
+            # capacidade tolera o parâmetro; rejeição vira FAILED visível.
+            resumo = self.armazem.nota_ler(definicao.job_id,
+                                           "__resumo_anterior")
+            if resumo:
+                passos[0]["params"]["resumo_anterior"] = resumo[:1024]
         resultado = rt.rodar(f"job:{definicao.job_id}", passos=passos)
         if not resultado.ok:
             no = (resultado.missao.nos.get("job")
                   if resultado.missao is not None else None)
             motivo = (no.detalhe if no is not None else resultado.motivo) or "sem detalhe"
             raise ErroRuntime(f"ocorrência falhou: {motivo}")
+        if hash_atual is not None:
+            # NH-018c: SÓ após sucesso, e o valor PRÉ-efeito — falha re-tenta;
+            # mudança ocorrida DURANTE o efeito re-dispara no próximo tick
+            self.armazem.nota_escrever(definicao.job_id, "__monitor_hash",
+                                       hash_atual)
         # O efeito é DERIVADO do registro, não afirmado. Antes esta linha era
         # `efeito_aplicado: True` literal, então um job `fs-listar` — leitura
         # A0, idempotente, que comprovadamente não muda nada — gravava efeito=1
