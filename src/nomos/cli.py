@@ -1559,13 +1559,18 @@ def cmd_orquestrar(ctx, args) -> int:
         return EXIT_ERROR
     executaveis = tuple(getattr(args, "executavel", None) or ())
     usar_scheduler = bool(getattr(args, "scheduler", False))
-    if executaveis and not usar_adapters:
-        print(fmt("E010", "--executavel exige --adapters: `script-rodar` é "
-                          "registrado junto com as capacidades de arquivo"),
+    if executaveis:
+        # Falha honesta na PORTA: `script-rodar` está selado no runtime
+        # (governado.py). Construir o runtime para só então negar era UX
+        # enganosa — o erro chegava tarde, vestido de defeito interno.
+        print(fmt("E010", "--executavel está SELADO: `script-rodar` (execução "
+                          "de binário arbitrário) segue indisponível — "
+                          "argv[1:] escapa do escopo de caminho. Módulo e "
+                          "testes preservados em adapters/script.py"),
               file=sys.stderr)
-        return EXIT_ERROR
-    if (executaveis or usar_scheduler) and not raizes:
-        print(fmt("E010", "--executavel/--scheduler exigem pelo menos um "
+        return EXIT_DENIED
+    if usar_scheduler and not raizes:
+        print(fmt("E010", "--scheduler exige pelo menos um "
                           "--raiz (escopo de caminho)"), file=sys.stderr)
         return EXIT_ERROR
     scheduler = None
@@ -1671,6 +1676,13 @@ def cmd_scheduler(ctx, args) -> int:
     sub = getattr(args, "scheduler_cmd", None)
     raizes = tuple(getattr(args, "raiz", None) or ())
     executaveis = tuple(getattr(args, "executavel", None) or ())
+    if executaveis:
+        # Mesma porta honesta do `nomos orquestrar`: o selamento vive no
+        # runtime; aqui só evitamos o caminho longo até o mesmo "não".
+        print(fmt("E010", "--executavel está SELADO: `script-rodar` segue "
+                          "indisponível (ver adapters/script.py)"),
+              file=sys.stderr)
+        return EXIT_DENIED
     if not raizes:
         print(fmt("E010", "scheduler exige pelo menos um --raiz (escopo de "
                           "caminho das capacidades executadas pelos jobs)"),
@@ -2605,8 +2617,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help="registra as capacidades de arquivo (fs-ler, "
                           "fs-escrever, fs-editar, …) — exige --raiz")
     orq.add_argument("--executavel", action="append", default=[],
-                     help="binário autorizado para script-rodar (pode repetir); "
-                          "sem isto a capacidade de script NÃO é registrada")
+                     help="SELADO: script-rodar está indisponível por "
+                          "segurança; a flag é aceita e negada na porta "
+                          "(ver adapters/script.py)")
     orq.add_argument("--scheduler", action="store_true",
                      help="registra as capacidades de agendamento "
                           "(sched-criar, sched-listar, …) — exige --raiz")
@@ -2621,7 +2634,8 @@ def build_parser() -> argparse.ArgumentParser:
         sc.add_argument("--raiz", action="append", default=[],
                         help="raiz autorizada (pode repetir) — obrigatório")
         sc.add_argument("--executavel", action="append", default=[],
-                        help="binário autorizado para script-rodar (pode repetir)")
+                        help="SELADO: script-rodar está indisponível por "
+                             "segurança; negado na porta")
         sc.add_argument("--intervalo", type=float, default=1.0,
                         help="segundos entre passadas do ticker")
         sc.add_argument("--max-ticks", type=int, dest="max_ticks", default=None,
