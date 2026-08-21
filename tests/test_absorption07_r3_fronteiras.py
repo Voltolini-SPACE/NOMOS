@@ -665,20 +665,18 @@ def test_r3_18_quarentena_que_NAO_pode_ser_apagada_vira_incidente(campo,
     um `rmtree` silencioso por outro. O canal é a propriedade — o descritor é
     só o mecanismo.
     """
-    import shutil as _sh
     repo = _init(campo.raiz / "repo")
     (repo / "s.txt").write_bytes(b"AWS_SECRET_ACCESS_KEY=P19ESEGREDO\n")
 
-    real = _sh.rmtree
-
-    def rmtree_quebra_so_a_limpeza(*a, **k):
-        # Só a limpeza FINAL usa `dir_fd`. Sabotar o `rmtree` inteiro quebraria
-        # a promoção também, e o erro original deixaria de ser o injetado —
-        # o teste passaria medindo outra coisa.
-        if "dir_fd" in k:
-            raise OSError(1, "Operation not permitted")
-        return real(*a, **k)
-    monkeypatch.setattr(_sh, "rmtree", rmtree_quebra_so_a_limpeza)
+    def limpeza_quebra(*a, **k):
+        # Sabota SÓ a limpeza final da quarentena. Antes a injeção era em
+        # `shutil.rmtree` filtrando por `dir_fd` no kwargs; a remoção passou
+        # a ser `_apagar_arvore_por_fd` (compat. com py3.10, onde
+        # `rmtree(dir_fd=)` não existe), então a injeção acompanha o
+        # mecanismo. A PROPRIEDADE medida é a mesma: limpeza que falha vira
+        # incidente, nunca recusa limpa.
+        raise OSError(1, "Operation not permitted")
+    monkeypatch.setattr(git_tree, "_apagar_arvore_por_fd", limpeza_quebra)
     monkeypatch.setattr(git_tree.GitTreeAdapter, "_auditar",
                         lambda self, *a, **k: (_ for _ in ()).throw(
                             RuntimeError("recusa pos-exec")))
@@ -698,20 +696,16 @@ def test_r3_19_no_SUCESSO_a_quarentena_residual_tambem_e_recusa(campo,
     nada, deixando o índice apontando para blob AUSENTE. Sucesso com store
     paralelo sobrevivendo é a mesma omissão, do lado que ninguém olha.
     """
-    import shutil as _sh
     repo = _init(campo.raiz / "repo")
     (repo / "ok.txt").write_text("conteudo\n")
 
-    real = _sh.rmtree
-    chamadas = {"n": 0}
-
-    def rmtree_quebra_no_fim(*a, **k):
-        # A promoção usa `rmtree` também; só a limpeza FINAL é sabotada.
-        chamadas["n"] += 1
-        if "dir_fd" in k:
-            raise OSError(1, "Operation not permitted")
-        return real(*a, **k)
-    monkeypatch.setattr(_sh, "rmtree", rmtree_quebra_no_fim)
+    def limpeza_quebra_no_fim(*a, **k):
+        # A promoção usa `shutil.rmtree`; só a limpeza FINAL (agora
+        # `_apagar_arvore_por_fd`) é sabotada — sabotar as duas faria o erro
+        # medido ser outro.
+        raise OSError(1, "Operation not permitted")
+    monkeypatch.setattr(git_tree, "_apagar_arvore_por_fd",
+                        limpeza_quebra_no_fim)
 
     with pytest.raises(supervisor.ErroSeguranca, match="QUARENTENA"):
         campo.add(repo, "ok.txt")
