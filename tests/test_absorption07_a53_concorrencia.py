@@ -25,6 +25,7 @@ side effect existiria.
 """
 from __future__ import annotations
 
+import errno
 import os
 import subprocess
 import sys
@@ -194,17 +195,22 @@ def test_05a07_origem_mutando_durante_o_import(armazem, tmp_path, modo):
                 resultados.append(armazem.importar(origem))
             except ErroFiltro:
                 pass                      # recusa é desfecho legítimo
-            except FileNotFoundError:
+            except OSError as e:
                 # Mesma classe de desfecho legítimo, pelo mesmo contrato: no
                 # modo `symlink` (e no `unlink_recreate`) o atacante faz
-                # unlink→symlink_to, e ENTRE os dois a origem simplesmente
-                # não existe. Cair nessa janela é a corrida acontecendo, não
-                # defeito — o que o teste mede é que nada PARCIAL fica
-                # publicado (`_integros` abaixo). Sem este ramo o teste
-                # falhava por sorteio no CI (visto em ubuntu py3.11/3.12 e
-                # macOS py3.12, passando no re-run) e mantinha o CI vermelho
-                # de forma intermitente.
-                pass
+                # unlink→symlink_to, e ENTRE os dois a origem não existe (ou
+                # é um link sendo trocado). Cair nessa janela é a corrida
+                # acontecendo, não defeito — o que o teste mede é que nada
+                # PARCIAL fica publicado (`_integros` abaixo).
+                #
+                # O errno DEPENDE DA PLATAFORMA para o mesmo evento: Linux
+                # devolve ENOENT e o macOS devolve EINVAL no `realpath` do
+                # link em troca. Filtro pela lista de sintomas de "o caminho
+                # mudou embaixo" em vez de engolir OSError inteiro — erro de
+                # permissão ou de I/O continua derrubando o teste, como deve.
+                if e.errno not in (errno.ENOENT, errno.EINVAL,
+                                   errno.ELOOP, errno.ENOTDIR):
+                    raise
     finally:
         parar.set()
         t.join(timeout=15)
