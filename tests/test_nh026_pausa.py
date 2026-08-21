@@ -128,6 +128,29 @@ def test_ticker_audit_por_borda_nao_por_tick():
     assert len(saiu) == 1
 
 
+def test_ticker_borda_reseta_nos_dois_sentidos():
+    """Mata o mutante que remove `self._estava_pausado = False` na saída
+    (SOBREVIVEU à 1ª rodada: com 1 tick pós-pausa o total de 'saiu' ainda é
+    1). Sem o reset, CADA tick ativo re-audita 'saiu' (DoS de trilha) e a
+    pausa seguinte não audita 'entrou'. Aqui: N ticks ativos ⇒ 1 'saiu';
+    re-pausar ⇒ 2º 'entrou' tem de aparecer."""
+    audit = _AuditFake()
+    pausado = {"v": True}
+    t = Ticker(_SchedulerEspiao(), SEM_AUTORIZACAO, audit=audit,
+               agora_fn=lambda: T0, dormir=lambda _s: None,
+               pausado_fn=lambda: pausado["v"])
+    t.tick()                                   # entra pausado (1º 'entrou')
+    pausado["v"] = False
+    for _ in range(4):                         # 4 ticks ativos
+        t.tick()
+    saiu = [e for e, _c in audit.eventos if e == "ticker.pausa.saiu"]
+    assert len(saiu) == 1, "4 ticks ativos = 1 'saiu', não 4"
+    pausado["v"] = True
+    t.tick()                                   # pausa DE NOVO
+    entrou = [e for e, _c in audit.eventos if e == "ticker.pausa.entrou"]
+    assert len(entrou) == 2, "re-pausar tem de auditar o 2º 'entrou'"
+
+
 def test_ticker_pausa_no_meio_do_catchup(tmp_path):
     """3 ocorrências vencidas; o freio liga após a 1ª ⇒ a corrente termina,
     as outras 2 NÃO iniciam. Mata o mutante que remove o check do laço."""
