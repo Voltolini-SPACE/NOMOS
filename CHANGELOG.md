@@ -4,6 +4,84 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Fixed (CI vermelho desde o merge do GATE_A — duas causas independentes)
+O CI está vermelho desde `2bda7b0` (13/08). O último verde foi `1636241`
+(11/08). Não era uma falha: eram duas, e a maior não tinha nada a ver com
+plataforma.
+
+**Causa 1 — o binário executado era o SHIM, não o Git (222 falhas no macOS).**
+`/usr/bin/git` no macOS não é o Git: é o shim do `xcrun`, que PROCURA o Git
+consultando `$TMPDIR/xcrun_db`. No miss do cache ele cai para `xcodebuild`, que
+não está na allowlist de `process-exec` — e não deve estar. O resultado era
+`rc=71` dependendo de estado de CACHE, não de código. MEDIDO, mesmo commit,
+mesma máquina:
+
+    suíte completa ........................ 220 falhas (2 rodadas, idêntico)
+    só a família absorption06+07 .......... 0 falhas (897 testes)
+    só `test_absorption07_c1_git` ......... 8 falhas (3 rodadas, idêntico)
+    apagando `$TMPDIR/xcrun_db` ........... falha reproduzível
+
+Determinístico por ESCOPO, não aleatório — o que é pior que flaky: "rodei os
+testes do módulo e passou" não provava nada. O runner macOS do CI falhava do
+mesmo jeito (222), com a mesma assinatura `couldn't spawn xcodebuild`.
+
+Correção: `binario_de_git()` resolve o Git da toolchain e os quatro adapters
+(`git`, `git_push`, `git_write`, `git_tree`) executam ELE. O `xcrun` sai do
+caminho: uma decisão a menos em tempo de execução, e autoridade MENOR — o
+processo que roda passa a ser exatamente o que a allowlist nomeia. Com o cache
+apagado de propósito, a suíte foi de 220 falhas para **3585 passed, 24 skipped,
+0 failed**.
+
+**Causa 2 — teste afirmando sucesso onde a capacidade não existe (67 no
+Linux/Windows).** As capacidades Git governadas exigem `sandbox-exec` e são
+indisponíveis fora do macOS **por desenho** (`adapters/supervisor.py`,
+"Fail-closed, sem exceção"). Cinco arquivos condicionavam o skip a
+`Path("/usr/bin/git").exists()` — que é VERDADE no Linux —, então os testes
+rodavam e falhavam numa plataforma onde a capacidade não deveria existir.
+
+Correção: marcador `git_governado` + `pytest_collection_modifyitems` na
+`conftest.py`, aplicado aos 58 testes que dependem do supervisor. Não é
+`pytestmark` de módulo de propósito: nesses arquivos a maioria dos testes é
+independente de plataforma e continua valendo no Linux — um skip de módulo
+apagaria 49 testes válidos só em `c1_git`. Sem `sandbox-exec` TODA operação
+recusa, então o teste que afirma "isto foi recusado" passaria por VÁCUO; pular
+diz a verdade, passar por vácuo mente.
+
+Três testes ficaram fora do marcador porque não são da capacidade Git, e o
+motivo do skip tem de ser o motivo certo: premissa de symlink em `/tmp` (gate
+pelo fato medido, não por `platform.system()`), medição de `fexecve` e
+dependência do `sed` BSD.
+
+### Added
+- `kernel.plataforma.capacidade_git_governada_disponivel()` — simétrico de
+  `execucao_isolada_disponivel()` (só-Linux). Os dois confinamentos do NOMOS
+  cobrem plataformas diferentes e cada um recusa fail-closed fora da sua; agora
+  isso é consultável, e `resumo()` (logo, `nomos doutor`) diz qual existe.
+- Gate MC33 `brand:contagem_de_testes` — confere o número anunciado no README,
+  no site e no banner contra a contagem REAL do repositório. O gate respondia
+  `13/13 consistente` enquanto as três superfícies diziam 1.800+, 1.900+ e
+  3.000+, e nenhuma batia com o repo. Ancorado no repositório, não em outro
+  texto: documento contra documento deixaria os três concordarem num número
+  errado. Tolerância por milhar — gate que fica vermelho a cada teste novo é
+  gate que alguém desliga.
+
+### Changed
+- README: "1.900 testes" → "3.000+ funções de teste"; a afirmação fixa "verde em
+  3 sistemas × 4 versões" saiu — quem diz o estado de cada rodada é o badge de
+  CI, não uma frase que envelhece. Passou a dizer que C1/C2 só existem no macOS.
+- `docs/brand/social-preview.svg`: "1.800+" → "3.000+".
+
+### Known / pendente de humano
+- `docs/brand/social-preview.png` (o que o README EXIBE) ainda mostra "1.800+":
+  não há `rsvg-convert` nesta máquina e o ImageMagick não rasteriza este SVG.
+  Re-render pendente (`brew install librsvg`). O gate acima cobre o SVG, que é a
+  fonte; o PNG continua desatualizado até alguém rodar o conversor.
+- `test_MEDICAO_A531`: no Linux `os.execve` JÁ está em `os.supports_fd` — o
+  primitive forte EXISTE lá. Isso é pergunta de projeto em aberto (se o
+  supervisor ganhar porte para Linux, A5.3 precisa ser reavaliado), não alarme
+  falso. Fica pulado fora do macOS em vez de vermelho, para não travar o CI com
+  uma decisão de arquitetura disfarçada de falha.
+
 ### Fixed (C8 — promoção PARCIAL deixava segredo legível numa operação RECUSADA)
 A0.3 põe os objetos em quarentena e só os promove ao store permanente no ponto
 de commit. A promoção em si era um laço de `os.replace`: cada movimento atômico

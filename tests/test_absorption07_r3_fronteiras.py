@@ -388,6 +388,7 @@ def _na_janela(monkeypatch, acao):
     monkeypatch.setattr(git_tree, "_instantaneo_das_refs", espiao)
 
 
+@pytest.mark.git_governado
 def test_r3_10_terceiro_ANTES_do_exec_nao_e_destruido_em_silencio(campo,
                                                                   monkeypatch):
     """`.8.05-08` (REGRESSION, reproduzido 12/12 e depois 4/4).
@@ -421,6 +422,7 @@ def test_r3_10_terceiro_ANTES_do_exec_nao_e_destruido_em_silencio(campo,
         "emitiu incidente — perda silenciosa de trabalho aceito")
 
 
+@pytest.mark.git_governado
 def test_r3_11_NOSSAS_refs_nao_viram_incidente_forense(campo, monkeypatch):
     """`.11.09`: sinal que dispara sozinho não é sinal.
 
@@ -442,6 +444,7 @@ def test_r3_11_NOSSAS_refs_nao_viram_incidente_forense(campo, monkeypatch):
         "exec, e não havia processo concorrente nenhum")
 
 
+@pytest.mark.git_governado
 def test_r3_12_ref_de_TERCEIRO_na_janela_continua_virando_incidente(campo,
                                                                     monkeypatch):
     """O par do teste acima: fechar o falso positivo não pode calar o real."""
@@ -467,6 +470,7 @@ def test_r3_12_ref_de_TERCEIRO_na_janela_continua_virando_incidente(campo,
     assert "refs" in erro, "o incidente não nomeia as refs"
 
 
+@pytest.mark.git_governado
 def test_r3_13_o_incidente_diz_QUAL_estado_foi_sobreposto(campo, monkeypatch):
     """"o índice" para uma REF perdida manda a pessoa procurar no lugar errado."""
     repo = _init(campo.raiz / "repo")
@@ -487,6 +491,7 @@ def test_r3_13_o_incidente_diz_QUAL_estado_foi_sobreposto(campo, monkeypatch):
 
 # ═══════ .6.N1 (P2) — o cenário EXATO do vetor, que era 2/2 antes ════════════
 
+@pytest.mark.git_governado
 def test_r3_14_ref_NOVA_criada_pelo_nosso_commit_nao_acusa_terceiro(campo):
     """O vetor de `.6.N1`, sem gancho nenhum: dois arquivos que o REPO escreve.
 
@@ -605,6 +610,7 @@ def _add_com_recusa_apos_o_exec(campo, repo, monkeypatch):
     return str(ei.value)
 
 
+@pytest.mark.git_governado
 def test_r3_17_renomear_o_git_dir_nao_faz_a_quarentena_sobreviver(campo,
                                                                   monkeypatch):
     """MEDIDO 6/6 antes: o blob CRU do arquivo recusado ficava legível.
@@ -650,6 +656,7 @@ def _tem_segredo(objeto, zlib) -> bool:
         return False
 
 
+@pytest.mark.git_governado
 def test_r3_18_quarentena_que_NAO_pode_ser_apagada_vira_incidente(campo,
                                                                   monkeypatch):
     """Apagar pode falhar; falhar em SILÊNCIO não pode.

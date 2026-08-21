@@ -56,6 +56,7 @@ from pathlib import Path
 
 from nomos.adapters import supervisor
 from nomos.adapters.caminho import resolver
+from nomos.kernel import plataforma
 from nomos.adapters.contrato import (
     Adapter, CapabilityContext, CapabilityRequest, CapabilityResult,
     ErroInvalido, ErroLimite, ErroNaoEncontrado,
@@ -186,6 +187,42 @@ def ambiente_minimo() -> dict[str, str]:
         # adapter — deixaria buracos por construção.
         "GIT_NO_REPLACE_OBJECTS": "1",
     }
+
+
+def binario_de_git() -> str:
+    """O git que o NOMOS EXECUTA — o da toolchain, nunca o shim.
+
+    `/usr/bin/git` não é o Git: é o shim do `xcrun`, que PROCURA o Git. Essa
+    procura consulta um cache em `$TMPDIR/xcrun_db` e, quando o cache não
+    responde, cai para `xcodebuild` — que não está na allowlist de
+    `process-exec` (e não deve estar). O resultado medido era `rc=71`
+    dependendo de estado de CACHE, não de código:
+
+        suíte completa .................... 220 falhas
+        só a família absorption06+07 ...... 0 falhas (897 testes)
+        só `test_absorption07_c1_git` ..... 8 falhas
+        apagando `$TMPDIR/xcrun_db` ....... falha reproduzível
+
+    O mesmo `rc=71` aparece no runner macOS do CI (222 falhas). Não era defeito
+    de máquina: era o shim.
+
+    Executar o binário resolvido tira o `xcrun` do caminho — uma decisão a menos
+    em tempo de execução, e autoridade MENOR, porque o processo que roda passa a
+    ser exatamente aquele que a allowlist nomeia.
+
+    Fora do macOS devolve o shim sem resolver nada: ali a execução já é recusada
+    antes, por `executaveis_de_git`, e levantar aqui quebraria até a CONSTRUÇÃO
+    do adapter — que é legítima e testada em qualquer plataforma.
+    """
+    if not plataforma.EH_MAC:
+        return "/usr/bin/git"
+    dev = os.path.realpath("/var/select/developer_dir")
+    real = os.path.join(dev, "usr", "bin", "git")
+    if not os.path.exists(real):
+        raise supervisor.ErroSeguranca(
+            f"git da toolchain não resolve ({real}) — recuso em vez de cair "
+            "para o shim, que reintroduz a procura por xcodebuild")
+    return real
 
 
 def executaveis_de_git() -> tuple[str, ...]:
@@ -1239,7 +1276,7 @@ class GitAdapter(Adapter):
     def __init__(self, binario: str | None = None):
         # O binário é resolvido pelo RUNTIME, não pelo plano. Guardado no
         # adapter, não em parâmetro — não há por onde um plano trocá-lo.
-        self._git = binario or "/usr/bin/git"
+        self._git = binario or binario_de_git()
 
     def executar(self, pedido: CapabilityRequest,
                  ctx: CapabilityContext) -> CapabilityResult:

@@ -106,6 +106,7 @@ def _sha(bare: Path, ref: str) -> str:
 
 # ============================================ push real
 
+@pytest.mark.git_governado
 def test_c2b_push_real_para_bare_local(amb):
     """REAL_REMOTE_PUSH: o SHA remoto tem de bater com o local."""
     rt, _ws, repo, permitido, _hostil, _ctx, _d = amb
@@ -115,6 +116,7 @@ def test_c2b_push_real_para_bare_local(amb):
     assert _sha(permitido, "refs/heads/main") == esperado
 
 
+@pytest.mark.git_governado
 def test_c2b_push_nao_toca_o_remote_hostil(amb):
     rt, _ws, repo, _permitido, hostil, _c, _d = amb
     assert _plano(rt, alvo=str(repo), remote_id="producao",
@@ -149,6 +151,7 @@ def test_c2b_pushInsteadOf_tambem_e_barrado(amb):
     assert _sha(permitido, "refs/heads/main") == ""
 
 
+@pytest.mark.git_governado
 def test_c2b_remote_do_repo_nao_e_a_autoridade(amb):
     """REMOTE_NAME_ONLY_TRUST=FALSE.
 
@@ -164,6 +167,7 @@ def test_c2b_remote_do_repo_nao_e_a_autoridade(amb):
     assert _sha(hostil, "refs/heads/main") == "", "PUSHURL_ESCAPE"
 
 
+@pytest.mark.git_governado
 def test_c2b_conferencia_roda_de_novo_antes_do_efeito(amb):
     """A segunda resolução é o que fecha o TOCTOU.
 
@@ -278,6 +282,7 @@ def test_c2b_CONTROLE_POSITIVO_espiao_e_canario_funcionam(amb, tmp_path, espiao_
         "o canário não é gravável onde mora — a ausência não provaria nada")
 
 
+@pytest.mark.git_governado
 def test_c2b_credential_helper_do_repo_nao_executa(amb, tmp_path, espiao_nativo):
     """CREDENTIAL_HELPER_EXECUTION=FALSE, ASKPASS_EXECUTION=FALSE.
 
@@ -301,6 +306,7 @@ def test_c2b_credential_helper_do_repo_nao_executa(amb, tmp_path, espiao_nativo)
     assert not canario.exists(), "helper/hook do repositório executou"
 
 
+@pytest.mark.git_governado
 def test_c2b_env_hostil_do_host_nao_executa(amb, monkeypatch, tmp_path, espiao_nativo):
     rt, _ws, repo, _p, _h, _c, _d = amb
     canario = Path(repo) / ".git" / "CANARIO-ENV"
@@ -357,6 +363,7 @@ def test_c2b_repo_fora_do_escopo_e_negado(amb, tmp_path):
                       source_branch="main").ok
 
 
+@pytest.mark.git_governado
 def test_c2b_passa_por_pdp_e_pep(amb):
     import json
     rt, _ws, repo, _p, _h, ctx, _d = amb
@@ -491,6 +498,7 @@ def test_m11_branch_de_destino_da_politica_e_validada(amb, tmp_path):
         ad.executar(pedido, ctx)
 
 
+@pytest.mark.git_governado
 def test_m6_GIT_DIR_do_host_nao_muda_o_repositorio_publicado(amb, monkeypatch,
                                                               tmp_path):
     """M6: `GIT_DIR` herdado redirecionaria a ORIGEM do push."""

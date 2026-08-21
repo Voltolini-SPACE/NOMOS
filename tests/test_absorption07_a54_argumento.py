@@ -27,6 +27,7 @@ from pathlib import Path
 
 import pytest
 
+from nomos.kernel import plataforma
 from nomos.adapters import filtro_governado as fg
 from nomos.adapters.filtro_governado import (
     ArmazemDeExecutaveis,
@@ -206,8 +207,18 @@ def test_o_filtro_governado_FUNCIONA_com_o_argv_aprovado(sed_art):
     assert "hunter2" not in r.stdout, "o segredo passou intacto"
 
 
+@pytest.mark.skipif(
+    not plataforma.EH_MAC,
+    reason="depende do sed BSD: o GNU sed sem script sai com erro de uso e "
+           "stdout VAZIO, então a contraprova não consegue nem rodar")
 def test_sem_o_argv_aprovado_o_redator_nao_redige(sed_art):
-    """Contraprova: o argv É a autoridade funcional, não decoração."""
+    """Contraprova: o argv É a autoridade funcional, não decoração.
+
+    Só vale onde `sed` sem script COPIA a entrada (BSD, macOS). No GNU sed
+    (Linux) o mesmo comando devolve erro de uso e stdout vazio — o teste ficaria
+    vermelho por diferença de implementação do `sed`, não por perda da
+    propriedade que ele mede.
+    """
     pol = _pol(sed_art, argv=())
     r = subprocess.run(pol.comando(), input="SENHA=hunter2\n",
                        capture_output=True, text=True, timeout=20)

@@ -33,7 +33,7 @@
   <!-- Selos de prova (rodapé da janela) -->
   <g font-family="Menlo, SFMono-Regular, Consolas, monospace" font-size="18">
     <rect x="112" y="478" width="212" height="40" rx="8" fill="none" stroke="#5AF78E" stroke-opacity="0.5"/>
-    <text x="218" y="504" text-anchor="middle" fill="#5AF78E">1.800+ testes</text>
+    <text x="218" y="504" text-anchor="middle" fill="#5AF78E">3.000+ testes</text>
     <rect x="340" y="478" width="268" height="40" rx="8" fill="none" stroke="#5AF78E" stroke-opacity="0.5"/>
     <text x="474" y="504" text-anchor="middle" fill="#5AF78E">SLSA · Sigstore</text>
     <rect x="624" y="478" width="300" height="40" rx="8" fill="none" stroke="#5AF78E" stroke-opacity="0.5"/>

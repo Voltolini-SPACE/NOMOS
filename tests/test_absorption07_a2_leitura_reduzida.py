@@ -44,7 +44,7 @@ import pytest
 from nomos.adapters import git as mod_git
 from nomos.adapters import supervisor
 
-GIT = "/usr/bin/git"
+GIT = "/usr/bin/git"          # preparo do repositório, FORA do sandbox
 SANDBOX = supervisor.SANDBOX
 pytestmark = pytest.mark.skipif(
     not (Path(GIT).exists() and Path(SANDBOX).exists()),
@@ -194,15 +194,19 @@ def test_ancestral_nao_permite_LISTAR(repo):
 ])
 def test_operacoes_object_only_funcionam_sob_o_piso(repo, op):
     real = os.path.realpath(repo)
-    r = _sob(mod_git.confinamento_de_leitura(repo), GIT, "-C", real,
-             "--no-pager", *op, env=mod_git.ambiente_minimo())
+    # `binario_de_git()` e não `GIT`: DENTRO do sandbox o produto executa o
+    # binário resolvido. Usar o shim aqui media um caminho que o adapter não
+    # percorre — e trazia junto o `rc=71` dependente do cache do xcrun.
+    r = _sob(mod_git.confinamento_de_leitura(repo), mod_git.binario_de_git(),
+             "-C", real, "--no-pager", *op, env=mod_git.ambiente_minimo())
     assert r.returncode == 0, f"{op}: rc={r.returncode} {r.stderr[:300]}"
 
 
 def test_paridade_de_saida_com_o_perfil_amplo(repo):
     """A redução não pode MUDAR o resultado, só a autoridade."""
     real = os.path.realpath(repo)
-    argv = (GIT, "-C", real, "--no-pager", "log", "--oneline")
+    argv = (mod_git.binario_de_git(), "-C", real, "--no-pager", "log",
+            "--oneline")
     amb = mod_git.ambiente_minimo()
     largo = _sob(supervisor.Confinamento(escrita=(), declara_sem_escrita=True,
                                          exec_permitido=mod_git.executaveis_de_git()),
@@ -210,6 +214,34 @@ def test_paridade_de_saida_com_o_perfil_amplo(repo):
     estreito = _sob(mod_git.confinamento_de_leitura(repo), *argv, env=amb)
     assert largo.returncode == estreito.returncode == 0
     assert largo.stdout == estreito.stdout, "a saída divergiu sob o piso"
+
+
+def test_o_binario_executado_NAO_e_o_shim_do_xcrun():
+    """Regressão do `rc=71` que dependia de CACHE, não de código.
+
+    `/usr/bin/git` no macOS é o shim do `xcrun`: ele procura o Git consultando
+    `$TMPDIR/xcrun_db` e, no miss, tenta `xcodebuild` — fora da allowlist. Isso
+    fazia a MESMA suíte passar ou falhar conforme a ordem dos testes (medido:
+    897/897 na família inteira, 8 falhas rodando só `c1_git`), e derrubava 222
+    testes no runner macOS do CI.
+
+    Voltar a `/usr/bin/git` reintroduz a procura. Este teste é o que impede.
+    """
+    escolhido = mod_git.binario_de_git()
+    assert escolhido != GIT, (
+        "o adapter voltou ao shim do xcrun — o rc=71 dependente de cache volta "
+        "junto")
+    assert os.path.exists(escolhido), f"binário resolvido não existe: {escolhido}"
+    # Contraprova de que o resolvido é Git de verdade, e não um caminho qualquer
+    # que só "não é o shim".
+    r = subprocess.run([escolhido, "--version"], capture_output=True, text=True)
+    assert r.returncode == 0 and "git version" in r.stdout
+
+
+def test_o_binario_executado_esta_na_allowlist_de_exec():
+    """Sem isto, resolver o binário certo e não o permitir daria `Operation not
+    permitted` — trocaria um modo de falha por outro."""
+    assert mod_git.binario_de_git() in mod_git.executaveis_de_git()
 
 
 def test_adapter_real_de_leitura_funciona_ponta_a_ponta(repo, tmp_path):

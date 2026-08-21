@@ -259,6 +259,7 @@ def test_filtro_com_required_rc_nao_zero(tmp_path):
     _falha_e_confere(repo, ["x.secreto"], tmp_path)
 
 
+@pytest.mark.git_governado
 def test_excecao_arbitraria_depois_do_efeito(monkeypatch, tmp_path):
     repo = _repo(tmp_path, filtro=None)
     (repo / "x.secreto").write_text(SEGREDO)
@@ -268,6 +269,7 @@ def test_excecao_arbitraria_depois_do_efeito(monkeypatch, tmp_path):
     _falha_e_confere(repo, ["x.secreto"], tmp_path, RuntimeError)
 
 
+@pytest.mark.git_governado
 def test_KeyboardInterrupt(monkeypatch, tmp_path):
     repo = _repo(tmp_path, filtro=None)
     (repo / "x.secreto").write_text(SEGREDO)
@@ -277,6 +279,7 @@ def test_KeyboardInterrupt(monkeypatch, tmp_path):
     _falha_e_confere(repo, ["x.secreto"], tmp_path, KeyboardInterrupt)
 
 
+@pytest.mark.git_governado
 def test_SystemExit(monkeypatch, tmp_path):
     repo = _repo(tmp_path, filtro=None)
     (repo / "x.secreto").write_text(SEGREDO)
@@ -288,6 +291,7 @@ def test_SystemExit(monkeypatch, tmp_path):
 
 # ═════════ CONTROLES NEGATIVOS — a quarentena não pode quebrar o bom ════════
 
+@pytest.mark.git_governado
 def test_sucesso_normal_promove_o_objeto(tmp_path):
     """Uma quarentena que descartasse sempre também "protegeria"."""
     repo = _repo(tmp_path, filtro=None)
@@ -322,6 +326,7 @@ def test_filtro_redator_legitimo_e_NEGADO_no_caminho_padrao(tmp_path):
     _falha_e_confere(repo, ["x.secreto"], tmp_path, supervisor.ErroSeguranca)
 
 
+@pytest.mark.git_governado
 def test_commit_apos_add_funciona_ponta_a_ponta(tmp_path):
     repo = _repo(tmp_path, filtro=None)
     (repo / "bom.txt").write_text("conteudo\n")
@@ -332,6 +337,7 @@ def test_commit_apos_add_funciona_ponta_a_ponta(tmp_path):
     assert "bom.txt" in _git(repo, "show", "--stat", "HEAD").stdout
 
 
+@pytest.mark.git_governado
 def test_dedup_objeto_que_ja_existe_no_store(tmp_path):
     """Colisão por conteúdo: mesmo SHA já presente. Promoção não pode quebrar."""
     repo = _repo(tmp_path, filtro=None)
@@ -346,6 +352,7 @@ def test_dedup_objeto_que_ja_existe_no_store(tmp_path):
 
 # ═════════════════════ Invariantes estruturais ══════════════════════════════
 
+@pytest.mark.git_governado
 def test_quarentena_nao_sobrevive_a_operacao(tmp_path):
     """Nem no sucesso nem na falha pode restar diretório de quarentena."""
     repo = _repo(tmp_path, filtro=None)

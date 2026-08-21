@@ -353,6 +353,14 @@ def test_c8_raiz_sob_symlink_do_sistema_permite_mutacao(tmp_path):
     import shutil
     import tempfile
     base = pathlib_Path(tempfile.mkdtemp())
+    if os.path.realpath(base) == str(base):
+        # A premissa é do HOST, não do código: no Linux `/tmp` é diretório de
+        # verdade, então não há ancestral-symlink para exercitar. Condicionar ao
+        # fato medido (e não a `platform.system()`) mantém o teste correto num
+        # macOS configurado sem esses symlinks e num Linux que os tivesse.
+        shutil.rmtree(base, ignore_errors=True)
+        pytest.skip("a raiz temporária deste host não está atrás de symlink — "
+                    "a premissa do teste não existe aqui")
     try:
         home = base / "h"
         home.mkdir()

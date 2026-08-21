@@ -19,7 +19,10 @@ print("IMPORT_OK_SEM_RESOURCE")
 
 
 def test_helpers():
-    assert set(plataforma.resumo()) == {"sistema", "python", "execucao_isolada"}
+    # Igualdade, não `issubset`: o resumo é contrato lido pelo `nomos doutor`, e
+    # afrouxar para "contém" deixaria uma chave sumir sem ninguém perceber.
+    assert set(plataforma.resumo()) == {
+        "sistema", "python", "execucao_isolada", "git_governado"}
 
 
 def test_chmod_privado_nunca_levanta(tmp_path):
@@ -32,6 +35,42 @@ def test_chmod_privado_nunca_levanta(tmp_path):
 def test_isolada_falsa_fora_linux(monkeypatch):
     monkeypatch.setattr(plataforma, "EH_LINUX", False)
     assert plataforma.execucao_isolada_disponivel() is False
+
+
+def test_git_governado_falso_fora_do_mac(monkeypatch):
+    """A capacidade Git governada não existe fora do macOS — e a decisão não
+    pode depender de `/usr/bin/git`, que existe em toda plataforma."""
+    monkeypatch.setattr(plataforma, "EH_MAC", False)
+    assert plataforma.capacidade_git_governada_disponivel() is False
+
+
+def test_git_governado_falso_sem_sandbox_exec(monkeypatch):
+    """Mac sem `sandbox-exec` também recusa: é o binário que confina, não o SO."""
+    monkeypatch.setattr(plataforma, "EH_MAC", True)
+    monkeypatch.setattr(plataforma.os.path, "exists", lambda _c: False)
+    assert plataforma.capacidade_git_governada_disponivel() is False
+
+
+def test_git_governado_verdadeiro_com_mac_e_sandbox(monkeypatch):
+    """Controle positivo: sem ele os dois testes acima passariam por vácuo se a
+    função passasse a devolver False sempre."""
+    monkeypatch.setattr(plataforma, "EH_MAC", True)
+    monkeypatch.setattr(plataforma.os.path, "exists", lambda _c: True)
+    assert plataforma.capacidade_git_governada_disponivel() is True
+
+
+def test_constante_do_sandbox_nao_diverge_do_supervisor():
+    """`kernel.plataforma` duplica o caminho do `sandbox-exec` de propósito (o
+    kernel não importa adapter). Duplicata sem trava vira divergência silenciosa
+    — e aí a suíte gataria numa plataforma e o produto em outra."""
+    from nomos.adapters import supervisor
+    assert plataforma.SANDBOX_EXEC == supervisor.SANDBOX
+
+
+def test_resumo_expoe_git_governado():
+    """`nomos doutor` e o resumo de plataforma precisam dizer que a capacidade
+    existe ou não — indisponibilidade por desenho só é honesta se for visível."""
+    assert "git_governado" in plataforma.resumo()
 
 
 def test_importa_sem_resource():

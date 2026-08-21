@@ -12,7 +12,46 @@ from pathlib import Path
 
 import pytest
 
+from nomos.kernel import plataforma
+
 collect_ignore_glob = ["nomos-[0-9]*"]
+
+_MOTIVO_SEM_GIT_GOVERNADO = (
+    "capacidade Git governada exige sandbox-exec — INDISPONÍVEL fora do macOS "
+    "por desenho (adapters/supervisor.py, 'Fail-closed, sem exceção')")
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "git_governado: exige a capacidade Git governada (sandbox-exec, só "
+        "macOS). Fora do macOS o teste é PULADO, não falha — a capacidade não "
+        "existe ali por decisão de projeto.")
+
+
+def pytest_collection_modifyitems(items):
+    """Pula o que exige a capacidade Git governada onde ela não existe.
+
+    Por que um hook e não `pytestmark` de módulo: nesses arquivos a MAIORIA dos
+    testes é independente de plataforma (análise estática do adapter, validação
+    de ref, recusa de escopo) e continua provando coisa real no Linux. Um skip
+    de módulo apagaria 49 testes válidos só em `c1_git` — trocaria um vermelho
+    honesto por um verde menor e silencioso.
+
+    Por que pular em vez de deixar falhar: sem `sandbox-exec` TODA operação
+    recusa, então o teste que afirma "isto foi recusado" passaria por vácuo —
+    verde que continuaria verde com a defesa removida. Pular diz a verdade;
+    passar por vácuo mente.
+    """
+    # Pelo módulo, e não por nome importado: assim um plugin de verificação
+    # consegue substituir a função e provar, DE DENTRO DO MAC, que o portão
+    # produz skip (e não falha) na plataforma onde a capacidade não existe.
+    if plataforma.capacidade_git_governada_disponivel():
+        return
+    pular = pytest.mark.skip(reason=_MOTIVO_SEM_GIT_GOVERNADO)
+    for item in items:
+        if "git_governado" in item.keywords:
+            item.add_marker(pular)
 
 
 _FONTE_ESPIAO = r"""

@@ -62,6 +62,7 @@ from nomos.adapters.git import (
     _NEUTRALIZAR,
     ambiente_minimo,
     autoridade_de,
+    binario_de_git,
     confinamento_de_leitura,
     confinamento_de_repo,
     conferir_alternates,
@@ -1018,7 +1019,7 @@ class GitTreeAdapter(Adapter):
     def __init__(self, binario: str | None = None,
                  identidade: Identidade | None = None,
                  registro: "filtro_governado.RegistroDeFiltros | None" = None):
-        self._git = binario or "/usr/bin/git"
+        self._git = binario or binario_de_git()
         self._id = identidade or Identidade()
         # Registry AUSENTE é diferente de registry VAZIO, e a diferença é de
         # comportamento: sem registry o adapter ignora `.gitattributes` por

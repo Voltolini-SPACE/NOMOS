@@ -422,6 +422,7 @@ def test_20a_origem_mutando_nunca_executa_codigo_nao_aprovado(armazem,
     art.conferir()                        # o artefato seguiu íntegro
 
 
+@pytest.mark.git_governado
 def test_20b_filtro_confinado_NAO_alcanca_o_armazem(armazem, tmp_path):
     """A razão pela qual `test_20c` é fronteira e não brecha.
 

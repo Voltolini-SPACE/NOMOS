@@ -51,7 +51,8 @@ from nomos.adapters.contrato import (
 from nomos.adapters.estrito import texto_estrito
 from nomos.adapters import supervisor
 from nomos.adapters.git import (
-    _NEUTRALIZAR, ambiente_minimo, confinamento_de_repo, conferir_alternates,
+    _NEUTRALIZAR, ambiente_minimo, binario_de_git, confinamento_de_repo,
+    conferir_alternates,
     autoridade_de, conferir_git_dir, executaveis_de_git,
     helpers_de_transporte,
 )
@@ -130,7 +131,7 @@ class GitPushAdapter(Adapter):
                  binario: str | None = None):
         # Os destinos vêm da POLÍTICA/runtime, nunca do plano nem do repo.
         self._destinos = dict(destinos or {})
-        self._git = binario or "/usr/bin/git"
+        self._git = binario or binario_de_git()
 
     # ------------------------------------------------------------ resolução
 

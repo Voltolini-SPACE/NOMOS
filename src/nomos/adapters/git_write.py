@@ -40,7 +40,8 @@ from nomos.adapters.contrato import (
 )
 from nomos.adapters.estrito import texto_estrito
 from nomos.adapters.git import (
-    _NEUTRALIZAR, ambiente_minimo, autoridade_de, confinamento_de_repo,
+    _NEUTRALIZAR, ambiente_minimo, autoridade_de, binario_de_git,
+    confinamento_de_repo,
     conferir_alternates, conferir_git_dir,
     ref_valida,
 )
@@ -92,7 +93,7 @@ class GitTagAdapter(Adapter):
     capacidades = CAPACIDADES
 
     def __init__(self, binario: str | None = None):
-        self._git = binario or "/usr/bin/git"
+        self._git = binario or binario_de_git()
 
     def executar(self, pedido: CapabilityRequest,
                  ctx: CapabilityContext) -> CapabilityResult:

@@ -90,6 +90,7 @@ def test_controle_positivo_o_git_sai_com_rc0_e_indexa_o_conteudo_cru(
 
 # ═══════════ PASSO 2 — o caminho governado RECUSA em vez de mentir ══════════
 
+@pytest.mark.git_governado
 def test_nomos_recusa_em_vez_de_reportar_sucesso(repo_com_redator, tmp_path):
     """O que o defeito produzia: `efeito_aplicado=True` com segredo em claro."""
     registro = _ctx_e_registro(tmp_path, tmp_path)
@@ -183,6 +184,7 @@ def test_filtro_que_executa_e_falha_tambem_e_recusado(tmp_path):
 
 # ═════════════ PASSO 3 — a checagem não pode virar falso positivo ═══════════
 
+@pytest.mark.git_governado
 def test_operacao_limpa_continua_passando(tmp_path):
     """CONTROLE NEGATIVO. Uma checagem que recusa tudo também "protegeria"."""
     repo = tmp_path / "limpo"

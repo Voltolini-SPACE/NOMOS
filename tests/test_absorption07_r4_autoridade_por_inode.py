@@ -119,6 +119,7 @@ def test_r4_03_o_caminho_de_FORA_nao_chega_ao_perfil(cenario):
                 f"`{cenario.fora}` está fora das raízes aprovadas")
 
 
+@pytest.mark.git_governado
 def test_r4_04_CONTROLE_sem_a_troca_o_confinamento_continua_saindo(cenario):
     """Sem este controle os três acima passariam num sistema que recusa tudo.
 
@@ -133,6 +134,7 @@ def test_r4_04_CONTROLE_sem_a_troca_o_confinamento_continua_saindo(cenario):
     assert str(cenario.fora) not in " ".join(leitura.leitura)
 
 
+@pytest.mark.git_governado
 def test_r4_05_a_identidade_e_do_INODE_nao_do_CAMINHO(cenario):
     """Estrutural: mover o git dir e apontar de volta NÃO é troca.
 
@@ -514,6 +516,7 @@ def _refs_heads_para_symlink(gd: Path) -> None:
     (gd / "refs" / "heads").symlink_to(reais, target_is_directory=True)
 
 
+@pytest.mark.git_governado
 def test_r4_30_refs_heads_symlink_profundidade_2_e_recusado(repo_commitavel):
     """MEDIDO 8/8: `rglob` não recursa em symlink de dir; refs/heads escapava.
 
@@ -548,6 +551,7 @@ def test_r4_31_ref_de_terceiro_nao_avanca_em_operacao_recusada(repo_commitavel):
 
 
 @pytest.mark.parametrize("onde", ["refs/tags", "refs/heads/sub", "logs/refs"])
+@pytest.mark.git_governado
 def test_r4_32_symlink_em_QUALQUER_profundidade_de_refs_e_recusado(
         repo_commitavel, onde):
     """A descida é por componente: symlink em tags, num subdir de heads, em logs.
@@ -570,6 +574,7 @@ def test_r4_32_symlink_em_QUALQUER_profundidade_de_refs_e_recusado(
         cen.add("b.txt")
 
 
+@pytest.mark.git_governado
 def test_r4_33_CONTROLE_refs_PROFUNDAS_e_legitimas_continuam_valendo(
         repo_commitavel):
     """`refs/heads/feature/x` — dirs reais em 3 níveis — tem de funcionar.
@@ -656,6 +661,7 @@ def test_r4_41_a_working_tree_nao_vira_raiz_de_escrita(tmp_path):
 
 
 @pytest.mark.parametrize("layout", ["repo-comum", "worktree-ligada", "submodulo"])
+@pytest.mark.git_governado
 def test_r4_42_CONTROLE_layouts_que_o_GIT_produz_seguem_aceitos(tmp_path,
                                                                  layout):
     """Nenhum layout real do Git tem git dir == working tree.
@@ -865,6 +871,7 @@ def campo_add(tmp_path):
 
 # ═══ `.8.05-08` / `.8.NEW-REFS-TERCEIRO` (P1) — a JANELA B, em path-space ════
 
+@pytest.mark.git_governado
 def test_r4_70_terceiro_DURANTE_o_exec_emite_incidente(campo_add, monkeypatch):
     """MEDIDO 10/10 determinístico: sobreposto em SILÊNCIO antes do conserto.
 
@@ -909,6 +916,7 @@ def test_r4_70_terceiro_DURANTE_o_exec_emite_incidente(campo_add, monkeypatch):
         f"o incidente não nomeia o caminho perdido: {msg[:200]}")
 
 
+@pytest.mark.git_governado
 def test_r4_71_CONTROLE_sem_terceiro_nenhum_incidente_e_emitido(campo_add,
                                                                  monkeypatch):
     """O par: path-space não pode acusar quando não há terceiro nenhum.
@@ -1077,6 +1085,7 @@ def test_r4_90_existencia_no_host_e_INDISTINGUIVEL(tmp_path):
         f"Detalhe: { {a: r for a, r in respostas.items()} }")
 
 
+@pytest.mark.git_governado
 def test_r4_91_CONTROLE_repo_legitimo_e_nao_repo_seguem_corretos(tmp_path):
     """Remover a pré-checagem não pode aceitar não-repositório nem quebrar repo.
 
@@ -1223,6 +1232,7 @@ def test_r4_97_filtro_nao_grava_em_NENHUMA_fonte_de_config(tmp_path, rel):
         "config/atributo e a contenção passaria a valer por UMA execução")
 
 
+@pytest.mark.git_governado
 def test_r4_98_config_worktree_esta_na_negacao_dos_DOIS_confinamentos(tmp_path):
     """Estrutural: `git-add`/`commit` E `push` precisam da mesma negação.
 
@@ -1359,6 +1369,7 @@ def test_r4_110_fifo_no_git_dir_recusa_IMEDIATAMENTE(tmp_path, rel):
         "prazo do NOMOS antes de a checagem rodar")
 
 
+@pytest.mark.git_governado
 def test_r4_111_CONTROLE_repo_normal_nao_e_afetado_pela_guarda(tmp_path):
     """Sem este controle, o de cima passaria numa implementação que recusa tudo.
 
@@ -1410,6 +1421,7 @@ def test_r4_120_erro_do_filesystem_nao_atravessa_a_fronteira(tmp_path):
         git_tree._instantaneo_das_refs(aut)
 
 
+@pytest.mark.git_governado
 def test_r4_121_leitura_nao_declara_store_estrangeiro(tmp_path):
     """`.5.NOVO-LEITURA-SEM-CONFERIR-ALTERNATES`: CONTIDO, por outro mecanismo.
 

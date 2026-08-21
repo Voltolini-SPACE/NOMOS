@@ -29,6 +29,7 @@ from pathlib import Path
 
 import pytest
 
+from nomos.kernel import plataforma
 from nomos.adapters.filtro_governado import (
     ArmazemDeExecutaveis,
     ErroFiltro,
@@ -212,12 +213,23 @@ def test_source_metadata_e_so_auditoria(armazem, tmp_path):
     assert not art.managed_path.startswith(str(tmp_path / "f.sh"))
 
 
+@pytest.mark.skipif(
+    not plataforma.EH_MAC,
+    reason="medição de macOS: no Linux `fexecve` EXISTE, e A5.3 foi decidido "
+           "para a plataforma onde o supervisor roda — ver CHANGELOG")
 def test_MEDICAO_A531_o_primitive_forte_nao_existe_neste_host():
     """Fixa a medição que motivou o modelo de artefato gerenciado.
 
     Se um dia `fexecve` ou exec via `/dev/fd` passar a existir, este teste
     falha — e aí vale reavaliar se o modelo por identidade de objeto aberto
     fica disponível, em vez de manter a decisão por inércia.
+
+    ATENÇÃO — o gatilho acima vale para o macOS, que é onde a capacidade Git
+    governada roda. No **Linux** `os.execve` JÁ está em `os.supports_fd`: o
+    primitive forte existe lá. Isso não é defeito nem alarme falso; é uma
+    pergunta de projeto em aberto (se um dia o supervisor ganhar porte para
+    Linux, A5.3 deve ser reavaliado ali). Fica pulado em vez de vermelho para
+    não travar o CI com uma decisão de arquitetura disfarçada de falha.
     """
     assert os.execve not in os.supports_fd, (
         "fexecve passou a existir — reavaliar A5.3")
