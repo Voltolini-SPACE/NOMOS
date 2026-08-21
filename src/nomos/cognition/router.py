@@ -12,6 +12,7 @@ Regras (R11):
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 from nomos.cognition.providers import (
@@ -38,7 +39,7 @@ class Router:
     def __init__(self, policy, gate, approver, audit, vault: Vault,
                  ollama: OllamaProvider | None = None,
                  cloud_factory=AnthropicProvider, embutido=None,
-                 openai_compat=None):
+                 openai_compat=None, uso=None):
         self.policy = policy
         self.gate = gate
         self.approver = approver
@@ -48,17 +49,56 @@ class Router:
         self.cloud_factory = cloud_factory
         self.embutido = embutido   # cérebro leve do NOMOS (opcional)
         self.openai_compat = openai_compat  # LM Studio/llama.cpp local (MC31)
+        # NH-019: medidor de uso (MedidorUso | None). None = no-op total —
+        # a suíte existente é o teste de regressão do default.
+        self.uso = uso
+
+    # ---------- medição (NH-019) ----------
+
+    @staticmethod
+    def _chars(messages) -> int:
+        try:
+            return sum(len(str(m.get("content", ""))) for m in messages)
+        except Exception:
+            return 0
+
+    def _medir(self, *, origem: str, rota: str, ok: bool, t0: float,
+               messages, resposta: str = "", motor: str = "", modelo: str = "",
+               tokens_prompt=None, tokens_resposta=None, erro: str = "") -> None:
+        """Nunca levanta; só type(exc).__name__ chega ao campo `erro`."""
+        if self.uso is None:
+            return
+        import time as _t
+        from nomos.cognition.uso_motores import EventoUso
+        self.uso.registrar(EventoUso(
+            ts=_t.time(), origem=origem, motor=motor, modelo=modelo,
+            modalidade="texto", rota=rota, ok=ok,
+            dur_ms=int((_t.monotonic() - t0) * 1000),
+            chars_prompt=self._chars(messages),
+            chars_resposta=len(resposta),
+            tokens_prompt=tokens_prompt, tokens_resposta=tokens_resposta,
+            erro=erro))
 
     # ---------- rotas ----------
     def _try_local(self, messages) -> ChatOutcome | None:
         if self.embutido is not None and self.embutido.disponivel():
+            t0 = time.monotonic()
             try:
                 r = self.embutido.chat(messages)
                 self.audit.append("chat.embutido", model=r.model, egress="nenhum")
+                self._medir(origem="chat", rota="local", ok=True, t0=t0,
+                            messages=messages, resposta=r.text,
+                            motor=r.provider, modelo=r.model,
+                            tokens_prompt=getattr(r, "tokens_prompt", None),
+                            tokens_resposta=getattr(r, "tokens_resposta", None))
                 return ChatOutcome(True, "local", r.text, r.provider, r.model)
             except Exception as exc:
                 self.audit.append("chat.embutido.falhou", motivo=type(exc).__name__)
+                self._medir(origem="chat", rota="local", ok=False, t0=t0,
+                            messages=messages, motor="embutido",
+                            erro=type(exc).__name__)
         if self.ollama.available():
+            t0 = time.monotonic()
             try:
                 # Horizonte 3/item 3: anotação explícita removida — `r` já
                 # é inferido corretamente como ChatReply pelo retorno de
@@ -67,24 +107,44 @@ class Router:
                 # `r` implícito da linha 56, sem mudar nenhum tipo real.
                 r = self.ollama.chat(messages)
                 self.audit.append("chat.local", model=r.model, egress="nenhum")
+                self._medir(origem="chat", rota="local", ok=True, t0=t0,
+                            messages=messages, resposta=r.text,
+                            motor=r.provider, modelo=r.model,
+                            tokens_prompt=r.tokens_prompt,
+                            tokens_resposta=r.tokens_resposta)
                 return ChatOutcome(True, "local", r.text, r.provider, r.model)
             except ProviderUnavailable as exc:
                 self.audit.append("chat.local.falhou", motivo=str(exc))
+                self._medir(origem="chat", rota="local", ok=False, t0=t0,
+                            messages=messages, motor="ollama",
+                            erro=type(exc).__name__)
         oc = self.openai_compat
         if oc is not None and oc.available():
+            t0 = time.monotonic()
             try:
                 r = oc.chat(messages)
                 self.audit.append("chat.local.openai", model=r.model,
                                   egress="nenhum")
+                self._medir(origem="chat", rota="local", ok=True, t0=t0,
+                            messages=messages, resposta=r.text,
+                            motor=r.provider, modelo=r.model,
+                            tokens_prompt=r.tokens_prompt,
+                            tokens_resposta=r.tokens_resposta)
                 return ChatOutcome(True, "local", r.text, r.provider, r.model)
             except ProviderUnavailable as exc:
                 self.audit.append("chat.local.openai.falhou", motivo=str(exc))
+                self._medir(origem="chat", rota="local", ok=False, t0=t0,
+                            messages=messages, motor="openai-compat",
+                            erro=type(exc).__name__)
         return None
 
     def _try_cloud(self, messages, passphrase: str | None) -> ChatOutcome:
+        t0 = time.monotonic()
         d_net = self.policy.decide(Category.NET_EGRESS, target=CLOUD_TARGET)
         if not self.gate(d_net, self.approver):
             self.audit.append("chat.cloud.negado", etapa="A2_NET_EGRESS", alvo=CLOUD_TARGET)
+            self._medir(origem="chat", rota="degradada", ok=False, t0=t0,
+                        messages=messages)
             return ChatOutcome(False, "degradada", "",
                                reason="egress negado no gate A2 (aprovação ausente)")
         d_cred = self.policy.decide(Category.CRED_USE, target=f"vault:{CLOUD_KEY_NAME}")
@@ -107,13 +167,22 @@ class Router:
             return ChatOutcome(False, "degradada", "",
                                reason=f"cofre ilegível ({type(exc).__name__}) — "
                                       "rode: nomos doutor --consertar")
+        t0 = time.monotonic()
         try:
             r = self.cloud_factory(api_key=key).chat(messages)
         except ProviderUnavailable as exc:
             self.audit.append("chat.cloud.falhou", motivo=str(exc))
+            self._medir(origem="chat", rota="cloud", ok=False, t0=t0,
+                        messages=messages, motor="cloud",
+                        erro=type(exc).__name__)
             return ChatOutcome(False, "degradada", "", reason=f"API cloud indisponível: {exc}")
         self.audit.append("chat.cloud.aprovado", model=r.model,
                           egress=CLOUD_TARGET, credencial=CLOUD_KEY_NAME)
+        self._medir(origem="chat", rota="cloud", ok=True, t0=t0,
+                    messages=messages, resposta=r.text,
+                    motor=r.provider, modelo=r.model,
+                    tokens_prompt=r.tokens_prompt,
+                    tokens_resposta=r.tokens_resposta)
         return ChatOutcome(True, "cloud", r.text, r.provider, r.model)
 
     # ---------- entrada única ----------
@@ -146,6 +215,7 @@ class Router:
                 else backend.available()
             if not pronto:
                 continue
+            t0 = time.monotonic()
             try:
                 if hasattr(backend, "chat_stream"):
                     r = backend.chat_stream(messages, on_token)
@@ -156,19 +226,28 @@ class Router:
                 raise                     # decisão do usuário sobe intacta
             except Exception as exc:
                 self.audit.append(f"{rotulo}.falhou", motivo=type(exc).__name__)
+                self._medir(origem="chat_stream", rota="local", ok=False,
+                            t0=t0, messages=messages, motor=rotulo,
+                            erro=type(exc).__name__)
                 continue
             self.audit.append(rotulo, model=r.model, egress="nenhum",
                               stream=True)
+            # stream não garante usage do backend ⇒ tokens None, honesto
+            self._medir(origem="chat_stream", rota="local", ok=True, t0=t0,
+                        messages=messages, resposta=r.text,
+                        motor=r.provider, modelo=r.model)
             return ChatOutcome(True, "local", r.text, r.provider, r.model)
-        return self._degraded(extra="")
+        return self._degraded(extra="", origem="chat_stream")
 
-    def _degraded(self, extra: str) -> ChatOutcome:
+    def _degraded(self, extra: str, origem: str = "chat") -> ChatOutcome:
         reason = (
             "nenhum backend de modelo disponível: Ollama não respondeu em "
             f"{self.ollama.host} e a rota cloud não foi autorizada/configurada"
             + (f" ({extra})" if extra else "")
         )
         self.audit.append("chat.degradado", motivo=reason)
+        self._medir(origem=origem, rota="degradada", ok=False,
+                    t0=time.monotonic(), messages=[])
         text = (
             "[MODO DEGRADADO — sem capacidade de modelo]\n"
             f"Motivo: {reason}.\n"

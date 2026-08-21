@@ -57,6 +57,10 @@ class ChatReply:
     text: str
     provider: str
     model: str
+    # NH-019: contagem que o backend DEVOLVEU (None = não informou; nunca
+    # inventar zero). Aditivos com default — nenhum construtor existente quebra.
+    tokens_prompt: int | None = None
+    tokens_resposta: int | None = None
 
 
 def _post_json(url: str, payload: dict, headers: dict, timeout: float) -> dict:
@@ -101,7 +105,10 @@ class OllamaProvider:
         msg = (data.get("message") or {}).get("content")
         if not isinstance(msg, str):
             raise ProviderUnavailable("resposta do ollama sem message.content")
-        return ChatReply(text=msg, provider=self.name, model=data.get("model", self.model))
+        return ChatReply(text=msg, provider=self.name,
+                         model=data.get("model", self.model),
+                         tokens_prompt=data.get("prompt_eval_count"),
+                         tokens_resposta=data.get("eval_count"))
 
     def chat_stream(self, messages: list[dict], on_token) -> ChatReply:
         """Streaming NDJSON do Ollama (v1.1): cada token vai ao callback na
@@ -164,7 +171,11 @@ class AnthropicProvider:
         text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
         if not text:
             raise ProviderUnavailable("resposta da API sem blocos de texto")
-        return ChatReply(text=text, provider=self.name, model=data.get("model", self.model))
+        uso = data.get("usage") or {}
+        return ChatReply(text=text, provider=self.name,
+                         model=data.get("model", self.model),
+                         tokens_prompt=uso.get("input_tokens"),
+                         tokens_resposta=uso.get("output_tokens"))
 
 
 class OpenAICompatProvider:
@@ -195,8 +206,11 @@ class OpenAICompatProvider:
             if choices else ""
         if not text:
             raise ProviderUnavailable("resposta do servidor local sem conteúdo")
+        uso = data.get("usage") or {}
         return ChatReply(text=text, provider=self.name,
-                         model=data.get("model", self.model))
+                         model=data.get("model", self.model),
+                         tokens_prompt=uso.get("prompt_tokens"),
+                         tokens_resposta=uso.get("completion_tokens"))
 
     def available(self) -> bool:
         """Probe leve no /models (loopback). Sem servidor => False, sem exceção."""

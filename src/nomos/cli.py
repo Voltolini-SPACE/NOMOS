@@ -941,6 +941,19 @@ def cmd_motores(ctx, args) -> int:
     if sub is None:
         print(motores_mod.tabela())   # compatível com v0.10
         return EXIT_OK
+    if sub == "uso":
+        # NH-019: relatório do medidor local. Metadado do próprio runtime no
+        # próprio home — não é capacidade nova (mesma classe do audit).
+        from nomos.cognition import uso_motores as um
+        eventos = um.MedidorUso(ctx["home"]).ler(
+            dias=int(getattr(args, "dias", 7) or 7))
+        agregado = um.agregar(eventos)
+        if getattr(args, "json", False):
+            print(json.dumps(agregado, ensure_ascii=False, indent=2,
+                             sort_keys=True))
+        else:
+            print(um.tabela(agregado))
+        return EXIT_OK
     if sub == "listar" or sub == "status":
         print(cat_mod.tabela_v011(home=ctx["home"]))
         auto = "LIGADO" if epol.auto_ligado() else "DESLIGADO"
@@ -1009,7 +1022,9 @@ def cmd_motores(ctx, args) -> int:
                                 egress=arbmod.CLOUD_TARGET)
             runners = runners + [runner_nuvem]
             allow_cloud = True
-        out = arbmod.arbitrar(prompt, runners, allow_cloud=allow_cloud)
+        from nomos.cognition.uso_motores import MedidorUso
+        out = arbmod.arbitrar(prompt, runners, allow_cloud=allow_cloud,
+                              uso=MedidorUso(ctx["home"]))
         ctx["audit"].append("motores.arbitrar", status=out.status,
                             motores=len(out.engines_ready), bloqueado=out.decision.blocked)
         if out.status == "no_engine":
@@ -1332,11 +1347,13 @@ def _router(ctx):
         raise config.ConfigError(
             f"{exc} — confira NOMOS_OLLAMA_HOST/NOMOS_OPENAI_COMPAT_BASE"
         ) from None
+    from nomos.cognition.uso_motores import MedidorUso
     return Router(policy=ctx["policy"], gate=gate, approver=interactive_approver,
                   audit=ctx["audit"], vault=ctx["vault"],
                   ollama=ollama,
                   embutido=EmbeddedProvider(ctx["home"]),
-                  openai_compat=openai_compat)
+                  openai_compat=openai_compat,
+                  uso=MedidorUso(ctx["home"]))
 
 
 def cmd_chat(ctx, args) -> int:
@@ -2943,6 +2960,11 @@ def build_parser() -> argparse.ArgumentParser:
     mf.add_argument("voto", choices=["bom", "ruim"])
     mf.set_defaults(fn=cmd_motores)
     mosub.add_parser("diagnostico").set_defaults(fn=cmd_motores)
+    mu2 = mosub.add_parser("uso", help="uso de motores medido localmente "
+                                       "(só metadados; nunca conteúdo)")
+    mu2.add_argument("--dias", type=int, default=7)
+    mu2.add_argument("--json", action="store_true")
+    mu2.set_defaults(fn=cmd_motores)
     mu = mosub.add_parser("usar")
     mu.add_argument("modalidade")
     mu.add_argument("motor")
