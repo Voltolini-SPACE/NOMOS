@@ -145,7 +145,24 @@ class Orquestrador:
     def __init__(self, registro: RegistroCapacidades, policy, approver=None,
                  audit=None, executores: dict[str, Callable] | None = None,
                  recuperacao=None, rotear_motor: Callable | None = None,
-                 estrito: bool = False, contexto_aprovacao=None):
+                 estrito: bool = False, contexto_aprovacao=None,
+                 max_paralelo: int = 1, ao_evento: Callable | None = None):
+        # NH-015: teto de nós executando ao mesmo tempo. O padrão é 1 — quem
+        # não pediu paralelismo não pode recebê-lo de surpresa, porque
+        # paralelismo muda a ORDEM dos efeitos no mundo. Teto inválido é erro
+        # de construção, não degradação silenciosa para 1: um `max_paralelo=0`
+        # aceito pararia a missão inteira sem executar nada.
+        if isinstance(max_paralelo, bool) or not isinstance(max_paralelo, int) \
+                or max_paralelo < 1:
+            raise ValueError(
+                f"max_paralelo deve ser inteiro >= 1, recebi {max_paralelo!r}")
+        self.max_paralelo = max_paralelo
+        # NH-015: transcrição ao vivo. Recebe (evento, campos) a cada transição
+        # de nó, para painel/CLI renderizarem enquanto a missão corre. É
+        # OBSERVAÇÃO: o retorno é ignorado e a exceção é engolida — um
+        # renderizador quebrado não pode derrubar a missão nem, pior, mudar o
+        # desfecho de um nó já aprovado.
+        self.ao_evento = ao_evento
         self.registro = registro
         self.policy = policy
         self.approver = approver
@@ -171,6 +188,11 @@ class Orquestrador:
     def _auditar(self, evento: str, **campos) -> None:
         if self.audit is not None:
             self.audit.append(evento, **campos)
+        if self.ao_evento is not None:
+            try:
+                self.ao_evento(evento, dict(campos))
+            except Exception:      # noqa: S110 — ver docstring de `ao_evento`
+                pass
 
     def _registro_aprovacoes(self):
         return self.contexto_aprovacao()[3]
@@ -226,91 +248,183 @@ class Orquestrador:
                 self._auditar("orquestracao.no.bloqueado", no=dep_id, causa=raiz)
 
     def executar(self, grafo: GrafoTarefas) -> ResultadoMissao:
+        """Executa em ONDAS: gate serial, efeitos em paralelo até o teto.
+
+        Por que ondas, e não um pool sobre a ordem topológica inteira: o gate
+        pode consultar o HUMANO (`gate(decisao, approver)`). Duas perguntas
+        simultâneas no mesmo terminal fazem o operador aprovar sem saber o
+        quê — a aprovação deixaria de ser aprovação. Então cada onda é
+
+            prontos → [SERIAL: política + gate, em ordem topológica]
+                    → [PARALELO: só o aprovado, com teto]
+                    → junta, bloqueia dependentes, repete
+
+        O recálculo do digest (`consumir`) continua imediatamente antes do
+        efeito DE CADA NÓ, dentro do worker: a propriedade é por nó e não se
+        perde ao paralelizar.
+
+        Com `max_paralelo=1` o caminho é o de sempre, nó a nó, na ordem
+        topológica — nenhuma thread é criada.
+        """
         nos: dict[str, ResultadoNo] = {i: ResultadoNo() for i in grafo.nos}
         self._auditar("orquestracao.missao.inicio",
-                      nos=len(nos), ordem=",".join(grafo.ordem_topologica()))
-        for no_id in grafo.ordem_topologica():
-            if nos[no_id].status != "PENDENTE":
-                continue                      # já bloqueado por dependência
-            no = grafo.nos[no_id]
-            categoria = self.registro.categoria_de(no.ferramenta)
-            if categoria is None:
-                nos[no_id] = ResultadoNo(status="NEGADO",
-                                         detalhe="capacidade desconhecida")
-                self._auditar("orquestracao.no.negado", no=no_id,
-                              ferramenta=no.ferramenta, motivo="desconhecida")
-                self._bloquear_dependentes(grafo, no_id, nos)
-                continue
-            # P1 — APROVAÇÃO NÃO-CEGA.
-            # `target` era `orquestracao:{id}:{ferramenta}:{alvo}` com `alvo`
-            # SEMPRE vazio — `No.alvo` não tinha nenhum escritor. O prompt de
-            # um plano benigno e o de um plano que exfiltrava chave privada
-            # eram byte-idênticos, variando só pelo id do nó, que o autor do
-            # plano escolhe. Agora o operador lê os campos REAIS, e o digest
-            # deles é recalculado imediatamente antes do efeito.
-            operacao = self._operacao(no, no_id, categoria)
-            decisao = self.policy.decide(
-                categoria,
-                target=(operacao.descrever() if operacao is not None
-                        else f"orquestracao:{no_id}:{no.ferramenta}:{no.alvo}"))
-            if not self._gate_vinculado(decisao, operacao):
-                nos[no_id] = ResultadoNo(status="NEGADO", detalhe=decisao.reason)
-                self._auditar("orquestracao.no.negado", no=no_id,
-                              ferramenta=no.ferramenta,
-                              categoria=categoria.value, motivo=decisao.reason)
-                self._bloquear_dependentes(grafo, no_id, nos)
-                continue
-            executor = self._executor_para(no)
-            if executor is None:
-                nos[no_id] = ResultadoNo(
-                    status="FALHOU",
-                    detalhe=(f"sem executor governado para '{no.ferramenta}' "
-                             "(modo estrito: capacidade fora do mapa protegido "
-                             "por PEP não executa)") if self.estrito else
-                            (f"sem executor para '{no.ferramenta}' "
-                             "(nativas exigem wiring explícito)"))
-                self._auditar("orquestracao.no.falhou", no=no_id,
-                              ferramenta=no.ferramenta, motivo="sem executor")
-                self._bloquear_dependentes(grafo, no_id, nos)
-                continue
-            params = dict(no.params)
-            # RECÁLCULO imediatamente antes do efeito: entre o "APROVO" e esta
-            # linha, nada pode ter mudado alvo, argumento, capacidade, sujeito,
-            # escopo ou política. Se mudou, o digest não bate e nada executa.
-            from nomos.kernel.policy import Effect as _Ef
-            if operacao is not None and decisao.effect is not _Ef.ALLOW:
-                try:
-                    self._registro_aprovacoes().consumir(
-                        self._operacao(no, no_id, categoria))
-                except Exception as exc:
-                    nos[no_id] = ResultadoNo(status="NEGADO", detalhe=str(exc))
-                    self._auditar("orquestracao.no.negado", no=no_id,
-                                  ferramenta=no.ferramenta,
-                                  motivo="aprovacao_divergente")
-                    self._bloquear_dependentes(grafo, no_id, nos)
-                    continue
-            if no.motor == "auto" and self.rotear_motor is not None:
-                rota = self.rotear_motor(no)
-                params["rota_motor"] = rota
-                self._auditar("orquestracao.no.rota_motor", no=no_id,
-                              **_resumo_rota(rota))
-            ok, resultado, tentativas = self._rodar(no, executor, params)
-            if ok:
-                nos[no_id] = ResultadoNo(status="OK", resultado=resultado,
-                                         tentativas=tentativas)
-                self._auditar("orquestracao.no.ok", no=no_id,
-                              ferramenta=no.ferramenta, tentativas=tentativas)
-            else:
-                nos[no_id] = ResultadoNo(status="FALHOU", detalhe=str(resultado),
-                                         tentativas=tentativas)
-                self._auditar("orquestracao.no.falhou", no=no_id,
-                              ferramenta=no.ferramenta, motivo=str(resultado),
-                              tentativas=tentativas)
-                self._bloquear_dependentes(grafo, no_id, nos)
+                      nos=len(nos), ordem=",".join(grafo.ordem_topologica()),
+                      max_paralelo=self.max_paralelo)
+        ordem = grafo.ordem_topologica()
+        while True:
+            prontos = [i for i in ordem
+                       if nos[i].status == "PENDENTE"
+                       and all(nos[d].status == "OK"
+                               for d in grafo.nos[i].depende_de)]
+            if not prontos:
+                break
+            # ---- FASE SERIAL: política, gate e rota. Nada executa aqui.
+            aprovados = []
+            for no_id in prontos:
+                preparado = self._preparar(grafo, no_id, nos)
+                if preparado is not None:
+                    aprovados.append((no_id, preparado))
+            # ---- FASE PARALELA: só o que já passou pelo gate.
+            self._executar_onda(grafo, aprovados, nos)
         ok_geral = all(r.status == "OK" for r in nos.values())
         self._auditar("orquestracao.missao.fim", ok=ok_geral)
         return ResultadoMissao(ok=ok_geral, nos=nos,
                                ordem=grafo.ordem_topologica())
+
+    def _preparar(self, grafo: GrafoTarefas, no_id: str,
+                  nos: dict[str, ResultadoNo]):
+        """Política + gate + executor + rota. Devolve o que EXECUTAR, ou None.
+
+        `None` significa que o nó já teve desfecho (NEGADO/FALHOU) e seus
+        dependentes já foram bloqueados — exatamente como no caminho serial
+        anterior, de onde este corpo foi extraído sem alteração de semântica.
+        """
+        no = grafo.nos[no_id]
+        categoria = self.registro.categoria_de(no.ferramenta)
+        if categoria is None:
+            nos[no_id] = ResultadoNo(status="NEGADO",
+                                     detalhe="capacidade desconhecida")
+            self._auditar("orquestracao.no.negado", no=no_id,
+                          ferramenta=no.ferramenta, motivo="desconhecida")
+            self._bloquear_dependentes(grafo, no_id, nos)
+            return None
+        # P1 — APROVAÇÃO NÃO-CEGA.
+        # `target` era `orquestracao:{id}:{ferramenta}:{alvo}` com `alvo`
+        # SEMPRE vazio — `No.alvo` não tinha nenhum escritor. O prompt de
+        # um plano benigno e o de um plano que exfiltrava chave privada
+        # eram byte-idênticos, variando só pelo id do nó, que o autor do
+        # plano escolhe. Agora o operador lê os campos REAIS, e o digest
+        # deles é recalculado imediatamente antes do efeito.
+        operacao = self._operacao(no, no_id, categoria)
+        decisao = self.policy.decide(
+            categoria,
+            target=(operacao.descrever() if operacao is not None
+                    else f"orquestracao:{no_id}:{no.ferramenta}:{no.alvo}"))
+        if not self._gate_vinculado(decisao, operacao):
+            nos[no_id] = ResultadoNo(status="NEGADO", detalhe=decisao.reason)
+            self._auditar("orquestracao.no.negado", no=no_id,
+                          ferramenta=no.ferramenta,
+                          categoria=categoria.value, motivo=decisao.reason)
+            self._bloquear_dependentes(grafo, no_id, nos)
+            return None
+        executor = self._executor_para(no)
+        if executor is None:
+            nos[no_id] = ResultadoNo(
+                status="FALHOU",
+                detalhe=(f"sem executor governado para '{no.ferramenta}' "
+                         "(modo estrito: capacidade fora do mapa protegido "
+                         "por PEP não executa)") if self.estrito else
+                        (f"sem executor para '{no.ferramenta}' "
+                         "(nativas exigem wiring explícito)"))
+            self._auditar("orquestracao.no.falhou", no=no_id,
+                          ferramenta=no.ferramenta, motivo="sem executor")
+            self._bloquear_dependentes(grafo, no_id, nos)
+            return None
+        params = dict(no.params)
+        # A rota de motor é DECISÃO, não efeito, e fica na fase serial: ela
+        # audita e pode consultar o roteador, e mantê-la aqui preserva a ordem
+        # determinística dos eventos `rota_motor` que a suíte já observava.
+        if no.motor == "auto" and self.rotear_motor is not None:
+            rota = self.rotear_motor(no)
+            params["rota_motor"] = rota
+            self._auditar("orquestracao.no.rota_motor", no=no_id,
+                          **_resumo_rota(rota))
+        return no, executor, params, operacao, decisao, categoria
+
+    def _executar_onda(self, grafo: GrafoTarefas, aprovados: list,
+                       nos: dict[str, ResultadoNo]) -> None:
+        """Efeitos da onda, até `max_paralelo` ao mesmo tempo.
+
+        Os desfechos são APLICADOS depois do join, em ordem topológica, pela
+        thread principal: `nos` continua sendo mutado por uma thread só, e o
+        bloqueio de dependentes acontece numa ordem determinística mesmo que as
+        threads terminem fora de ordem.
+        """
+        if not aprovados:
+            return
+        if self.max_paralelo == 1 or len(aprovados) == 1:
+            # Caminho de sempre: nenhuma thread é criada. Não é otimização —
+            # é a garantia de que o padrão não muda de forma.
+            for no_id, preparado in aprovados:
+                self._aplicar(grafo, no_id, self._efetuar(no_id, preparado), nos)
+            return
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=self.max_paralelo,
+                                thread_name_prefix="nomos-no") as pool:
+            futuros = [(no_id, pool.submit(self._efetuar, no_id, preparado))
+                       for no_id, preparado in aprovados]
+            desfechos = [(no_id, f.result()) for no_id, f in futuros]
+        for no_id, desfecho in desfechos:
+            self._aplicar(grafo, no_id, desfecho, nos)
+
+    def _efetuar(self, no_id: str, preparado):
+        """RODA o nó. É o único trecho que executa em paralelo.
+
+        Devolve o desfecho em vez de escrever em `nos`: assim nenhuma thread
+        toca estado compartilhado da missão, e o único estado mutável tocado
+        aqui é o do gerenciador de recuperação — que ganhou trava própria
+        justamente por isto (o orçamento da missão é um contador global).
+        """
+        no, executor, params, operacao, decisao, categoria = preparado
+        # RECÁLCULO imediatamente antes do efeito: entre o "APROVO" e esta
+        # linha, nada pode ter mudado alvo, argumento, capacidade, sujeito,
+        # escopo ou política. Se mudou, o digest não bate e nada executa.
+        # Continua sendo "imediatamente antes" mesmo com paralelismo: a
+        # propriedade é por nó, e cada worker faz a sua.
+        from nomos.kernel.policy import Effect as _Ef
+        if operacao is not None and decisao.effect is not _Ef.ALLOW:
+            try:
+                self._registro_aprovacoes().consumir(
+                    self._operacao(no, no_id, categoria))
+            except Exception as exc:
+                return ("NEGADO", str(exc), None, 0)
+        ok, resultado, tentativas = self._rodar(no, executor, params)
+        if ok:
+            return ("OK", "", resultado, tentativas)
+        return ("FALHOU", str(resultado), None, tentativas)
+
+    def _aplicar(self, grafo: GrafoTarefas, no_id: str, desfecho,
+                 nos: dict[str, ResultadoNo]) -> None:
+        """Escreve o desfecho e audita — sempre na thread principal."""
+        status, detalhe, resultado, tentativas = desfecho
+        ferramenta = grafo.nos[no_id].ferramenta
+        if status == "OK":
+            nos[no_id] = ResultadoNo(status="OK", resultado=resultado,
+                                     tentativas=tentativas)
+            self._auditar("orquestracao.no.ok", no=no_id,
+                          ferramenta=ferramenta, tentativas=tentativas)
+            return
+        if status == "NEGADO":
+            nos[no_id] = ResultadoNo(status="NEGADO", detalhe=detalhe)
+            self._auditar("orquestracao.no.negado", no=no_id,
+                          ferramenta=ferramenta, motivo="aprovacao_divergente")
+        else:
+            nos[no_id] = ResultadoNo(status="FALHOU", detalhe=detalhe,
+                                     tentativas=tentativas)
+            self._auditar("orquestracao.no.falhou", no=no_id,
+                          ferramenta=ferramenta, motivo=detalhe,
+                          tentativas=tentativas)
+        self._bloquear_dependentes(grafo, no_id, nos)
 
     def _rodar(self, no: No, executor: Callable, params: dict):
         """(ok, resultado|motivo, tentativas). Com NH-004 plugado, delega.

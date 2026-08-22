@@ -19,6 +19,7 @@ O que o NOMOS não tinha: sobreviver a falha transiente sem operador. Regras
 """
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -43,14 +44,45 @@ class GerenciadorRecuperacao:
         self.dormir = dormir
         self._falhas_consecutivas: dict[str, int] = {}
         self._tentativas_gastas = 0
+        # NH-015: com nós independentes rodando em paralelo, este gerenciador
+        # passa a ser tocado por várias threads. `_tentativas_gastas` é o
+        # ORÇAMENTO DA MISSÃO — um `+= 1` sem trava perde incrementos, e o
+        # limite anti retry-storm passaria a ser um teto que vaza. A trava
+        # protege SÓ os contadores; `dormir()` (o backoff) fica fora dela, ou
+        # uma thread em backoff bloquearia todas as outras.
+        self._trava = threading.Lock()
+
+    def _gastar_tentativa(self) -> bool:
+        """Reserva uma tentativa do orçamento. False = orçamento esgotado.
+
+        Ler e incrementar num passo só: com a leitura separada do incremento,
+        duas threads leem o mesmo valor abaixo do teto e ambas gastam — o
+        clássico check-then-act, que aqui custaria execuções reais a mais.
+        """
+        with self._trava:
+            if self._tentativas_gastas >= self.politica.orcamento_missao:
+                return False
+            self._tentativas_gastas += 1
+            return True
 
     def _auditar(self, evento: str, **campos) -> None:
         if self.audit is not None:
             self.audit.append(evento, **campos)
 
     def _circuito_aberto(self, ferramenta: str) -> bool:
-        return (self._falhas_consecutivas.get(ferramenta, 0)
-                >= self.politica.circuito_limite)
+        with self._trava:
+            return (self._falhas_consecutivas.get(ferramenta, 0)
+                    >= self.politica.circuito_limite)
+
+    def _contar_falha(self, ferramenta: str) -> int:
+        with self._trava:
+            n = self._falhas_consecutivas.get(ferramenta, 0) + 1
+            self._falhas_consecutivas[ferramenta] = n
+            return n
+
+    def _zerar_falhas(self, ferramenta: str) -> None:
+        with self._trava:
+            self._falhas_consecutivas[ferramenta] = 0
 
     def executar(self, no, executor: Callable, params: dict,
                  *, idempotente: bool | None = None):
@@ -69,7 +101,9 @@ class GerenciadorRecuperacao:
                           ferramenta=ferramenta)
             return False, (f"circuito aberto para '{ferramenta}' "
                            f"({self.politica.circuito_limite} falhas consecutivas)"), 0
-        if self._tentativas_gastas >= self.politica.orcamento_missao:
+        with self._trava:
+            esgotado = self._tentativas_gastas >= self.politica.orcamento_missao
+        if esgotado:
             self._auditar("recuperacao.orcamento.esgotado", no=no.id,
                           ferramenta=ferramenta,
                           orcamento=self.politica.orcamento_missao)
@@ -79,24 +113,22 @@ class GerenciadorRecuperacao:
         tentativas = 0
         ultimo_motivo = ""
         while tentativas < maximo:
-            if self._tentativas_gastas >= self.politica.orcamento_missao:
+            if not self._gastar_tentativa():
                 self._auditar("recuperacao.orcamento.esgotado", no=no.id,
                               ferramenta=ferramenta,
                               orcamento=self.politica.orcamento_missao)
                 break
             tentativas += 1
-            self._tentativas_gastas += 1
             try:
                 resultado = executor(**params)
-                self._falhas_consecutivas[ferramenta] = 0     # sucesso fecha circuito
+                self._zerar_falhas(ferramenta)               # sucesso fecha circuito
                 if tentativas > 1:
                     self._auditar("recuperacao.recuperou", no=no.id,
                                   ferramenta=ferramenta, tentativas=tentativas)
                 return True, resultado, tentativas
             except Exception as exc:
                 ultimo_motivo = f"{type(exc).__name__}: {exc}"
-                falhas = self._falhas_consecutivas.get(ferramenta, 0) + 1
-                self._falhas_consecutivas[ferramenta] = falhas
+                falhas = self._contar_falha(ferramenta)
                 self._auditar("recuperacao.tentativa.falhou", no=no.id,
                               ferramenta=ferramenta, tentativa=tentativas,
                               motivo=type(exc).__name__)
