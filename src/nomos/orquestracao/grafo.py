@@ -257,7 +257,7 @@ class Orquestrador:
                     detalhe=f"dependência '{raiz}' não concluiu")
                 self._auditar("orquestracao.no.bloqueado", no=dep_id, causa=raiz)
 
-    def executar(self, grafo: GrafoTarefas) -> ResultadoMissao:
+    def executar(self, grafo: GrafoTarefas, checkpoint=None) -> ResultadoMissao:
         """Executa em ONDAS: gate serial, efeitos em paralelo até o teto.
 
         Por que ondas, e não um pool sobre a ordem topológica inteira: o gate
@@ -275,11 +275,52 @@ class Orquestrador:
 
         Com `max_paralelo=1` o caminho é o de sempre, nó a nó, na ordem
         topológica — nenhuma thread é criada.
+
+        `checkpoint` (NH-009): estado durável por nó + retomada. A amarração
+        ao grafo, a recusa de arquivo corrompido e a regra "interrompido no
+        meio + não idempotente = FALHOU" vivem em `orquestracao/checkpoint.py`
+        — aqui só o fio: carregar antes, gravar a cada transição.
         """
         nos: dict[str, ResultadoNo] = {i: ResultadoNo() for i in grafo.nos}
+        previos: dict[str, str] = {}
+        if checkpoint is not None:
+            # Antes de QUALQUER evento de auditoria: ErroCheckpoint aborta a
+            # missão inteira sem executar nada (grafo trocado/arquivo podre).
+            previos = checkpoint.iniciar(grafo)
         self._auditar("orquestracao.missao.inicio",
                       nos=len(nos), ordem=",".join(grafo.ordem_topologica()),
                       max_paralelo=self.max_paralelo)
+        if previos:
+            retomados = 0
+            for no_id, estado in previos.items():
+                if no_id not in nos:
+                    continue          # digest garante o grafo; cinto e suspensório
+                if estado == "OK":
+                    nos[no_id] = ResultadoNo(status="OK",
+                                             detalhe="retomado de checkpoint")
+                    retomados += 1
+                elif estado == "EXECUTANDO" and not self.registro.idempotente_de(
+                        grafo.nos[no_id].ferramenta):
+                    # O crash pegou o nó no meio. "O efeito aplicou?" não tem
+                    # resposta — reexecutar apostaria no efeito duplicado.
+                    nos[no_id] = ResultadoNo(
+                        status="FALHOU",
+                        detalhe="interrompido no meio da execução anterior; "
+                                "nó não idempotente não reexecuta (desfecho "
+                                "desconhecido)")
+                # EXECUTANDO idempotente, FALHOU, NEGADO e BLOQUEADO voltam a
+                # PENDENTE (já estão): a retomada reavalia, o gate decide de
+                # novo, como sempre.
+            for no_id, r in list(nos.items()):
+                if r.status == "FALHOU":
+                    self._auditar("orquestracao.no.falhou", no=no_id,
+                                  ferramenta=grafo.nos[no_id].ferramenta,
+                                  motivo=r.detalhe, tentativas=0)
+                    self._bloquear_dependentes(grafo, no_id, nos)
+            self._auditar("orquestracao.missao.retomada",
+                          retomados=retomados,
+                          pendentes=sum(1 for r in nos.values()
+                                        if r.status == "PENDENTE"))
         ordem = grafo.ordem_topologica()
         while True:
             prontos = [i for i in ordem
@@ -294,9 +335,24 @@ class Orquestrador:
                 preparado = self._preparar(grafo, no_id, nos)
                 if preparado is not None:
                     aprovados.append((no_id, preparado))
+            if checkpoint is not None:
+                # Recusas da fase serial + a marca EXECUTANDO dos que vão
+                # rodar — TUDO antes do primeiro efeito da onda: é a marca
+                # que faz o crash no meio ser detectável na retomada.
+                transicoes = {i: r.status for i, r in nos.items()
+                              if r.status != "PENDENTE"}
+                transicoes.update({no_id: "EXECUTANDO"
+                                   for no_id, _ in aprovados})
+                checkpoint.sincronizar(transicoes)
             # ---- FASE PARALELA: só o que já passou pelo gate.
             self._executar_onda(grafo, aprovados, nos)
+            if checkpoint is not None:
+                checkpoint.sincronizar({i: r.status for i, r in nos.items()
+                                        if r.status != "PENDENTE"})
         ok_geral = all(r.status == "OK" for r in nos.values())
+        if checkpoint is not None:
+            checkpoint.sincronizar({i: r.status for i, r in nos.items()
+                                    if r.status != "PENDENTE"})
         self._auditar("orquestracao.missao.fim", ok=ok_geral)
         return ResultadoMissao(ok=ok_geral, nos=nos,
                                ordem=grafo.ordem_topologica())
