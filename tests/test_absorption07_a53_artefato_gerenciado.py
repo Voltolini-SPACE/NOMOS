@@ -59,6 +59,7 @@ def _rodar(caminho, canario=None):
 
 # ════════ O CONTRATO CENTRAL — troca do source depois do import ═════════════
 
+@pytest.mark.filtro_posix
 def test_source_trocado_apos_import_NAO_muda_o_codigo_executado(armazem,
                                                                 tmp_path):
     """O teste que fecha o TOCTOU externo.
@@ -90,6 +91,7 @@ def test_source_trocado_apos_import_NAO_muda_o_codigo_executado(armazem,
     art.conferir()
 
 
+@pytest.mark.filtro_posix
 def test_source_apagado_apos_import_e_inofensivo(armazem, tmp_path):
     origem = _script(tmp_path / "filtro.sh", BOM)
     art = armazem.importar(origem)
@@ -99,6 +101,7 @@ def test_source_apagado_apos_import_e_inofensivo(armazem, tmp_path):
     art.conferir()
 
 
+@pytest.mark.filtro_posix
 def test_source_virando_symlink_para_hostil_e_inofensivo(armazem, tmp_path):
     origem = _script(tmp_path / "filtro.sh", BOM)
     art = armazem.importar(origem)
@@ -110,6 +113,7 @@ def test_source_virando_symlink_para_hostil_e_inofensivo(armazem, tmp_path):
     assert not canario.exists()
 
 
+@pytest.mark.filtro_posix
 def test_symlink_como_origem_congela_o_DESTINO(armazem, tmp_path):
     """Symlink é entrada administrativa aceitável; o que congela é o destino."""
     alvo = _script(tmp_path / "real.sh", BOM)
@@ -133,6 +137,7 @@ def test_artifact_id_e_o_sha256_do_conteudo(armazem, tmp_path):
     assert art.artifact_id in art.managed_path
 
 
+@pytest.mark.filtro_posix
 def test_mesmos_bytes_de_origens_diferentes_deduplicam(armazem, tmp_path):
     a = armazem.importar(_script(tmp_path / "a.sh", BOM))
     b = armazem.importar(_script(tmp_path / "b.sh", BOM))
@@ -160,6 +165,7 @@ def test_artefato_adulterado_e_RECUSADO_e_nao_atualizado(armazem, tmp_path):
         "aprovação, nunca auto-trust")
 
 
+@pytest.mark.filtro_posix
 def test_artefato_removido_do_armazem_e_recusado(armazem, tmp_path):
     art = armazem.importar(_script(tmp_path / "f.sh", BOM))
     os.chmod(Path(art.managed_path).parent, 0o700)
@@ -168,6 +174,7 @@ def test_artefato_removido_do_armazem_e_recusado(armazem, tmp_path):
         art.conferir()
 
 
+@pytest.mark.filtro_posix
 def test_artefato_nasce_nao_gravavel(armazem, tmp_path):
     art = armazem.importar(_script(tmp_path / "f.sh", BOM))
     modo = os.stat(art.managed_path).st_mode
@@ -175,6 +182,7 @@ def test_artefato_nasce_nao_gravavel(armazem, tmp_path):
     assert modo & 0o100, "artefato não executável"
 
 
+@pytest.mark.filtro_posix
 def test_armazem_e_privado(armazem):
     modo = os.stat(armazem.raiz).st_mode
     assert not modo & 0o077, "armazém acessível a outros — deve ser 0700"
@@ -250,6 +258,7 @@ def _pol(**kw):
     return PoliticaDeFiltro(**base)
 
 
+@pytest.mark.filtro_posix
 def test_politica_SEM_artefato_recusa_executar():
     """Sem import não há execução. Apontar o exec para o path externo
     reabriria exatamente o TOCTOU que A5.3 fechou."""
@@ -269,6 +278,7 @@ def test_executavel_vem_do_ARTEFATO_e_nao_do_path_externo(armazem, tmp_path):
 
 
 @pytest.mark.parametrize("ataque", ["remover", "substituir", "retargetar"])
+@pytest.mark.filtro_posix
 def test_resolucao_IDENTICA_com_o_source_atacado(armazem, tmp_path, ataque):
     """A propriedade que o gate exige: mexer no source não muda a resolução."""
     origem = _script(tmp_path / "f.sh", BOM)
@@ -291,6 +301,7 @@ def test_resolucao_IDENTICA_com_o_source_atacado(armazem, tmp_path, ataque):
     assert not canario.exists(), "UNAPPROVED_CODE_EXECUTED"
 
 
+@pytest.mark.filtro_posix
 def test_executavel_CONFERE_o_artefato_antes_de_devolver(armazem, tmp_path):
     """`conferir()` está COLADO na porta de execução, não num passo anterior."""
     art = armazem.importar(_script(tmp_path / "f.sh", BOM))

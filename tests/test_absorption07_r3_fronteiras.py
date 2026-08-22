@@ -169,6 +169,7 @@ def test_r3_02_CONTROLE_sem_cancelamento_o_filtro_roda_e_redige(governado):
 # ══════ .8.NEW-REFSDIR-SYMLINK (P0) — o link estava no componente do MEIO ════
 
 @pytest.mark.parametrize("sub", ["refs", "logs"])
+@pytest.mark.filtro_posix
 def test_r3_03_refs_como_SYMLINK_DE_DIRETORIO_e_recusado(campo, tmp_path, sub):
     """`is_dir()` e `rglob` SEGUEM o link; o `lstat` final não vê nada errado.
 
@@ -244,6 +245,7 @@ def test_r3_04_gitdir_SEM_o_nome_git_nao_e_gravavel_pelo_filtro(tmp_path, rel):
 
 @pytest.mark.parametrize("secao", ["[core]", "[CORE]", "[Core]",
                                    '[core "sub"]', "[coreX]"])
+@pytest.mark.filtro_posix
 def test_r3_05_titularidade_aceita_EXATAMENTE_o_que_o_git_honra(tmp_path,
                                                                 secao):
     """O parser pegava o primeiro token da seção — `[core "sub"]` virava `core`.
@@ -283,6 +285,7 @@ def test_r3_05_titularidade_aceita_EXATAMENTE_o_que_o_git_honra(tmp_path,
 
 # ═══ .5.08 (P1) — o teto do BFS de alternates era uma PORTA, agora é RECUSA ══
 
+@pytest.mark.filtro_posix
 def test_r3_07_alternates_a_LARGURA_nao_derruba_a_transitividade(tmp_path):
     """MEDIDO: com N=3 a cadeia era recusada; com N=120 passava.
 
@@ -316,6 +319,7 @@ def test_r3_07_alternates_a_LARGURA_nao_derruba_a_transitividade(tmp_path):
         git.conferir_alternates(str(repo), raizes, autoridade=aut)
 
 
+@pytest.mark.filtro_posix
 def test_r3_08_CONTROLE_cadeia_LEGITIMA_e_larga_continua_passando(tmp_path):
     """Sem este controle, o de cima passaria num sistema que recusa por tamanho.
 
@@ -335,6 +339,7 @@ def test_r3_08_CONTROLE_cadeia_LEGITIMA_e_larga_continua_passando(tmp_path):
     git.conferir_alternates(str(repo), raizes, autoridade=aut)
 
 
+@pytest.mark.filtro_posix
 def test_r3_09_estourar_o_teto_e_RECUSA_e_nao_silencio(tmp_path, monkeypatch):
     """Parar por defesa não prova contenção — e antes retornava como se provasse.
 
@@ -688,6 +693,7 @@ def test_r3_18_quarentena_que_NAO_pode_ser_apagada_vira_incidente(campo,
         f"recusado fica em disco sem ninguém saber: {str(ei.value)[:200]}")
 
 
+@pytest.mark.filtro_posix
 def test_r3_19_no_SUCESSO_a_quarentena_residual_tambem_e_recusa(campo,
                                                                 monkeypatch):
     """O outro lado da mesma propriedade, que o vetor mediu como `ok=True`.
@@ -713,6 +719,7 @@ def test_r3_19_no_SUCESSO_a_quarentena_residual_tambem_e_recusa(campo,
 
 # ═══ .1.07 (P2) — um diretório CHAMADO `worktrees` não é uma worktree ligada ══
 
+@pytest.mark.filtro_posix
 def test_r3_20_repo_comum_dentro_do_git_dir_alheio_nao_redireciona_o_efeito(
         campo):
     """MEDIDO: `AWS_SECRET_ACCESS_KEY=VAZOU_1_07` no store da VÍTIMA, ok=True.

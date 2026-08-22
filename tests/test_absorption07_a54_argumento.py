@@ -72,6 +72,7 @@ def test_comando_NAO_ACEITA_PARAMETRO():
         "de argv; a partir daí a defesa vira filtragem, e filtragem falha")
 
 
+@pytest.mark.filtro_posix
 def test_argv_vem_INTEIRO_da_politica(sed_art):
     pol = _pol(sed_art)
     cmd = pol.comando()
@@ -80,6 +81,7 @@ def test_argv_vem_INTEIRO_da_politica(sed_art):
 
 
 @pytest.mark.parametrize("mutacao", ["append", "replace", "extend"])
+@pytest.mark.filtro_posix
 def test_politica_de_argv_e_IMUTAVEL(sed_art, mutacao):
     pol = _pol(sed_art)
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -132,6 +134,7 @@ def test_argv_com_nao_string_e_recusado():
     "> /tmp/OWNED", ">> /tmp/OWNED", "< /etc/passwd", "\n touch /tmp/OWNED",
     "'quote", '"aspas', "back\\slash", "*", "?",
 ])
+@pytest.mark.filtro_posix
 def test_metacaractere_no_argv_nao_executa_nada(sed_art, tmp_path, meta):
     """CONTROLE POSITIVO EMBUTIDO: o mesmo texto sob `sh -c` faria efeito.
 
@@ -149,6 +152,7 @@ def test_metacaractere_no_argv_nao_executa_nada(sed_art, tmp_path, meta):
         assert "OWNED" not in r.stdout or meta in r.stdout
 
 
+@pytest.mark.filtro_posix
 def test_controle_positivo_o_mesmo_texto_SOB_SHELL_executa(tmp_path):
     """Sem isto, o teste acima não distingue contenção de 'nada aconteceu'."""
     canario = tmp_path / "OWNED_SHELL"
@@ -168,6 +172,7 @@ def test_estrutural_nenhum_shell_no_modulo():
 
 @pytest.mark.parametrize("arg", ["-rf", "--output=/etc/passwd", "-o/etc/x",
                                  "--file=/etc/passwd"])
+@pytest.mark.filtro_posix
 def test_argumento_com_cara_de_opcao_vem_da_POLITICA_nao_do_repo(sed_art, arg):
     """Option smuggling só existe se houver quem contrabandeie.
 
@@ -181,6 +186,7 @@ def test_argumento_com_cara_de_opcao_vem_da_POLITICA_nao_do_repo(sed_art, arg):
     assert pol.argv_policy == (arg,)
 
 
+@pytest.mark.filtro_posix
 def test_repo_nao_tem_como_pedir_argv(sed_art):
     """O repositório só fornece `filter_id`. `resolver()` não tem outro campo."""
     reg = fg.RegistroDeFiltros({"synthetic-redactor": _pol(sed_art)})
@@ -193,6 +199,7 @@ def test_repo_nao_tem_como_pedir_argv(sed_art):
 
 # ════════════ CONTROLE POSITIVO — o argv fixo é NECESSÁRIO ══════════════════
 
+@pytest.mark.filtro_posix
 def test_o_filtro_governado_FUNCIONA_com_o_argv_aprovado(sed_art):
     """Provar denial não basta: o argv aprovado tem de ser o que faz funcionar.
 

@@ -615,6 +615,7 @@ def _repo_auto_referente(raiz: Path, ponteiro: str) -> Path:
 
 
 @pytest.mark.parametrize("ponteiro", [".", "./", "sub/..", "ABSOLUTO"])
+@pytest.mark.filtro_posix
 def test_r4_40_gitdir_auto_referente_e_recusado(tmp_path, ponteiro):
     """MEDIDO: a raiz de ESCRITA deixava de ser o git dir e virava o repo INTEIRO.
 
@@ -702,6 +703,7 @@ def test_r4_42_CONTROLE_layouts_que_o_GIT_produz_seguem_aceitos(tmp_path,
 # ═══ `.11.13` (P1) — o teto era de PROFUNDIDADE, e ela é escolha do atacante ══
 
 @pytest.mark.parametrize("prof", [3, 5, 6, 8])
+@pytest.mark.filtro_posix
 def test_r4_50_git_dir_aninhado_e_achado_em_QUALQUER_profundidade(tmp_path,
                                                                    prof):
     """MEDIDO 8/8 a prof 6 e 8/8 a prof 8: escapava e o filtro gravava dentro.
@@ -1124,6 +1126,7 @@ def test_r4_91_CONTROLE_repo_legitimo_e_nao_repo_seguem_corretos(tmp_path):
 # ═ `.9.NOVO-CONTROLE-TRAVESSIA` / `.5.NOVO-INFO-SYMLINK` (P2) — o MEIO do caminho ═
 
 @pytest.mark.parametrize("componente", ["objects", "objects/info"])
+@pytest.mark.filtro_posix
 def test_r4_95_symlink_no_componente_do_MEIO_e_recusado(tmp_path, componente):
     """`O_NOFOLLOW` no ÚLTIMO componente não vê o link do MEIO.
 
@@ -1171,6 +1174,7 @@ def test_r4_95_symlink_no_componente_do_MEIO_e_recusado(tmp_path, componente):
         "divulgação sem escrita nenhuma")
 
 
+@pytest.mark.filtro_posix
 def test_r4_96_CONTROLE_alternates_LEGITIMO_continua_valendo(tmp_path):
     """Sem este controle, o de cima passaria num sistema que recusa todo alternate.
 
@@ -1253,6 +1257,7 @@ def test_r4_98_config_worktree_esta_na_negacao_dos_DOIS_confinamentos(tmp_path):
 
 @pytest.mark.parametrize("nome_wt", ["proj", "proj#hash", "proj com espaco",
                                       "proj;ponto"])
+@pytest.mark.filtro_posix
 def test_r4_99_titularidade_concorda_com_o_git_mesmo_com_valor_CITADO(tmp_path,
                                                                        nome_wt):
     """MEDIDO: com `#` no caminho, o Git grava `worktree = "<p>"` — COM ASPAS.
@@ -1288,6 +1293,7 @@ def test_r4_99_titularidade_concorda_com_o_git_mesmo_com_valor_CITADO(tmp_path,
             git.conferir_git_dir(str(trab), (str(raiz),))
 
 
+@pytest.mark.filtro_posix
 def test_r4_100_ultima_declaracao_vence_mesmo_citada(tmp_path):
     """O par: desfazer aspas não pode afrouxar a regra da ÚLTIMA declaração.
 
@@ -1316,6 +1322,7 @@ def test_r4_100_ultima_declaracao_vence_mesmo_citada(tmp_path):
 # ═══ `.11.NOVO-FIFO-60S` (P2) — o repositório gastava o PRAZO INTEIRO ═══════
 
 @pytest.mark.parametrize("rel", ["HEAD", "index", "packed-refs"])
+@pytest.mark.filtro_posix
 def test_r4_110_fifo_no_git_dir_recusa_IMEDIATAMENTE(tmp_path, rel):
     """MEDIDO: `HEAD` e `index` como FIFO custavam 60,1 s e 60,2 s.
 
@@ -1399,6 +1406,7 @@ def test_r4_111_CONTROLE_repo_normal_nao_e_afetado_pela_guarda(tmp_path):
 
 # ═══ INFO da 4ª medição — classificação com PROVA, não com silêncio ═════════
 
+@pytest.mark.filtro_posix
 def test_r4_120_erro_do_filesystem_nao_atravessa_a_fronteira(tmp_path):
     """`N-A7-04`: `NotADirectoryError` CRU escapava da capacidade governada.
 
@@ -1449,6 +1457,7 @@ def test_r4_121_leitura_nao_declara_store_estrangeiro(tmp_path):
         f"a leitura declara caminho FORA das raízes: {conf.leitura}")
 
 
+@pytest.mark.filtro_posix
 def test_r4_122_separate_git_dir_sem_titularidade_segue_RECUSADO(tmp_path):
     """`.7.18`: a recusa é DELIBERADA — decisão de dono, não defeito.
 

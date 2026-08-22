@@ -137,6 +137,7 @@ def test_o_indice_NAO_fica_contaminado_apos_a_recusa(repo_com_redator,
 
 # ══ PASSO 2b — o filtro que EXECUTA e falha (caminho distinto do não-exec) ══
 
+@pytest.mark.filtro_posix
 def test_filtro_que_executa_e_falha_tambem_e_recusado(tmp_path):
     """Cenário levantado pela sonda FILE_READ do censo, e ele é OUTRO caminho.
 

@@ -7,7 +7,9 @@ que contêm cópias dos testes com os mesmos nomes de módulo e causariam
 """
 from __future__ import annotations
 
+import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -25,6 +27,49 @@ _MOTIVO_SEM_SERVICO = (
     "nesta plataforma por desenho (kernel/plataforma.py, "
     "servico_persistente_disponivel)")
 
+_MOTIVO_SEM_POSIX = (
+    "bateria A5 (filtro governado + armazém de artefatos) exige ferramentas "
+    "POSIX (/bin/sh, /usr/bin/sed) e semântica Unix de permissão — "
+    "INDISPONÍVEL nesta plataforma")
+
+_FILTRO_EXECUTAVEIS = ("/bin/sh", "/usr/bin/sed")
+
+
+def _ferramentas_posix_do_filtro() -> bool:
+    """Os DOIS fatos de que a bateria A5 depende, medidos — não deduzidos.
+
+    1. **Ferramentas POSIX.** Os testes escrevem um filtro `#!/bin/sh` que faz
+       `exec /usr/bin/sed "$@"` e o executam. Sem shebang e sem `sed` não há o
+       que exercitar: o modelo de ameaça inteiro (injeção por argv em `sed`)
+       tem formato POSIX.
+
+    2. **Semântica Unix de permissão.** O armazém publica o artefato
+       NÃO-GRAVÁVEL (`0o500`) — é essa a defesa. No Windows os bits não mapeiam
+       e, pior, não se apaga nem substitui arquivo somente-leitura: a limpeza
+       vira `PermissionError`, a publicação atômica deixa temporário para trás,
+       e asserções como "armazém deve ser 0700" comparam número com número
+       errado.
+
+    Medir em vez de perguntar `platform.system()` é a mesma escolha de
+    `capacidade_git_governada_disponivel` e `servico_persistente_disponivel`, e
+    pelo mesmo motivo registrado lá: já houve na suíte um condicional preso ao
+    caminho ERRADO, afirmando sucesso onde a capacidade não existe.
+    """
+    if not all(os.access(c, os.X_OK) for c in _FILTRO_EXECUTAVEIS):
+        return False
+    # O bit de permissão PEGA nesta plataforma? Um `chmod` que o SO ignora em
+    # silêncio é pior que a ausência da ferramenta: a defesa pareceria ligada.
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        alvo = Path(tmp.name)
+    try:
+        alvo.chmod(0o600)
+        return (alvo.stat().st_mode & 0o777) == 0o600
+    except (OSError, NotImplementedError):
+        return False
+    finally:
+        alvo.chmod(0o600)
+        alvo.unlink(missing_ok=True)
+
 
 def pytest_configure(config):
     config.addinivalue_line(
@@ -37,6 +82,10 @@ def pytest_configure(config):
         "servico_persistente: exige launchd + fcntl.flock (NH-014). Onde não "
         "há, o teste é PULADO — o produto RECUSA a capacidade ali, então o "
         "teste passaria por vácuo ou morreria de ModuleNotFoundError.")
+    config.addinivalue_line(
+        "markers",
+        "filtro_posix: exige /bin/sh + /usr/bin/sed e bits de permissão Unix "
+        "que PEGAM (bateria A5: filtro governado e armazém de artefatos).")
 
 
 def pytest_collection_modifyitems(items):
@@ -74,6 +123,14 @@ def pytest_collection_modifyitems(items):
         for item in items:
             if "servico_persistente" in item.keywords:
                 item.add_marker(pular_sv)
+
+    # Bateria A5. Medido UMA vez por sessão: o teste de permissão escreve em
+    # disco, e repeti-lo por item custaria uma ida ao filesystem por teste.
+    if not _ferramentas_posix_do_filtro():
+        pular_px = pytest.mark.skip(reason=_MOTIVO_SEM_POSIX)
+        for item in items:
+            if "filtro_posix" in item.keywords:
+                item.add_marker(pular_px)
 
 
 _FONTE_ESPIAO = r"""
