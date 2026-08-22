@@ -4,6 +4,23 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Added (Missão C — ORQUESTRA-02: NH-015 + NH-021 + NH-009)
+- **Execução paralela de nós independentes** (NH-015): `nomos orquestrar
+  --paralelo N` — ondas com gate SERIAL (o humano nunca recebe duas
+  perguntas ao mesmo tempo) e efeitos em paralelo até o teto; padrão 1 =
+  comportamento de sempre, sem thread nenhuma. **Transcrição ao vivo**: cada
+  nó aparece no terminal enquanto acontece; callback quebrado não derruba a
+  missão e vê exatamente os campos da trilha, nem um a mais.
+- **Loop-guards** (NH-021): breaker de chamada idêntica (ferramenta + params
+  do PLANO) + teto de chamadas por turno, SEMPRE ligados (limites
+  configuráveis, sem interruptor); recusa consome o teto — loop de chamadas
+  negadas ainda é loop. Disparo auditado (`orquestracao.guarda.disparou`).
+- **Checkpoint + retomada de missão** (NH-009): `--checkpoint <arquivo>` —
+  estado durável por nó (atômico, 0600), amarrado ao grafo por SHA-256
+  (plano modificado não herda estado nem aprovações); nó OK não reexecuta;
+  interrompido no meio e NÃO idempotente nunca reexecuta; checkpoint
+  corrompido é recusa, não recomeço silencioso.
+
 ### Added (Missão B — OPERACAO-01: NH-019 + NH-017 + NH-018 + NH-005)
 - **`nomos motores uso`** (NH-019): medição LOCAL de uso de motor (jsonl
   0600, rotação 5 MiB) — só metadados, nunca conteúdo; tokens quando o

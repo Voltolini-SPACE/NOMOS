@@ -19,6 +19,7 @@ O que o NOMOS não tinha: sobreviver a falha transiente sem operador. Regras
 """
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -43,14 +44,45 @@ class GerenciadorRecuperacao:
         self.dormir = dormir
         self._falhas_consecutivas: dict[str, int] = {}
         self._tentativas_gastas = 0
+        # NH-015: com nós independentes rodando em paralelo, este gerenciador
+        # passa a ser tocado por várias threads. `_tentativas_gastas` é o
+        # ORÇAMENTO DA MISSÃO — um `+= 1` sem trava perde incrementos, e o
+        # limite anti retry-storm passaria a ser um teto que vaza. A trava
+        # protege SÓ os contadores; `dormir()` (o backoff) fica fora dela, ou
+        # uma thread em backoff bloquearia todas as outras.
+        self._trava = threading.Lock()
+
+    def _gastar_tentativa(self) -> bool:
+        """Reserva uma tentativa do orçamento. False = orçamento esgotado.
+
+        Ler e incrementar num passo só: com a leitura separada do incremento,
+        duas threads leem o mesmo valor abaixo do teto e ambas gastam — o
+        clássico check-then-act, que aqui custaria execuções reais a mais.
+        """
+        with self._trava:
+            if self._tentativas_gastas >= self.politica.orcamento_missao:
+                return False
+            self._tentativas_gastas += 1
+            return True
 
     def _auditar(self, evento: str, **campos) -> None:
         if self.audit is not None:
             self.audit.append(evento, **campos)
 
     def _circuito_aberto(self, ferramenta: str) -> bool:
-        return (self._falhas_consecutivas.get(ferramenta, 0)
-                >= self.politica.circuito_limite)
+        with self._trava:
+            return (self._falhas_consecutivas.get(ferramenta, 0)
+                    >= self.politica.circuito_limite)
+
+    def _contar_falha(self, ferramenta: str) -> int:
+        with self._trava:
+            n = self._falhas_consecutivas.get(ferramenta, 0) + 1
+            self._falhas_consecutivas[ferramenta] = n
+            return n
+
+    def _zerar_falhas(self, ferramenta: str) -> None:
+        with self._trava:
+            self._falhas_consecutivas[ferramenta] = 0
 
     def executar(self, no, executor: Callable, params: dict,
                  *, idempotente: bool | None = None):
@@ -69,7 +101,9 @@ class GerenciadorRecuperacao:
                           ferramenta=ferramenta)
             return False, (f"circuito aberto para '{ferramenta}' "
                            f"({self.politica.circuito_limite} falhas consecutivas)"), 0
-        if self._tentativas_gastas >= self.politica.orcamento_missao:
+        with self._trava:
+            esgotado = self._tentativas_gastas >= self.politica.orcamento_missao
+        if esgotado:
             self._auditar("recuperacao.orcamento.esgotado", no=no.id,
                           ferramenta=ferramenta,
                           orcamento=self.politica.orcamento_missao)
@@ -79,24 +113,22 @@ class GerenciadorRecuperacao:
         tentativas = 0
         ultimo_motivo = ""
         while tentativas < maximo:
-            if self._tentativas_gastas >= self.politica.orcamento_missao:
+            if not self._gastar_tentativa():
                 self._auditar("recuperacao.orcamento.esgotado", no=no.id,
                               ferramenta=ferramenta,
                               orcamento=self.politica.orcamento_missao)
                 break
             tentativas += 1
-            self._tentativas_gastas += 1
             try:
                 resultado = executor(**params)
-                self._falhas_consecutivas[ferramenta] = 0     # sucesso fecha circuito
+                self._zerar_falhas(ferramenta)               # sucesso fecha circuito
                 if tentativas > 1:
                     self._auditar("recuperacao.recuperou", no=no.id,
                                   ferramenta=ferramenta, tentativas=tentativas)
                 return True, resultado, tentativas
             except Exception as exc:
                 ultimo_motivo = f"{type(exc).__name__}: {exc}"
-                falhas = self._falhas_consecutivas.get(ferramenta, 0) + 1
-                self._falhas_consecutivas[ferramenta] = falhas
+                falhas = self._contar_falha(ferramenta)
                 self._auditar("recuperacao.tentativa.falhou", no=no.id,
                               ferramenta=ferramenta, tentativa=tentativas,
                               motivo=type(exc).__name__)
@@ -119,3 +151,88 @@ class GerenciadorRecuperacao:
         else:
             motivo = ultimo_motivo or "falha sem execução (orçamento/circuito)"
         return False, motivo, tentativas
+
+
+# ===================================================================== NH-021
+
+@dataclass(frozen=True)
+class PoliticaGuarda:
+    """Limites do loop-guard. Configuráveis; não existe 'desligado'.
+
+    Os defaults são deliberadamente folgados: o breaker existe para pegar
+    LOOP (o planejador martelando a mesma chamada), não para racionar uso
+    legítimo. Grafo real da suíte tem ≤ 6 nós; um plano com 6 chamadas
+    IDÊNTICAS já é anomalia, e 100 execuções num turno também.
+    """
+    identicas_limite: int = 5      # N idênticas passam; a (N+1)-ésima recusa
+    chamadas_por_turno: int = 100  # total que um turno pode INTENTAR
+
+
+class GuardaDeLaco:
+    """Breaker de chamada idêntica + teto por turno (NH-021).
+
+    O orçamento de retry (acima) só conta tentativas de nós que FALHAM; um
+    loop de chamadas idênticas bem-sucedidas atravessa o NH-004 sem gastar
+    nada. Esta guarda conta INTENÇÃO: toda reserva de execução, com sucesso
+    ou sem.
+
+    Escopo é decisão do CHAMADOR: o Orquestrador cria uma por missão quando
+    nenhuma é passada; o loop de replanejamento passa a MESMA para todas as
+    missões do turno — é aí que o breaker pega o caso real (o planejador
+    gerando o mesmo plano de novo, e de novo).
+
+    A identidade da chamada usa os params DO PLANO (`no.params`), que são
+    JSON por construção (`entrada.py`). Nunca o params enriquecido da
+    execução: `rota_motor` é objeto, e repr de objeto carrega id() — cada
+    chamada ganharia identidade nova e o breaker nunca dispararia.
+    Params que não canonizam ⇒ recusa (fail-closed): se isentassem, params
+    exóticos virariam o passe-livre do loop.
+    """
+
+    def __init__(self, politica: PoliticaGuarda | None = None):
+        self.politica = politica or PoliticaGuarda()
+        for nome in ("identicas_limite", "chamadas_por_turno"):
+            valor = getattr(self.politica, nome)
+            if isinstance(valor, bool) or not isinstance(valor, int) or valor < 1:
+                raise ValueError(f"{nome} deve ser inteiro >= 1, recebi {valor!r}")
+        # Consultada na fase SERIAL do Orquestrador (uma thread), mas a trava
+        # fica: a guarda é compartilhável entre missões e nada impede um
+        # chamador de rodá-las de threads diferentes.
+        self._trava = threading.Lock()
+        self._identicas: dict[str, int] = {}
+        self._chamadas = 0
+
+    @staticmethod
+    def _identidade(ferramenta: str, params: dict) -> str:
+        import hashlib
+        import json
+        canonico = json.dumps(params, sort_keys=True, ensure_ascii=False,
+                              separators=(",", ":"))
+        return hashlib.sha256(
+            f"{ferramenta}\x00{canonico}".encode()).hexdigest()
+
+    def reservar(self, ferramenta: str, params: dict) -> tuple[bool, str]:
+        """(pode_executar, motivo). Consome o turno MESMO quando recusa.
+
+        Recusa que não consome deixaria o plano martelar "de graça": um loop
+        de chamadas negadas ainda é um loop, e queima o operador igual.
+        """
+        try:
+            chave = self._identidade(ferramenta, dict(params))
+        except (TypeError, ValueError) as exc:
+            return False, (f"params não canonizáveis para a guarda de laço "
+                           f"({type(exc).__name__}) — identidade que não se "
+                           f"computa é recusa, não isenção")
+        with self._trava:
+            if self._chamadas >= self.politica.chamadas_por_turno:
+                return False, (f"teto de chamadas do turno atingido "
+                               f"({self.politica.chamadas_por_turno})")
+            self._chamadas += 1
+            vistas = self._identicas.get(chave, 0) + 1
+            self._identicas[chave] = vistas
+            if vistas > self.politica.identicas_limite:
+                return False, (f"chamada idêntica repetida {vistas}× — limite "
+                               f"{self.politica.identicas_limite} "
+                               f"(breaker de laço: mesma ferramenta + mesmos "
+                               f"params do plano)")
+        return True, ""

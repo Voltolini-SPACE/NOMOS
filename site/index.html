@@ -505,6 +505,11 @@ cada ocorrência pede autoridade nova antes de rodar</pre></figure>
                 <figure class="demo"><p class="cmd">$ nomos orquestrar "ler e diagnosticar" --passos '[...]'</p><pre>plano: 2 passo(s) · risco A0
 sem --executar é só plano — nada roda
 cada passo passa pelo gate; negado bloqueia quem depende dele</pre></figure>
+                <figure class="demo"><p class="cmd">$ nomos orquestrar "..." --executar --paralelo 4 --checkpoint missao.ckpt</p><pre>nós independentes rodam juntos (teto 4) — o gate de aprovação NUNCA paraleliza
+transcrição ao vivo: cada nó aparece no terminal enquanto acontece
+missão morreu no meio? retomar não reexecuta nó já OK — e um nó interrompido
+que não é idempotente NUNCA reexecuta (efeito duplicado é pior que falhar)
+loop-guard sempre ligado: chamada idêntica repetida além do limite é recusada</pre></figure>
                 <figure class="demo"><p class="cmd">$ nomos servico instalar --raiz ~/trabalho</p><pre>o plist é impresso na ÍNTEGRA + SHA-256 — você aprova o artefato
 serviço vive no launchd (KeepAlive), uma instância só, batimento em disco
 sensível sem humano no painel EXPIRA NEGADO — nunca se auto-aprova</pre></figure>

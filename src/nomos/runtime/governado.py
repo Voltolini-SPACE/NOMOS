@@ -583,9 +583,16 @@ class RuntimeGovernado:
 
     # ---------------- execução ----------------
 
-    def executar(self, plano: PlanoTipado) -> ResultadoExecucao:
+    def executar(self, plano: PlanoTipado, *, max_paralelo: int = 1,
+                 checkpoint=None, ao_evento=None) -> ResultadoExecucao:
         """Plano ⇒ grafo ⇒ execução governada. Nunca levanta por causa do
-        conteúdo do plano: plano inválido vira resultado fail-closed."""
+        conteúdo do plano: plano inválido vira resultado fail-closed.
+
+        ORQUESTRA-02 — repasse explícito, não mágica: `max_paralelo` (NH-015,
+        padrão serial), `checkpoint` (NH-009, CheckpointMissao ou None) e
+        `ao_evento` (transcrição ao vivo) descem ao Orquestrador. Sem porta
+        aqui, as três capacidades seriam biblioteca inalcançável — a forma de
+        falso fechamento que o FIX-02 corrigiu nas capacidades Git."""
         if not isinstance(plano, PlanoTipado):
             raise ErroRuntime("plano inválido (tipo inesperado)")
         if not plano.ok:
@@ -604,10 +611,11 @@ class RuntimeGovernado:
                            recuperacao=self.recuperacao,
                            rotear_motor=self.rotear_motor,
                            estrito=True,
-                           contexto_aprovacao=self._contexto_aprovacao)
+                           contexto_aprovacao=self._contexto_aprovacao,
+                           max_paralelo=max_paralelo, ao_evento=ao_evento)
         self._auditar("runtime.execucao.inicio", objetivo=plano.objetivo[:120],
                       passos=len(plano.passos), risco=plano.risco)
-        missao = orq.executar(grafo)
+        missao = orq.executar(grafo, checkpoint=checkpoint)
         self._auditar("runtime.execucao.fim", ok=missao.ok)
         return ResultadoExecucao(ok=missao.ok, plano=plano, missao=missao,
                                  motivo="" if missao.ok else "um ou mais nós não concluíram")
