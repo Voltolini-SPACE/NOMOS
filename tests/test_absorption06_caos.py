@@ -11,7 +11,6 @@ duplicado no mundo — e o mundo não tem desfazer.
 """
 from __future__ import annotations
 
-import gc
 import os
 import signal
 import sqlite3
@@ -214,18 +213,11 @@ def test_armazem_corrompido_falha_fechado_nao_relata_zero_jobs(tmp_path):
     caminho = tmp_path / "jobs.db"
     s = Scheduler(ArmazemJobs(caminho), executor=lambda *a, **k: None)
     s.criar("j", "sujeito", "fs-listar", intervalo_s=60)
-    # Solta as conexões ANTES de apagar. No POSIX isto é dispensável — `unlink`
-    # de arquivo aberto funciona —, mas no Windows o apagar falha com WinError
-    # 32 ("usado por outro processo") e o teste morre antes de medir o que
-    # promete. A propriedade sob teste (armazém ilegível LEVANTA) é portável; a
-    # técnica é que não era.
-    #
-    # Precisa de `gc` porque `adapters/scheduler.py` nunca fecha conexão: são
-    # 13 `self._conn()` e zero `.close()`, cada uma dependendo do coletor. É um
-    # descuido real de recurso, invisível no POSIX, e a correção certa é no
-    # produto — fora do escopo desta fatia, registrada aqui para não sumir.
-    del s
-    gc.collect()
+    # A dívida registrada aqui na Missão B foi paga: `_sessao()` fecha toda
+    # conexão no fim da operação (com a transação preservada), então apagar o
+    # banco funciona em QUALQUER plataforma sem soltar referência nem coletar.
+    # Se este loop voltar a falhar com WinError 32 no Windows, uma conexão
+    # voltou a vazar — é regressão do fix, não flakiness.
     for p in tmp_path.iterdir():
         if p.name.startswith("jobs.db"):
             p.unlink()
