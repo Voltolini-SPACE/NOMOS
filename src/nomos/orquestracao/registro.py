@@ -49,10 +49,14 @@ def _risco(categoria: Category | None) -> str:
 class RegistroCapacidades:
     """Fonte única de verdade sobre QUAIS capacidades existem e QUAL risco têm."""
 
-    def __init__(self, policy=None, approver=None, audit=None):
+    def __init__(self, policy=None, approver=None, audit=None, concessoes=None):
         self.policy = policy
         self.approver = approver
         self.audit = audit
+        # `concessoes` (kernel.concessoes.RegistroConcessoes) é OPCIONAL: com
+        # None o comportamento é byte-idêntico ao anterior — toda autorização
+        # vem do gate ao vivo. Ver `_autorizar`.
+        self.concessoes = concessoes
         self._dinamicas: dict[str, Capacidade] = {}
 
     # ---------- consulta (nunca levanta; desconhecida => fail-closed) ----------
@@ -113,6 +117,66 @@ class RegistroCapacidades:
                 extra = f" (audit indisponível: {type(exc).__name__})"
         return ErroRegistro(f"registro de '{nome}' negado: {motivo}{extra}")
 
+    def operacao_de_registro(self, nome: str, categoria: Category,
+                             origem: str, idempotente: bool):
+        """A operação que o humano lê e que o digest cobre.
+
+        Fica aqui — e não na CLI — para que o digest CONCEDIDO e o digest
+        CONSULTADO nasçam do mesmo código. Se divergirem, o dono aprova A e o
+        sistema consulta B: exatamente o defeito que `pdp/aprovacao.py` existe
+        para fechar (ver `descrever()` lá).
+        """
+        from nomos.pdp.aprovacao import OperacaoAprovavel, versao_da_politica
+        return OperacaoAprovavel(
+            sujeito="registro",
+            capacidade=nome,
+            recurso=f"registro:{nome}",
+            classe_de_risco=categoria.value,
+            argumentos={"origem": origem, "idempotente": bool(idempotente)},
+            versao_da_politica=versao_da_politica(self.policy),
+        )
+
+    def operacao_registrada(self, nome: str):
+        """A operação de uma capacidade JÁ registrada nesta instância.
+
+        Existe para que quem CONCEDE (a CLI) não precise adivinhar categoria e
+        origem: elas vêm do wiring que registrou, fonte única. Adivinhar aqui
+        produziria um digest que nunca casa com o consultado no registrar().
+        """
+        cap = self._dinamicas.get(nome)
+        if cap is None:
+            raise self._negar(nome, "não é capacidade dinâmica desta instância")
+        return self.operacao_de_registro(cap.nome, cap.categoria, cap.origem,
+                                         cap.idempotente)
+
+    def _autorizar(self, decisao, nome: str, categoria: Category,
+                   origem: str, idempotente: bool) -> bool:
+        """Gate ao vivo OU concessão durável — nesta ordem de prioridade.
+
+        Invariantes que esta função NÃO pode quebrar:
+        - DENY continua DENY. Concessão jamais converte proibição em permissão:
+          só se consulta concessão quando o efeito é REQUIRE_APPROVAL.
+        - ALLOW não consulta nada (o gate já devolve True sem aprovador).
+        - Sem `concessoes` configurado, o caminho é o antigo, intocado.
+        - Consumir concessão é auditado como USO (`registro.concessao.consumida`),
+          nunca como uma nova decisão humana — a trilha não pode fabricar
+          aprovações que ninguém deu.
+        """
+        from nomos.kernel.policy import Effect
+        if self.concessoes is not None and decisao.effect is Effect.REQUIRE_APPROVAL:
+            try:
+                op = self.operacao_de_registro(nome, categoria, origem, idempotente)
+                if self.concessoes.vigente(op.digest()):
+                    if self.audit is not None:
+                        self.audit.append("registro.concessao.consumida",
+                                          capacidade=nome,
+                                          digest=op.digest()[:16],
+                                          origem=origem)
+                    return True
+            except Exception:
+                pass          # concessão indisponível NUNCA autoriza; cai no gate
+        return gate(decisao, self.approver)
+
     def registrar(self, nome: str, categoria: Category | str,
                   executor: Callable, origem: str,
                   idempotente: bool = False) -> Capacidade:
@@ -134,7 +198,7 @@ class RegistroCapacidades:
         if self.policy is None:
             raise self._negar(nome, "sem política carregada — fail-closed")
         decisao = self.policy.decide(Category.SKILL_INSTALL, target=f"registro:{nome}")
-        if not gate(decisao, self.approver):
+        if not self._autorizar(decisao, nome, categoria, origem, idempotente):
             raise self._negar(nome, f"gate negou ({decisao.reason})")
         cap = Capacidade(nome=nome, categoria=categoria, executor=executor,
                          origem=origem, nativa=False,

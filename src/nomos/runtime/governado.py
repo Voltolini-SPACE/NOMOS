@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from nomos.orquestracao.grafo import ErroGrafo, Orquestrador, ResultadoMissao
@@ -330,9 +331,21 @@ class RuntimeGovernado:
         self.manifesto = (manifesto if manifesto is not None
                           else manifesto_do_runtime(risco_max="A6" if destrutivas
                                                     else None))
+        # Concessões duráveis de REGISTRO (kernel.concessoes): sem elas, cada
+        # construção deste runtime custa uma aprovação A5 humana por capacidade
+        # — e o agendador constrói um por ocorrência de job. Ver o módulo para
+        # por que isto não enfraquece o gate. `home` ausente ⇒ None ⇒ caminho
+        # antigo, gate ao vivo.
+        concessoes = None
+        _home = ctx.get("home")
+        if _home is not None:
+            from nomos.kernel.concessoes import RegistroConcessoes
+            concessoes = RegistroConcessoes(Path(_home) / "concessoes.json",
+                                            audit=self.audit)
         self.registro = RegistroCapacidades(policy=self.policy,
                                             approver=aprovador,
-                                            audit=self.audit)
+                                            audit=self.audit,
+                                            concessoes=concessoes)
         # ABSORPTION-03: adapters entram como capacidades DINÂMICAS, pelo
         # caminho governado (registrar é A5 + gate + audit). A allowlist
         # nativa de 8 ferramentas continua intocada.

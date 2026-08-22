@@ -149,6 +149,99 @@ def cmd_consent(ctx, args) -> int:
     return EXIT_ERROR
 
 
+def cmd_capacidades(ctx, args) -> int:
+    """Concessões duráveis de REGISTRO de capacidade (kernel.concessoes).
+
+    Sem elas o dono aprova a MESMA série de capacidades a cada construção de
+    runtime — e o agendador constrói uma por ocorrência de job. `conceder`
+    descobre o conjunto exato pelo MESMO wiring que o runtime usa (nunca por
+    lista digitada, que divergiria) e pede UMA decisão humana para o conjunto.
+    """
+    from pathlib import Path as _Path
+
+    from nomos.kernel.concessoes import ConcessaoError, RegistroConcessoes
+
+    conc = RegistroConcessoes(_Path(ctx["home"]) / "concessoes.json",
+                              audit=ctx["audit"])
+
+    if args.cap_cmd == "listar":
+        vivas = conc.listar()
+        if not vivas:
+            print("nenhuma concessão vigente.")
+            return EXIT_OK
+        import time as _time
+        for e in vivas:
+            resta = max(0, int((e["expira_em"] - _time.time()) / 86400))
+            print(f"{e['digest'][:16]}  {e['capacidade']:<20} "
+                  f"risco={e['classe_de_risco']:<16} expira em ~{resta}d")
+        return EXIT_OK
+
+    if args.cap_cmd == "revogar":
+        if args.tudo:
+            print(f"{conc.panic()} concessão(ões) revogada(s).")
+            return EXIT_OK
+        if not args.digest:
+            print("informe um digest ou use --tudo.")
+            return EXIT_ERROR
+        achados = [e for e in conc.listar() if e["digest"].startswith(args.digest)]
+        if not achados:
+            print("nenhuma concessão vigente com esse digest.")
+            return EXIT_ERROR
+        for e in achados:
+            conc.revogar(e["digest"])
+            print(f"revogada: {e['digest'][:16]} {e['capacidade']}")
+        return EXIT_OK
+
+    if args.cap_cmd == "conceder":
+        from nomos.adapters.wiring import registrar_filesystem
+        from nomos.orquestracao.registro import RegistroCapacidades
+
+        # SONDA: descobre o conjunto pelo wiring real. audit=None de propósito —
+        # esta construção é descartável e não pode deixar na trilha registros
+        # que não aconteceram operacionalmente.
+        sonda = RegistroCapacidades(policy=ctx["policy"],
+                                    approver=lambda _d: True, audit=None)
+        try:
+            nomes = registrar_filesystem(sonda, raizes=tuple(args.raiz), audit=None,
+                                         apenas_leitura=bool(args.apenas_leitura),
+                                         destrutivas=bool(args.destrutivas))
+        except Exception as exc:
+            print(f"não foi possível descobrir as capacidades: {exc}")
+            return EXIT_ERROR
+        if not nomes:
+            print("nenhuma capacidade a conceder para essas raízes.")
+            return EXIT_ERROR
+
+        ops = [sonda.operacao_registrada(n) for n in sorted(nomes)]
+        print("Vai conceder REGISTRO durável para:")
+        for op in ops:
+            print(f"  - {op.capacidade}  (risco {op.classe_de_risco})")
+        print(f"raízes: {', '.join(args.raiz)}")
+        print(f"prazo:  {args.ttl_dias} dias   ·   revogável: nomos capacidades revogar")
+        print("A EXECUÇÃO continua exigindo aprovação a cada uso — isto cobre "
+              "apenas o ato de registrar.")
+
+        decisao = ctx["policy"].decide(
+            Category.SKILL_INSTALL,
+            target=f"concessao:registro x{len(ops)} ttl={args.ttl_dias}d")
+        if not gate(decisao, interactive_approver):
+            ctx["audit"].append("registro.concessao.negada", quantas=len(ops))
+            return EXIT_DENIED
+
+        for op in ops:
+            try:
+                conc.conceder(op, ttl_dias=args.ttl_dias,
+                              motivo=args.motivo or "concessão de registro",
+                              dono=os.environ.get("USER", ""))
+            except ConcessaoError as exc:
+                print(f"recusada ({op.capacidade}): {exc}")
+                return EXIT_DENIED
+        print(f"{len(ops)} concessão(ões) gravada(s).")
+        return EXIT_OK
+
+    return EXIT_ERROR
+
+
 def cmd_panic(ctx, args) -> int:
     # Fase 0 (higiene pós-validação): o botão de pânico só revogava
     # consentimento de dispositivo — mais estreito do que "corta tudo"
@@ -159,6 +252,13 @@ def cmd_panic(ctx, args) -> int:
     # tem que ser instantâneo, sem fricção.
     from nomos.kernel import pausa
     ctx["consent"].panic()
+    # Concessões de REGISTRO também caem: pânico que deixa autorização durável
+    # de pé não é pânico. (Ver kernel/concessoes.py.)
+    from pathlib import Path as _Path
+
+    from nomos.kernel.concessoes import RegistroConcessoes
+    RegistroConcessoes(_Path(ctx["home"]) / "concessoes.json",
+                       audit=ctx["audit"]).panic()
     negadas = _queue(ctx).deny_all()
     localidade.definir(ctx["home"], True)
     # NH-026: pânico também PAUSA a autonomia agendada (ticker + rotinas).
@@ -3294,6 +3394,23 @@ def build_parser() -> argparse.ArgumentParser:
     rv = co.add_parser("revoke")
     rv.add_argument("device", choices=DEVICES)
     rv.set_defaults(fn=cmd_consent)
+
+    cp = sub.add_parser("capacidades",
+                        help="concessões duráveis de registro (listar/conceder/revogar)"
+                        ).add_subparsers(dest="cap_cmd", required=True)
+    cp.add_parser("listar").set_defaults(fn=cmd_capacidades)
+    cc = cp.add_parser("conceder")
+    cc.add_argument("--raiz", action="append", required=True,
+                    help="raiz de dados (repita para várias) — mesmo valor do serviço")
+    cc.add_argument("--ttl-dias", type=float, default=30, dest="ttl_dias")
+    cc.add_argument("--motivo", default="")
+    cc.add_argument("--apenas-leitura", action="store_true", dest="apenas_leitura")
+    cc.add_argument("--destrutivas", action="store_true")
+    cc.set_defaults(fn=cmd_capacidades)
+    cr = cp.add_parser("revogar")
+    cr.add_argument("digest", nargs="?", help="prefixo do digest")
+    cr.add_argument("--tudo", action="store_true")
+    cr.set_defaults(fn=cmd_capacidades)
 
     sub.add_parser("panic", help="botão de pânico: revoga consentimentos e tranca tudo").set_defaults(fn=cmd_panic)
     pz = sub.add_parser("pausar", help="freio gracioso: a ocorrência atual "
