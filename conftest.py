@@ -20,6 +20,11 @@ _MOTIVO_SEM_GIT_GOVERNADO = (
     "capacidade Git governada exige sandbox-exec — INDISPONÍVEL fora do macOS "
     "por desenho (adapters/supervisor.py, 'Fail-closed, sem exceção')")
 
+_MOTIVO_SEM_SERVICO = (
+    "serviço persistente (NH-014) exige launchd e fcntl.flock — INDISPONÍVEL "
+    "nesta plataforma por desenho (kernel/plataforma.py, "
+    "servico_persistente_disponivel)")
+
 
 def pytest_configure(config):
     config.addinivalue_line(
@@ -27,6 +32,11 @@ def pytest_configure(config):
         "git_governado: exige a capacidade Git governada (sandbox-exec, só "
         "macOS). Fora do macOS o teste é PULADO, não falha — a capacidade não "
         "existe ali por decisão de projeto.")
+    config.addinivalue_line(
+        "markers",
+        "servico_persistente: exige launchd + fcntl.flock (NH-014). Onde não "
+        "há, o teste é PULADO — o produto RECUSA a capacidade ali, então o "
+        "teste passaria por vácuo ou morreria de ModuleNotFoundError.")
 
 
 def pytest_collection_modifyitems(items):
@@ -46,12 +56,24 @@ def pytest_collection_modifyitems(items):
     # Pelo módulo, e não por nome importado: assim um plugin de verificação
     # consegue substituir a função e provar, DE DENTRO DO MAC, que o portão
     # produz skip (e não falha) na plataforma onde a capacidade não existe.
-    if plataforma.capacidade_git_governada_disponivel():
-        return
-    pular = pytest.mark.skip(reason=_MOTIVO_SEM_GIT_GOVERNADO)
-    for item in items:
-        if "git_governado" in item.keywords:
-            item.add_marker(pular)
+    if not plataforma.capacidade_git_governada_disponivel():
+        pular = pytest.mark.skip(reason=_MOTIVO_SEM_GIT_GOVERNADO)
+        for item in items:
+            if "git_governado" in item.keywords:
+                item.add_marker(pular)
+
+    # Mesmo contrato para o serviço persistente (NH-014): onde não há launchd
+    # nem `fcntl.flock` o produto RECUSA a capacidade na porta, então o teste
+    # que exercita trava, batimento ou instalação não tem o que medir — passaria
+    # por vácuo ou morreria de ModuleNotFoundError. Os demais testes do arquivo
+    # (renderização do plist, validação de argumento) são independentes de
+    # plataforma e seguem valendo, que é o motivo de marcar por TESTE e não com
+    # `pytestmark` de módulo.
+    if not plataforma.servico_persistente_disponivel():
+        pular_sv = pytest.mark.skip(reason=_MOTIVO_SEM_SERVICO)
+        for item in items:
+            if "servico_persistente" in item.keywords:
+                item.add_marker(pular_sv)
 
 
 _FONTE_ESPIAO = r"""

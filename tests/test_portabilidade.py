@@ -22,7 +22,8 @@ def test_helpers():
     # Igualdade, não `issubset`: o resumo é contrato lido pelo `nomos doutor`, e
     # afrouxar para "contém" deixaria uma chave sumir sem ninguém perceber.
     assert set(plataforma.resumo()) == {
-        "sistema", "python", "execucao_isolada", "git_governado"}
+        "sistema", "python", "execucao_isolada", "git_governado",
+        "servico_persistente"}
 
 
 def test_chmod_privado_nunca_levanta(tmp_path):
@@ -77,3 +78,46 @@ def test_importa_sem_resource():
     r = subprocess.run([sys.executable, "-c", _COD], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     assert "IMPORT_OK_SEM_RESOURCE" in r.stdout
+
+
+# ------------------------------------- serviço persistente (NH-014, launchd)
+
+def test_servico_falso_sem_fcntl(monkeypatch):
+    """Windows: sem `fcntl` não há flock, e sem flock não há como saber que já
+    existe uma instância rodando — PID não prova. A capacidade não existe ali.
+
+    Simula pelo IMPORT, não por `platform.system()`: é o fato que a função
+    consulta, e é o mesmo mecanismo do `_COD` acima para `resource`.
+    """
+    import builtins
+    orig = builtins.__import__
+
+    def sem_fcntl(nome, *a, **k):
+        if nome == "fcntl":
+            raise ImportError("simulando Windows")
+        return orig(nome, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", sem_fcntl)
+    assert plataforma.servico_persistente_disponivel() is False
+
+
+def test_servico_falso_sem_launchctl(monkeypatch):
+    """Linux tem `fcntl` e não tem `launchd` — e o NH-014 escreve um plist e
+    fala com `launchctl`. Ter metade da capacidade não é ter a capacidade."""
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda _n: None)
+    assert plataforma.servico_persistente_disponivel() is False
+
+
+def test_servico_verdadeiro_com_fcntl_e_launchctl(monkeypatch):
+    """Controle positivo: sem ele os dois acima passariam por vácuo se a função
+    passasse a devolver False sempre — o mesmo cuidado do trio do git."""
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda _n: "/bin/launchctl")
+    assert plataforma.servico_persistente_disponivel() is True
+
+
+def test_resumo_expoe_servico_persistente():
+    """`nomos doutor` precisa poder dizer que o serviço não existe NESTA
+    plataforma — senão o usuário do Windows lê 'parado' e conclui defeito."""
+    assert "servico_persistente" in plataforma.resumo()

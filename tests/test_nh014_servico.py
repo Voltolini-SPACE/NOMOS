@@ -77,6 +77,7 @@ def test_precondicoes_audit_quebrado_recusa(tmp_path):
 
 # ------------------------------------------------------------------- trava
 
+@pytest.mark.servico_persistente
 def test_trava_segunda_instancia_falha(tmp_path):
     t1 = sv.TravaInstancia(tmp_path / "s.lock")
     t2 = sv.TravaInstancia(tmp_path / "s.lock")
@@ -89,6 +90,7 @@ def test_trava_segunda_instancia_falha(tmp_path):
     t2.liberar()
 
 
+@pytest.mark.servico_persistente
 def test_trava_inode_trocado_recusa(tmp_path, monkeypatch):
     """Se o arquivo do path foi substituído entre open e flock, recusa."""
     import os as _os
@@ -110,6 +112,7 @@ def test_trava_inode_trocado_recusa(tmp_path, monkeypatch):
 
 # --------------------------------------------------------------- batimento
 
+@pytest.mark.servico_persistente
 def test_batimento_roundtrip_0600_atomico(tmp_path):
     sv.escrever_batimento(tmp_path, ticks=3, pausado=False)
     b = sv.ler_batimento(tmp_path)
@@ -162,6 +165,7 @@ def home_falso(tmp_path, monkeypatch):
     return tmp_path
 
 
+@pytest.mark.servico_persistente
 def test_instalar_simular_zero_efeito(home_falso, tmp_path, capsys):
     ctx = _ctx(tmp_path)
     chamadas = []
@@ -176,6 +180,7 @@ def test_instalar_simular_zero_efeito(home_falso, tmp_path, capsys):
     assert "SHA-256" in out and sv.ROTULO in out
 
 
+@pytest.mark.servico_persistente
 def test_instalar_gate_negado_nada_escrito(home_falso, tmp_path, capsys):
     ctx = _ctx(tmp_path)
     chamadas = []
@@ -188,6 +193,7 @@ def test_instalar_gate_negado_nada_escrito(home_falso, tmp_path, capsys):
     assert not registro.exists()
 
 
+@pytest.mark.servico_persistente
 def test_instalar_argv_golden_e_registro(home_falso, tmp_path):
     import os as _os
     ctx = _ctx(tmp_path)
@@ -205,6 +211,7 @@ def test_instalar_argv_golden_e_registro(home_falso, tmp_path):
         sv.caminho_plist().read_bytes()).hexdigest()
 
 
+@pytest.mark.servico_persistente
 def test_instalar_launchctl_rc1_rollback(home_falso, tmp_path, capsys):
     ctx = _ctx(tmp_path)
     rc = sv.instalar(ctx, sv.ConfigServico(raizes=("/x",)), lambda d: True,
@@ -214,6 +221,7 @@ def test_instalar_launchctl_rc1_rollback(home_falso, tmp_path, capsys):
     assert not (ctx["home"] / sv.DIR_SERVICO / "instalado.json").exists()
 
 
+@pytest.mark.servico_persistente
 def test_remover_label_alheio_nao_apaga(home_falso, tmp_path, capsys):
     ctx = _ctx(tmp_path)
     alheio = {"Label": "com.exemplo.outro", "ProgramArguments": ["/bin/true"]}
@@ -257,6 +265,7 @@ def test_rodar_plist_adulterado_recusa(tmp_path):
     assert rc == sv.EXIT_DENIED
 
 
+@pytest.mark.servico_persistente
 def test_rodar_instancia_duplicada(tmp_path):
     ctx = _ctx(tmp_path)
     trava = sv.TravaInstancia(sv._dir(ctx["home"]) / "servico.lock")
@@ -269,6 +278,7 @@ def test_rodar_instancia_duplicada(tmp_path):
         trava.liberar()
 
 
+@pytest.mark.servico_persistente
 def test_rodar_smoke_batimento_e_audit(tmp_path):
     ctx = _ctx(tmp_path)
     rc = sv.rodar_servico(ctx, _config_ws(tmp_path), max_ticks=3,
@@ -285,6 +295,7 @@ def test_rodar_smoke_batimento_e_audit(tmp_path):
     t.liberar()
 
 
+@pytest.mark.servico_persistente
 def test_rodar_nasce_pausado_e_nao_executa(tmp_path):
     """Restart com pausa.json presente: o serviço sobe, mas PAUSADO."""
     ctx = _ctx(tmp_path)
@@ -298,6 +309,7 @@ def test_rodar_nasce_pausado_e_nao_executa(tmp_path):
 
 # ------------------------------------------------------------------ status
 
+@pytest.mark.servico_persistente
 def test_diagnostico_parado_e_sem_instalacao(tmp_path):
     ctx = _ctx(tmp_path)
     d = sv.diagnostico(ctx)
@@ -305,6 +317,7 @@ def test_diagnostico_parado_e_sem_instalacao(tmp_path):
     assert d["problemas"] == []
 
 
+@pytest.mark.servico_persistente
 def test_diagnostico_batimento_forjado_nao_prova_vida(tmp_path):
     """Batimento fresco SEM flock ⇒ não está rodando (verdade = flock)."""
     ctx = _ctx(tmp_path)
@@ -314,6 +327,7 @@ def test_diagnostico_batimento_forjado_nao_prova_vida(tmp_path):
     assert d["rodando"] is False
 
 
+@pytest.mark.servico_persistente
 def test_flock_ocupado_ve_dono_vivo(tmp_path):
     """Mata o mutante `return False` na sonda (SOBREVIVEU à primeira rodada —
     só o lado False estava assertado): com a trava SEGURA, a sonda tem de
@@ -329,6 +343,7 @@ def test_flock_ocupado_ve_dono_vivo(tmp_path):
         "trava liberada ⇒ sonda tem de dizer LIVRE (e não pode ser destrutiva)"
 
 
+@pytest.mark.servico_persistente
 def test_diagnostico_rodando_com_flock_e_batimento_fresco(tmp_path):
     """O lado True do veredito 'rodando' (flock ocupado E batimento fresco)."""
     ctx = _ctx(tmp_path)
@@ -341,3 +356,47 @@ def test_diagnostico_rodando_com_flock_e_batimento_fresco(tmp_path):
         assert d["rodando"] is True
     finally:
         t.liberar()
+
+
+# --------------------------------------------- recusa honesta por plataforma
+
+def test_cli_servico_recusa_na_porta_onde_a_capacidade_nao_existe(monkeypatch, capsys):
+    """No Windows o `fcntl` não existe, e os `import fcntl` de `servico.py` são
+    locais de função — o módulo importa, e a quebra só aparecia na CHAMADA,
+    como `ModuleNotFoundError` cru. Erro interno aparente onde o fato é "esta
+    plataforma não tem a capacidade".
+
+    Não leva o marcador `servico_persistente` de propósito: é justamente o
+    caminho da AUSÊNCIA, e precisa rodar nas plataformas que TÊM a capacidade —
+    senão ninguém exercitaria a recusa, que é o comportamento novo.
+    """
+    from nomos import cli
+    from nomos.kernel import plataforma
+
+    monkeypatch.setattr(plataforma, "servico_persistente_disponivel", lambda: False)
+    for sub in ("status", "rodar", "instalar", "remover"):
+        rc = cli.main(["servico", sub])
+        err = capsys.readouterr().err
+        assert rc == cli.EXIT_DENIED, f"servico {sub} não recusou na porta"
+        assert "INDISPONÍVEL" in err
+        # A saída tem de apontar o caminho que CONTINUA existindo: recusar sem
+        # dizer o que fazer empurra o usuário para contornar a recusa.
+        assert "scheduler rodar" in err
+
+
+def test_cli_servico_nao_recusa_onde_a_capacidade_existe(monkeypatch, capsys):
+    """Guarda contra o portão largo demais.
+
+    Sem isto, um `return EXIT_DENIED` incondicional passaria no teste acima e
+    mataria o comando em TODA plataforma — inclusive no macOS, onde ele é a
+    razão de existir do NH-014.
+    """
+    from nomos import cli
+    from nomos.kernel import plataforma
+
+    monkeypatch.setattr(plataforma, "servico_persistente_disponivel", lambda: True)
+    rc = cli.main(["servico"])                    # sem subcomando: mostra uso
+    err = capsys.readouterr().err
+    assert rc != cli.EXIT_DENIED
+    assert "INDISPONÍVEL" not in err
+    assert "uso: nomos servico" in err

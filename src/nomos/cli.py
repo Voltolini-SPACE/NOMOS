@@ -2008,9 +2008,24 @@ def cmd_scheduler(ctx, args) -> int:
 
 def cmd_servico(ctx, args) -> int:
     """NH-014 — runtime persistente governado (`runtime/servico.py`)."""
+    from nomos.kernel import plataforma
     from nomos.runtime import servico as sv
     from nomos.simple.erros import fmt
     sub = getattr(args, "servico_cmd", None)
+    if not plataforma.servico_persistente_disponivel():
+        # Recusa na PORTA, com a verdade da plataforma. Antes, os `import
+        # fcntl` locais de `servico.py` deixavam o módulo importar no Windows e
+        # a quebra aparecia lá na frente como ModuleNotFoundError cru — um
+        # defeito interno aparente onde o fato é "esta plataforma não tem a
+        # capacidade". Mesmo padrão do `--executavel` selado.
+        print(fmt("E010", f"`nomos servico` está INDISPONÍVEL em "
+                          f"{plataforma.nome_amigavel_so()}: o serviço "
+                          f"persistente exige launchd (supervisão) e "
+                          f"fcntl.flock (trava de instância única, que é o que "
+                          f"prova 'já há um rodando' — PID não prova). "
+                          f"O NOMOS em foreground continua inteiro: "
+                          f"`nomos scheduler rodar`"), file=sys.stderr)
+        return EXIT_DENIED
     if sub == "status":
         return sv.status(ctx)
     if sub == "remover":

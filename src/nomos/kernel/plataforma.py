@@ -71,10 +71,41 @@ def capacidade_git_governada_disponivel() -> bool:
     return EH_MAC and os.path.exists(SANDBOX_EXEC)
 
 
+def servico_persistente_disponivel() -> bool:
+    """True apenas onde o serviço persistente (NH-014) pode existir de fato.
+
+    Ele precisa de DUAS coisas, e as duas são POSIX/macOS:
+
+    - `launchd` para supervisionar (o `runtime/servico.py` escreve um plist e
+      fala com `launchctl`; não há equivalente portável escrito);
+    - `fcntl.flock` para a trava de instância única — que no NH-014 não é
+      conveniência, é a verdade sobre "já existe um rodando". PID não prova
+      nada, e sem a trava duas instâncias executariam a mesma ocorrência.
+
+    No Windows o `fcntl` nem existe. Como os `import fcntl` de `servico.py` são
+    locais de função, o módulo IMPORTA lá sem erro e a quebra só aparecia na
+    chamada, como `ModuleNotFoundError` cru — defeito interno aparente onde a
+    verdade é "esta plataforma não tem a capacidade".
+
+    Gate pelo FATO MEDIDO e não por `platform.system()`: é a mesma escolha de
+    `execucao_isolada_disponivel` (só-Linux) e `capacidade_git_governada_
+    disponivel` (só-macOS), e pelo mesmo motivo — já houve na suíte um
+    condicional preso ao caminho ERRADO, que fazia afirmar sucesso numa
+    plataforma onde a capacidade não existe.
+    """
+    try:
+        import fcntl  # noqa: F401
+    except ImportError:
+        return False
+    from shutil import which
+    return which("launchctl") is not None
+
+
 def resumo() -> dict:
     return {
         "sistema": nome_amigavel_so(),
         "python": sys.version.split()[0],
         "execucao_isolada": execucao_isolada_disponivel(),
         "git_governado": capacidade_git_governada_disponivel(),
+        "servico_persistente": servico_persistente_disponivel(),
     }
