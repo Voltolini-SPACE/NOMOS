@@ -332,3 +332,54 @@ def test_transcricao_nao_ve_conteudo_alem_do_que_a_trilha_ve(policy):
                  ).executar(GrafoTarefas(_independentes(2), reg))
 
     assert do_vivo == do_audit, "transcrição divergiu da trilha"
+
+
+# ------------------------------- orçamento compartilhado sob concorrência real
+
+def test_orcamento_da_missao_nao_vaza_sob_paralelismo(policy):
+    """N nós idempotentes falhando AO MESMO TEMPO: as tentativas somadas nunca
+    passam do orçamento da missão.
+
+    É a prova direta da trava do GerenciadorRecuperacao: sem ela, o
+    check-then-act do contador deixa duas threads lerem o mesmo valor abaixo
+    do teto e AMBAS gastarem — o teto anti-retry-storm vira um teto que vaza
+    exatamente quando mais importa. A trava existe; este teste a exercita sob
+    concorrência real, não por inspeção.
+    """
+    from nomos.orquestracao.recuperacao import (
+        GerenciadorRecuperacao, GuardaDeLaco, PoliticaGuarda,
+        PoliticaRecuperacao,
+    )
+
+    tentativas_reais = {"n": 0}
+    trava = threading.Lock()
+
+    def falha_sempre(**_kw):
+        with trava:
+            tentativas_reais["n"] += 1
+        time.sleep(0.01)              # alarga a janela da corrida
+        raise RuntimeError("boom")
+
+    reg = RegistroCapacidades(policy=policy, approver=lambda d: True)
+    for i in range(8):
+        reg.registrar(f"f{i}", Category.READ_LOCAL, falha_sempre, "teste",
+                      idempotente=True)
+    nos = [No(f"n{i}", f"f{i}", params={"k": i}) for i in range(8)]
+
+    orcamento = 6
+    rec = GerenciadorRecuperacao(
+        PoliticaRecuperacao(max_tentativas=3, backoff_base=0.0,
+                            backoff_teto=0.0, circuito_limite=99,
+                            orcamento_missao=orcamento),
+        dormir=lambda _s: None)
+    r = Orquestrador(reg, policy, approver=lambda d: True, audit=AuditFake(),
+                     recuperacao=rec, max_paralelo=8,
+                     guarda=GuardaDeLaco(PoliticaGuarda(identicas_limite=99,
+                                                        chamadas_por_turno=99)),
+                     ).executar(GrafoTarefas(nos, reg))
+
+    assert not r.ok
+    assert tentativas_reais["n"] <= orcamento, (
+        f"{tentativas_reais['n']} execuções reais com orçamento {orcamento} — "
+        "o teto vazou sob concorrência")
+    assert rec._tentativas_gastas <= orcamento
