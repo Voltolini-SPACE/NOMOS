@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+import contextlib
 import sqlite3
 import threading
 from dataclasses import dataclass, field, replace
@@ -165,8 +166,31 @@ class ArmazemJobs:
         c.execute("PRAGMA synchronous=FULL")
         return c
 
+    @contextlib.contextmanager
+    def _sessao(self):
+        """Transação + FECHAMENTO — as duas coisas, na ordem certa.
+
+        O código usava `with self._conn() as c:` acreditando fechar. Em
+        `sqlite3`, `with conexão` é gerenciador de TRANSAÇÃO (commit no
+        sucesso, rollback na exceção) e não fecha nada: eram 13 conexões por
+        ciclo entregues ao coletor — invisível no POSIX, `WinError 32` no
+        Windows ao apagar o banco (o teste do caos precisava de gc.collect()
+        para simular corrupção).
+
+        A correção simétrica e ERRADA seria `contextlib.closing()`: fecharia,
+        mas sem a transação os writes deixariam de commitar (isolation_level
+        padrão) e o armazém perderia dados em silêncio. Este helper preserva
+        as duas propriedades; tests/test_scheduler_conexoes.py prova ambas.
+        """
+        c = self._conn()
+        try:
+            with c:
+                yield c
+        finally:
+            c.close()
+
     def _criar(self) -> None:
-        with self._lock, self._conn() as c:
+        with self._lock, self._sessao() as c:
             c.execute("""CREATE TABLE IF NOT EXISTS jobs (
                 job_id TEXT PRIMARY KEY, sujeito TEXT NOT NULL,
                 capacidade TEXT NOT NULL, argumentos TEXT NOT NULL,
@@ -218,7 +242,7 @@ class ArmazemJobs:
         # `INSERT ... VALUES (?,...)` posicional quebrava em runtime na
         # primeira coluna nova de migração aditiva — a tabela crescia e o
         # INSERT continuava contando 11.
-        with self._lock, self._conn() as c:
+        with self._lock, self._sessao() as c:
             c.execute("""INSERT OR REPLACE INTO jobs
                 (job_id, sujeito, capacidade, argumentos, alvo, intervalo_s,
                  proximo_em, estado, criado_em, tz, schedule,
@@ -249,7 +273,7 @@ class ArmazemJobs:
             raise ErroInvalido(
                 f"valor de nota excede {self.NOTA_VALOR_MAX} bytes — "
                 "recusado (nunca truncado em silêncio)")
-        with self._lock, self._conn() as c:
+        with self._lock, self._sessao() as c:
             existentes = {r[0] for r in c.execute(
                 "SELECT chave FROM job_notas WHERE job_id=?", (job_id,))}
             # Chaves de SISTEMA (`__*`) são ISENTAS da quota (achado da
@@ -271,24 +295,24 @@ class ArmazemJobs:
                        datetime.now(timezone.utc).isoformat()))
 
     def nota_ler(self, job_id: str, chave: str) -> str | None:
-        with self._lock, self._conn() as c:
+        with self._lock, self._sessao() as c:
             r = c.execute("SELECT valor FROM job_notas WHERE job_id=? AND chave=?",
                           (job_id, chave)).fetchone()
         return r[0] if r else None
 
     def notas_de(self, job_id: str) -> dict[str, str]:
-        with self._lock, self._conn() as c:
+        with self._lock, self._sessao() as c:
             return {r[0]: r[1] for r in c.execute(
                 "SELECT chave, valor FROM job_notas WHERE job_id=? "
                 "ORDER BY chave", (job_id,))}
 
     def notas_apagar(self, job_id: str) -> int:
-        with self._lock, self._conn() as c:
+        with self._lock, self._sessao() as c:
             cur = c.execute("DELETE FROM job_notas WHERE job_id=?", (job_id,))
             return cur.rowcount
 
     def obter(self, job_id: str) -> JobDefinition | None:
-        with self._lock, self._conn() as c:
+        with self._lock, self._sessao() as c:
             r = c.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
         return _linha_para_def(r) if r else None
 
@@ -306,7 +330,7 @@ class ArmazemJobs:
         operador. Sumir com ela seria pior que o defeito original: o operador
         deixaria de saber que o job existe.
         """
-        with self._lock, self._conn() as c:
+        with self._lock, self._sessao() as c:
             rs = c.execute("SELECT * FROM jobs ORDER BY job_id").fetchall()
         saida, ruins = [], {}
         for r in rs:
@@ -319,7 +343,7 @@ class ArmazemJobs:
 
     def ilegiveis(self) -> dict[str, str]:
         """`{job_id: motivo}` das linhas em quarentena na última listagem."""
-        with self._lock, self._conn() as c:
+        with self._lock, self._sessao() as c:
             rs = c.execute("SELECT * FROM jobs ORDER BY job_id").fetchall()
         ruins = {}
         for r in rs:
@@ -330,7 +354,7 @@ class ArmazemJobs:
         return ruins
 
     def apagar(self, job_id: str) -> None:
-        with self._lock, self._conn() as c:
+        with self._lock, self._sessao() as c:
             c.execute("DELETE FROM jobs WHERE job_id=?", (job_id,))
             # NH-018: nota órfã é vazamento de quota e de dado
             c.execute("DELETE FROM job_notas WHERE job_id=?", (job_id,))
@@ -343,7 +367,7 @@ class ArmazemJobs:
         Reserva ANTES do efeito, de propósito: se marcássemos depois, um crash
         entre o efeito e a marca faria o restart repetir.
         """
-        with self._lock, self._conn() as c:
+        with self._lock, self._sessao() as c:
             try:
                 c.execute(
                     "INSERT INTO ocorrencias (chave, job_id, ocorrencia, "
@@ -357,13 +381,13 @@ class ArmazemJobs:
 
     def concluir(self, inst: JobInstance, estado: JobState, detalhe: str = "",
                  efeito: bool = False) -> None:
-        with self._lock, self._conn() as c:
+        with self._lock, self._sessao() as c:
             c.execute("UPDATE ocorrencias SET estado=?, detalhe=?, efeito=? "
                       "WHERE chave=?",
                       (estado.value, detalhe[:500], 1 if efeito else 0, inst.chave))
 
     def ocorrencia_estado(self, inst: JobInstance) -> str | None:
-        with self._lock, self._conn() as c:
+        with self._lock, self._sessao() as c:
             r = c.execute("SELECT estado FROM ocorrencias WHERE chave=?",
                           (inst.chave,)).fetchone()
         return r[0] if r else None
