@@ -252,7 +252,12 @@ teste cobrindo segurança (fail-closed, não-vazamento de segredo, opt-in de nuv
 e UX, rodando em 3 sistemas × 4 versões de Python — o estado de cada rodada é o
 que o badge de CI acima mostra, não uma afirmação fixa aqui. As capacidades Git
 governadas (C1/C2) exigem `sandbox-exec` e existem **apenas no macOS**; fora dele
-o NOMOS recusa fail-closed, por desenho. A cadeia de publicação tem
+o NOMOS recusa fail-closed, por desenho. Pedem opt-in separado por autoridade em
+`nomos orquestrar`: `--git` (C1, leitura), `--git-tag` (C2a) e `--git-tree`
+(C2c, `git-add`/`git-commit`), cada uma exigindo `--raiz`. O push (C2b) é o
+único **sem porta**: seu destino é declarado pela política, e o `policy.json`
+ainda não tem chave para declará-lo — `--git-push` existe e nega na porta, com
+esse motivo. A cadeia de publicação tem
 proveniência SLSA verificada, SBOM com amarração por hash e builds
 bit-a-bit reproduzíveis com gate próprio no CI. O
 **Motor Council** está em dry-run (ver seção acima): o subcomando `simular`

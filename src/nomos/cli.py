@@ -1714,6 +1714,34 @@ def cmd_orquestrar(ctx, args) -> int:
         print(fmt("E010", "--scheduler exige pelo menos um "
                           "--raiz (escopo de caminho)"), file=sys.stderr)
         return EXIT_ERROR
+    # FIX-02: as capacidades Git governadas ganham porta. Até aqui elas eram
+    # parâmetros do RuntimeGovernado que NENHUM caller de produção passava —
+    # biblioteca testada e inalcançável, o falso fechamento mais silencioso
+    # desta série.
+    if getattr(args, "git_push", False):
+        # Falha honesta na PORTA, como o `--executavel` selado. `git_push`
+        # exige `destinos` governados e `DestinoGovernado` é categórico: "o
+        # destino que a POLÍTICA autoriza; não vem do repositório nem do
+        # plano". O policy.json de hoje só conhece `rules` — não há onde
+        # declarar destino. Aceitar URL no argv moveria a decisão da política
+        # para a linha de comando, que é o inverso do contrato.
+        print(fmt("E010", "--git-push está INDISPONÍVEL: o destino de push é "
+                          "declarado pela POLÍTICA (DestinoGovernado), não "
+                          "pelo repositório, pelo plano nem pela linha de "
+                          "comando — e policy.json ainda não tem chave para "
+                          "declará-lo. Capacidade e testes preservados em "
+                          "adapters/git_push.py"), file=sys.stderr)
+        return EXIT_DENIED
+    usar_git = bool(getattr(args, "git", False))
+    usar_git_tag = bool(getattr(args, "git_tag", False))
+    usar_git_tree = bool(getattr(args, "git_tree", False))
+    if (usar_git or usar_git_tag or usar_git_tree) and not raizes:
+        # Mesmo contrato de --adapters: sem escopo de caminho a capacidade
+        # seria MENOS confinada que o git nu que ela substitui.
+        print(fmt("E010", "as capacidades Git (--git, --git-tag, --git-tree) "
+                          "exigem pelo menos um --raiz (escopo de caminho das "
+                          "capacidades governadas)"), file=sys.stderr)
+        return EXIT_ERROR
     scheduler = None
     if usar_scheduler:
         # CALLER DE PRODUÇÃO do scheduler. O registro acontece DENTRO da
@@ -1732,14 +1760,18 @@ def cmd_orquestrar(ctx, args) -> int:
         rt = RuntimeGovernado(ctx, aprovador,
                               sem_motor=getattr(args, "sem_motor", False),
                               caminhos=raizes, adapters=usar_adapters,
-                              executaveis=executaveis, scheduler=scheduler)
+                              executaveis=executaveis, scheduler=scheduler,
+                              git=usar_git, git_write=usar_git_tag,
+                              git_tree=usar_git_tree)
     except ValueError as exc:
         print(fmt("E010", str(exc)), file=sys.stderr)
         return EXIT_ERROR
 
-    if usar_adapters and rt.capacidades_adapter:
-        print(f"capacidades de arquivo ligadas: "
-              f"{', '.join(rt.capacidades_adapter)}")
+    # Condicionado ao que FOI ligado, não a `--adapters`: com FIX-02 as
+    # capacidades Git entram sem `--adapters`, e anunciar só no caso antigo
+    # deixaria o usuário sem saber que autoridade acabou de conceder.
+    if rt.capacidades_adapter:
+        print(f"capacidades ligadas: {', '.join(rt.capacidades_adapter)}")
         print(f"escopo: {', '.join(raizes)}")
     plano = rt.planejar(args.objetivo, passos=passos)
 
@@ -2879,6 +2911,23 @@ def build_parser() -> argparse.ArgumentParser:
     orq.add_argument("--scheduler", action="store_true",
                      help="registra as capacidades de agendamento "
                           "(sched-criar, sched-listar, …) — exige --raiz")
+    # FIX-02: opt-in SEPARADO por autoridade, não uma flag "--git" que ligue
+    # tudo. Ler objeto, escrever referência e tocar índice/working tree são
+    # três autoridades distintas — o runtime já as separa em C1/C2a/C2c, e a
+    # porta do CLI tem de preservar essa separação em vez de achatá-la.
+    orq.add_argument("--git", action="store_true",
+                     help="C1: capacidades Git de LEITURA (git-diff, git-log, "
+                          "git-show) confinadas às raízes — exige --raiz")
+    orq.add_argument("--git-tag", action="store_true", dest="git_tag",
+                     help="C2a: git-tag (escrever referência é autoridade "
+                          "distinta de ler objeto) — exige --raiz")
+    orq.add_argument("--git-tree", action="store_true", dest="git_tree",
+                     help="C2c: git-add e git-commit (tocam working tree, "
+                          "índice e object store) — exige --raiz")
+    orq.add_argument("--git-push", action="store_true", dest="git_push",
+                     help="C2b: INDISPONÍVEL — destino de push é declarado "
+                          "pela política, e policy.json ainda não tem onde; "
+                          "a flag é aceita e negada na porta")
     orq.set_defaults(fn=cmd_orquestrar)
 
     sch = sub.add_parser("scheduler",
