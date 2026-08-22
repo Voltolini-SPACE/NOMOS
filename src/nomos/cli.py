@@ -1732,6 +1732,13 @@ def cmd_orquestrar(ctx, args) -> int:
                           "declará-lo. Capacidade e testes preservados em "
                           "adapters/git_push.py"), file=sys.stderr)
         return EXIT_DENIED
+    paralelo = getattr(args, "paralelo", 1)
+    if isinstance(paralelo, bool) or not isinstance(paralelo, int) or paralelo < 1:
+        # Mesma verdade que o Orquestrador diria — mas na PORTA, antes de
+        # construir runtime nenhum (padrão do --executavel selado).
+        print(fmt("E010", f"--paralelo exige inteiro >= 1, recebi "
+                          f"{paralelo!r}"), file=sys.stderr)
+        return EXIT_ERROR
     usar_git = bool(getattr(args, "git", False))
     usar_git_tag = bool(getattr(args, "git_tag", False))
     usar_git_tree = bool(getattr(args, "git_tree", False))
@@ -1793,7 +1800,37 @@ def cmd_orquestrar(ctx, args) -> int:
         print("\n(dry-run — nada executado; use --executar para valer)")
         return EXIT_OK
 
-    resultado = rt.executar(plano)
+    checkpoint = None
+    caminho_ck = getattr(args, "checkpoint", "") or ""
+    if caminho_ck:
+        from nomos.orquestracao.checkpoint import CheckpointMissao
+        checkpoint = CheckpointMissao(caminho_ck)
+
+    # NH-015: transcrição AO VIVO — o operador vê cada nó acontecer enquanto
+    # a missão corre, não só o resumo do fim (que permanece, como fechamento).
+    _MARCAS = {"orquestracao.no.ok": "✅", "orquestracao.no.negado": "⛔",
+               "orquestracao.no.bloqueado": "⏸", "orquestracao.no.falhou": "❌"}
+
+    def _transmitir(evento: str, campos: dict) -> None:
+        marca = _MARCAS.get(evento)
+        if marca:
+            print(f"  {marca} {campos.get('no', '?')} …", flush=True)
+        elif evento == "orquestracao.missao.retomada":
+            print(f"  ↻ retomada: {campos.get('retomados', 0)} nó(s) já OK, "
+                  f"{campos.get('pendentes', 0)} pendente(s)", flush=True)
+
+    print()
+    try:
+        resultado = rt.executar(plano, max_paralelo=paralelo,
+                                checkpoint=checkpoint, ao_evento=_transmitir)
+    except Exception as exc:
+        # ErroCheckpoint (grafo trocado, arquivo podre) e afins: recusa
+        # honesta, não traceback vestido de defeito interno.
+        from nomos.orquestracao.checkpoint import ErroCheckpoint as _EC
+        if isinstance(exc, _EC):
+            print(fmt("E010", str(exc)), file=sys.stderr)
+            return EXIT_DENIED
+        raise
     print()
     for no_id in (resultado.missao.ordem if resultado.missao else ()):
         r = resultado.missao.nos[no_id]
@@ -2943,6 +2980,15 @@ def build_parser() -> argparse.ArgumentParser:
                      help="C2b: INDISPONÍVEL — destino de push é declarado "
                           "pela política, e policy.json ainda não tem onde; "
                           "a flag é aceita e negada na porta")
+    # ORQUESTRA-02
+    orq.add_argument("--paralelo", type=int, default=1,
+                     help="NH-015: teto de nós independentes executando ao "
+                          "mesmo tempo (padrão 1 = serial; o gate de "
+                          "aprovação nunca paraleliza)")
+    orq.add_argument("--checkpoint", default="",
+                     help="NH-009: arquivo de estado da missão — nó já OK "
+                          "não reexecuta na retomada; interrompido no meio "
+                          "e não idempotente NUNCA reexecuta")
     orq.set_defaults(fn=cmd_orquestrar)
 
     sch = sub.add_parser("scheduler",
