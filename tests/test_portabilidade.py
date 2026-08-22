@@ -111,8 +111,18 @@ def test_servico_falso_sem_launchctl(monkeypatch):
 
 def test_servico_verdadeiro_com_fcntl_e_launchctl(monkeypatch):
     """Controle positivo: sem ele os dois acima passariam por vácuo se a função
-    passasse a devolver False sempre — o mesmo cuidado do trio do git."""
+    passasse a devolver False sempre — o mesmo cuidado do trio do git.
+
+    Injeta um `fcntl` postiço além do `which`: no Windows o módulo não existe e
+    a função devolve False no PRIMEIRO fato, sem nunca chegar ao segundo. Trocar
+    só o `which` fazia este controle falhar exatamente onde ele mais importa —
+    medido no CI (windows-latest, `assert False is True`).
+    """
     import shutil
+    import sys
+    import types
+
+    monkeypatch.setitem(sys.modules, "fcntl", types.ModuleType("fcntl"))
     monkeypatch.setattr(shutil, "which", lambda _n: "/bin/launchctl")
     assert plataforma.servico_persistente_disponivel() is True
 

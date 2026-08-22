@@ -70,6 +70,7 @@ def _ctx_e_registro(raiz, tmp_path):
 
 # ══════════════ PASSO 1 — CONTROLE POSITIVO: o Git realmente mente ══════════
 
+@pytest.mark.git_governado
 def test_controle_positivo_o_git_sai_com_rc0_e_indexa_o_conteudo_cru(
         repo_com_redator):
     """Sem isto o teste seguinte não prova nada.
@@ -111,6 +112,7 @@ def test_nomos_recusa_em_vez_de_reportar_sucesso(repo_com_redator, tmp_path):
     assert FILTRO_QUEBRADO in str(exc.value)
 
 
+@pytest.mark.git_governado
 def test_o_indice_NAO_fica_contaminado_apos_a_recusa(repo_com_redator,
                                                      tmp_path):
     """Antes existia aqui um teste que PASSAVA asserindo o índice sujo.

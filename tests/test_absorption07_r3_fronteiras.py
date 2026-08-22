@@ -533,6 +533,7 @@ def test_r3_14_ref_NOVA_criada_pelo_nosso_commit_nao_acusa_terceiro(campo):
 
 @pytest.mark.parametrize("como", ["regular", "grande", "fifo", "diretorio",
                                    "ausente", "isca-com-gitdir"])
+@pytest.mark.git_governado
 def test_r3_15_symlink_de_git_para_FORA_nao_responde_nada_sobre_o_alvo(
         tmp_path, como):
     """Uma resposta só para as seis sondas — senão a exceção É o oráculo.
@@ -582,6 +583,7 @@ def test_r3_15_symlink_de_git_para_FORA_nao_responde_nada_sobre_o_alvo(
             "raízes — a exceção é o oráculo")
 
 
+@pytest.mark.git_governado
 def test_r3_16_CONTROLE_symlink_de_git_DENTRO_das_raizes_nao_e_barrado_por_aqui(
         tmp_path):
     """A guarda nova é de ESCOPO, não da forma-link.
@@ -759,6 +761,7 @@ def test_r3_20_repo_comum_dentro_do_git_dir_alheio_nao_redireciona_o_efeito(
 
 
 @pytest.mark.parametrize("layout", ["worktree-ligada", "principal", "submodulo"])
+@pytest.mark.git_governado
 def test_r3_21_CONTROLE_os_tres_layouts_LEGITIMOS_continuam_aceitos(campo,
                                                                      layout):
     """Sem este controle, o de cima passaria num sistema que recusa `commondir`.

@@ -86,6 +86,7 @@ def cenario(tmp_path):
     return Cen()
 
 
+@pytest.mark.git_governado
 def test_r4_01_confinamento_de_ESCRITA_recusa_apos_a_troca(cenario):
     """O perfil do sandbox saía com raiz de escrita FORA das raízes, 12/12."""
     aut = cenario.ligar()
@@ -94,6 +95,7 @@ def test_r4_01_confinamento_de_ESCRITA_recusa_apos_a_troca(cenario):
         git.confinamento_de_repo(str(cenario.hostil), autoridade=aut)
 
 
+@pytest.mark.git_governado
 def test_r4_02_confinamento_de_LEITURA_recusa_apos_a_troca(cenario):
     """`git-log` governado devolvia a história do repositório de FORA (6/120)."""
     aut = cenario.ligar()
@@ -102,6 +104,7 @@ def test_r4_02_confinamento_de_LEITURA_recusa_apos_a_troca(cenario):
         git.confinamento_de_leitura(str(cenario.hostil), autoridade=aut)
 
 
+@pytest.mark.git_governado
 def test_r4_03_o_caminho_de_FORA_nao_chega_ao_perfil(cenario):
     """O critério é o EFEITO: nenhum caminho de fora das raízes no SBPL.
 
@@ -149,6 +152,7 @@ def test_r4_05_a_identidade_e_do_INODE_nao_do_CAMINHO(cenario):
     git.confinamento_de_repo(str(cenario.hostil), autoridade=aut)
 
 
+@pytest.mark.git_governado
 def test_r4_06_DESFAZER_nao_grava_no_repositorio_de_terceiro(cenario, monkeypatch):
     """`N-A7-02`: o supervisor sobrescrevia índice e reflog alheios, 20/20.
 
@@ -532,6 +536,7 @@ def test_r4_30_refs_heads_symlink_profundidade_2_e_recusado(repo_commitavel):
         cen.add("b.txt")
 
 
+@pytest.mark.git_governado
 def test_r4_31_ref_de_terceiro_nao_avanca_em_operacao_recusada(repo_commitavel):
     """`.6.NOVO-08-REFS-FORA-DA-TRANSACAO`: o critério é o EFEITO no branch.
 
