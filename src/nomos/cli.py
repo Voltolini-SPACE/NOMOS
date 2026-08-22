@@ -157,18 +157,63 @@ def cmd_panic(ctx, args) -> int:
     # localidade de volta a LIGADO (egress volta a ser bloqueado mesmo que
     # você tivesse destravado antes). Continua sem gate/aprovação — pânico
     # tem que ser instantâneo, sem fricção.
+    from nomos.kernel import pausa
     ctx["consent"].panic()
     negadas = _queue(ctx).deny_all()
     localidade.definir(ctx["home"], True)
+    # NH-026: pânico também PAUSA a autonomia agendada (ticker + rotinas).
+    # `nomos retomar` religa SÓ o agendador — não desfaz o resto do pânico.
+    pausa.pausar(ctx["home"], motivo="panic", origem="panic")
     ctx["audit"].append(
         "panic.executado",
-        efeito="consentimentos revogados; aprovações pendentes negadas; localidade travada",
+        efeito="consentimentos revogados; aprovações pendentes negadas; "
+               "localidade travada; autonomia pausada",
         aprovacoes_negadas=negadas,
+        pausa_ativada=True,
     )
     print(
         "PÂNICO: microfone, câmera e tela revogados; "
-        f"{negadas} aprovação(ões) pendente(s) negada(s); modo só-local travado."
+        f"{negadas} aprovação(ões) pendente(s) negada(s); modo só-local "
+        "travado; autonomia agendada PAUSADA."
     )
+    return EXIT_OK
+
+
+def cmd_pausar(ctx, args) -> int:
+    """NH-026 — freio gracioso, sem gate (freio não tem fricção)."""
+    from nomos.kernel import pausa
+    est = pausa.pausar(ctx["home"], motivo=getattr(args, "motivo", "") or "")
+    ctx["audit"].append("pausa.ativada", motivo=est["motivo"], origem="cli")
+    sufixo = f" — motivo: {est['motivo']}" if est["motivo"] else ""
+    print(f"PAUSA ativa desde {est['desde']}{sufixo}")
+    print("a ocorrência em andamento termina; nenhuma nova começa. "
+          "religar: `nomos retomar` (pede aprovação).")
+    return EXIT_OK
+
+
+def cmd_retomar(ctx, args) -> int:
+    """NH-026 — religar a autonomia exige o dono presente (gate A1)."""
+    from nomos.kernel import pausa
+    est = pausa.estado(ctx["home"])
+    if not est["pausado"]:
+        print("pausa já estava inativa — nada a fazer.")
+        return EXIT_OK
+    decision = ctx["policy"].decide(Category.WRITE_LOCAL,
+                                    target="pausa:retomar")
+    if not gate(decision, _approver_for(ctx, args)):
+        ctx["audit"].append("pausa.retomada.negada",
+                            origem_anterior=est["origem"])
+        from nomos.simple.erros import fmt
+        print(fmt("E002", "retomar não aprovado (fail-closed)."),
+              file=sys.stderr)
+        return EXIT_DENIED
+    pausa.retomar(ctx["home"])
+    ctx["audit"].append("pausa.retomada", origem_anterior=est["origem"])
+    print("pausa desativada — a autonomia agendada volta a rodar.")
+    if est["origem"] == "panic":
+        print("ATENÇÃO: o pânico NÃO foi desfeito — consentimentos seguem "
+              "revogados e a localidade segue travada. Isto religa só o "
+              "agendador.")
     return EXIT_OK
 
 
@@ -896,6 +941,19 @@ def cmd_motores(ctx, args) -> int:
     if sub is None:
         print(motores_mod.tabela())   # compatível com v0.10
         return EXIT_OK
+    if sub == "uso":
+        # NH-019: relatório do medidor local. Metadado do próprio runtime no
+        # próprio home — não é capacidade nova (mesma classe do audit).
+        from nomos.cognition import uso_motores as um
+        eventos = um.MedidorUso(ctx["home"]).ler(
+            dias=int(getattr(args, "dias", 7) or 7))
+        agregado = um.agregar(eventos)
+        if getattr(args, "json", False):
+            print(json.dumps(agregado, ensure_ascii=False, indent=2,
+                             sort_keys=True))
+        else:
+            print(um.tabela(agregado))
+        return EXIT_OK
     if sub == "listar" or sub == "status":
         print(cat_mod.tabela_v011(home=ctx["home"]))
         auto = "LIGADO" if epol.auto_ligado() else "DESLIGADO"
@@ -964,7 +1022,9 @@ def cmd_motores(ctx, args) -> int:
                                 egress=arbmod.CLOUD_TARGET)
             runners = runners + [runner_nuvem]
             allow_cloud = True
-        out = arbmod.arbitrar(prompt, runners, allow_cloud=allow_cloud)
+        from nomos.cognition.uso_motores import MedidorUso
+        out = arbmod.arbitrar(prompt, runners, allow_cloud=allow_cloud,
+                              uso=MedidorUso(ctx["home"]))
         ctx["audit"].append("motores.arbitrar", status=out.status,
                             motores=len(out.engines_ready), bloqueado=out.decision.blocked)
         if out.status == "no_engine":
@@ -1234,10 +1294,16 @@ def _queue(ctx):
 
 
 def _approver_for(ctx, args):
+    from nomos.kernel.disjuntor import DisjuntorAprovacoes
     if getattr(args, "panel", False):
         from nomos.kernel.approvals import panel_approver
-        return panel_approver(_queue(ctx))
-    return interactive_approver
+        base = panel_approver(_queue(ctx))
+    else:
+        base = interactive_approver
+    # NH-017c: anti-fadiga — N negações da MESMA (categoria, alvo) na janela
+    # ⇒ para de perguntar e nega direto (nunca o contrário). Uma instância
+    # por comando: cobre fluxos com muitas solicitações (orquestrar, missão).
+    return DisjuntorAprovacoes(audit=ctx["audit"]).envolver(base)
 
 
 def cmd_approvals(ctx, args) -> int:
@@ -1269,6 +1335,63 @@ def cmd_approvals(ctx, args) -> int:
             print(f"[{a.id}] {rotulo_categoria(a.category)} "
                   f"alvo={a.target} motivo={a.reason}")
         return EXIT_OK
+    if args.appr_cmd == "sugerir":
+        # NH-017a: minera a trilha e PROPÕE — nunca aplica (por construção:
+        # o PolicyEngine decide por categoria; não há onde aplicar por alvo).
+        from nomos.kernel import sugestor_aprovacoes as sug
+        stats = sug.minerar(ctx["home"] / "logs" / "audit.jsonl",
+                            janela_dias=int(getattr(args, "dias", 30) or 30))
+        sugestoes = sug.sugerir(stats)
+        modo_json = bool(getattr(args, "json", False))
+        if modo_json:
+            # `--json` imprime SÓ JSON no stdout (a prosa e o caminho da
+            # proposta vão para o stderr) — saída de máquina tem de ser
+            # parseável, como no resto da CLI
+            import dataclasses as _dc
+            print(json.dumps([{**_dc.asdict(s),
+                               "evidencia": _dc.asdict(s.evidencia)}
+                              for s in sugestoes],
+                             ensure_ascii=False, indent=2))
+        elif not sugestoes:
+            print("sem histórico de aprovações suficiente na janela — "
+                  "nada a sugerir.")
+        else:
+            for s in sugestoes:
+                print(f"[{s.acao}] {s.categoria} alvo={s.alvo}")
+                print(f"    {s.explicacao}")
+        caminho = sug.gravar_proposta(ctx["home"], sugestoes, ctx["audit"])
+        aviso = f"proposta gravada (LEITURA para decisão humana): {caminho}"
+        if modo_json:
+            print(aviso, file=sys.stderr)
+        else:
+            print(f"\n{aviso}")
+        return EXIT_OK
+    if args.appr_cmd == "testar":
+        # NH-017b: dry-run do veredito — consulta, não gate. Nada é criado
+        # na fila, nada executa; a sondagem fica visível na trilha.
+        from nomos.kernel.policy import rotulo_categoria
+        try:
+            categoria = Category(args.categoria)
+        except ValueError:
+            decision = ctx["policy"].decide(args.categoria, target=args.alvo)
+            print(f"categoria desconhecida {args.categoria!r} ⇒ "
+                  f"{decision.effect.value} (fail-closed).", file=sys.stderr)
+            print("categorias válidas: "
+                  + ", ".join(c.value for c in Category), file=sys.stderr)
+            ctx["audit"].append("approvals.teste", categoria=args.categoria,
+                                alvo=args.alvo, efeito=decision.effect.value)
+            return EXIT_DENIED
+        decision = ctx["policy"].decide(categoria, target=args.alvo)
+        efeito = decision.effect.value
+        ctx["audit"].append("approvals.teste", categoria=categoria.value,
+                            alvo=args.alvo, efeito=efeito)
+        print(f"{rotulo_categoria(categoria.value)} · alvo={args.alvo}")
+        print(f"veredito: {efeito}" + (f" — {decision.reason}"
+                                       if decision.reason else ""))
+        if efeito == "REQUIRE_APPROVAL":
+            print("na prática: pediria a SUA aprovação; sem aprovador "
+                  "presente, o gate NEGA (fail-closed).")
+        return EXIT_DENIED if efeito == "DENY" else EXIT_OK
     return EXIT_ERROR
 
 
@@ -1287,11 +1410,13 @@ def _router(ctx):
         raise config.ConfigError(
             f"{exc} — confira NOMOS_OLLAMA_HOST/NOMOS_OPENAI_COMPAT_BASE"
         ) from None
+    from nomos.cognition.uso_motores import MedidorUso
     return Router(policy=ctx["policy"], gate=gate, approver=interactive_approver,
                   audit=ctx["audit"], vault=ctx["vault"],
                   ollama=ollama,
                   embutido=EmbeddedProvider(ctx["home"]),
-                  openai_compat=openai_compat)
+                  openai_compat=openai_compat,
+                  uso=MedidorUso(ctx["home"]))
 
 
 def cmd_chat(ctx, args) -> int:
@@ -1323,8 +1448,15 @@ def cmd_chat(ctx, args) -> int:
         out = router.chat(messages, prefer_cloud=args.cloud, passphrase=pw)
         print(out.text)
         if out.ok:
-            mem.remember("user", user_text)
-            mem.remember("assistant", out.text)
+            from nomos.cognition.memory import MemoriaRecusada
+            try:
+                mem.remember("user", user_text)
+                mem.remember("assistant", out.text)
+            except MemoriaRecusada:
+                # NH-005 P1: a resposta do chat NUNCA quebra por recusa de
+                # memória — o dono é avisado e a conversa segue sem guardar
+                print("(não guardei esta troca: conteúdo com padrão de "
+                      "segredo/dado sensível)", file=sys.stderr)
             # P2-1 (auditoria de 2026-07-17): produtor real da fila de
             # revisão de memória (ISSUE-020) — antes, propor_candidata()
             # nunca era chamado por nenhum fluxo real, só em teste.
@@ -1450,6 +1582,15 @@ def cmd_status(ctx, args) -> int:
     print("política: read-only por padrão, fail-closed ativo")
     for dev, ok in ctx["consent"].status().items():
         print(f"consentimento {dev}: {'CONCEDIDO' if ok else 'desligado'}")
+    from nomos.kernel import pausa
+    est_pausa = pausa.estado(ctx["home"])
+    if est_pausa["pausado"] and est_pausa["ilegivel"]:
+        print("pausa: ATIVA (pausa.json ilegível → fail-closed)")
+    elif est_pausa["pausado"]:
+        motivo = est_pausa["motivo"] or "—"
+        print(f"pausa: ATIVA desde {est_pausa['desde']} (motivo: {motivo})")
+    else:
+        print("pausa: inativa")
     from nomos.ext import skills as skills_mod
     print(f"skills instaladas: {len(skills_mod.list_installed(ctx['skills']))}")
     print(f"auditoria: {auditoria_txt}")
@@ -1559,14 +1700,47 @@ def cmd_orquestrar(ctx, args) -> int:
         return EXIT_ERROR
     executaveis = tuple(getattr(args, "executavel", None) or ())
     usar_scheduler = bool(getattr(args, "scheduler", False))
-    if executaveis and not usar_adapters:
-        print(fmt("E010", "--executavel exige --adapters: `script-rodar` é "
-                          "registrado junto com as capacidades de arquivo"),
+    if executaveis:
+        # Falha honesta na PORTA: `script-rodar` está selado no runtime
+        # (governado.py). Construir o runtime para só então negar era UX
+        # enganosa — o erro chegava tarde, vestido de defeito interno.
+        print(fmt("E010", "--executavel está SELADO: `script-rodar` (execução "
+                          "de binário arbitrário) segue indisponível — "
+                          "argv[1:] escapa do escopo de caminho. Módulo e "
+                          "testes preservados em adapters/script.py"),
               file=sys.stderr)
-        return EXIT_ERROR
-    if (executaveis or usar_scheduler) and not raizes:
-        print(fmt("E010", "--executavel/--scheduler exigem pelo menos um "
+        return EXIT_DENIED
+    if usar_scheduler and not raizes:
+        print(fmt("E010", "--scheduler exige pelo menos um "
                           "--raiz (escopo de caminho)"), file=sys.stderr)
+        return EXIT_ERROR
+    # FIX-02: as capacidades Git governadas ganham porta. Até aqui elas eram
+    # parâmetros do RuntimeGovernado que NENHUM caller de produção passava —
+    # biblioteca testada e inalcançável, o falso fechamento mais silencioso
+    # desta série.
+    if getattr(args, "git_push", False):
+        # Falha honesta na PORTA, como o `--executavel` selado. `git_push`
+        # exige `destinos` governados e `DestinoGovernado` é categórico: "o
+        # destino que a POLÍTICA autoriza; não vem do repositório nem do
+        # plano". O policy.json de hoje só conhece `rules` — não há onde
+        # declarar destino. Aceitar URL no argv moveria a decisão da política
+        # para a linha de comando, que é o inverso do contrato.
+        print(fmt("E010", "--git-push está INDISPONÍVEL: o destino de push é "
+                          "declarado pela POLÍTICA (DestinoGovernado), não "
+                          "pelo repositório, pelo plano nem pela linha de "
+                          "comando — e policy.json ainda não tem chave para "
+                          "declará-lo. Capacidade e testes preservados em "
+                          "adapters/git_push.py"), file=sys.stderr)
+        return EXIT_DENIED
+    usar_git = bool(getattr(args, "git", False))
+    usar_git_tag = bool(getattr(args, "git_tag", False))
+    usar_git_tree = bool(getattr(args, "git_tree", False))
+    if (usar_git or usar_git_tag or usar_git_tree) and not raizes:
+        # Mesmo contrato de --adapters: sem escopo de caminho a capacidade
+        # seria MENOS confinada que o git nu que ela substitui.
+        print(fmt("E010", "as capacidades Git (--git, --git-tag, --git-tree) "
+                          "exigem pelo menos um --raiz (escopo de caminho das "
+                          "capacidades governadas)"), file=sys.stderr)
         return EXIT_ERROR
     scheduler = None
     if usar_scheduler:
@@ -1586,14 +1760,18 @@ def cmd_orquestrar(ctx, args) -> int:
         rt = RuntimeGovernado(ctx, aprovador,
                               sem_motor=getattr(args, "sem_motor", False),
                               caminhos=raizes, adapters=usar_adapters,
-                              executaveis=executaveis, scheduler=scheduler)
+                              executaveis=executaveis, scheduler=scheduler,
+                              git=usar_git, git_write=usar_git_tag,
+                              git_tree=usar_git_tree)
     except ValueError as exc:
         print(fmt("E010", str(exc)), file=sys.stderr)
         return EXIT_ERROR
 
-    if usar_adapters and rt.capacidades_adapter:
-        print(f"capacidades de arquivo ligadas: "
-              f"{', '.join(rt.capacidades_adapter)}")
+    # Condicionado ao que FOI ligado, não a `--adapters`: com FIX-02 as
+    # capacidades Git entram sem `--adapters`, e anunciar só no caso antigo
+    # deixaria o usuário sem saber que autoridade acabou de conceder.
+    if rt.capacidades_adapter:
+        print(f"capacidades ligadas: {', '.join(rt.capacidades_adapter)}")
         print(f"escopo: {', '.join(raizes)}")
     plano = rt.planejar(args.objetivo, passos=passos)
 
@@ -1669,8 +1847,31 @@ def cmd_scheduler(ctx, args) -> int:
     from nomos.runtime.agendador import AgendadorGovernado, ConfigAgendador
 
     sub = getattr(args, "scheduler_cmd", None)
+    if sub == "notas":
+        # NH-018a: visibilidade do OPERADOR sobre o próprio home (A0, mesma
+        # classe do `approvals list`) — sem furar a posse da capacidade
+        # governada, que continua só existindo dentro da execução do job.
+        from nomos.adapters.scheduler import ArmazemJobs
+        from nomos.runtime.agendador import caminho_do_armazem
+        notas = ArmazemJobs(caminho_do_armazem(ctx["home"])).notas_de(
+            str(args.job_id))
+        if not notas:
+            print(f"job '{args.job_id}': nenhuma nota.")
+            return EXIT_OK
+        for chave, valor in notas.items():
+            marca = " (sistema)" if chave.startswith("__") else ""
+            print(f"  {chave}{marca}: {len(valor)} byte(s)")
+            print(f"    {valor[:160]}")
+        return EXIT_OK
     raizes = tuple(getattr(args, "raiz", None) or ())
     executaveis = tuple(getattr(args, "executavel", None) or ())
+    if executaveis:
+        # Mesma porta honesta do `nomos orquestrar`: o selamento vive no
+        # runtime; aqui só evitamos o caminho longo até o mesmo "não".
+        print(fmt("E010", "--executavel está SELADO: `script-rodar` segue "
+                          "indisponível (ver adapters/script.py)"),
+              file=sys.stderr)
+        return EXIT_DENIED
     if not raizes:
         print(fmt("E010", "scheduler exige pelo menos um --raiz (escopo de "
                           "caminho das capacidades executadas pelos jobs)"),
@@ -1744,6 +1945,10 @@ def cmd_scheduler(ctx, args) -> int:
                 # que o recusa. Com teste de verdade, o zero sumia aqui e o
                 # operador recebia um ONE_SHOT sem nunca saber.
                 params["intervalo_s"] = int(args.intervalo_job)
+            if getattr(args, "continuidade", False):
+                params["continuidade"] = True
+            if getattr(args, "monitorar", ""):
+                params["monitorar_alvo"] = str(args.monitorar)
             ok, valor, motivo = ag.operar("sched-criar", **params)
         if not ok:
             print(fmt("E010", f"scheduler {sub} recusado: {motivo}"),
@@ -1799,6 +2004,65 @@ def cmd_scheduler(ctx, args) -> int:
           "                              [--catch-up skip|once|all] "
           "[--catch-up-max N]")
     return EXIT_OK
+
+
+def cmd_servico(ctx, args) -> int:
+    """NH-014 — runtime persistente governado (`runtime/servico.py`)."""
+    from nomos.kernel import plataforma
+    from nomos.runtime import servico as sv
+    from nomos.simple.erros import fmt
+    sub = getattr(args, "servico_cmd", None)
+    if not plataforma.servico_persistente_disponivel():
+        # Recusa na PORTA, com a verdade da plataforma. Antes, os `import
+        # fcntl` locais de `servico.py` deixavam o módulo importar no Windows e
+        # a quebra aparecia lá na frente como ModuleNotFoundError cru — um
+        # defeito interno aparente onde o fato é "esta plataforma não tem a
+        # capacidade". Mesmo padrão do `--executavel` selado.
+        print(fmt("E010", f"`nomos servico` está INDISPONÍVEL em "
+                          f"{plataforma.nome_amigavel_so()}: o serviço "
+                          f"persistente exige launchd (supervisão) e "
+                          f"fcntl.flock (trava de instância única, que é o que "
+                          f"prova 'já há um rodando' — PID não prova). "
+                          f"O NOMOS em foreground continua inteiro: "
+                          f"`nomos scheduler rodar`"), file=sys.stderr)
+        return EXIT_DENIED
+    if sub == "status":
+        return sv.status(ctx)
+    if sub == "remover":
+        # gate A1 SEMPRE interativo — mexer no launchd exige o dono no teclado
+        return sv.remover(ctx, interactive_approver,
+                          simular=bool(getattr(args, "simular", False)))
+    raizes = tuple(getattr(args, "raiz", None) or ())
+    if sub in ("rodar", "instalar"):
+        if not raizes:
+            print(fmt("E010", f"servico {sub} exige pelo menos um --raiz "
+                              "(escopo de caminho dos jobs)"), file=sys.stderr)
+            return EXIT_ERROR
+        try:
+            catchup = _catchup_valido(getattr(args, "catch_up", "once"))
+        except ValueError as exc:
+            print(fmt("E010", str(exc)), file=sys.stderr)
+            return EXIT_ERROR
+        config = sv.ConfigServico(
+            raizes=raizes,
+            intervalo_s=float(getattr(args, "intervalo", 1.0) or 1.0),
+            catchup=catchup,
+            catchup_max=int(getattr(args, "catch_up_max", 10) or 10),
+            painel=bool(getattr(args, "painel", False)))
+        if sub == "rodar":
+            return sv.rodar_servico(ctx, config,
+                                    max_ticks=getattr(args, "max_ticks", None))
+        # instalar: gate A5 SEMPRE interativo (por isso não existe --panel
+        # nesta superfície — autonomia persistente exige o dono no teclado)
+        return sv.instalar(ctx, config, interactive_approver,
+                           simular=bool(getattr(args, "simular", False)))
+    print("uso: nomos servico rodar    --raiz <dir> [--intervalo N] "
+          "[--catch-up skip|once|all] [--painel] [--max-ticks N]\n"
+          "     nomos servico instalar --raiz <dir> [--intervalo N] "
+          "[--painel] [--simular]\n"
+          "     nomos servico remover  [--simular]\n"
+          "     nomos servico status", file=sys.stderr)
+    return EXIT_ERROR
 
 
 def cmd_missao(ctx, args) -> int:
@@ -2298,6 +2562,46 @@ def cmd_memoria(ctx, args) -> int:
     from nomos.cognition.memory import Memory
     mem = Memory(ctx["home"] / "memory.db")
     sub = getattr(args, "memoria_cmd", None)
+    if sub == "importar-mc28":
+        # NH-005 P2: consolidação de menor risco — memory.db é a fonte;
+        # o memory.jsonl do MC28 fica INTACTO (byte-idêntico) e o rollback
+        # é completo (--desfazer apaga exatamente fonte='mc28').
+        from nomos.memory import ponte
+        from nomos.memory.store import MemoryStore
+        from nomos.simple.erros import fmt
+        seco_pedido = bool(getattr(args, "dry_run", False))
+        if getattr(args, "desfazer", False):
+            if seco_pedido:
+                # achado da revisão: `--dry-run --desfazer` executava o
+                # rollback REAL durante a "simulação" — a flag que promete
+                # não escrever apagava dados. Recusa explícita.
+                print(fmt("E010", "--dry-run com --desfazer é contraditório: "
+                                  "o rollback é escrita. Rode um OU outro."),
+                      file=sys.stderr)
+                return EXIT_ERROR
+            n = ponte.desfazer(mem)
+            ctx["audit"].append("memoria.importacao.desfeita", removidas=n)
+            print(f"desfeito: {n} memória(s) importada(s) removida(s) — a "
+                  "origem MC28 nunca foi tocada.")
+            return EXIT_OK
+        seco = seco_pedido
+        r = ponte.importar(MemoryStore(), mem, dry_run=seco)
+        modo = "(simulação — nada gravado) " if seco else ""
+        print(f"{modo}importadas: {r.importadas} · duplicadas: "
+              f"{r.duplicadas} · rejeitadas pela política: "
+              f"{r.rejeitadas_politica} · PULADAS por hash inválido: "
+              f"{r.puladas_hash}")
+        if not seco:
+            ctx["audit"].append("memoria.importacao.mc28",
+                                importadas=r.importadas,
+                                puladas_hash=r.puladas_hash,
+                                rejeitadas_pii=r.rejeitadas_politica)
+        if not r.ok:
+            print("ATENÇÃO: entrada(s) com hash inválido foram PULADAS — "
+                  "adulteração na origem exige a SUA decisão antes de "
+                  "qualquer nova importação.", file=sys.stderr)
+            return EXIT_ERROR
+        return EXIT_OK
     # sem subcomando = o default útil (mesmo padrão de `nomos motores`):
     # o site ensina `nomos memoria` pelado — não pode terminar em erro de uso
     if sub in (None, "candidatas"):
@@ -2331,7 +2635,18 @@ def cmd_memoria(ctx, args) -> int:
             print(f"\n({c.get('tipo', 'fato')}) {c['text']}")
             resp = input("guardar para sempre? [s]im / [n]ão / [p]ular> ").strip().lower()
             if resp == "s":
-                mem.aprovar_candidata(c["id"])
+                from nomos.cognition.memory import MemoriaRecusada
+                try:
+                    mem.aprovar_candidata(c["id"])
+                except MemoriaRecusada:
+                    # candidata LEGADA (pré-gate NH-005) com segredo: não
+                    # promove e NÃO aborta a revisão — o dono decide se
+                    # descarta. Antes, a exceção matava o loop inteiro e a
+                    # candidata envenenada travava o 's' para sempre.
+                    print("  não guardei: esta candidata tem padrão de "
+                          "segredo/dado sensível (recuse com [n] para "
+                          "tirá-la da fila).")
+                    continue
                 aprovadas += 1
             elif resp == "n":
                 mem.descartar_candidata(c["id"])
@@ -2605,11 +2920,29 @@ def build_parser() -> argparse.ArgumentParser:
                      help="registra as capacidades de arquivo (fs-ler, "
                           "fs-escrever, fs-editar, …) — exige --raiz")
     orq.add_argument("--executavel", action="append", default=[],
-                     help="binário autorizado para script-rodar (pode repetir); "
-                          "sem isto a capacidade de script NÃO é registrada")
+                     help="SELADO: script-rodar está indisponível por "
+                          "segurança; a flag é aceita e negada na porta "
+                          "(ver adapters/script.py)")
     orq.add_argument("--scheduler", action="store_true",
                      help="registra as capacidades de agendamento "
                           "(sched-criar, sched-listar, …) — exige --raiz")
+    # FIX-02: opt-in SEPARADO por autoridade, não uma flag "--git" que ligue
+    # tudo. Ler objeto, escrever referência e tocar índice/working tree são
+    # três autoridades distintas — o runtime já as separa em C1/C2a/C2c, e a
+    # porta do CLI tem de preservar essa separação em vez de achatá-la.
+    orq.add_argument("--git", action="store_true",
+                     help="C1: capacidades Git de LEITURA (git-diff, git-log, "
+                          "git-show) confinadas às raízes — exige --raiz")
+    orq.add_argument("--git-tag", action="store_true", dest="git_tag",
+                     help="C2a: git-tag (escrever referência é autoridade "
+                          "distinta de ler objeto) — exige --raiz")
+    orq.add_argument("--git-tree", action="store_true", dest="git_tree",
+                     help="C2c: git-add e git-commit (tocam working tree, "
+                          "índice e object store) — exige --raiz")
+    orq.add_argument("--git-push", action="store_true", dest="git_push",
+                     help="C2b: INDISPONÍVEL — destino de push é declarado "
+                          "pela política, e policy.json ainda não tem onde; "
+                          "a flag é aceita e negada na porta")
     orq.set_defaults(fn=cmd_orquestrar)
 
     sch = sub.add_parser("scheduler",
@@ -2621,7 +2954,8 @@ def build_parser() -> argparse.ArgumentParser:
         sc.add_argument("--raiz", action="append", default=[],
                         help="raiz autorizada (pode repetir) — obrigatório")
         sc.add_argument("--executavel", action="append", default=[],
-                        help="binário autorizado para script-rodar (pode repetir)")
+                        help="SELADO: script-rodar está indisponível por "
+                             "segurança; negado na porta")
         sc.add_argument("--intervalo", type=float, default=1.0,
                         help="segundos entre passadas do ticker")
         sc.add_argument("--max-ticks", type=int, dest="max_ticks", default=None,
@@ -2646,6 +2980,12 @@ def build_parser() -> argparse.ArgumentParser:
             ag_grp.add_argument("--intervalo-job", dest="intervalo_job",
                                 type=int, default=None,
                                 help="segundos entre execuções (agenda INTERVAL)")
+            sc.add_argument("--continuidade", action="store_true",
+                            help="a ocorrência N+1 recebe resumo compacto do "
+                                 "fim da N (params['resumo_anterior'])")
+            sc.add_argument("--monitorar", default="",
+                            help="só dispara quando o CONTEÚDO deste caminho "
+                                 "muda (hash; mtime não engana)")
             sc.add_argument("--tz", default="UTC",
                             help="timezone IANA aplicada à agenda (padrão UTC)")
         if nome_s == "rodar":
@@ -2661,8 +3001,49 @@ def build_parser() -> argparse.ArgumentParser:
                             help="teto de ocorrências recuperadas por passada "
                                  "(limita a tempestade após uma parada longa)")
         sc.set_defaults(fn=cmd_scheduler)
+    scn = schsub.add_parser("notas", help="notas duráveis de um job "
+                                          "(leitura do operador, A0)")
+    scn.add_argument("job_id")
+    scn.set_defaults(fn=cmd_scheduler)
     sch.set_defaults(fn=cmd_scheduler, scheduler_cmd=None, raiz=[],
                      executavel=[], intervalo=1.0, max_ticks=None)
+
+    srv = sub.add_parser("servico",
+                         help="runtime persistente governado: o mesmo ticker "
+                              "de sempre, supervisionado pelo launchd")
+    srvsub = srv.add_subparsers(dest="servico_cmd")
+    srv_r = srvsub.add_parser("rodar",
+                              help="o processo que o launchd supervisiona "
+                                   "(também roda em foreground); aprovações "
+                                   "sensíveis esperam humano no painel e "
+                                   "EXPIRAM NEGADAS no TTL")
+    srv_i = srvsub.add_parser("instalar",
+                              help="escreve o LaunchAgent e carrega no "
+                                   "launchd — aprovação A5 no teclado, você "
+                                   "aprova o plist na íntegra")
+    for srv_p in (srv_r, srv_i):
+        srv_p.add_argument("--raiz", action="append", default=[],
+                           help="raiz autorizada (pode repetir) — obrigatório")
+        srv_p.add_argument("--intervalo", type=float, default=1.0,
+                           help="segundos entre passadas do ticker")
+        srv_p.add_argument("--painel", action="store_true",
+                           help="sobe junto o painel local de aprovações")
+    srv_r.add_argument("--catch-up", default="once", dest="catch_up",
+                       help="skip|once|all — ocorrências perdidas no downtime")
+    srv_r.add_argument("--catch-up-max", type=int, default=10,
+                       dest="catch_up_max",
+                       help="teto do catch-up 'all'")
+    srv_r.add_argument("--max-ticks", type=int, dest="max_ticks", default=None,
+                       help="para após N passadas (operação pontual/teste)")
+    srv_i.add_argument("--simular", action="store_true",
+                       help="imprime plist+argv; zero escrita, zero launchctl")
+    srv_rm = srvsub.add_parser("remover",
+                               help="bootout + apaga o plist (só se o Label "
+                                    "for o nosso)")
+    srv_rm.add_argument("--simular", action="store_true")
+    srvsub.add_parser("status", help="instalado? vivo? batimento? pausa? "
+                                     "problemas?")
+    srv.set_defaults(fn=cmd_servico, servico_cmd=None)
 
     mip = sub.add_parser("missao",
                          help="missões que FAZEM: plano → sua aprovação → evidência")
@@ -2745,6 +3126,13 @@ def build_parser() -> argparse.ArgumentParser:
     memc.add_argument("--json", action="store_true")
     memc.set_defaults(fn=cmd_memoria)
     memsub.add_parser("revisar").set_defaults(fn=cmd_memoria)
+    memi = memsub.add_parser("importar-mc28",
+                             help="importa o histórico do motor MC28 "
+                                  "(memory.jsonl) para o memory.db — origem "
+                                  "fica byte-idêntica; rollback: --desfazer")
+    memi.add_argument("--dry-run", action="store_true", dest="dry_run")
+    memi.add_argument("--desfazer", action="store_true")
+    memi.set_defaults(fn=cmd_memoria)
     memp.set_defaults(fn=cmd_memoria, memoria_cmd=None)
     evd = sub.add_parser("evidencia",
                          help="pacote de evidências auditável (criar/verificar, local)")
@@ -2794,6 +3182,11 @@ def build_parser() -> argparse.ArgumentParser:
     mf.add_argument("voto", choices=["bom", "ruim"])
     mf.set_defaults(fn=cmd_motores)
     mosub.add_parser("diagnostico").set_defaults(fn=cmd_motores)
+    mu2 = mosub.add_parser("uso", help="uso de motores medido localmente "
+                                       "(só metadados; nunca conteúdo)")
+    mu2.add_argument("--dias", type=int, default=7)
+    mu2.add_argument("--json", action="store_true")
+    mu2.set_defaults(fn=cmd_motores)
     mu = mosub.add_parser("usar")
     mu.add_argument("modalidade")
     mu.add_argument("motor")
@@ -2857,6 +3250,16 @@ def build_parser() -> argparse.ArgumentParser:
     rv.set_defaults(fn=cmd_consent)
 
     sub.add_parser("panic", help="botão de pânico: revoga consentimentos e tranca tudo").set_defaults(fn=cmd_panic)
+    pz = sub.add_parser("pausar", help="freio gracioso: a ocorrência atual "
+                                       "termina, nenhuma nova começa")
+    pz.add_argument("--motivo", default="",
+                    help="anotação livre (vai para a auditoria)")
+    pz.set_defaults(fn=cmd_pausar)
+    rt = sub.add_parser("retomar", help="religa a autonomia agendada "
+                                        "(pede aprovação)")
+    rt.add_argument("--panel", action="store_true",
+                    help="aprova via painel local em vez do terminal")
+    rt.set_defaults(fn=cmd_retomar)
 
     rn = sub.add_parser("run", help="executa uma ação governada (passa pelo gate A0–A6)")
     rn.add_argument("cmd")
@@ -2895,6 +3298,16 @@ def build_parser() -> argparse.ArgumentParser:
     aps.add_argument("--port", type=int, default=0)
     aps.set_defaults(fn=cmd_approvals)
     ap.add_parser("list").set_defaults(fn=cmd_approvals)
+    apg = ap.add_parser("sugerir", help="minera a trilha e PROPÕE política "
+                                        "(nunca aplica)")
+    apg.add_argument("--dias", type=int, default=30)
+    apg.add_argument("--json", action="store_true")
+    apg.set_defaults(fn=cmd_approvals)
+    apt = ap.add_parser("testar", help="dry-run do veredito da política "
+                                       "(nada entra na fila, nada executa)")
+    apt.add_argument("categoria", help="ex.: A2_NET_EGRESS")
+    apt.add_argument("alvo")
+    apt.set_defaults(fn=cmd_approvals)
 
     ch = sub.add_parser("chat", help="conversa com o agente no terminal")
     ch.add_argument("prompt", nargs="*")

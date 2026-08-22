@@ -160,16 +160,34 @@ def _agregado(s: JudgeScore) -> float:
 # Orquestrador da arbitragem
 # ----------------------------------------------------------------------------
 def _gerar_candidato(runner: EngineRunner, prompt: str, system: str,
-                     max_retries: int, tried: list) -> AnswerCandidate:
+                     max_retries: int, tried: list,
+                     uso=None) -> AnswerCandidate:
     """Executa o motor DE VERDADE. Falha/vazio ⇒ failure_code (sem inventar)."""
+    import time as _t
     ultimo_erro = None
+
+    def _medir(ok: bool, resposta: str, t0: float, erro: str = "") -> None:
+        if uso is None:
+            return
+        from nomos.cognition.uso_motores import EventoUso
+        uso.registrar(EventoUso(
+            ts=_t.time(), origem="arbitragem", motor=runner.engine_id,
+            modelo="", modalidade="texto",
+            rota="local" if runner.local else "cloud", ok=ok,
+            dur_ms=int((_t.monotonic() - t0) * 1000),
+            chars_prompt=len(prompt) + len(system),
+            chars_resposta=len(resposta), erro=erro))
+
     for tentativa in range(max_retries + 1):
         tried.append(f"{runner.engine_id}#run{tentativa + 1}")
+        t0 = _t.monotonic()
         try:
             texto = runner.run(prompt, system=system)
         except Exception as exc:                    # motor real pode falhar
             ultimo_erro = str(exc)
+            _medir(False, "", t0, erro=type(exc).__name__)
             continue
+        _medir(bool(texto and texto.strip()), texto or "", t0)
         if texto and texto.strip():
             return AnswerCandidate(
                 candidate_id=f"cand-{runner.engine_id}",
@@ -190,7 +208,7 @@ def _gerar_candidato(runner: EngineRunner, prompt: str, system: str,
 def arbitrar(prompt: str, runners: list[EngineRunner], *,
              system: str = "", rounds: int = 2, min_candidatos: int = 2,
              allow_cloud: bool = False, max_retries: int = 1,
-             judge: Callable | None = None) -> ArbitrationOutcome:
+             judge: Callable | None = None, uso=None) -> ArbitrationOutcome:
     """Arbitragem real entre motores. Ver docstring do módulo para as invariantes.
 
     - `rounds`: nº de rodadas de debate (≥1). Após a 1ª, motores podem revisar.
@@ -235,7 +253,8 @@ def arbitrar(prompt: str, runners: list[EngineRunner], *,
                          "nenhum motor pronto para a tarefa", status="no_engine")
 
     # 2) Candidatos reais (rodada 1)
-    candidatos = [_gerar_candidato(r, prompt, system, max_retries, tried) for r in prontos]
+    candidatos = [_gerar_candidato(r, prompt, system, max_retries, tried,
+                                   uso=uso) for r in prontos]
 
     rounds_run = 1
     scores: dict = {}
@@ -266,7 +285,8 @@ def arbitrar(prompt: str, runners: list[EngineRunner], *,
                 f"{prompt}\n\n[debate] Outras respostas anônimas para a mesma tarefa:\n"
                 f"{criticas}\n\nRevise e melhore a SUA resposta se for o caso. "
                 f"Se a sua já for a melhor, repita-a.")
-            novo = _gerar_candidato(r, prompt_rev, system, max_retries, tried)
+            novo = _gerar_candidato(r, prompt_rev, system, max_retries, tried,
+                                    uso=uso)
             if novo.failure_code is None and novo.content.strip() != cand.content.strip():
                 candidatos[i] = novo
                 mudou = True

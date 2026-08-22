@@ -25,6 +25,7 @@ side effect existiria.
 """
 from __future__ import annotations
 
+import errno
 import os
 import subprocess
 import sys
@@ -79,6 +80,7 @@ def _integros(armazem) -> None:
 
 # ═══════════ 01-04 — imports simultâneos e endereçamento por conteúdo ═══════
 
+@pytest.mark.filtro_posix
 def test_01_imports_simultaneos_da_MESMA_origem(armazem, tmp_path):
     origem = _script(tmp_path / "f.sh", BOM)
     pronto = threading.Barrier(N)
@@ -97,6 +99,7 @@ def test_01_imports_simultaneos_da_MESMA_origem(armazem, tmp_path):
     assert _rodar(arts[0].managed_path).stdout.strip() == "SAIDA_BOA"
 
 
+@pytest.mark.filtro_posix
 def test_02_imports_simultaneos_MESMOS_BYTES_origens_diferentes(armazem,
                                                                 tmp_path):
     origens = [_script(tmp_path / f"o{i}.sh", BOM) for i in range(N)]
@@ -115,6 +118,7 @@ def test_02_imports_simultaneos_MESMOS_BYTES_origens_diferentes(armazem,
     _integros(armazem)
 
 
+@pytest.mark.filtro_posix
 def test_03_imports_simultaneos_BYTES_DIFERENTES(armazem, tmp_path):
     origens = [_script(tmp_path / f"o{i}.sh", BOM + f"# {i}\n")
                for i in range(N)]
@@ -134,6 +138,7 @@ def test_03_imports_simultaneos_BYTES_DIFERENTES(armazem, tmp_path):
         assert _rodar(a.managed_path).stdout.strip() == "SAIDA_BOA"
 
 
+@pytest.mark.filtro_posix
 def test_04_artefato_valido_existente_nao_e_corrompido_por_reimport(armazem,
                                                                     tmp_path):
     """VALID_EXISTING_ARTIFACT_CORRUPTED=0 sob reimport concorrente."""
@@ -156,6 +161,7 @@ def test_04_artefato_valido_existente_nao_e_corrompido_por_reimport(armazem,
 # ═══════════ 05-07 — origem mudando DURANTE o import ════════════════════════
 
 @pytest.mark.parametrize("modo", ["replace", "unlink_recreate", "symlink"])
+@pytest.mark.filtro_posix
 def test_05a07_origem_mutando_durante_o_import(armazem, tmp_path, modo):
     """A origem troca em loop enquanto importamos.
 
@@ -194,6 +200,22 @@ def test_05a07_origem_mutando_durante_o_import(armazem, tmp_path, modo):
                 resultados.append(armazem.importar(origem))
             except ErroFiltro:
                 pass                      # recusa é desfecho legítimo
+            except OSError as e:
+                # Mesma classe de desfecho legítimo, pelo mesmo contrato: no
+                # modo `symlink` (e no `unlink_recreate`) o atacante faz
+                # unlink→symlink_to, e ENTRE os dois a origem não existe (ou
+                # é um link sendo trocado). Cair nessa janela é a corrida
+                # acontecendo, não defeito — o que o teste mede é que nada
+                # PARCIAL fica publicado (`_integros` abaixo).
+                #
+                # O errno DEPENDE DA PLATAFORMA para o mesmo evento: Linux
+                # devolve ENOENT e o macOS devolve EINVAL no `realpath` do
+                # link em troca. Filtro pela lista de sintomas de "o caminho
+                # mudou embaixo" em vez de engolir OSError inteiro — erro de
+                # permissão ou de I/O continua derrubando o teste, como deve.
+                if e.errno not in (errno.ENOENT, errno.EINVAL,
+                                   errno.ELOOP, errno.ENOTDIR):
+                    raise
     finally:
         parar.set()
         t.join(timeout=15)
@@ -206,6 +228,7 @@ def test_05a07_origem_mutando_durante_o_import(armazem, tmp_path, modo):
 
 # ═══════════ 08-09 — tentativa de trocar o artefato publicado ═══════════════
 
+@pytest.mark.filtro_posix
 def test_08_09_artefato_publicado_nao_e_gravavel(armazem, tmp_path):
     """CONTROLE POSITIVO: o hostil é funcional antes de exigir sua ausência."""
     art = armazem.importar(_script(tmp_path / "f.sh", BOM))
@@ -241,6 +264,7 @@ def test_10_mismatch_registry_artefato_nunca_e_aceito(armazem, tmp_path):
 
 @pytest.mark.parametrize("onde", ["antes_verify", "antes_replace",
                                   "depois_replace"])
+@pytest.mark.filtro_posix
 def test_11a14_interrupcao_em_cada_ponto(armazem, tmp_path, monkeypatch, onde):
     """Injeta falha em cada janela da sequência temp->verify->replace."""
     origem = _script(tmp_path / "f.sh", BOM)
@@ -288,6 +312,7 @@ def test_15_temporarios_nao_sobrevivem_a_falhas_repetidas(armazem, tmp_path):
 
 # ═══════════ 16-20 — leitura, verificação e execução durante publish ════════
 
+@pytest.mark.filtro_posix
 def test_16a19_leitura_verificacao_execucao_concorrentes(armazem, tmp_path):
     """Enquanto imports acontecem, leitores conferem e executam.
 
@@ -370,6 +395,7 @@ def test_16a19_leitura_verificacao_execucao_concorrentes(armazem, tmp_path):
 #   20b  o filtro confinado não alcança o armazém                    — a razão
 #   20c  artefato divergente é DETECTADO, com corrida real           — não vácuo
 
+@pytest.mark.filtro_posix
 def test_20a_origem_mutando_nunca_executa_codigo_nao_aprovado(armazem,
                                                               tmp_path):
     """A propriedade de A5.3: o SOURCE externo nunca executa após a aprovação.
@@ -422,6 +448,7 @@ def test_20a_origem_mutando_nunca_executa_codigo_nao_aprovado(armazem,
     art.conferir()                        # o artefato seguiu íntegro
 
 
+@pytest.mark.git_governado
 def test_20b_filtro_confinado_NAO_alcanca_o_armazem(armazem, tmp_path):
     """A razão pela qual `test_20c` é fronteira e não brecha.
 
@@ -513,6 +540,7 @@ def test_20c_artefato_divergente_e_DETECTADO_com_corrida_real(armazem,
 
 # ═══════════ 21-22 — idempotência e resíduo após crash ══════════════════════
 
+@pytest.mark.filtro_posix
 def test_21_import_duplicado_e_idempotente(armazem, tmp_path):
     origem = _script(tmp_path / "f.sh", BOM)
     a = armazem.importar(origem)

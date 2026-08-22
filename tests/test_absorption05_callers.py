@@ -251,6 +251,7 @@ def test_validar_executaveis_recusa_invalidos(ruim):
         validar_executaveis([ruim])
 
 
+@pytest.mark.permissao_unix
 def test_validar_executaveis_recusa_nao_executavel(tmp_path):
     arq = tmp_path / "texto.txt"
     arq.write_text("nao sou binario")
@@ -258,6 +259,7 @@ def test_validar_executaveis_recusa_nao_executavel(tmp_path):
         validar_executaveis([str(arq)])
 
 
+@pytest.mark.filtro_posix
 def test_validar_executaveis_recusa_shell(tmp_path):
     import shutil
     sh = shutil.which("sh")
@@ -646,10 +648,15 @@ def test_intervalo_zero_e_recusado_nao_corrigido(tmp_path, monkeypatch, capsys):
 
 
 def test_executavel_sem_adapters_e_recusado(tmp_path, monkeypatch, capsys):
-    """`--executavel` sozinho não registrava script-rodar e não avisava."""
+    """`--executavel` é negado NA PORTA com a verdade do selamento (FIX-03).
+
+    Contrato antigo: exigia `--adapters` e, satisfeito isso, deixava o
+    usuário atravessar o CLI para receber um `ErroRuntime` tardio. Contrato
+    novo: EXIT_DENIED imediato, mensagem diz que script-rodar está SELADO.
+    """
     from nomos import cli
     monkeypatch.setenv("NOMOS_HOME", str(tmp_path / "h"))
     rc = cli.main(["orquestrar", "x", "--raiz", str(tmp_path),
                    "--executavel", sys.executable])
-    assert rc == cli.EXIT_ERROR
-    assert "--adapters" in capsys.readouterr().err
+    assert rc == cli.EXIT_DENIED
+    assert "SELADO" in capsys.readouterr().err

@@ -89,6 +89,7 @@ def test_c1_status_e_diff_worktree_estao_AUSENTES(amb):
     assert not _plano(rt, "git-diff", alvo=str(repo), ref_a="HEAD").ok
 
 
+@pytest.mark.git_governado
 def test_c1_log_e_show_leem_o_commit_real(amb):
     rt, _ws, repo, _ = amb
     log = _plano(rt, "git-log", alvo=str(repo), limite=5)
@@ -97,6 +98,7 @@ def test_c1_log_e_show_leem_o_commit_real(amb):
     assert show.ok and "primeiro" in show.missao.nos["p"].resultado
 
 
+@pytest.mark.git_governado
 def test_c1_diff_entre_refs_reais(amb):
     rt, _ws, repo, _ = amb
     (repo / "a.txt").write_text("linha 1\nlinha 2\n")
@@ -200,6 +202,7 @@ def test_c1_ambiente_nao_herda_nada_do_host(monkeypatch):
     assert env["GIT_OPTIONAL_LOCKS"] == "0"
 
 
+@pytest.mark.git_governado
 def test_c1_env_hostil_do_host_nao_muda_a_execucao(amb, monkeypatch, tmp_path,
                                                    espiao_nativo):
     """A prova pela execução — e o que ela pode e NÃO pode provar aqui.
@@ -308,6 +311,7 @@ def repo_hostil(amb, tmp_path):
     ("git-show", {"ref": "HEAD"}),
     ("git-diff", {"ref_a": "HEAD~1", "ref_b": "HEAD"}),
 ])
+@pytest.mark.git_governado
 def test_c1_config_do_repo_nao_executa_programa(repo_hostil, cap, extra):
     """EXTERNAL_DIFF_EXECUTION=FALSE, PAGER_EXECUTION=FALSE.
 
@@ -410,6 +414,7 @@ def test_c1_registrar_sem_raizes_falha_fechado():
         registrar_git(object(), raizes=())
 
 
+@pytest.mark.git_governado
 def test_c1_passa_por_pdp_e_pep(amb):
     import json
     rt, _ws, repo, ctx = amb
@@ -467,6 +472,7 @@ def test_c1_operacoes_nao_tocam_worktree_nem_indice(repo_hostil, cap, extra):
     assert not mudou, f"{cap} tocou: {sorted(mudou)}"
 
 
+@pytest.mark.git_governado
 def test_c1_nenhum_subcomando_toca_rede(amb):
     """NETWORK_TOUCHED=FALSE — nem por config do repo.
 
@@ -482,6 +488,7 @@ def test_c1_nenhum_subcomando_toca_rede(amb):
     assert not Path("/tmp/NET").exists()
 
 
+@pytest.mark.git_governado
 def test_c1_GIT_EXEC_PATH_do_host_nao_redireciona_subcomando(amb, monkeypatch,
                                                               tmp_path):
     """O caso que mata o mutante "ambiente herdado".
@@ -569,6 +576,7 @@ def test_m3_adapter_recusa_repo_fora_do_escopo_sem_o_pdp(amb, tmp_path, cap, ext
         GitAdapter().executar(pedido, ctx)
 
 
+@pytest.mark.git_governado
 def test_m3_adapter_aceita_repo_dentro_do_escopo_sem_o_pdp(amb, tmp_path):
     """Contraparte: sem ela, um adapter que recusa TUDO passaria."""
     from nomos.adapters.contrato import CapabilityRequest
@@ -583,6 +591,7 @@ def test_m3_adapter_aceita_repo_dentro_do_escopo_sem_o_pdp(amb, tmp_path):
 
 # ============================================ M1 — ambiente herdado é real
 
+@pytest.mark.git_governado
 def test_m1_GIT_DIR_do_host_nao_redireciona_o_repositorio(amb, monkeypatch,
                                                            tmp_path):
     """O vetor que mata o mutante "ambiente herdado".

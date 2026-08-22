@@ -131,7 +131,12 @@ class _RouterChat:
 def _conversa(nomos_home, entradas, router, notas=()):
     mem = Memory(nomos_home / "memory.db")
     for n in notas:
-        mem.remember("note", n)
+        # INSERT direto: as notas de teste podem conter SEGREDO de propósito
+        # (para provar a redação na leitura) e o gate de admissão do NH-005
+        # recusaria a escrita governada — dado legado se semeia por baixo.
+        mem.conn.execute("INSERT INTO memories(ts, role, text) "
+                         "VALUES (1, 'note', ?)", (n,))
+        mem.conn.commit()
     feed = iter(entradas)
     tela, tokens = [], []
     ctx = {"home": nomos_home, "policy": PolicyEngine(nomos_home / "p.json")}

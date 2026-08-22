@@ -86,6 +86,7 @@ def cenario(tmp_path):
     return Cen()
 
 
+@pytest.mark.git_governado
 def test_r4_01_confinamento_de_ESCRITA_recusa_apos_a_troca(cenario):
     """O perfil do sandbox saía com raiz de escrita FORA das raízes, 12/12."""
     aut = cenario.ligar()
@@ -94,6 +95,7 @@ def test_r4_01_confinamento_de_ESCRITA_recusa_apos_a_troca(cenario):
         git.confinamento_de_repo(str(cenario.hostil), autoridade=aut)
 
 
+@pytest.mark.git_governado
 def test_r4_02_confinamento_de_LEITURA_recusa_apos_a_troca(cenario):
     """`git-log` governado devolvia a história do repositório de FORA (6/120)."""
     aut = cenario.ligar()
@@ -102,6 +104,7 @@ def test_r4_02_confinamento_de_LEITURA_recusa_apos_a_troca(cenario):
         git.confinamento_de_leitura(str(cenario.hostil), autoridade=aut)
 
 
+@pytest.mark.git_governado
 def test_r4_03_o_caminho_de_FORA_nao_chega_ao_perfil(cenario):
     """O critério é o EFEITO: nenhum caminho de fora das raízes no SBPL.
 
@@ -119,6 +122,7 @@ def test_r4_03_o_caminho_de_FORA_nao_chega_ao_perfil(cenario):
                 f"`{cenario.fora}` está fora das raízes aprovadas")
 
 
+@pytest.mark.git_governado
 def test_r4_04_CONTROLE_sem_a_troca_o_confinamento_continua_saindo(cenario):
     """Sem este controle os três acima passariam num sistema que recusa tudo.
 
@@ -133,6 +137,7 @@ def test_r4_04_CONTROLE_sem_a_troca_o_confinamento_continua_saindo(cenario):
     assert str(cenario.fora) not in " ".join(leitura.leitura)
 
 
+@pytest.mark.git_governado
 def test_r4_05_a_identidade_e_do_INODE_nao_do_CAMINHO(cenario):
     """Estrutural: mover o git dir e apontar de volta NÃO é troca.
 
@@ -147,6 +152,7 @@ def test_r4_05_a_identidade_e_do_INODE_nao_do_CAMINHO(cenario):
     git.confinamento_de_repo(str(cenario.hostil), autoridade=aut)
 
 
+@pytest.mark.git_governado
 def test_r4_06_DESFAZER_nao_grava_no_repositorio_de_terceiro(cenario, monkeypatch):
     """`N-A7-02`: o supervisor sobrescrevia índice e reflog alheios, 20/20.
 
@@ -514,6 +520,7 @@ def _refs_heads_para_symlink(gd: Path) -> None:
     (gd / "refs" / "heads").symlink_to(reais, target_is_directory=True)
 
 
+@pytest.mark.git_governado
 def test_r4_30_refs_heads_symlink_profundidade_2_e_recusado(repo_commitavel):
     """MEDIDO 8/8: `rglob` não recursa em symlink de dir; refs/heads escapava.
 
@@ -529,6 +536,7 @@ def test_r4_30_refs_heads_symlink_profundidade_2_e_recusado(repo_commitavel):
         cen.add("b.txt")
 
 
+@pytest.mark.git_governado
 def test_r4_31_ref_de_terceiro_nao_avanca_em_operacao_recusada(repo_commitavel):
     """`.6.NOVO-08-REFS-FORA-DA-TRANSACAO`: o critério é o EFEITO no branch.
 
@@ -548,6 +556,7 @@ def test_r4_31_ref_de_terceiro_nao_avanca_em_operacao_recusada(repo_commitavel):
 
 
 @pytest.mark.parametrize("onde", ["refs/tags", "refs/heads/sub", "logs/refs"])
+@pytest.mark.git_governado
 def test_r4_32_symlink_em_QUALQUER_profundidade_de_refs_e_recusado(
         repo_commitavel, onde):
     """A descida é por componente: symlink em tags, num subdir de heads, em logs.
@@ -570,6 +579,7 @@ def test_r4_32_symlink_em_QUALQUER_profundidade_de_refs_e_recusado(
         cen.add("b.txt")
 
 
+@pytest.mark.git_governado
 def test_r4_33_CONTROLE_refs_PROFUNDAS_e_legitimas_continuam_valendo(
         repo_commitavel):
     """`refs/heads/feature/x` — dirs reais em 3 níveis — tem de funcionar.
@@ -610,6 +620,7 @@ def _repo_auto_referente(raiz: Path, ponteiro: str) -> Path:
 
 
 @pytest.mark.parametrize("ponteiro", [".", "./", "sub/..", "ABSOLUTO"])
+@pytest.mark.filtro_posix
 def test_r4_40_gitdir_auto_referente_e_recusado(tmp_path, ponteiro):
     """MEDIDO: a raiz de ESCRITA deixava de ser o git dir e virava o repo INTEIRO.
 
@@ -656,6 +667,7 @@ def test_r4_41_a_working_tree_nao_vira_raiz_de_escrita(tmp_path):
 
 
 @pytest.mark.parametrize("layout", ["repo-comum", "worktree-ligada", "submodulo"])
+@pytest.mark.git_governado
 def test_r4_42_CONTROLE_layouts_que_o_GIT_produz_seguem_aceitos(tmp_path,
                                                                  layout):
     """Nenhum layout real do Git tem git dir == working tree.
@@ -696,6 +708,7 @@ def test_r4_42_CONTROLE_layouts_que_o_GIT_produz_seguem_aceitos(tmp_path,
 # ═══ `.11.13` (P1) — o teto era de PROFUNDIDADE, e ela é escolha do atacante ══
 
 @pytest.mark.parametrize("prof", [3, 5, 6, 8])
+@pytest.mark.filtro_posix
 def test_r4_50_git_dir_aninhado_e_achado_em_QUALQUER_profundidade(tmp_path,
                                                                    prof):
     """MEDIDO 8/8 a prof 6 e 8/8 a prof 8: escapava e o filtro gravava dentro.
@@ -865,6 +878,7 @@ def campo_add(tmp_path):
 
 # ═══ `.8.05-08` / `.8.NEW-REFS-TERCEIRO` (P1) — a JANELA B, em path-space ════
 
+@pytest.mark.git_governado
 def test_r4_70_terceiro_DURANTE_o_exec_emite_incidente(campo_add, monkeypatch):
     """MEDIDO 10/10 determinístico: sobreposto em SILÊNCIO antes do conserto.
 
@@ -909,6 +923,7 @@ def test_r4_70_terceiro_DURANTE_o_exec_emite_incidente(campo_add, monkeypatch):
         f"o incidente não nomeia o caminho perdido: {msg[:200]}")
 
 
+@pytest.mark.git_governado
 def test_r4_71_CONTROLE_sem_terceiro_nenhum_incidente_e_emitido(campo_add,
                                                                  monkeypatch):
     """O par: path-space não pode acusar quando não há terceiro nenhum.
@@ -1077,6 +1092,7 @@ def test_r4_90_existencia_no_host_e_INDISTINGUIVEL(tmp_path):
         f"Detalhe: { {a: r for a, r in respostas.items()} }")
 
 
+@pytest.mark.git_governado
 def test_r4_91_CONTROLE_repo_legitimo_e_nao_repo_seguem_corretos(tmp_path):
     """Remover a pré-checagem não pode aceitar não-repositório nem quebrar repo.
 
@@ -1115,6 +1131,7 @@ def test_r4_91_CONTROLE_repo_legitimo_e_nao_repo_seguem_corretos(tmp_path):
 # ═ `.9.NOVO-CONTROLE-TRAVESSIA` / `.5.NOVO-INFO-SYMLINK` (P2) — o MEIO do caminho ═
 
 @pytest.mark.parametrize("componente", ["objects", "objects/info"])
+@pytest.mark.filtro_posix
 def test_r4_95_symlink_no_componente_do_MEIO_e_recusado(tmp_path, componente):
     """`O_NOFOLLOW` no ÚLTIMO componente não vê o link do MEIO.
 
@@ -1162,6 +1179,7 @@ def test_r4_95_symlink_no_componente_do_MEIO_e_recusado(tmp_path, componente):
         "divulgação sem escrita nenhuma")
 
 
+@pytest.mark.filtro_posix
 def test_r4_96_CONTROLE_alternates_LEGITIMO_continua_valendo(tmp_path):
     """Sem este controle, o de cima passaria num sistema que recusa todo alternate.
 
@@ -1223,6 +1241,7 @@ def test_r4_97_filtro_nao_grava_em_NENHUMA_fonte_de_config(tmp_path, rel):
         "config/atributo e a contenção passaria a valer por UMA execução")
 
 
+@pytest.mark.git_governado
 def test_r4_98_config_worktree_esta_na_negacao_dos_DOIS_confinamentos(tmp_path):
     """Estrutural: `git-add`/`commit` E `push` precisam da mesma negação.
 
@@ -1243,6 +1262,7 @@ def test_r4_98_config_worktree_esta_na_negacao_dos_DOIS_confinamentos(tmp_path):
 
 @pytest.mark.parametrize("nome_wt", ["proj", "proj#hash", "proj com espaco",
                                       "proj;ponto"])
+@pytest.mark.filtro_posix
 def test_r4_99_titularidade_concorda_com_o_git_mesmo_com_valor_CITADO(tmp_path,
                                                                        nome_wt):
     """MEDIDO: com `#` no caminho, o Git grava `worktree = "<p>"` — COM ASPAS.
@@ -1278,6 +1298,7 @@ def test_r4_99_titularidade_concorda_com_o_git_mesmo_com_valor_CITADO(tmp_path,
             git.conferir_git_dir(str(trab), (str(raiz),))
 
 
+@pytest.mark.filtro_posix
 def test_r4_100_ultima_declaracao_vence_mesmo_citada(tmp_path):
     """O par: desfazer aspas não pode afrouxar a regra da ÚLTIMA declaração.
 
@@ -1306,6 +1327,7 @@ def test_r4_100_ultima_declaracao_vence_mesmo_citada(tmp_path):
 # ═══ `.11.NOVO-FIFO-60S` (P2) — o repositório gastava o PRAZO INTEIRO ═══════
 
 @pytest.mark.parametrize("rel", ["HEAD", "index", "packed-refs"])
+@pytest.mark.filtro_posix
 def test_r4_110_fifo_no_git_dir_recusa_IMEDIATAMENTE(tmp_path, rel):
     """MEDIDO: `HEAD` e `index` como FIFO custavam 60,1 s e 60,2 s.
 
@@ -1359,6 +1381,7 @@ def test_r4_110_fifo_no_git_dir_recusa_IMEDIATAMENTE(tmp_path, rel):
         "prazo do NOMOS antes de a checagem rodar")
 
 
+@pytest.mark.git_governado
 def test_r4_111_CONTROLE_repo_normal_nao_e_afetado_pela_guarda(tmp_path):
     """Sem este controle, o de cima passaria numa implementação que recusa tudo.
 
@@ -1388,6 +1411,7 @@ def test_r4_111_CONTROLE_repo_normal_nao_e_afetado_pela_guarda(tmp_path):
 
 # ═══ INFO da 4ª medição — classificação com PROVA, não com silêncio ═════════
 
+@pytest.mark.filtro_posix
 def test_r4_120_erro_do_filesystem_nao_atravessa_a_fronteira(tmp_path):
     """`N-A7-04`: `NotADirectoryError` CRU escapava da capacidade governada.
 
@@ -1410,6 +1434,7 @@ def test_r4_120_erro_do_filesystem_nao_atravessa_a_fronteira(tmp_path):
         git_tree._instantaneo_das_refs(aut)
 
 
+@pytest.mark.git_governado
 def test_r4_121_leitura_nao_declara_store_estrangeiro(tmp_path):
     """`.5.NOVO-LEITURA-SEM-CONFERIR-ALTERNATES`: CONTIDO, por outro mecanismo.
 
@@ -1437,6 +1462,7 @@ def test_r4_121_leitura_nao_declara_store_estrangeiro(tmp_path):
         f"a leitura declara caminho FORA das raízes: {conf.leitura}")
 
 
+@pytest.mark.filtro_posix
 def test_r4_122_separate_git_dir_sem_titularidade_segue_RECUSADO(tmp_path):
     """`.7.18`: a recusa é DELIBERADA — decisão de dono, não defeito.
 

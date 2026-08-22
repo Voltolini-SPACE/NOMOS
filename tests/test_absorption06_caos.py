@@ -11,6 +11,7 @@ duplicado no mundo — e o mundo não tem desfazer.
 """
 from __future__ import annotations
 
+import gc
 import os
 import signal
 import sqlite3
@@ -213,7 +214,18 @@ def test_armazem_corrompido_falha_fechado_nao_relata_zero_jobs(tmp_path):
     caminho = tmp_path / "jobs.db"
     s = Scheduler(ArmazemJobs(caminho), executor=lambda *a, **k: None)
     s.criar("j", "sujeito", "fs-listar", intervalo_s=60)
-    # apaga TUDO: o arquivo principal e os sidecars do WAL
+    # Solta as conexões ANTES de apagar. No POSIX isto é dispensável — `unlink`
+    # de arquivo aberto funciona —, mas no Windows o apagar falha com WinError
+    # 32 ("usado por outro processo") e o teste morre antes de medir o que
+    # promete. A propriedade sob teste (armazém ilegível LEVANTA) é portável; a
+    # técnica é que não era.
+    #
+    # Precisa de `gc` porque `adapters/scheduler.py` nunca fecha conexão: são
+    # 13 `self._conn()` e zero `.close()`, cada uma dependendo do coletor. É um
+    # descuido real de recurso, invisível no POSIX, e a correção certa é no
+    # produto — fora do escopo desta fatia, registrada aqui para não sumir.
+    del s
+    gc.collect()
     for p in tmp_path.iterdir():
         if p.name.startswith("jobs.db"):
             p.unlink()
@@ -253,8 +265,13 @@ def test_armazem_corrompido_falha_fechado_nao_relata_zero_jobs(tmp_path):
 
 # ============================================ 5. SIGTERM / SIGKILL
 
-@pytest.mark.parametrize("sinal,nome", [(signal.SIGTERM, "SIGTERM"),
-                                        (signal.SIGKILL, "SIGKILL")])
+# `signal.SIGKILL` não existe no Windows e, avaliado no DECORATOR, derrubava
+# a coleta inteira do runner. A parametrização passa a ser montada com o que
+# a plataforma tem: no Windows sobra o SIGTERM (o caso que lá faz sentido).
+@pytest.mark.parametrize(
+    "sinal,nome",
+    [(signal.SIGTERM, "SIGTERM")]
+    + ([(signal.SIGKILL, "SIGKILL")] if hasattr(signal, "SIGKILL") else []))
 def test_ticker_morto_por_sinal_nao_deixa_ocorrencia_meio_executada(tmp_path,
                                                                     sinal, nome):
     """Mata o processo NO MEIO da execução e confere o estado que sobrou.
@@ -331,6 +348,7 @@ def test_mesma_ocorrencia_despachada_duas_vezes_executa_uma(tmp_path):
 
 # ============================================ 6b. permissão dos sidecars
 
+@pytest.mark.permissao_unix
 def test_sidecars_do_wal_nao_ficam_legiveis_por_terceiros(tmp_path):
     """0600 no `.db` só protege o `.db`.
 
@@ -342,14 +360,27 @@ def test_sidecars_do_wal_nao_ficam_legiveis_por_terceiros(tmp_path):
     refatoração remove sem ninguém perceber.
     """
     caminho = tmp_path / "jobs.db"
-    s = Scheduler(ArmazemJobs(caminho), executor=lambda *a, **k: None)
+    armazem = ArmazemJobs(caminho)
+    s = Scheduler(armazem, executor=lambda *a, **k: None)
     s.criar("j", "sujeito", "fs-listar", intervalo_s=60,
             argumentos={"segredo": "CANARIO-QUE-NAO-PODE-VAZAR"})
-    sidecars = [p for p in tmp_path.iterdir() if p.name.startswith("jobs.db-")]
-    assert sidecars, "sem sidecars de WAL — teste inócuo"
-    frouxos = {p.name: oct(p.stat().st_mode & 0o777)
-               for p in [caminho, *sidecars] if p.stat().st_mode & 0o077}
-    assert not frouxos, f"legível por terceiros: {frouxos}"
+    # A checagem precisa de uma conexão VIVA: ao fechar a última, o SQLite
+    # faz checkpoint e APAGA `-wal`/`-shm`. O armazém abre e fecha por
+    # operação, então a presença dos sidecars dependia de timing e de versão
+    # do SQLite — em py3.10 (Linux e macOS) eles já não estavam lá e o teste
+    # morria no próprio guarda "teste inócuo". Com a conexão aberta, a
+    # condição é determinística em qualquer plataforma.
+    con = armazem._conn()
+    try:
+        con.execute("SELECT COUNT(*) FROM jobs").fetchone()
+        sidecars = [p for p in tmp_path.iterdir()
+                    if p.name.startswith("jobs.db-")]
+        assert sidecars, "sem sidecars de WAL — teste inócuo"
+        frouxos = {p.name: oct(p.stat().st_mode & 0o777)
+                   for p in [caminho, *sidecars] if p.stat().st_mode & 0o077}
+        assert not frouxos, f"legível por terceiros: {frouxos}"
+    finally:
+        con.close()
 
 
 # ============================================ 7. estado inconsistente

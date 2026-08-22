@@ -284,6 +284,7 @@ def test_filtro_que_executa_e_falha_com_rc0_desfaz(tmp_path):
     assert _indice_bytes(repo) == antes
 
 
+@pytest.mark.git_governado
 def test_excecao_arbitraria_no_meio_tambem_desfaz(monkeypatch, tmp_path):
     """Injeta falha DEPOIS do exec: prova que o rollback é do `finally`, não
     de um ramo específico de erro. Cobre timeout e interrupção por construção.
@@ -306,6 +307,7 @@ def test_excecao_arbitraria_no_meio_tambem_desfaz(monkeypatch, tmp_path):
         "exceção fora do caminho de segurança deixou o índice mexido")
 
 
+@pytest.mark.git_governado
 def test_KeyboardInterrupt_tambem_desfaz(monkeypatch, tmp_path):
     """`BaseException`, não `Exception`: Ctrl-C não pode deixar segredo."""
     repo = _novo_repo(tmp_path, filtro=None)
@@ -324,6 +326,7 @@ def test_KeyboardInterrupt_tambem_desfaz(monkeypatch, tmp_path):
 
 # ═════════════ CONTROLE NEGATIVO — a transação não pode quebrar o bom ═══════
 
+@pytest.mark.git_governado
 def test_operacao_legitima_CONFIRMA_e_nao_sofre_rollback(tmp_path):
     """Uma transação que desfizesse sempre também "protegeria". Aqui o efeito
     TEM de persistir."""
@@ -337,6 +340,7 @@ def test_operacao_legitima_CONFIRMA_e_nao_sofre_rollback(tmp_path):
     assert _git(repo, "show", ":bom.txt").stdout == "conteudo legitimo\n"
 
 
+@pytest.mark.git_governado
 def test_commit_legitimo_continua_funcionando(tmp_path):
     repo = _novo_repo(tmp_path, filtro=None)
     (repo / "bom.txt").write_text("conteudo\n")

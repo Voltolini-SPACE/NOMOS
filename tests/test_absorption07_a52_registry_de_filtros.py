@@ -38,6 +38,7 @@ def _politica(pid="synthetic-redactor", **kw):
 
 # ═══════════════════ Os seis contratos mínimos do gate ══════════════════════
 
+@pytest.mark.filtro_posix
 def test_id_aprovado_resolve():
     reg = RegistroDeFiltros({"synthetic-redactor": _politica()})
     pol = reg.resolver("synthetic-redactor")
@@ -45,6 +46,7 @@ def test_id_aprovado_resolve():
     assert pol.argv_policy == ("-e", "s/SENHA=.*/SENHA=REDIGIDO/")
 
 
+@pytest.mark.filtro_posix
 def test_id_desconhecido_e_NEGADO():
     reg = RegistroDeFiltros({"synthetic-redactor": _politica()})
     with pytest.raises(ErroFiltro, match="não está no registry"):
@@ -57,6 +59,7 @@ def test_registry_vazio_nega_tudo():
         RegistroDeFiltros().resolver("synthetic-redactor")
 
 
+@pytest.mark.filtro_posix
 def test_repo_NAO_pode_sobrepor_o_executavel():
     """O caso central: o repo pede o id aprovado e tenta trocar o binário.
 
@@ -72,6 +75,7 @@ def test_repo_NAO_pode_sobrepor_o_executavel():
         pol.canonical_executable = "/bin/sh"        # type: ignore[misc]
 
 
+@pytest.mark.filtro_posix
 def test_repo_NAO_pode_sobrepor_o_argv():
     reg = RegistroDeFiltros({"synthetic-redactor": _politica()})
     pol = reg.resolver("synthetic-redactor")
@@ -117,6 +121,7 @@ def test_id_valido_passa():
 
 # ═══════════════════════ Invariantes do registry ════════════════════════════
 
+@pytest.mark.filtro_posix
 def test_registrar_duas_vezes_o_mesmo_id_e_recusado():
     """Redefinição silenciosa trocaria a autoridade de um filtro em uso."""
     reg = RegistroDeFiltros({"synthetic-redactor": _politica()})
@@ -131,12 +136,14 @@ def test_dicionario_solto_nao_vira_politica():
         reg.registrar("x", {"canonical_executable": "/bin/sh"})  # type: ignore[arg-type]
 
 
+@pytest.mark.filtro_posix
 def test_chave_divergente_do_filter_id_e_recusada():
     reg = RegistroDeFiltros()
     with pytest.raises(ErroFiltro, match="!="):
         reg.registrar("um-nome", _politica(pid="outro-nome"))
 
 
+@pytest.mark.filtro_posix
 def test_executavel_e_canonicalizado(tmp_path):
     """Symlink resolve para o destino REAL já na construção.
 

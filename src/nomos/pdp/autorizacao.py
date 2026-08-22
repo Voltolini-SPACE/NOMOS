@@ -36,6 +36,9 @@ RISCOS = ("A0", "A1", "A2", "A3", "A4", "A5", "A6")
 CAPACIDADES_DE_CONTROLE = frozenset({
     "sched-listar", "sched-status", "sched-criar", "sched-habilitar",
     "sched-desabilitar", "sched-cancelar", "sched-apagar",
+    # NH-018a: o notepad do job vive no jobs.db (escopo de CONTROLE) —
+    # sem isto o PDP conferiria contra o escopo de DADOS e negaria sempre
+    "job-nota-ler", "job-nota-escrever",
 })
 
 

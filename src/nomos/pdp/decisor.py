@@ -308,10 +308,13 @@ class Decisor:
         # mesmo quando a capacidade que o carrega é de controle — separar as
         # autoridades não pode significar que agendar escapa do escopo.
         if autorizacao.caminhos:
-            alvo_job = pedido.argumentos.get("alvo_job")
-            if isinstance(alvo_job, str) and alvo_job:
-                if not _no_escopo(alvo_job, autorizacao.caminhos):
-                    return f"alvo_job {alvo_job}"
+            # NH-018c: `monitorar_alvo` entra na mesma conferência — um alvo
+            # de DADOS novo ganha o verificador existente, não um espelho
+            for chave_dado in ("alvo_job", "monitorar_alvo"):
+                valor_dado = pedido.argumentos.get(chave_dado)
+                if isinstance(valor_dado, str) and valor_dado:
+                    if not _no_escopo(valor_dado, autorizacao.caminhos):
+                        return f"{chave_dado} {valor_dado}"
 
         escopo = escopo_de(pedido.capacidade, autorizacao)
         if not escopo:

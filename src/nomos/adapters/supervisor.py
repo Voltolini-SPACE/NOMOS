@@ -83,7 +83,6 @@ from __future__ import annotations
 
 import os
 import re
-import resource
 import signal
 import shutil
 import subprocess
@@ -94,9 +93,22 @@ import uuid
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
+from types import ModuleType
 
 from nomos.adapters import processos
 from nomos.adapters.contrato import ErroInvalido, ErroLimite
+
+# `resource` é Unix-only. Este módulo é só-macOS por desenho (sandbox-exec) e
+# recusa fail-closed noutras plataformas, mas o import CRU quebrava a coleta
+# do pytest inteira no Windows — o CI acusava dezenas de ImportError em
+# módulos que nem exercitam o supervisor. Mesmo padrão guardado já usado em
+# `runtime/sandbox.py` e `kernel/plataforma.py`. O uso real (`setrlimit`)
+# vive dentro do `preexec_fn`, que só roda em POSIX.
+resource: ModuleType | None
+try:
+    import resource
+except ImportError:   # pragma: no cover - exercitado no runner Windows
+    resource = None
 
 SANDBOX = "/usr/bin/sandbox-exec"
 

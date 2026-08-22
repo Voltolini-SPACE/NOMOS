@@ -10,13 +10,28 @@ requires-python = ">=3.10"
 license = "MIT"
 authors = [{name = "Se7enpay"}]
 readme = "README.md"
-dependencies = ["cryptography>=46.0.7", "argon2-cffi>=23.1"]
+# `tzdata` SÓ no Windows: Linux e macOS trazem a base de fusos IANA no
+# sistema (`/usr/share/zoneinfo`), o Windows não traz nenhuma. Sem ela o
+# `zoneinfo` da stdlib não resolve NEM `UTC`, e como `adapters/agenda.py`
+# passa toda agenda por `resolver_tz`, o scheduler inteiro fica indisponível
+# lá. Condicionada, e não incondicional, para não carregar ~1 MB de dados
+# redundantes onde o SO já os tem. Ver tests/test_portabilidade_fusos.py.
+dependencies = [
+    "cryptography>=46.0.7",
+    "argon2-cffi>=23.1",
+    'tzdata; sys_platform == "win32"',
+]
 
 [project.optional-dependencies]
 cerebro = ["llama-cpp-python>=0.2.0"]
 arquivos = ["pypdf>=4.0"]
 mosaic = ["playwright>=1.40"]
-dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.5", "build>=1.2"]
+# `tzdata` aqui é INCONDICIONAL de propósito, ao contrário da dependência de
+# runtime: o teste de portabilidade de fusos remove os diretórios do SO da
+# busca para reproduzir a condição do Windows, e sem o pacote instalado ele
+# ficaria vermelho em Linux/macOS por falta do que o Windows receberia em
+# produção. Com ele, os 3 SO da matriz exercitam o MESMO caminho de código.
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.5", "build>=1.2", "tzdata"]
 
 [project.urls]
 Homepage = "https://github.com/Voltolini-SPACE/NOMOS"

@@ -576,6 +576,14 @@ def executar_devidas(ctx, agora: datetime | None = None, say=print,
                      simular: bool = False, approver=None) -> list[dict]:
     """Roda (ou simula) as rotinas devidas. Em simulação: nada executa, nada
     é marcado como executado, e a auditoria registra apenas o dry-run."""
+    from nomos.kernel import pausa
+    if pausa.esta_pausado(Path(ctx["home"])):
+        # NH-026: pausado não executa E não marca — a rotina continua devida
+        # para o primeiro ciclo depois do retomar. Um evento por chamada
+        # (o cron roda isto a cada 15 min, não a cada segundo).
+        if ctx.get("audit") is not None:
+            ctx["audit"].append("rotinas.pausadas")
+        return []
     resultados = []
     for r in devidas(Path(ctx["home"]), agora):
         ok, detalhe = executar_acao(ctx, r["acao"], say=say, simular=simular,

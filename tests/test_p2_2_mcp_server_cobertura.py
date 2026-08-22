@@ -281,7 +281,13 @@ def test_tool_memoria_buscar_rediz_segredo_em_processo(tmp_path):
     from nomos.cognition.memory import Memory
     ctx = _ctx(tmp_path)
     chave = "sk-" + "Q" * 30
-    Memory(tmp_path / "memory.db").remember("note", f"minha chave é {chave}")
+    # dado LEGADO pré-gate (NH-005 P1): semeia por INSERT direto — a escrita
+    # governada agora RECUSA segredo; a redação na LEITURA continua sendo a
+    # defesa para o que JÁ estava no banco antes do gate existir.
+    _mem_legada = Memory(tmp_path / "memory.db")
+    _mem_legada.conn.execute("INSERT INTO memories(ts, role, text) "
+                             "VALUES (1, 'note', ?)", (f"minha chave é {chave}",))
+    _mem_legada.conn.commit()
     resultado = mcp_server._rodar_tool(ctx, "nomos_memoria_buscar", {"consulta": "chave"})
     texto = resultado["content"][0]["text"]
     assert chave not in texto

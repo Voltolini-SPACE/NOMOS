@@ -69,7 +69,7 @@ class Ticker:
                  alert_sink=None, catchup: CatchUp = CatchUp.RUN_ONCE,
                  catchup_max: int = 10, intervalo_s: float = 1.0,
                  agora_fn=lambda: datetime.now(timezone.utc),
-                 dormir=time.sleep):
+                 dormir=time.sleep, pausado_fn=None):
         # FAIL-CLOSED (achado do censo independente): `autorizador` era
         # opcional e o default `None` fazia o ticker executar o efeito com
         # `credencial=None`. "Autorização por ocorrência" virava opt-in — e
@@ -91,6 +91,20 @@ class Ticker:
         self._agora = agora_fn
         self._dormir = dormir
         self._parar = False
+        # NH-026 — pausa graciosa. `None` = comportamento clássico (sem freio),
+        # o que mantém a suíte existente como teste de regressão do default.
+        self._pausado_fn = pausado_fn
+        self._estava_pausado = False
+
+    def _pausado(self) -> bool:
+        """Freio nunca é fail-open: `pausado_fn` que LEVANTA conta como
+        pausado — um freio que quebra aberto não é freio."""
+        if self._pausado_fn is None:
+            return False
+        try:
+            return bool(self._pausado_fn())
+        except Exception:
+            return True
 
     # ---------------------------------------------------------------- loop
 
@@ -99,11 +113,24 @@ class Ticker:
         self._parar = True
 
     def tick(self) -> ResultadoTick:
+        if self._pausado():
+            # Pausado: nem examina (`devidos()` não é chamado). Audita só a
+            # TRANSIÇÃO — N ticks pausados geram 1 evento, não N (a trilha
+            # não vira vítima de DoS do próprio freio).
+            if not self._estava_pausado:
+                self._auditar("ticker.pausa.entrou")
+                self._estava_pausado = True
+            return ResultadoTick()
+        if self._estava_pausado:
+            self._auditar("ticker.pausa.saiu")
+            self._estava_pausado = False
         agora = self._agora()
         devidos = self.scheduler.devidos(agora)
         r = ResultadoTick(examinados=len(devidos))
         for d in devidos:
-            if self._parar:
+            if self._parar or self._pausado():
+                # pausa no meio do tick: vale também ENTRE jobs — "nenhuma
+                # nova começa" não tem exceção para o job seguinte da fila
                 break
             r = self._processar(d, agora, r)
         return r
@@ -173,6 +200,11 @@ class Ticker:
             r = ResultadoTick(r.examinados, r.executadas,
                               r.puladas + descartadas, r.falhas, r.negadas)
         for quando in atrasadas:
+            if self._parar or self._pausado():
+                # NH-026: a ocorrência CORRENTE terminou (a reserva já foi
+                # feita; abortar no meio criaria reserva órfã de propósito);
+                # as seguintes não iniciam — é a definição de "graciosa".
+                break
             ex = self._executar_ocorrencia(d, quando, agora)
             if ex is None:
                 r = ResultadoTick(r.examinados, r.executadas, r.puladas + 1,

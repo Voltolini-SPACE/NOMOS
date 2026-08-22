@@ -17,6 +17,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+class MemoriaRecusada(ValueError):
+    """NH-005 P1: a política de admissão recusou o texto (segredo/PII).
+
+    Recusa de escrita é RESULTADO, não crash de fluxo — quem chama decide
+    se avisa e segue (chat) ou se propaga (demais callers)."""
+
+
 @dataclass(frozen=True)
 class MemoryItem:
     id: int
@@ -107,9 +114,22 @@ class Memory:
             "text TEXT NOT NULL, fonte TEXT DEFAULT '')")
 
     # ---------- escrita ----------
+    def _gate_de_admissao(self, text: str) -> None:
+        """NH-005 P1: NENHUM texto entra no memory.db sem passar pela
+        política de admissão do MC28 (`memory/policy.evaluate`, fail-closed).
+        Antes, `remember` gravava qualquer coisa — inclusive segredo. A
+        recusa é VISÍVEL (exceção), nunca silenciosa."""
+        from nomos.memory import policy as politica
+        decisao = politica.evaluate(text)
+        if not decisao.allowed:
+            raise MemoriaRecusada(
+                f"memória recusada ({decisao.reason}): o texto contém padrão "
+                "de segredo/dado sensível — não guardei")
+
     def remember(self, role: str, text: str) -> int:
         if role not in {"user", "assistant", "system", "note"}:
             raise ValueError(f"role inválido: {role!r}")
+        self._gate_de_admissao(text)
         cur = self.conn.execute(
             "INSERT INTO memories(ts, role, text) VALUES (?, ?, ?)",
             (time.time(), role, text),
@@ -131,6 +151,7 @@ class Memory:
                     "decisao", "regra", "conversa"}
         if tipo not in tipos_ok:
             raise ValueError(f"tipo de memória inválido: {tipo!r}")
+        self._gate_de_admissao(text)
         cur = self.conn.execute(
             "INSERT INTO memories(ts, role, text, tipo, fonte, confianca) "
             "VALUES (?, 'note', ?, ?, ?, ?)",
@@ -147,6 +168,11 @@ class Memory:
     # candidatas (ISSUE-020): "você quer que eu lembre disso?"
     def propor_candidata(self, text: str, tipo: str = "fato",
                          fonte: str = "conversa") -> int:
+        # NH-005 P1 (achado da revisão adversarial): `mem_candidatas` é
+        # tabela DO memory.db. Sem este gate, o segredo que `remember()`
+        # recusava entrava em claro pela fila de revisão no MESMO turno de
+        # chat — exatamente o critério NO-GO nº 4 do ADR.
+        self._gate_de_admissao(text)
         cur = self.conn.execute(
             "INSERT INTO mem_candidatas(ts, tipo, text, fonte) VALUES (?, ?, ?, ?)",
             (time.time(), tipo, text, fonte))
@@ -187,7 +213,15 @@ class Memory:
             nota = f"{prefixo} {trecho}"[:160]
             if nota in ja_visto or len(trecho) <= 3:
                 continue
-            novas.append(self.propor_candidata(nota, tipo=tipo, fonte=fonte))
+            try:
+                novas.append(self.propor_candidata(nota, tipo=tipo,
+                                                   fonte=fonte))
+            except MemoriaRecusada:
+                # a fila de revisão é conveniência: candidata com padrão de
+                # segredo é PULADA em silêncio (o chat já avisou que não
+                # guardou a troca) — nunca derruba o turno
+                ja_visto.add(nota)
+                continue
             ja_visto.add(nota)
         return novas
 
@@ -312,7 +346,14 @@ class Memory:
                     trecho = m.group(1).strip(" .,;")
                 nota = f"{prefixo} {trecho}"[:160]
                 if nota not in ja_notado and len(trecho) > 3:
-                    self.remember("note", nota)
+                    try:
+                        self.remember("note", nota)
+                    except MemoriaRecusada:
+                        # nota LEGADA (pré-gate) com segredo não pode abortar
+                        # a consolidação inteira: pula a suja, grava as
+                        # limpas. Lote é conveniência, não transação.
+                        ja_notado.add(nota)
+                        continue
                     ja_notado.add(nota)
                     criadas.append(nota)
         return criadas

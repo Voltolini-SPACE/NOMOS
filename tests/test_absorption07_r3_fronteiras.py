@@ -169,6 +169,7 @@ def test_r3_02_CONTROLE_sem_cancelamento_o_filtro_roda_e_redige(governado):
 # ══════ .8.NEW-REFSDIR-SYMLINK (P0) — o link estava no componente do MEIO ════
 
 @pytest.mark.parametrize("sub", ["refs", "logs"])
+@pytest.mark.filtro_posix
 def test_r3_03_refs_como_SYMLINK_DE_DIRETORIO_e_recusado(campo, tmp_path, sub):
     """`is_dir()` e `rglob` SEGUEM o link; o `lstat` final não vê nada errado.
 
@@ -244,6 +245,7 @@ def test_r3_04_gitdir_SEM_o_nome_git_nao_e_gravavel_pelo_filtro(tmp_path, rel):
 
 @pytest.mark.parametrize("secao", ["[core]", "[CORE]", "[Core]",
                                    '[core "sub"]', "[coreX]"])
+@pytest.mark.filtro_posix
 def test_r3_05_titularidade_aceita_EXATAMENTE_o_que_o_git_honra(tmp_path,
                                                                 secao):
     """O parser pegava o primeiro token da seção — `[core "sub"]` virava `core`.
@@ -283,6 +285,7 @@ def test_r3_05_titularidade_aceita_EXATAMENTE_o_que_o_git_honra(tmp_path,
 
 # ═══ .5.08 (P1) — o teto do BFS de alternates era uma PORTA, agora é RECUSA ══
 
+@pytest.mark.filtro_posix
 def test_r3_07_alternates_a_LARGURA_nao_derruba_a_transitividade(tmp_path):
     """MEDIDO: com N=3 a cadeia era recusada; com N=120 passava.
 
@@ -316,6 +319,7 @@ def test_r3_07_alternates_a_LARGURA_nao_derruba_a_transitividade(tmp_path):
         git.conferir_alternates(str(repo), raizes, autoridade=aut)
 
 
+@pytest.mark.filtro_posix
 def test_r3_08_CONTROLE_cadeia_LEGITIMA_e_larga_continua_passando(tmp_path):
     """Sem este controle, o de cima passaria num sistema que recusa por tamanho.
 
@@ -335,6 +339,7 @@ def test_r3_08_CONTROLE_cadeia_LEGITIMA_e_larga_continua_passando(tmp_path):
     git.conferir_alternates(str(repo), raizes, autoridade=aut)
 
 
+@pytest.mark.filtro_posix
 def test_r3_09_estourar_o_teto_e_RECUSA_e_nao_silencio(tmp_path, monkeypatch):
     """Parar por defesa não prova contenção — e antes retornava como se provasse.
 
@@ -388,6 +393,7 @@ def _na_janela(monkeypatch, acao):
     monkeypatch.setattr(git_tree, "_instantaneo_das_refs", espiao)
 
 
+@pytest.mark.git_governado
 def test_r3_10_terceiro_ANTES_do_exec_nao_e_destruido_em_silencio(campo,
                                                                   monkeypatch):
     """`.8.05-08` (REGRESSION, reproduzido 12/12 e depois 4/4).
@@ -421,6 +427,7 @@ def test_r3_10_terceiro_ANTES_do_exec_nao_e_destruido_em_silencio(campo,
         "emitiu incidente — perda silenciosa de trabalho aceito")
 
 
+@pytest.mark.git_governado
 def test_r3_11_NOSSAS_refs_nao_viram_incidente_forense(campo, monkeypatch):
     """`.11.09`: sinal que dispara sozinho não é sinal.
 
@@ -442,6 +449,7 @@ def test_r3_11_NOSSAS_refs_nao_viram_incidente_forense(campo, monkeypatch):
         "exec, e não havia processo concorrente nenhum")
 
 
+@pytest.mark.git_governado
 def test_r3_12_ref_de_TERCEIRO_na_janela_continua_virando_incidente(campo,
                                                                     monkeypatch):
     """O par do teste acima: fechar o falso positivo não pode calar o real."""
@@ -467,6 +475,7 @@ def test_r3_12_ref_de_TERCEIRO_na_janela_continua_virando_incidente(campo,
     assert "refs" in erro, "o incidente não nomeia as refs"
 
 
+@pytest.mark.git_governado
 def test_r3_13_o_incidente_diz_QUAL_estado_foi_sobreposto(campo, monkeypatch):
     """"o índice" para uma REF perdida manda a pessoa procurar no lugar errado."""
     repo = _init(campo.raiz / "repo")
@@ -487,6 +496,7 @@ def test_r3_13_o_incidente_diz_QUAL_estado_foi_sobreposto(campo, monkeypatch):
 
 # ═══════ .6.N1 (P2) — o cenário EXATO do vetor, que era 2/2 antes ════════════
 
+@pytest.mark.git_governado
 def test_r3_14_ref_NOVA_criada_pelo_nosso_commit_nao_acusa_terceiro(campo):
     """O vetor de `.6.N1`, sem gancho nenhum: dois arquivos que o REPO escreve.
 
@@ -523,6 +533,7 @@ def test_r3_14_ref_NOVA_criada_pelo_nosso_commit_nao_acusa_terceiro(campo):
 
 @pytest.mark.parametrize("como", ["regular", "grande", "fifo", "diretorio",
                                    "ausente", "isca-com-gitdir"])
+@pytest.mark.git_governado
 def test_r3_15_symlink_de_git_para_FORA_nao_responde_nada_sobre_o_alvo(
         tmp_path, como):
     """Uma resposta só para as seis sondas — senão a exceção É o oráculo.
@@ -572,6 +583,7 @@ def test_r3_15_symlink_de_git_para_FORA_nao_responde_nada_sobre_o_alvo(
             "raízes — a exceção é o oráculo")
 
 
+@pytest.mark.git_governado
 def test_r3_16_CONTROLE_symlink_de_git_DENTRO_das_raizes_nao_e_barrado_por_aqui(
         tmp_path):
     """A guarda nova é de ESCOPO, não da forma-link.
@@ -605,6 +617,7 @@ def _add_com_recusa_apos_o_exec(campo, repo, monkeypatch):
     return str(ei.value)
 
 
+@pytest.mark.git_governado
 def test_r3_17_renomear_o_git_dir_nao_faz_a_quarentena_sobreviver(campo,
                                                                   monkeypatch):
     """MEDIDO 6/6 antes: o blob CRU do arquivo recusado ficava legível.
@@ -650,6 +663,7 @@ def _tem_segredo(objeto, zlib) -> bool:
         return False
 
 
+@pytest.mark.git_governado
 def test_r3_18_quarentena_que_NAO_pode_ser_apagada_vira_incidente(campo,
                                                                   monkeypatch):
     """Apagar pode falhar; falhar em SILÊNCIO não pode.
@@ -658,20 +672,18 @@ def test_r3_18_quarentena_que_NAO_pode_ser_apagada_vira_incidente(campo,
     um `rmtree` silencioso por outro. O canal é a propriedade — o descritor é
     só o mecanismo.
     """
-    import shutil as _sh
     repo = _init(campo.raiz / "repo")
     (repo / "s.txt").write_bytes(b"AWS_SECRET_ACCESS_KEY=P19ESEGREDO\n")
 
-    real = _sh.rmtree
-
-    def rmtree_quebra_so_a_limpeza(*a, **k):
-        # Só a limpeza FINAL usa `dir_fd`. Sabotar o `rmtree` inteiro quebraria
-        # a promoção também, e o erro original deixaria de ser o injetado —
-        # o teste passaria medindo outra coisa.
-        if "dir_fd" in k:
-            raise OSError(1, "Operation not permitted")
-        return real(*a, **k)
-    monkeypatch.setattr(_sh, "rmtree", rmtree_quebra_so_a_limpeza)
+    def limpeza_quebra(*a, **k):
+        # Sabota SÓ a limpeza final da quarentena. Antes a injeção era em
+        # `shutil.rmtree` filtrando por `dir_fd` no kwargs; a remoção passou
+        # a ser `_apagar_arvore_por_fd` (compat. com py3.10, onde
+        # `rmtree(dir_fd=)` não existe), então a injeção acompanha o
+        # mecanismo. A PROPRIEDADE medida é a mesma: limpeza que falha vira
+        # incidente, nunca recusa limpa.
+        raise OSError(1, "Operation not permitted")
+    monkeypatch.setattr(git_tree, "_apagar_arvore_por_fd", limpeza_quebra)
     monkeypatch.setattr(git_tree.GitTreeAdapter, "_auditar",
                         lambda self, *a, **k: (_ for _ in ()).throw(
                             RuntimeError("recusa pos-exec")))
@@ -683,6 +695,7 @@ def test_r3_18_quarentena_que_NAO_pode_ser_apagada_vira_incidente(campo,
         f"recusado fica em disco sem ninguém saber: {str(ei.value)[:200]}")
 
 
+@pytest.mark.filtro_posix
 def test_r3_19_no_SUCESSO_a_quarentena_residual_tambem_e_recusa(campo,
                                                                 monkeypatch):
     """O outro lado da mesma propriedade, que o vetor mediu como `ok=True`.
@@ -691,20 +704,16 @@ def test_r3_19_no_SUCESSO_a_quarentena_residual_tambem_e_recusa(campo,
     nada, deixando o índice apontando para blob AUSENTE. Sucesso com store
     paralelo sobrevivendo é a mesma omissão, do lado que ninguém olha.
     """
-    import shutil as _sh
     repo = _init(campo.raiz / "repo")
     (repo / "ok.txt").write_text("conteudo\n")
 
-    real = _sh.rmtree
-    chamadas = {"n": 0}
-
-    def rmtree_quebra_no_fim(*a, **k):
-        # A promoção usa `rmtree` também; só a limpeza FINAL é sabotada.
-        chamadas["n"] += 1
-        if "dir_fd" in k:
-            raise OSError(1, "Operation not permitted")
-        return real(*a, **k)
-    monkeypatch.setattr(_sh, "rmtree", rmtree_quebra_no_fim)
+    def limpeza_quebra_no_fim(*a, **k):
+        # A promoção usa `shutil.rmtree`; só a limpeza FINAL (agora
+        # `_apagar_arvore_por_fd`) é sabotada — sabotar as duas faria o erro
+        # medido ser outro.
+        raise OSError(1, "Operation not permitted")
+    monkeypatch.setattr(git_tree, "_apagar_arvore_por_fd",
+                        limpeza_quebra_no_fim)
 
     with pytest.raises(supervisor.ErroSeguranca, match="QUARENTENA"):
         campo.add(repo, "ok.txt")
@@ -712,6 +721,7 @@ def test_r3_19_no_SUCESSO_a_quarentena_residual_tambem_e_recusa(campo,
 
 # ═══ .1.07 (P2) — um diretório CHAMADO `worktrees` não é uma worktree ligada ══
 
+@pytest.mark.filtro_posix
 def test_r3_20_repo_comum_dentro_do_git_dir_alheio_nao_redireciona_o_efeito(
         campo):
     """MEDIDO: `AWS_SECRET_ACCESS_KEY=VAZOU_1_07` no store da VÍTIMA, ok=True.
@@ -751,6 +761,7 @@ def test_r3_20_repo_comum_dentro_do_git_dir_alheio_nao_redireciona_o_efeito(
 
 
 @pytest.mark.parametrize("layout", ["worktree-ligada", "principal", "submodulo"])
+@pytest.mark.git_governado
 def test_r3_21_CONTROLE_os_tres_layouts_LEGITIMOS_continuam_aceitos(campo,
                                                                      layout):
     """Sem este controle, o de cima passaria num sistema que recusa `commondir`.

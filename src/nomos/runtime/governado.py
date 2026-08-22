@@ -315,7 +315,8 @@ class RuntimeGovernado:
                  executaveis: tuple[str, ...] = (), scheduler=None,
                  destrutivas: bool = False, git: bool = False,
                  git_write: bool = False, git_push_destinos=None,
-                 git_tree: bool = False, filtros_governados=None):
+                 git_tree: bool = False, filtros_governados=None,
+                 notas_job: tuple | None = None):
         if ctx is None or "policy" not in ctx:
             raise ErroRuntime("contexto sem política carregada — fail-closed")
         self.ctx = ctx
@@ -437,6 +438,15 @@ class RuntimeGovernado:
             # sobre a política de segurança.
             from nomos.runtime.agendador import caminho_do_armazem
             caminhos_controle = (str(caminho_do_armazem(ctx["home"]).parent),)
+            # NH-018a: notepad do job — SÓ existe dentro da execução do
+            # próprio job (o agendador passa `(armazem, job_id)`); fora
+            # disso a capacidade nem entra no registro e o PDP nega por
+            # capacidade desconhecida. O job_id vai CRAVADO na closure.
+            if notas_job is not None:
+                from nomos.adapters.wiring import registrar_notas_job
+                armazem_notas, job_id_notas = notas_job
+                self.capacidades_adapter += registrar_notas_job(
+                    self.registro, armazem_notas, str(job_id_notas))
 
         brutos = dict(executores if executores is not None
                       else executores_nativos(ctx, aprovador=aprovador,

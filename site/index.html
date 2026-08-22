@@ -342,7 +342,7 @@
 
             <div class="prova-grid">
                 <div class="pcard"><b>12/12</b><span>combinações de CI verdes — 3 sistemas (Linux · macOS · Windows) × 4 versões de Python (3.10 → 3.13), sem <em>fail-fast</em> — dentro de 19 checks no total, somando 7 gates bloqueantes: cobertura, mypy, pip-audit, reprodutibilidade e smoke do wheel nos 3 sistemas.</span></div>
-                <div class="pcard"><b>3.000+</b><span>funções de teste a cada push (3.601 casos executados, contando as parametrizadas), com cobertura medida acima de 80% — o gate reprova abaixo disso — e checagem de tipos (mypy) num job à parte.</span></div>
+                <div class="pcard"><b>3.000+</b><span>funções de teste a cada push (3.703 casos executados, contando as parametrizadas), com cobertura medida acima de 80% — o gate reprova abaixo disso — e checagem de tipos (mypy) num job à parte.</span></div>
                 <div class="pcard"><b>0</b><span>telemetria, rastreio ou "casa" para ligar. O modo só-local é a política — não um botão que dá para esquecer desligado.</span></div>
                 <div class="pcard"><b>SEC-01…12</b><span>invariantes de segurança que <em>são</em> testes: se o código divergir da política, a suíte inteira falha.</span></div>
                 <div class="pcard"><b>bit-a-bit</b><span>builds reproduzíveis: dois builds independentes do mesmo commit geram wheel e sdist com o MESMO sha256 — gate bloqueante no CI (Linux, Python 3.12) que refaz os dois e compara byte a byte. Verificação empírica registrada em Linux e macOS. A suíte de testes roda em Linux, macOS e Windows, Python 3.10 a 3.13.</span></div>
@@ -505,6 +505,24 @@ cada ocorrência pede autoridade nova antes de rodar</pre></figure>
                 <figure class="demo"><p class="cmd">$ nomos orquestrar "ler e diagnosticar" --passos '[...]'</p><pre>plano: 2 passo(s) · risco A0
 sem --executar é só plano — nada roda
 cada passo passa pelo gate; negado bloqueia quem depende dele</pre></figure>
+                <figure class="demo"><p class="cmd">$ nomos servico instalar --raiz ~/trabalho</p><pre>o plist é impresso na ÍNTEGRA + SHA-256 — você aprova o artefato
+serviço vive no launchd (KeepAlive), uma instância só, batimento em disco
+sensível sem humano no painel EXPIRA NEGADO — nunca se auto-aprova</pre></figure>
+                <figure class="demo"><p class="cmd">$ nomos pausar --motivo "fim de semana"</p><pre>freio gracioso: a ocorrência atual termina, nenhuma nova começa
+pausar nunca pede aprovação — freio não tem fricção
+nomos retomar religa (aí sim, com o seu ok no teclado)</pre></figure>
+                <figure class="demo"><p class="cmd">$ nomos motores uso --dias 7</p><pre>quanto cada motor trabalhou: chamadas, tempo, tokens quando o backend informa
+só METADADOS — nenhum pedaço de prompt ou resposta vai para o disco
+arquivo 0600 no seu home; nada sai da máquina</pre></figure>
+                <figure class="demo"><p class="cmd">$ nomos approvals sugerir</p><pre>lê a sua trilha e PROPÕE política — nunca aplica nada sozinho
+A5/A6 (executar, instalar, destruir) ficam fora da sugestão, sempre
+`nomos approvals testar A2_NET_EGRESS api.exemplo` responde sem executar</pre></figure>
+                <figure class="demo"><p class="cmd">$ nomos scheduler criar --raiz ~/trabalho --job-id vigia --capacidade fs-listar --monitorar ~/trabalho/entrada --continuidade</p><pre>--monitorar: só dispara quando o CONTEÚDO muda (mtime não engana)
+--continuidade: a próxima execução recebe o resumo da anterior
+`nomos scheduler notas vigia` mostra o bloco de notas do job</pre></figure>
+                <figure class="demo"><p class="cmd">$ nomos memoria importar-mc28 --dry-run</p><pre>traz o histórico do motor de memória antigo para a memória principal
+valida o hash de cada entrada — adulterada é PULADA e o comando falha
+origem fica byte-idêntica; --desfazer reverte por inteiro</pre></figure>
             </div>
 
             <h3 class="slots-h">Clipes do sistema <span class="soon">— gravações reais entram aqui (solte seus arquivos em <code>site/assets/media/</code>)</span></h3>

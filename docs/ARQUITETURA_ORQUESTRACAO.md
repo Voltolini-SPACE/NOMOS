@@ -1,10 +1,11 @@
 # Orquestração governada — `nomos.orquestracao`
 
 > **Status das capacidades descritas aqui**
-> `VALIDATED` — implementado, testado (107 testes próprios) e auditado adversarialmente,
-> **ainda sem caller de produção no CLI**. O pacote é fundação: nenhum módulo existente do
-> NOMOS o importa. Expor comando ao usuário é missão de produto (regra MC35), não desta camada.
-> Nada aqui é `PRODUCTION` até ter caller real e uso comprovado.
+> `WIRED` (2026-08-21) — implementado, testado (107 testes próprios), auditado
+> adversarialmente e **com callers de produção**: `runtime/governado.py` (imports de topo),
+> o comando `nomos orquestrar` (`cli.py`) e o chat amigável via `usar_ferramenta_governada`.
+> A execução dos nós é **sequencial em ordem topológica**; paralelismo governado é missão
+> futura (NH-015). `PRODUCTION` pleno ainda exige uso comprovado em operação real.
 
 ## Por que este pacote existe
 

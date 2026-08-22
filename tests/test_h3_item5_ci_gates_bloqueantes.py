@@ -123,6 +123,28 @@ def test_setuptools_desatualizado_e_a_causa_raiz_documentada_nao_hipotese():
     ambiente de instalação do job, não uma escolha de dependência do
     projeto que precisaria de uma decisão de produto para mudar."""
     conteudo = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'dependencies = ["cryptography>=46.0.7", "argon2-cffi>=23.1"]' in conteudo
+
+    # A asserção anterior era um RETRATO literal da linha `dependencies = [...]`
+    # servindo de proxy para "setuptools não está aí". Proxy frágil: quebrava
+    # ao declarar QUALQUER dependência nova (foi o que aconteceu ao adicionar
+    # `tzdata` para o Windows), e quebrava sem que a propriedade tivesse
+    # mudado — vermelho que não corresponde a defeito. Agora mede o que o
+    # docstring promete.
+    #
+    # `[build-system].requires` contém `setuptools` legitimamente: é o backend
+    # que CONSTRÓI o pacote, não algo que o usuário instala junto. Por isso a
+    # busca é por seção, e não um `"setuptools" not in conteudo` — este último
+    # ficaria vermelho para sempre, pela razão errada.
+    import re as _re
+
+    bloco = _re.search(r"^dependencies\s*=\s*\[(.*?)\]", conteudo, _re.S | _re.M)
+    assert bloco, "pyproject.toml sem array `dependencies` em [project]"
+    declaradas = [s or d for s, d in
+                  _re.findall(r"'([^']*)'|\"([^\"]*)\"", bloco.group(1))]
+    assert declaradas, "array `dependencies` vazio — asserção passaria por vácuo"
+    nomes = [_re.split(r"[<>=!;\[ ]", e.strip())[0].lower() for e in declaradas]
+    assert "setuptools" not in nomes, (
+        f"`setuptools` virou dependência de runtime do NOMOS: {declaradas}")
+
     assert "setuptools" not in conteudo.split("[project.optional-dependencies]")[1].split(
         "[project.urls]")[0]

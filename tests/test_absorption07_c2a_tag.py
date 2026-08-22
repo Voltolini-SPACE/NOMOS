@@ -72,6 +72,7 @@ def _tags(repo: Path) -> set[str]:
 
 # ============================================ execução real
 
+@pytest.mark.git_governado
 def test_c2a_cria_tag_sobre_ref(amb):
     """REAL_GIT_WRITE_TEST: efeito real, verificado pelo próprio git."""
     rt, _ws, repo, _ = amb
@@ -80,6 +81,7 @@ def test_c2a_cria_tag_sobre_ref(amb):
     assert "v1.0.0" in _tags(repo)
 
 
+@pytest.mark.git_governado
 def test_c2a_cria_tag_sobre_SHA_real(amb):
     rt, _ws, repo, _ = amb
     sha = _git(repo, "rev-parse", "HEAD~1").stdout.strip()
@@ -87,6 +89,7 @@ def test_c2a_cria_tag_sobre_SHA_real(amb):
     assert _git(repo, "rev-parse", "marco").stdout.strip() == sha
 
 
+@pytest.mark.git_governado
 def test_c2a_tag_e_leve_nao_anotada(amb):
     """Lightweight: o objeto apontado é o COMMIT, não um tag object.
 
@@ -249,6 +252,7 @@ def test_c2a_CONTROLE_POSITIVO_o_espiao_e_o_canario_funcionam(hostil, tmp_path):
     canario.unlink()
 
 
+@pytest.mark.git_governado
 def test_c2a_repo_hostil_nao_executa_nada(hostil):
     """HOSTILE_REPO_CODE_EXECUTION=FALSE, GPG_EXECUTION=FALSE,
     EDITOR_EXECUTION=FALSE, HOOK_EXECUTION=FALSE.
@@ -264,6 +268,7 @@ def test_c2a_repo_hostil_nao_executa_nada(hostil):
     assert not canario.exists(), "config do repositório executou programa"
 
 
+@pytest.mark.git_governado
 def test_c2a_tag_gpgsign_do_repo_nao_assina(hostil):
     """SIGNED_TAG_REACHABLE=FALSE — `tag.gpgSign=true` está no repo hostil."""
     rt, repo, canario = hostil
@@ -272,6 +277,7 @@ def test_c2a_tag_gpgsign_do_repo_nao_assina(hostil):
     assert not canario.exists()
 
 
+@pytest.mark.git_governado
 def test_c2a_nao_toca_worktree_nem_indice(hostil):
     """WORKTREE_TOUCHED=FALSE, INDEX_TOUCHED=FALSE."""
     rt, repo, _c = hostil
@@ -283,6 +289,7 @@ def test_c2a_nao_toca_worktree_nem_indice(hostil):
         assert (p.stat().st_mtime_ns, p.stat().st_size) == marca, f"tocou {p}"
 
 
+@pytest.mark.git_governado
 def test_c2a_GIT_DIR_do_host_nao_redireciona(amb, monkeypatch, tmp_path):
     """A lição do M1 do C1, aplicada à escrita — aqui o dano seria criar a tag
     no repositório ERRADO."""
@@ -332,6 +339,7 @@ def test_c2a_nao_registra_sem_opt_in(tmp_path):
     assert not rt.registro.conhecida("git-tag")
 
 
+@pytest.mark.git_governado
 def test_c2a_passa_por_pdp_e_pep(amb):
     import json
     rt, _ws, repo, ctx = amb

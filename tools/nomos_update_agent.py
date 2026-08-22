@@ -46,6 +46,9 @@ BRANDBOOK_REL = "docs/brand/NOMOS_BRANDBOOK.md"
 MANUAL_REL = "docs/installation/NOMOS_INSTALLATION_MANUAL.md"
 LANDING_REL = "site/index.html"
 README_REL = "README.md"
+# O banner é a PRIMEIRA coisa que se vê no README; ficou 2 rodadas anunciando
+# "1.800+" enquanto o site já dizia "3.000+".
+BANNER_REL = "docs/brand/social-preview.svg"
 GOVERNANCE_REL = "docs/governance/NOMOS_UPDATE_AGENT.md"
 
 # Brand/site sync (MC29): identidade congelada (docs/brand/frozen) e instalação oficial
@@ -325,6 +328,60 @@ class NomosUpdateAgent:
             else f"comandos ausentes do site (atualize site/ ou marque como "
                  f"interno): {faltando}")
 
+    def _check_contagem_de_testes(self):
+        """REGRA (MC33): o número de testes anunciado tem de ser o número real.
+
+        Existe porque o gate respondia `consistent: 13/13` enquanto TRÊS
+        superfícies públicas diziam números diferentes — banner "1.800+",
+        README "1.900+", site "3.000+" —, e nenhuma delas batia com o repo. O
+        commit que corrigiu isso mexeu só no site, e o gate não teve como
+        perceber: ele não olhava para essa dimensão.
+
+        A âncora é o REPOSITÓRIO (conta `def test_`), não outro texto: comparar
+        documento com documento deixaria os três concordarem num número errado.
+
+        Tolerância por milhar, de propósito: um gate que fica vermelho a cada
+        teste novo vira gate que alguém desliga. Ele acusa quando a ordem de
+        grandeza anunciada deixa de ser verdade.
+        """
+        testes_dir = self.repo_root / "tests"
+        if not testes_dir.is_dir():
+            self._add_check("brand:contagem_de_testes", False, "tests/ ausente")
+            return
+        real = 0
+        for arquivo in sorted(testes_dir.rglob("*.py")):
+            real += len(re.findall(r"^\s*(?:async )?def test_",
+                                   arquivo.read_text(errors="replace"),
+                                   re.MULTILINE))
+        esperado = (real // 1000) * 1000
+        superficies = {
+            README_REL: self._read(README_REL),
+            LANDING_REL: self._read(LANDING_REL),
+            BANNER_REL: self._read(BANNER_REL),
+        }
+        divergentes = []
+        for rel, texto in superficies.items():
+            if texto is None:
+                divergentes.append(f"{rel}: ausente")
+                continue
+            # Sem as tags: no site e no SVG o número e a palavra "testes" ficam
+            # separados por marcação (`3.000+</b><span>testes`), e um regex que
+            # exigisse adjacência literal não veria a contagem — passaria por
+            # "nenhuma contagem anunciada" em vez de conferir a que existe.
+            limpo = re.sub(r"<[^>]+>", " ", texto)
+            achados = {int(n.replace(".", "")) for n in re.findall(
+                r"(?:mais de\s+)?([0-9]\.[0-9]{3})\+?\s*(?:testes|funções)",
+                limpo)}
+            if not achados:
+                divergentes.append(f"{rel}: nenhuma contagem anunciada")
+            elif achados != {esperado}:
+                anunciado = ", ".join(f"{a:,}".replace(",", ".") for a in sorted(achados))
+                divergentes.append(f"{rel}: anuncia {anunciado}, real {real}")
+        self._add_check(
+            "brand:contagem_de_testes", not divergentes,
+            f"as 3 superfícies anunciam {esperado}+ e o repo tem {real} testes"
+            if not divergentes else "; ".join(divergentes))
+
     def _check_git(self):
         """Lê estado básico do git por leitura direta de .git (somente leitura)."""
         git_dir = self.repo_root / ".git"
@@ -355,6 +412,7 @@ class NomosUpdateAgent:
         self._check_instalacao_oficial()
         self._check_versao_coerente()
         self._check_site_cobre_comandos()
+        self._check_contagem_de_testes()
         self._check_git()
 
         self.report.timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

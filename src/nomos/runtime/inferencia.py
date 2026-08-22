@@ -18,6 +18,11 @@ Isso não é promessa de docstring: `sugestao_como_dado()` remove qualquer campo
 de autoridade que venha na resposta ANTES de o planejador olhar, e o
 planejador já deriva categoria/idempotência do registro. Duas camadas, porque
 a saída de um modelo é entrada hostil por definição.
+
+STATUS (2026-08-21): fundação SEM caller de produção, por desenho — o caller
+chega com o planejador-LLM (missão futura). Mantido porque a fronteira de
+sanitização já está testada (test_absorption02_provider_security.py) e
+removê-la agora significaria reauditar tudo ao reintroduzi-la.
 """
 from __future__ import annotations
 
