@@ -146,7 +146,8 @@ class Orquestrador:
                  audit=None, executores: dict[str, Callable] | None = None,
                  recuperacao=None, rotear_motor: Callable | None = None,
                  estrito: bool = False, contexto_aprovacao=None,
-                 max_paralelo: int = 1, ao_evento: Callable | None = None):
+                 max_paralelo: int = 1, ao_evento: Callable | None = None,
+                 guarda=None):
         # NH-015: teto de nós executando ao mesmo tempo. O padrão é 1 — quem
         # não pediu paralelismo não pode recebê-lo de surpresa, porque
         # paralelismo muda a ORDEM dos efeitos no mundo. Teto inválido é erro
@@ -163,6 +164,15 @@ class Orquestrador:
         # renderizador quebrado não pode derrubar a missão nem, pior, mudar o
         # desfecho de um nó já aprovado.
         self.ao_evento = ao_evento
+        # NH-021: loop-guard SEMPRE ligado. Sem guarda passada, cria a própria
+        # (escopo = esta missão); o loop de replanejamento passa UMA guarda
+        # para todas as missões do turno e a contagem atravessa. Não há
+        # interruptor de desligar — guarda com interruptor não guarda; quem
+        # precisa de mais folga configura os limites da PoliticaGuarda.
+        if guarda is None:
+            from nomos.orquestracao.recuperacao import GuardaDeLaco
+            guarda = GuardaDeLaco()
+        self.guarda = guarda
         self.registro = registro
         self.policy = policy
         self.approver = approver
@@ -306,6 +316,19 @@ class Orquestrador:
                                      detalhe="capacidade desconhecida")
             self._auditar("orquestracao.no.negado", no=no_id,
                           ferramenta=no.ferramenta, motivo="desconhecida")
+            self._bloquear_dependentes(grafo, no_id, nos)
+            return None
+        # NH-021: a guarda decide ANTES do gate — não se consome a atenção do
+        # humano com uma aprovação que a guarda vai recusar em seguida. A
+        # reserva consome o teto do turno mesmo quando recusa (loop de
+        # chamadas negadas ainda é loop).
+        pode, motivo_guarda = self.guarda.reservar(no.ferramenta, no.params)
+        if not pode:
+            nos[no_id] = ResultadoNo(status="NEGADO", detalhe=motivo_guarda)
+            self._auditar("orquestracao.guarda.disparou", no=no_id,
+                          ferramenta=no.ferramenta, motivo=motivo_guarda)
+            self._auditar("orquestracao.no.negado", no=no_id,
+                          ferramenta=no.ferramenta, motivo="loop_guard")
             self._bloquear_dependentes(grafo, no_id, nos)
             return None
         # P1 — APROVAÇÃO NÃO-CEGA.

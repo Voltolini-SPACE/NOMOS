@@ -151,3 +151,88 @@ class GerenciadorRecuperacao:
         else:
             motivo = ultimo_motivo or "falha sem execução (orçamento/circuito)"
         return False, motivo, tentativas
+
+
+# ===================================================================== NH-021
+
+@dataclass(frozen=True)
+class PoliticaGuarda:
+    """Limites do loop-guard. Configuráveis; não existe 'desligado'.
+
+    Os defaults são deliberadamente folgados: o breaker existe para pegar
+    LOOP (o planejador martelando a mesma chamada), não para racionar uso
+    legítimo. Grafo real da suíte tem ≤ 6 nós; um plano com 6 chamadas
+    IDÊNTICAS já é anomalia, e 100 execuções num turno também.
+    """
+    identicas_limite: int = 5      # N idênticas passam; a (N+1)-ésima recusa
+    chamadas_por_turno: int = 100  # total que um turno pode INTENTAR
+
+
+class GuardaDeLaco:
+    """Breaker de chamada idêntica + teto por turno (NH-021).
+
+    O orçamento de retry (acima) só conta tentativas de nós que FALHAM; um
+    loop de chamadas idênticas bem-sucedidas atravessa o NH-004 sem gastar
+    nada. Esta guarda conta INTENÇÃO: toda reserva de execução, com sucesso
+    ou sem.
+
+    Escopo é decisão do CHAMADOR: o Orquestrador cria uma por missão quando
+    nenhuma é passada; o loop de replanejamento passa a MESMA para todas as
+    missões do turno — é aí que o breaker pega o caso real (o planejador
+    gerando o mesmo plano de novo, e de novo).
+
+    A identidade da chamada usa os params DO PLANO (`no.params`), que são
+    JSON por construção (`entrada.py`). Nunca o params enriquecido da
+    execução: `rota_motor` é objeto, e repr de objeto carrega id() — cada
+    chamada ganharia identidade nova e o breaker nunca dispararia.
+    Params que não canonizam ⇒ recusa (fail-closed): se isentassem, params
+    exóticos virariam o passe-livre do loop.
+    """
+
+    def __init__(self, politica: PoliticaGuarda | None = None):
+        self.politica = politica or PoliticaGuarda()
+        for nome in ("identicas_limite", "chamadas_por_turno"):
+            valor = getattr(self.politica, nome)
+            if isinstance(valor, bool) or not isinstance(valor, int) or valor < 1:
+                raise ValueError(f"{nome} deve ser inteiro >= 1, recebi {valor!r}")
+        # Consultada na fase SERIAL do Orquestrador (uma thread), mas a trava
+        # fica: a guarda é compartilhável entre missões e nada impede um
+        # chamador de rodá-las de threads diferentes.
+        self._trava = threading.Lock()
+        self._identicas: dict[str, int] = {}
+        self._chamadas = 0
+
+    @staticmethod
+    def _identidade(ferramenta: str, params: dict) -> str:
+        import hashlib
+        import json
+        canonico = json.dumps(params, sort_keys=True, ensure_ascii=False,
+                              separators=(",", ":"))
+        return hashlib.sha256(
+            f"{ferramenta}\x00{canonico}".encode()).hexdigest()
+
+    def reservar(self, ferramenta: str, params: dict) -> tuple[bool, str]:
+        """(pode_executar, motivo). Consome o turno MESMO quando recusa.
+
+        Recusa que não consome deixaria o plano martelar "de graça": um loop
+        de chamadas negadas ainda é um loop, e queima o operador igual.
+        """
+        try:
+            chave = self._identidade(ferramenta, dict(params))
+        except (TypeError, ValueError) as exc:
+            return False, (f"params não canonizáveis para a guarda de laço "
+                           f"({type(exc).__name__}) — identidade que não se "
+                           f"computa é recusa, não isenção")
+        with self._trava:
+            if self._chamadas >= self.politica.chamadas_por_turno:
+                return False, (f"teto de chamadas do turno atingido "
+                               f"({self.politica.chamadas_por_turno})")
+            self._chamadas += 1
+            vistas = self._identicas.get(chave, 0) + 1
+            self._identicas[chave] = vistas
+            if vistas > self.politica.identicas_limite:
+                return False, (f"chamada idêntica repetida {vistas}× — limite "
+                               f"{self.politica.identicas_limite} "
+                               f"(breaker de laço: mesma ferramenta + mesmos "
+                               f"params do plano)")
+        return True, ""
