@@ -32,6 +32,11 @@ _MOTIVO_SEM_POSIX = (
     "POSIX (/bin/sh, /usr/bin/sed) e semântica Unix de permissão — "
     "INDISPONÍVEL nesta plataforma")
 
+_MOTIVO_SEM_PERMISSAO_UNIX = (
+    "asserção de bit de permissão Unix (0600/0700) — nesta plataforma o chmod "
+    "não pega e a proteção vem das permissões do perfil do usuário "
+    "(kernel/plataforma.chmod_privado)")
+
 _FILTRO_EXECUTAVEIS = ("/bin/sh", "/usr/bin/sed")
 
 
@@ -55,10 +60,24 @@ def _ferramentas_posix_do_filtro() -> bool:
     pelo mesmo motivo registrado lá: já houve na suíte um condicional preso ao
     caminho ERRADO, afirmando sucesso onde a capacidade não existe.
     """
-    if not all(os.access(c, os.X_OK) for c in _FILTRO_EXECUTAVEIS):
-        return False
-    # O bit de permissão PEGA nesta plataforma? Um `chmod` que o SO ignora em
-    # silêncio é pior que a ausência da ferramenta: a defesa pareceria ligada.
+    return (all(os.access(c, os.X_OK) for c in _FILTRO_EXECUTAVEIS)
+            and permissao_unix_pega())
+
+
+def permissao_unix_pega() -> bool:
+    """O bit de permissão PEGA nesta plataforma?
+
+    Fato separado porque tem consumidor próprio: vários pontos do NOMOS gravam
+    0600 (proposta de aprovação, medição de uso, `pausa.json`, sidecars do WAL)
+    e a asserção "está 0600" é a prova de que o segredo não vazou para outro
+    usuário. No Windows os bits Unix não mapeiam — `kernel/plataforma.
+    chmod_privado` já documenta isso e engole o erro de propósito, porque lá a
+    proteção vem das permissões do perfil.
+
+    Um `chmod` que o SO ignora em SILÊNCIO é pior que a ausência da ferramenta:
+    a defesa pareceria ligada. Por isso mede escrevendo de verdade e lendo de
+    volta, em vez de perguntar `os.name`.
+    """
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         alvo = Path(tmp.name)
     try:
@@ -67,7 +86,10 @@ def _ferramentas_posix_do_filtro() -> bool:
     except (OSError, NotImplementedError):
         return False
     finally:
-        alvo.chmod(0o600)
+        try:
+            alvo.chmod(0o600)
+        except OSError:
+            pass
         alvo.unlink(missing_ok=True)
 
 
@@ -86,6 +108,10 @@ def pytest_configure(config):
         "markers",
         "filtro_posix: exige /bin/sh + /usr/bin/sed e bits de permissão Unix "
         "que PEGAM (bateria A5: filtro governado e armazém de artefatos).")
+    config.addinivalue_line(
+        "markers",
+        "permissao_unix: afirma bit de permissão Unix (0600/0700). Onde o "
+        "chmod não pega, a asserção mede o SO e não o NOMOS.")
 
 
 def pytest_collection_modifyitems(items):
@@ -131,6 +157,16 @@ def pytest_collection_modifyitems(items):
         for item in items:
             if "filtro_posix" in item.keywords:
                 item.add_marker(pular_px)
+
+    # Fato mais estreito, marcador próprio: há testes fora da bateria A5 cuja
+    # ÚNICA parte não portável é a asserção de modo (proposta de aprovação,
+    # medição de uso, pausa.json, sidecars do WAL). Reaproveitar `filtro_posix`
+    # neles diria um motivo falso no relatório de skip.
+    if not permissao_unix_pega():
+        pular_pu = pytest.mark.skip(reason=_MOTIVO_SEM_PERMISSAO_UNIX)
+        for item in items:
+            if "permissao_unix" in item.keywords:
+                item.add_marker(pular_pu)
 
 
 _FONTE_ESPIAO = r"""

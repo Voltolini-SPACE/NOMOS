@@ -16,6 +16,7 @@ from nomos.cognition.router import Router
 from nomos.kernel.audit import AuditLog
 from nomos.kernel.policy import PolicyEngine, gate
 from nomos.kernel.vault import Vault
+import pytest
 
 SENTINELA = "conteudo-secreto-do-prompt-9f8e7d"
 
@@ -135,6 +136,7 @@ def test_uso_zero_conteudo_de_prompt_sentinela(nomos_home):
             assert proibido not in ev, f"campo proibido em disco: {proibido}"
 
 
+@pytest.mark.permissao_unix
 def test_uso_arquivo_0600_e_rotaciona_por_tamanho(nomos_home, monkeypatch):
     monkeypatch.setattr(um, "TAMANHO_MAX", 120)
     medidor = um.MedidorUso(nomos_home)

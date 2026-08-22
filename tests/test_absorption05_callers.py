@@ -251,6 +251,7 @@ def test_validar_executaveis_recusa_invalidos(ruim):
         validar_executaveis([ruim])
 
 
+@pytest.mark.permissao_unix
 def test_validar_executaveis_recusa_nao_executavel(tmp_path):
     arq = tmp_path / "texto.txt"
     arq.write_text("nao sou binario")
@@ -258,6 +259,7 @@ def test_validar_executaveis_recusa_nao_executavel(tmp_path):
         validar_executaveis([str(arq)])
 
 
+@pytest.mark.filtro_posix
 def test_validar_executaveis_recusa_shell(tmp_path):
     import shutil
     sh = shutil.which("sh")

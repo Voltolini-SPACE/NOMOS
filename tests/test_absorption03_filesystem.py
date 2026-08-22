@@ -269,6 +269,7 @@ def test_n9_arquivo_inexistente(ctx_fabrica, raiz):
 # permissão) e degrada para "não é root" onde a função não existe.
 @pytest.mark.skipif(getattr(os, "geteuid", lambda: 1)() == 0,
                     reason="root ignora permissões")
+@pytest.mark.permissao_unix
 def test_n10_permissao_negada(ctx_fabrica, raiz):
     """[N10] erro TIPADO, não vazamento de stacktrace."""
     p = raiz / "sem-permissao.txt"
@@ -399,13 +400,38 @@ def test_mover_e_apagar_dentro_do_escopo_funcionam(ctx_fabrica, raiz):
 
 
 def test_auditoria_registra_alvo_canonico(ctx_fabrica, raiz, tmp_path):
-    """A trilha guarda o caminho RESOLVIDO, não o que o caller digitou."""
+    """A trilha guarda o caminho RESOLVIDO, não o que o caller digitou.
+
+    Compara o VALOR desserializado, e não substring do arquivo cru: a trilha é
+    JSONL, e onde o separador de caminho é `\\` o JSON o escapa para `\\\\` —
+    `str(raiz / "dentro.txt") in trilha` nunca casaria, por um detalhe de
+    serialização e não pela propriedade sob teste. A propriedade (caminho
+    canônico, sem `..`) é portável; a técnica de medir é que não era.
+    """
+    import json as _json
+
     sinuoso = str(raiz / "sub" / ".." / "dentro.txt")
     (raiz / "sub").mkdir(exist_ok=True)
     _exec("fs-ler", sinuoso, ctx=ctx_fabrica("fs-ler"))
-    trilha = (tmp_path / "logs" / "audit.jsonl").read_text()
-    assert str(raiz / "dentro.txt") in trilha
-    assert ".." not in trilha.split("fs.ler")[-1][:300]
+    linhas = (tmp_path / "logs" / "audit.jsonl").read_text().splitlines()
+    eventos = [_json.loads(x) for x in linhas if x.strip()]
+
+    def _valores(obj):
+        if isinstance(obj, dict):
+            for v in obj.values():
+                yield from _valores(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                yield from _valores(v)
+        elif isinstance(obj, str):
+            yield obj
+
+    alvos = [v for e in eventos for v in _valores(e)]
+    assert str(raiz / "dentro.txt") in alvos, (
+        f"caminho canônico ausente da trilha; valores: {alvos[:12]}")
+    assert not any(".." in v for v in alvos), (
+        f"trilha guardou caminho não resolvido: "
+        f"{[v for v in alvos if '..' in v]}")
 
 
 # --------------------------------------------------- versão de capacidade

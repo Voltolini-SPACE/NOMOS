@@ -15,6 +15,7 @@ from nomos import cli
 from nomos.adapters.scheduler import ArmazemJobs, Scheduler
 from nomos.adapters.ticker import SEM_AUTORIZACAO, CatchUp, Ticker
 from nomos.kernel import pausa
+import pytest
 
 T0 = datetime(2026, 8, 21, 12, 0, tzinfo=timezone.utc)
 
@@ -46,6 +47,7 @@ def test_pausa_default_ativo(tmp_path):
     assert est["pausado"] is False and est["ilegivel"] is False
 
 
+@pytest.mark.permissao_unix
 def test_pausa_roundtrip_0600_atomico(tmp_path):
     est = pausa.pausar(tmp_path, motivo="manutenção")
     assert est["pausado"] is True and est["motivo"] == "manutenção"

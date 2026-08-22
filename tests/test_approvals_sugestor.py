@@ -9,6 +9,7 @@ from nomos import cli
 from nomos.kernel import sugestor_aprovacoes as sug
 from nomos.kernel.approvals import ApprovalQueue
 from nomos.kernel.audit import AuditLog
+import pytest
 
 
 def _fila_com_historico(home, decisoes):
@@ -60,6 +61,7 @@ def test_sugerir_tolera_linha_invalida_no_audit(tmp_path):
     assert stats, "linha lixo não derruba a mineração"
 
 
+@pytest.mark.permissao_unix
 def test_proposta_0600_com_ancora_e_nao_toca_policy(tmp_path, monkeypatch):
     import stat
     monkeypatch.setenv("NOMOS_HOME", str(tmp_path))
