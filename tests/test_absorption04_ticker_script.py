@@ -624,3 +624,45 @@ def test_scheduler_alerta_sem_depender_do_ticker(tmp_path):
     s.executar_job(d, T0)                       # caminho SEM ticker
     assert len(sink.eventos) == 1
     assert sink.eventos[0].job_id == "j"
+
+
+# ------------------------------- bootstrap do SO no env (portabilidade Windows)
+
+def test_env_herda_bootstrap_do_so_mas_nao_deixa_o_plano_escreve_lo(monkeypatch):
+    """Duas propriedades numa tacada, porque elas se equilibram.
+
+    (1) HERDA. Sem `SystemRoot` o interpretador filho MORRE no arranque do
+    Windows com `_Py_HashRandomization_Init: failed to get random numbers` — a
+    mesma causa raiz que `tests/_cli_env.py` documenta (MC46.3), reaparecendo
+    aqui porque o adapter monta o env por conta própria. MEDIDO no CI: 15
+    falhas em windows py3.10/3.11, todas neste arquivo, todas com esse texto.
+
+    (2) NÃO DEIXA ESCREVER. A correção óbvia — jogar as variáveis dentro de
+    `ENV_PERMITIDO` — daria de brinde ao plano o poder de redefinir `COMSPEC` e
+    `SystemRoot` do filho. Isso é autoridade NOVA em troca de portabilidade.
+    Herdar do SO e deixar o chamador escrever são coisas diferentes, e o teste
+    fixa a diferença para que ninguém a colapse de novo por conveniência.
+    """
+    from nomos.adapters.script import ENV_BOOTSTRAP_SO, ENV_PERMITIDO, ScriptAdapter
+
+    assert "SystemRoot" in ENV_BOOTSTRAP_SO, (
+        "sem SystemRoot o Python filho não boota no Windows")
+    assert not (ENV_BOOTSTRAP_SO & ENV_PERMITIDO), (
+        f"bootstrap do SO vazou para a allowlist do chamador: "
+        f"{sorted(ENV_BOOTSTRAP_SO & ENV_PERMITIDO)}")
+
+    monkeypatch.setenv("SystemRoot", "C:\\Windows")
+
+    class _Pedido:
+        def arg(self, _nome, padrao=None):
+            return {"SystemRoot": "C:\\Malicioso"}
+
+    with pytest.raises(ErroEscopo, match="fora da allowlist"):
+        ScriptAdapter()._env(_Pedido())
+
+    class _Limpo:
+        def arg(self, _nome, padrao=None):
+            return {}
+
+    assert ScriptAdapter()._env(_Limpo())["SystemRoot"] == "C:\\Windows", (
+        "bootstrap do SO não foi herdado")

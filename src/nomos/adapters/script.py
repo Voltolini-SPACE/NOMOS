@@ -47,7 +47,29 @@ TIMEOUT_MAX = 600.0
 
 # Variáveis que um processo pode receber. O ambiente do NOMOS NÃO é herdado:
 # ele carrega credenciais, tokens e caminhos que não são do script.
+#
+# O bloco do Windows não é conveniência: sem `SystemRoot` o interpretador filho
+# MORRE no arranque com `_Py_HashRandomization_Init: failed to get random
+# numbers`, porque não alcança o RNG do sistema. É a MESMA causa raiz que
+# `tests/_cli_env.py` já documenta (MC46.3) para os testes de CLI — aqui ela
+# reaparecia pelo adapter, que monta o env por conta própria.
+#
+# Deliberadamente NÃO entram `APPDATA`, `LOCALAPPDATA` nem `USERPROFILE`, que o
+# `_cli_env.py` preserva: lá o subprocesso é o PRÓPRIO NOMOS e precisa achar a
+# home; aqui é código de terceiro, e apontar-lhe o perfil do usuário amplia o
+# que ele enxerga sem que nada no arranque exija isso. A allowlist continua
+# sendo allowlist — ganhou o mínimo do SO, não o ambiente inteiro.
 ENV_PERMITIDO = frozenset({"PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR"})
+
+# HERDADAS do SO, e NUNCA definíveis pelo chamador — a distinção é o ponto.
+# Juntá-las ao `ENV_PERMITIDO` teria dado ao plano o poder de redefinir
+# `COMSPEC` e `SystemRoot` do processo filho, que é autoridade nova em troca de
+# uma correção de portabilidade. Herdar não é o mesmo que deixar escrever.
+# Ausentes em Linux/macOS, então lá o env resultante é idêntico ao de antes.
+ENV_BOOTSTRAP_SO = frozenset({
+    "SystemRoot", "SYSTEMROOT", "SystemDrive", "windir",
+    "TEMP", "TMP", "PATHEXT", "COMSPEC",
+})
 
 # Interpretadores recusados como argv[0]. Rodar um shell é pedir shell —
 # ainda que via lista, e ainda que sem `shell=True`.
@@ -198,7 +220,7 @@ class ScriptAdapter(Adapter):
         if not isinstance(extra, dict):
             raise ErroInvalido("`env` precisa ser dict")
         env: dict[str, str] = {}
-        for chave in ENV_PERMITIDO:
+        for chave in ENV_PERMITIDO | ENV_BOOTSTRAP_SO:
             if chave in os.environ:
                 env[chave] = os.environ[chave]
         for k, v in extra.items():
