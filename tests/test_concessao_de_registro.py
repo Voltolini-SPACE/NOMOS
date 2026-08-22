@@ -354,3 +354,39 @@ def test_panic_revoga_concessoes(tmp_path, monkeypatch):
 
     cli.main(["panic"])
     assert RegistroConcessoes(home / "concessoes.json").listar() == []
+
+
+def test_conjunto_concedido_cobre_o_que_o_servico_registra(tmp_path, monkeypatch, capsys):
+    """O conjunto de `conceder` tem de casar com o que o RUNTIME registra.
+
+    Achado em operação (22/08): `conceder` cobria só o filesystem, mas
+    `AgendadorGovernado._runtime()` passa `scheduler=` ao construtor, que
+    registra também as `sched-*`. O dono concederia 8, o serviço travaria na 9ª
+    — e pareceria falha da concessão, não conjunto incompleto. Este teste prende
+    as duas listas.
+    """
+    from nomos import cli
+    from nomos.adapters.wiring import registrar_filesystem, registrar_scheduler
+    from nomos.kernel.concessoes import RegistroConcessoes
+
+    home = tmp_path / "home"
+    (home / "dados").mkdir(parents=True)
+    monkeypatch.setenv("NOMOS_HOME", str(home))
+    monkeypatch.setattr(cli, "interactive_approver", lambda _d: True)
+    assert cli.main(["capacidades", "conceder", "--raiz", str(home / "dados")]) == 0
+    capsys.readouterr()
+
+    concedidas = {e["capacidade"]
+                  for e in RegistroConcessoes(home / "concessoes.json").listar()}
+
+    # o que o runtime do serviço registra, pelo MESMO wiring
+    espelho = RegistroCapacidades(policy=PolicyEngine(home / "policy.json"),
+                                  approver=lambda _d: True, audit=None)
+    esperadas = set(registrar_filesystem(espelho, raizes=(str(home / "dados"),),
+                                         audit=None, apenas_leitura=False,
+                                         destrutivas=False))
+    esperadas |= set(registrar_scheduler(espelho, None))
+
+    faltando = esperadas - concedidas
+    assert not faltando, f"o serviço registra o que não foi concedido: {sorted(faltando)}"
+    assert any(n.startswith("sched-") for n in concedidas), "sched-* tem de entrar"

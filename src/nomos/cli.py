@@ -202,9 +202,20 @@ def cmd_capacidades(ctx, args) -> int:
         sonda = RegistroCapacidades(policy=ctx["policy"],
                                     approver=lambda _d: True, audit=None)
         try:
-            nomes = registrar_filesystem(sonda, raizes=tuple(args.raiz), audit=None,
-                                         apenas_leitura=bool(args.apenas_leitura),
-                                         destrutivas=bool(args.destrutivas))
+            nomes = list(registrar_filesystem(
+                sonda, raizes=tuple(args.raiz), audit=None,
+                apenas_leitura=bool(args.apenas_leitura),
+                destrutivas=bool(args.destrutivas)))
+            # O SERVIÇO também registra as capacidades de scheduler: `_runtime()`
+            # passa `scheduler=` ao construtor, que chama `registrar_scheduler`.
+            # Conceder só o filesystem deixaria o serviço travando no primeiro
+            # `sched-*` — e pareceria falha da concessão, não conjunto incompleto.
+            # O executor não entra no digest, então a sonda não precisa de um
+            # scheduler real.
+            if not args.sem_scheduler:
+                from nomos.adapters.wiring import registrar_scheduler
+                nomes += list(registrar_scheduler(
+                    sonda, None, apenas_leitura=bool(args.apenas_leitura)))
         except Exception as exc:
             print(f"não foi possível descobrir as capacidades: {exc}")
             return EXIT_ERROR
@@ -3406,6 +3417,8 @@ def build_parser() -> argparse.ArgumentParser:
     cc.add_argument("--motivo", default="")
     cc.add_argument("--apenas-leitura", action="store_true", dest="apenas_leitura")
     cc.add_argument("--destrutivas", action="store_true")
+    cc.add_argument("--sem-scheduler", action="store_true", dest="sem_scheduler",
+                    help="não conceder as capacidades sched-* (o serviço PRECISA delas)")
     cc.set_defaults(fn=cmd_capacidades)
     cr = cp.add_parser("revogar")
     cr.add_argument("digest", nargs="?", help="prefixo do digest")
