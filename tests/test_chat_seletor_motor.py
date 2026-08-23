@@ -6,10 +6,6 @@ do modelo é o perfil, e o composer deixa escolher motor e modo de roteamento.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from nomos.interface import painel_web as pw
 
 
@@ -42,7 +38,9 @@ def test_motores_chat_lista_locais(monkeypatch, tmp_path):
             return _json.dumps({"models": [
                 {"name": "gemma3:4b"}, {"name": "qwen3.5:4b-q8_0"}]}).encode()
 
-    import nomos.cognition.motores as _mot; monkeypatch.setattr(_mot, "modelos_ollama_geradores", lambda *a, **k: ["gemma3:4b", "qwen3.5:4b-q8_0"])
+    import nomos.cognition.motores as _mot
+
+    monkeypatch.setattr(_mot, "modelos_ollama_geradores", lambda *a, **k: ["gemma3:4b", "qwen3.5:4b-q8_0"])
     monkeypatch.setattr(pw, "_modelo_configurado", lambda: "qwen3.5:4b-q8_0")
     itens = pw.motores_chat({"home": tmp_path})
     ids = [m["id"] for m in itens]

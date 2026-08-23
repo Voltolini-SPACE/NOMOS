@@ -9,8 +9,9 @@ Princípios:
 - LER é livre; AGIR existe em DUAS portas governadas (MC38):
   1. ``aprovacoes/decidir`` — token SINGLE-USE da fila (kernel.approvals,
      TTL 5 min, comparação em tempo constante, tudo auditado);
-  2. ``chat/enviar`` — chat LOCAL (token CSRF por servidor; roda só motor
-     local, fail-closed sem motor, cada turno auditado; nuvem só no terminal).
+  2. ``chat/enviar`` — chat (token CSRF por servidor; local por padrão,
+     fail-closed sem motor, cada turno auditado; a nuvem exige opt-in POR
+     MENSAGEM com a passphrase do cofre, e o cadeado de localidade vale).
   Qualquer outro POST é 405. Sem fila, aprovações somem; com ``--sem-chat``
   ou sem chat habilitado, o chat vira histórico read-only;
 - HTML autossuficiente: zero assets externos, zero JavaScript de terceiros
@@ -301,6 +302,32 @@ _CSS = """
  textarea{cursor:text}
  /* botão só-ícone continua quadrado e clicável */
  button.icone, .copiar.icone{min-width:var(--alvo);padding-inline:var(--esp-2)}
+ /* <summary> é um controle (abre/fecha), não um título: recebe o alvo.
+    Medido: o "N modalidade(s) sem motor pronto" saía com 26px. Mesma forma
+    já usada no summary da nuvem — generalizada em vez de duplicada. */
+ summary{
+   cursor:pointer; min-height:var(--alvo);
+   display:flex; align-items:center; gap:var(--esp-2);
+   touch-action:manipulation;
+ }
+ /* caixa de seleção: a caixa NÃO é esticada (viraria um quadrado enorme),
+    então quem carrega o alvo é o RÓTULO inteiro — clicar no texto marca.
+    Sem isso o controle mede ~18px e é o único fora do padrão. */
+ label.chk, label.checkbox, .chk{
+   display:flex; align-items:center; gap:var(--esp-2);
+   min-height:var(--alvo);
+   cursor:pointer;
+   touch-action:manipulation;
+ }
+ /* links utilitários do cabeçalho (api/ audit/ roteador/ health/): ficavam
+    com 35px. Inline-flex dá o alvo sem quebrar a linha nem inchar a fonte. */
+ .topo .acoes a{
+   display:inline-flex; align-items:center;
+   min-height:var(--alvo);
+   padding-inline:var(--esp-1);
+   border-radius:var(--r-1);
+ }
+ .topo .acoes a:hover{background:var(--surface2)}
  /* a navegação é o caminho mais usado: linha inteira clicável */
  .nav a, nav a{
    display:flex; align-items:center; gap:var(--esp-2);
@@ -681,8 +708,6 @@ def motores_chat(ctx) -> list[dict]:
     Só locais — a nuvem (anthropic/omniroute) exige A2+A3 e passphrase, que o
     painel não conduz por mensagem; ela fica no terminal, honestamente.
     """
-    import os
-
     itens: list[dict] = []
     cfg = _modelo_configurado()
     # só modelos que SABEM gerar texto — um de embedding aparece no /api/tags
@@ -705,8 +730,8 @@ def motores_chat(ctx) -> list[dict]:
         if EmbeddedProvider(ctx["home"]).disponivel():
             itens.append({"id": "embutido", "rotulo": "Cérebro embutido (leve)",
                           "pronto": True, "padrao": not itens})
-    except Exception:
-        pass
+    except Exception:  # noqa: S110 — cérebro ausente/quebrado só some da lista:
+        pass           # montar o seletor não pode derrubar a página do chat.
     return itens
 
 
@@ -1372,9 +1397,10 @@ def _secao_chat(d: dict, chat: dict | None) -> str:
         '<textarea name="mensagem" required rows="2" '
         'placeholder="escreva sua mensagem…" aria-label="mensagem"></textarea>'
         '<button type="submit">enviar</button></form>')
-    corpo.append('<p class="chat-nota">roda só motor <b>local</b> (o cadeado '
-                 "vale; nuvem só no terminal, com opt-in). Sem motor pronto, o "
-                 "NOMOS avisa — nunca inventa. Cada turno fica na auditoria.</p>")
+    corpo.append('<p class="chat-nota">padrão é motor <b>local</b>; a nuvem '
+                 "só sai por mensagem, marcada e com a senha-mestra — o cadeado "
+                 "de localidade continua valendo. Sem motor pronto, o NOMOS "
+                 "avisa — nunca inventa. Cada turno fica na auditoria.</p>")
     corpo.append("</div></div>")  # fim coluna 2 + wrap
     return "\n".join(corpo)
 
@@ -1415,7 +1441,6 @@ def _bloco_nuvem_chat(chat: dict) -> str:
     Marcar o checkbox + digitar a passphrase manda ESTA mensagem para a nuvem,
     governada e auditada. Desmarcado = local, como sempre (default seguro).
     """
-    e = esc
     if not chat.get("nuvem_disponivel"):
         return ('<small class="chat-controles-nota">nuvem indisponível aqui '
                 "(cadeado ligado ou sem chave no cofre — use o terminal)</small>")

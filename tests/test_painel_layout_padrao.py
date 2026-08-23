@@ -99,3 +99,35 @@ def test_tema_claro_do_sistema_tambem_define_as_variaveis():
     bloco = CSS.split("prefers-color-scheme:light")[1].split("}}")[0]
     for v in ("--bg", "--surface", "--txt", "--neon", "--line"):
         assert v in bloco, f"tema claro do sistema não define {v}"
+
+
+def test_rotulo_de_checkbox_carrega_o_alvo():
+    """A caixa de seleção mede ~18px e não deve ser esticada; quem tem de ter
+    os 44px é o RÓTULO. Medido no navegador: sem esta regra, `label.chk` saía
+    com 37px — o único controle do painel fora do padrão."""
+    assert "label.chk" in CAMADA
+    trecho = CAMADA[CAMADA.index("label.chk"):CAMADA.index("label.chk") + 260]
+    assert "min-height:var(--alvo)" in trecho
+    assert "cursor:pointer" in trecho
+
+
+def test_camada_do_checkbox_sem_cor_literal():
+    """Mesma exigência do resto da camada: nada de cor fixa (quebra um tema)."""
+    trecho = CAMADA[CAMADA.index("label.chk"):CAMADA.index("label.chk") + 260]
+    assert not re.search(r"#[0-9a-fA-F]{3,8}\b", trecho)
+
+
+def test_summary_e_controle_com_alvo():
+    """<summary> abre/fecha: é controle. Medido no navegador, o summary de
+    "N modalidade(s) sem motor pronto" saía com 26px — fora do padrão."""
+    i = CAMADA.index("\n summary{")
+    trecho = CAMADA[i:i + 220]
+    assert "min-height:var(--alvo)" in trecho
+    assert "cursor:pointer" in trecho
+
+
+def test_links_utilitarios_do_topo_tem_alvo():
+    """api/ audit/ roteador/ health/ saíam com 35px no cabeçalho."""
+    assert ".topo .acoes a{" in CAMADA
+    trecho = CAMADA[CAMADA.index(".topo .acoes a{"):][:220]
+    assert "min-height:var(--alvo)" in trecho
