@@ -942,6 +942,14 @@ def dados_dashboard(ctx) -> dict:
     # Capacidades (MC30-A4): o catálogo completo, com risco visível
     from nomos.ext import skill_catalogo as scat
     try:
+        # `incluir_do_pacote=True`: sem ele a tela dizia "catálogo vazio" com
+        # 33 skills dentro do próprio wheel — exigia rodar `--semear` só para
+        # ENXERGAR o que já veio na caixa. Mostrar não é registrar nem
+        # autorizar: instalar continua exigindo confirmação e o gate A5.
+        capacidades = scat.capacidades(home, home / "skills",
+                                       incluir_do_pacote=True)
+    except TypeError:
+        # instalação mais antiga, sem o parâmetro: degrada, não quebra
         capacidades = scat.capacidades(home, home / "skills")
     except Exception:
         capacidades = []   # catálogo nunca derruba o painel
@@ -2217,14 +2225,48 @@ def render_html(d: dict, refresh: int | None = None,
                          f'<span class="pill">{estado}</span><br>'
                          f"<small>ferramentas: {e(ferr)}</small></div>")
     aba_capac.append('<h2 id="capacidades">Capacidades (catálogo)</h2>')
-    if not d.get("capacidades"):
+    caps = d.get("capacidades", [])
+    if not caps:
         aba_capac.append("<p>catálogo vazio. <code>nomos skills catalogo</code></p>")
-    for c in d.get("capacidades", []):
-        aba_capac.append(
-            f'<div class="card filtravel">{e(c["nome"])} '
-            f'<small>[{e(c["status"])} · risco {e(c["risco"])}]</small><br>'
-            f'{e(c["descricao"])}<br>'
-            f'<small>entrada: {e(c["entrada"])} → {e(c["saida"])}</small></div>')
+    else:
+        # Três estados, e a diferença entre eles importa mais que a lista:
+        #   instalada             — registrada nesta casa, passou pelo gate
+        #   disponível no catálogo— semeada, ainda não instalada
+        #   vem no NOMOS          — veio no pacote; NÃO está registrada
+        # A última é a que engana se mal escrita: "vem no NOMOS" não é
+        # "está ativa". Por isso cada grupo diz o que aquele estado SIGNIFICA.
+        ORDEM = [("instalada", "Instaladas",
+                  "registradas nesta máquina — passaram pelo gate"),
+                 ("disponível no catálogo", "No catálogo",
+                  "já semeadas aqui; instalar ainda pede confirmação"),
+                 ("vem no NOMOS", "Vêm no NOMOS",
+                  "acompanham o pacote e ainda NÃO estão instaladas — "
+                  "aparecem para você escolher, não porque estejam ativas")]
+        vistos = {c.get("status") for c in caps}
+        for chave, titulo, o_que_significa in ORDEM:
+            grupo = [c for c in caps if c.get("status") == chave]
+            if not grupo:
+                continue
+            aba_capac.append(
+                f'<h3 class="mini-h">{e(titulo)} ({len(grupo)})</h3>'
+                f'<p><small class="pendente">{e(o_que_significa)}</small></p>')
+            for c in sorted(grupo, key=lambda x: str(x.get("nome", ""))):
+                perms = ", ".join(c.get("permissoes") or []) or "—"
+                aba_capac.append(
+                    f'<div class="card filtravel">{e(str(c["nome"]))} '
+                    f'<span class="pill">risco {e(str(c["risco"]))}</span><br>'
+                    f'{e(str(c["descricao"]))}<br>'
+                    f'<small>entrada: {e(str(c["entrada"]))} → '
+                    f'{e(str(c["saida"]))}</small><br>'
+                    f'<small class="pendente">toca: {e(perms)}</small></div>')
+        # estado que o código não conhece não pode sumir da tela
+        for extra in sorted(vistos - {k for k, _, _ in ORDEM}):
+            grupo = [c for c in caps if c.get("status") == extra]
+            aba_capac.append(f'<h3 class="mini-h">{e(str(extra))} '
+                             f"({len(grupo)})</h3>")
+            for c in grupo:
+                aba_capac.append(f'<div class="card filtravel">'
+                                 f'{e(str(c["nome"]))}</div>')
     mcp = d.get("mcp", {})
     aba_capac.append('<h2 id="mcp">MCP — Model Context Protocol</h2>')
     aba_capac.append(f'<div class="card ok"><b>NOMOS como servidor</b> '
