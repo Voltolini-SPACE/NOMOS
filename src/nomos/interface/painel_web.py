@@ -895,6 +895,33 @@ def _secao_chaves(d: dict, chaves: dict | None) -> str:
     e = esc
     partes = ['<h2 id="chaves">🔑 Chaves</h2>']
 
+    # onde pegar cada chave gratuita — nome sugerido + site do provedor.
+    # (nome, rótulo, url, dica). Abrem em nova aba; rel protege a origem.
+    FONTES = [
+        ("groq_api_key", "Groq", "https://console.groq.com/keys",
+         "grátis, rápido, sem cartão — comece por aqui"),
+        ("google_api_key", "Google AI Studio", "https://aistudio.google.com/apikey",
+         "Gemini grátis, sem cartão"),
+        ("openrouter_api_key", "OpenRouter", "https://openrouter.ai/keys",
+         "modelos com sufixo :free"),
+        ("mistral_api_key", "Mistral", "https://console.mistral.ai/api-keys",
+         "cota gratuita"),
+    ]
+    linhas = "".join(
+        f'<li><a href="{u}" target="_blank" rel="noopener noreferrer">'
+        f"{e(rot)} ↗</a> <small>— {e(dica)}</small><br>"
+        f'<small>nome sugerido: <code>{nome}</code></small></li>'
+        for nome, rot, u, dica in FONTES)
+    partes.append(
+        '<details class="fontes-chave" open><summary>Onde conseguir chaves '
+        "gratuitas</summary>"
+        f'<ul class="lista">{linhas}</ul>'
+        "<p><small>Crie a conta no site, gere a chave lá e volte para colar "
+        "aqui. <b>Não cole a chave em chat de IA</b> — cole só neste campo, "
+        "que é local e cifrado. As rotas grátis compartilhadas do OmniRoute "
+        "são instáveis; uma conta própria (Groq/Google) dá cota confiável."
+        "</small></p></details>")
+
     if chaves and chaves.get("gravada"):
         partes.append(f'<div class="ok-banner">✓ chave '
                       f'<code>{e(chaves["gravada"])}</code> gravada no cofre '

@@ -115,3 +115,17 @@ def test_get_form_nao_expoe_valor_nem_token_no_html_de_leitura(painel):
     pag = urllib.request.urlopen(base + "/#chaves").read().decode()
     assert "omniroute_api_key" in pag
     assert VALOR not in pag
+
+
+def test_aba_traz_links_das_fontes_gratuitas(painel):
+    """A aba mostra onde conseguir cada chave, com link e nome sugerido."""
+    base = _base(painel)
+    pag = urllib.request.urlopen(base + "/#chaves").read().decode()
+    # os 4 provedores gratuitos, com URL clicável em nova aba protegida
+    for host in ("console.groq.com", "aistudio.google.com",
+                 "openrouter.ai", "console.mistral.ai"):
+        assert host in pag, f"falta o link de {host}"
+    assert 'rel="noopener noreferrer"' in pag       # não vaza a origem
+    assert "Não cole a chave em chat" in pag        # a advertência de segurança
+    # o nome sugerido aparece para orientar o campo
+    assert "groq_api_key" in pag
