@@ -1,13 +1,11 @@
 {
   "name": "reach-bilibili",
-  "version": "1.0.0",
-  "description": "B站 via CLI de terceiro com sessao logada",
+  "version": "2.0.0",
+  "description": "metadados de video do Bilibili (titulo, autor, duracao, views) pela API web aberta — sem bili, sem login, stdlib pura",
   "entry": "reach_bilibili.py",
   "permissions": [
     "A1_WRITE_LOCAL",
-    "A2_NET_EGRESS",
-    "A3_CRED_USE",
-    "A3_CONNECTOR_USE"
+    "A2_NET_EGRESS"
   ],
   "modalities": [
     "texto",
@@ -19,18 +17,8 @@
   "local_only_capable": false,
   "cloud_required": false,
   "compatible_nomos_version": ">=0.11",
-  "requires": [
-    {
-      "tipo": "binario",
-      "nome": "bili",
-      "obrigatorio": true
-    },
-    {
-      "tipo": "chave",
-      "nome": "sessao_navegador",
-      "obrigatorio": true,
-      "descricao": "sessao logada no navegador — NAO e chave de cofre"
-    }
-  ],
-  "files": {}
+  "requires": [],
+  "files": {
+    "reach_bilibili.py": "5695e234ff57b87d524dc10794a903d97da840a350f12cb472f28db222f78c45"
+  }
 }

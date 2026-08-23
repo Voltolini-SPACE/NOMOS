@@ -408,3 +408,61 @@ def test_modulo_ausente_nao_impede_instalacao(tmp_path, nomos_home):
     reg.instalar(src, nomos_home / "skills", engine, lambda d: True,
                  confirmar_experimental=lambda m: True, home=nomos_home)
     assert (nomos_home / "skills" / "usa-modulo").exists()
+
+
+# ---------------------------------------- argumentos atravessam a cerca
+def test_regras_da_cerca_cobrem_TODOS_os_argumentos_arquivo(tmp_path):
+    """Regressão do `break` que cegava o segundo argumento.
+
+    O executor passa DOIS arquivos ao interpretador: o entry (argv[1]) e o
+    `skill-args-*.json` (argv[2]). O laço que emite as regras de leitura
+    parava no primeiro — medido em 23/08: toda skill chamada COM argumentos
+    morria em "não li os argumentos de '…/skill-args-….json'", com a cerca
+    deixando ler o script e negando o JSON logo ao lado.
+    """
+    from nomos.runtime.sandbox import _regras_do_interpretador
+
+    a = tmp_path / "dir-a" / "entry.py"
+    b = tmp_path / "dir-b" / "args.json"
+    a.parent.mkdir()
+    b.parent.mkdir()
+    a.write_text("pass")
+    b.write_text("{}")
+
+    _argv, regras = _regras_do_interpretador(["python3", str(a), str(b)])
+    texto = "\n".join(regras)
+    assert str(a.parent) in texto, "diretório do entry tem de entrar"
+    assert str(b.parent) in texto, "diretório do args TAMBÉM — era o furo"
+
+
+def test_argumentos_chegam_na_skill_de_ponta_a_ponta(tmp_path, nomos_home):
+    """O ciclo inteiro: executar(argumentos=...) → a skill LÊ e devolve.
+
+    A skill ecoa o que recebeu; a asserção é o round-trip. Declara A2 para
+    exercitar o caminho que executa nas duas plataformas (no macOS o ramo sem
+    rede é recusado por desenho) — o gate é aprovado pelo stub do teste.
+    """
+    from nomos.kernel import localidade
+
+    localidade.definir(nomos_home, ligado=False)
+    corpo = (
+        "import json, sys\n"
+        "args = json.load(open(sys.argv[1])) if len(sys.argv) > 1 else {}\n"
+        "print(json.dumps({'ok': True, 'eco': args}))\n")
+    d = tmp_path / "loja" / "eco"
+    d.mkdir(parents=True)
+    (d / "main.py").write_text(corpo)
+    (d / "skill.json").write_text(json.dumps({
+        "name": "eco", "version": "1.0.0", "entry": "main.py",
+        "permissions": ["A0_READ_LOCAL", "A2_NET_EGRESS"],
+        "files": {"main.py": hashlib.sha256(corpo.encode()).hexdigest()}}))
+    engine = PolicyEngine(nomos_home / "policy.json")
+    reg.instalar(d, nomos_home / "skills", engine, lambda x: True,
+                 confirmar_experimental=lambda m: True, home=nomos_home)
+
+    rc, j, bruta = reg.executar_json(
+        "eco", nomos_home / "skills", engine, lambda x: True,
+        argumentos={"mensagem": "atravessei a cerca", "n": 7})
+
+    assert rc == 0, bruta
+    assert j and j["eco"] == {"mensagem": "atravessei a cerca", "n": 7}

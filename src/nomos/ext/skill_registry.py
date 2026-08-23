@@ -231,7 +231,8 @@ def disponiveis(home: Path, skills_dir: Path) -> list[dict]:
 
 # ------------------------- instalação v2 -------------------------
 
-TIPOS_REQUISITO = ("binario", "modulo_python", "chave", "servidor_mcp")
+TIPOS_REQUISITO = ("binario", "modulo_python", "chave", "servidor_mcp",
+                   "credencial_externa")
 """Os três tipos que um manifesto pode declarar em `requires`."""
 
 
@@ -289,6 +290,18 @@ def verificar_requisitos(mf: dict, home: Path | None = None) -> list[dict]:
                 motivo = _chave_ausente(nome, home)
         elif tipo == "servidor_mcp":
             motivo = _mcp_ausente(nome, home)
+        elif tipo == "credencial_externa":
+            # Credencial que MORA FORA do cofre por desenho — token do `gh` em
+            # ~/.config/gh, sessão de navegador, login de app. O NOMOS não a
+            # governa e NÃO vai lê-la para "verificar": sondar credencial
+            # alheia seria exatamente o comportamento que o A3 existe para
+            # controlar. Declarar aqui é informação ao dono, nunca checagem.
+            # Antes disto, `reach-github` declarava o token como tipo "chave"
+            # e era BLOQUEADO por "não está no cofre" — recusa falsa: o token
+            # nunca deveria estar lá.
+            motivo, verificado = (
+                f"credencial externa '{nome}': o NOMOS não a governa nem "
+                "verifica — confira você mesmo", False)
         else:
             motivo, verificado = f"tipo de requisito desconhecido: {tipo!r}", False
         if motivo:

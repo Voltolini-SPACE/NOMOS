@@ -225,7 +225,13 @@ def _regras_do_interpretador(argv: list[str]) -> tuple[list[str], list[str]]:
                         regras.append(
                             f'(allow file-read-metadata (literal "{anc}"))')
                     anc = os.path.dirname(anc)
-            break
+            # SEM break: o executor pode passar MAIS de um arquivo — o entry
+            # (argv[1]) E o arquivo de argumentos (argv[2], skill-args-*.json).
+            # O break original parava no primeiro, e o segundo ficava proibido:
+            # medido em 23/08, toda skill chamada COM argumentos morria em
+            # "não li os argumentos de '…/sandbox/skill-args-….json'" — a cerca
+            # deixava ler o script e negava o JSON logo ao lado. Quem decide
+            # quais caminhos entram continua sendo o executor, nunca o confinado.
     return [real, *argv[1:]], regras
 
 

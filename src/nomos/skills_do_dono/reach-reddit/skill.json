@@ -1,13 +1,11 @@
 {
   "name": "reach-reddit",
-  "version": "1.0.0",
-  "description": "Reddit via CLI de terceiro com sessao logada",
+  "version": "2.0.0",
+  "description": "posts publicos de um subreddit (hot/new/top/rising) pela listagem .json aberta — sem rdt, sem login, stdlib pura",
   "entry": "reach_reddit.py",
   "permissions": [
     "A1_WRITE_LOCAL",
-    "A2_NET_EGRESS",
-    "A3_CRED_USE",
-    "A3_CONNECTOR_USE"
+    "A2_NET_EGRESS"
   ],
   "modalities": [
     "texto",
@@ -19,18 +17,8 @@
   "local_only_capable": false,
   "cloud_required": false,
   "compatible_nomos_version": ">=0.11",
-  "requires": [
-    {
-      "tipo": "binario",
-      "nome": "rdt",
-      "obrigatorio": true
-    },
-    {
-      "tipo": "chave",
-      "nome": "sessao_navegador",
-      "obrigatorio": true,
-      "descricao": "sessao logada no navegador — NAO e chave de cofre"
-    }
-  ],
-  "files": {}
+  "requires": [],
+  "files": {
+    "reach_reddit.py": "1eac6532c2da12726a9e717ba2379480dc3d4bda2e5a9f4dfb1a580beb993421"
+  }
 }

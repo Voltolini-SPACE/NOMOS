@@ -29,7 +29,7 @@
       "obrigatorio": true
     },
     {
-      "tipo": "chave",
+      "tipo": "credencial_externa",
       "nome": "gh_token_host",
       "obrigatorio": true,
       "descricao": "token do gh CLI, mora em ~/.config/gh — FORA do cofre; o A3 nao o governa"
