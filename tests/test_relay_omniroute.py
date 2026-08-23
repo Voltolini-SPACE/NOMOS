@@ -12,7 +12,7 @@ import pytest
 
 from nomos.cognition import relay
 from nomos.kernel import localidade
-from nomos.kernel.policy import Category, Effect, PolicyEngine
+from nomos.kernel.policy import Category, PolicyEngine
 
 
 class _CofreFake:

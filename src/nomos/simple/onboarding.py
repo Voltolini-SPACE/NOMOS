@@ -35,13 +35,18 @@ def escolher_modelo(nomes: list[str]) -> str | None:
     """Escolhe o cérebro entre modelos que JÁ foram filtrados por capacidade.
 
     A lista chega de `modelos_ollama_geradores`; aqui só se ordena preferência.
+    Ordem: Hermes (o cérebro padrão do projeto), depois llama — essa é uma
+    decisão de produto, não um detalhe; eu a havia invertido sem necessidade e
+    o teste `prefere_hermes` pegou. As famílias seguintes são acréscimo: sem
+    elas, um cofre só com qwen/gemma/mistral caía no `sorted()[0]` alfabético.
+
     O `sorted(nomes)[0]` final é alfabético e por isso era perigoso enquanto a
     lista vinha crua: com um cofre contendo `embeddinggemma`, `nomic-embed-text`
     e `qwen3.5`, o alfabeto elegia o primeiro — um modelo que não responde.
     """
     if not nomes:
         return None
-    for prefixo in ("qwen", "llama", "gemma", "mistral", "phi", "hermes"):
+    for prefixo in ("hermes", "llama", "qwen", "gemma", "mistral", "phi"):
         for n in nomes:
             if n.lower().startswith(prefixo):
                 return n

@@ -94,7 +94,7 @@ class RegistroConcessoes:
             return
         try:
             self.audit.append(evento, **campos)
-        except Exception:
+        except Exception:  # noqa: S110 — silêncio DELIBERADO:
             # Auditoria indisponível não pode transformar uma revogação em
             # concessão. Quem CONCEDE trata o erro (ver conceder()).
             pass

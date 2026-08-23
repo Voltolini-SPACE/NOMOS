@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 
-from nomos import simple
 from nomos.kernel import localidade
 from nomos.simple import onboarding
 

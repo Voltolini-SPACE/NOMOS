@@ -52,8 +52,8 @@ def _conceder(registro, concessoes, *, categoria=Category.WRITE_LOCAL,
 
 
 def _eventos(audit_path):
-    return [json.loads(l)["event"] for l in
-            audit_path.read_text().splitlines() if l.strip()]
+    return [json.loads(linha)["event"] for linha in
+            audit_path.read_text().splitlines() if linha.strip()]
 
 
 # ----------------------------------------------------------------- A, B

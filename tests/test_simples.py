@@ -74,6 +74,11 @@ def test_escolher_modelo_prefere_hermes(nomes, esperado):
 
 # ---------- onboarding com streams fake ----------
 def _roda_onboarding(respostas, monkeypatch, nomos_home, modelos=None):
+    """ORDEM das perguntas (posicional — inserir no lugar errado quebra tudo):
+    1) nome  2) personalidade  3) cérebro NÃO pergunta (autodetecta)
+    4) localidade  5) senha do cofre  6) paleta.
+    A localidade entrou no passo 4 quando o modo só-local virou escolha; "" =
+    Enter = opção 1 = só-local, que era o comportamento fixo anterior."""
     monkeypatch.setattr(onboarding, "listar_modelos", lambda *a, **k: modelos or [])
     feed = iter(respostas)
     linhas = []
@@ -83,7 +88,7 @@ def _roda_onboarding(respostas, monkeypatch, nomos_home, modelos=None):
 
 
 def test_onboarding_completo_modo_demo(monkeypatch, nomos_home):
-    perfil, tela = _roda_onboarding(["Luna", "2", "", ""], monkeypatch, nomos_home)
+    perfil, tela = _roda_onboarding(["Luna", "2", "", "", ""], monkeypatch, nomos_home)
     assert perfil["agent_name"] == "Luna"
     assert perfil["personalidade"] == "direto"
     assert perfil["modo_cerebro"] == "demo" and perfil["modelo"] is None
@@ -92,13 +97,13 @@ def test_onboarding_completo_modo_demo(monkeypatch, nomos_home):
 
 
 def test_onboarding_nome_invalido_pede_de_novo(monkeypatch, nomos_home):
-    perfil, _ = _roda_onboarding(["1nome!", "Atlas", "", "", ""], monkeypatch, nomos_home)
+    perfil, _ = _roda_onboarding(["1nome!", "Atlas", "", "", "", ""], monkeypatch, nomos_home)
     assert perfil["agent_name"] == "Atlas"
     assert perfil["personalidade"] == "caloroso"       # Enter usa o padrão
 
 
 def test_onboarding_detecta_hermes_e_cria_cofre(monkeypatch, nomos_home):
-    perfil, tela = _roda_onboarding(["Jarbas", "3", "senha-bem-grande-123", ""],
+    perfil, tela = _roda_onboarding(["Jarbas", "3", "", "senha-bem-grande-123", ""],
                                     monkeypatch, nomos_home,
                                     modelos=["llama3.2", "hermes3:8b"])
     assert perfil["modelo"] == "hermes3:8b" and perfil["modo_cerebro"] == "local"
@@ -109,7 +114,7 @@ def test_onboarding_detecta_hermes_e_cria_cofre(monkeypatch, nomos_home):
 
 
 def test_onboarding_senha_curta_reorienta_e_pula(monkeypatch, nomos_home):
-    perfil, tela = _roda_onboarding(["Nina", "1", "curta", "", ""], monkeypatch, nomos_home)
+    perfil, tela = _roda_onboarding(["Nina", "1", "", "curta", "", ""], monkeypatch, nomos_home)
     assert perfil["cofre"] is False and "10" in tela   # explicou o mínimo
 
 

@@ -810,11 +810,22 @@ def responder_nuvem(ctx, messages, passphrase: str, *, modelo=None):
     vault = Vault(Path(home) / "vault.json")
     if not vault.exists():
         return None, "cofre não criado (nomos vault init)"
+    # PROVA DE POSSE ANTES DO GATE. A ordem importa e eu a tinha invertido:
+    # `montar_runner_omniroute` decide A2 e A3 e só DEPOIS usa a passphrase.
+    # Com um approver que sempre diz sim, uma senha ERRADA ainda produzia dois
+    # eventos de gate aprovado na auditoria — consentimento afirmado antes de
+    # ser provado. Abrindo o cofre aqui, o `lambda: True` abaixo passa a ser
+    # verdade verificada nesta requisição, e senha errada não aprova nada.
+    try:
+        vault.get(relay.RELAY_KEY_NAME, passphrase)
+    except Exception:
+        return None, ("senha-mestra não confere, ou a chave 'omniroute_api_key' "
+                      "não está no cofre — nada foi aprovado")
+
     prov, motivo = relay.montar_runner_omniroute(
         home, policy=policy, vault=vault,
-        # o envio deste formulário, com a passphrase certa, É a aprovação:
-        # o dono está presente e prova posse do segredo. A cadeia ainda exige
-        # cadeado desligado e a chave decifrável — passphrase errada => falha.
+        # posse do segredo PROVADA acima: o dono está presente nesta
+        # requisição. A cadeia ainda exige cadeado desligado.
         approver=lambda _d: True,
         passphrase=passphrase,
         modelo=modelo or relay.MODELO_PADRAO)

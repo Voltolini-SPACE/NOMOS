@@ -173,8 +173,8 @@ class RegistroCapacidades:
                                           digest=op.digest()[:16],
                                           origem=origem)
                     return True
-            except Exception:
-                pass          # concessão indisponível NUNCA autoriza; cai no gate
+            except Exception:  # noqa: S110 — concessão indisponível NUNCA
+                pass           # autoriza: cai no gate logo abaixo, fail-closed.
         return gate(decisao, self.approver)
 
     def registrar(self, nome: str, categoria: Category | str,
