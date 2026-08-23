@@ -8,6 +8,8 @@ Garantias:
 """
 from __future__ import annotations
 
+import urllib.request as _urllib
+
 import json
 import urllib.error
 import urllib.request
@@ -188,6 +190,69 @@ class AnthropicProvider:
                          model=data.get("model", self.model),
                          tokens_prompt=uso.get("input_tokens"),
                          tokens_resposta=uso.get("output_tokens"))
+
+
+class OmniRouteProvider:
+    """Roteador OmniRoute em loopback — que SAI para a internet.
+
+    Fala o dialeto OpenAI (`/v1/chat/completions`), como o `OpenAICompatProvider`,
+    mas com uma diferença que muda tudo: aquele é LOCAL por lei e este é uma
+    FRONTEIRA DE SAÍDA. Por isso NÃO passa por `_exigir_loopback` — o alvo dele
+    é justamente uma porta de relay, que aquela função recusa de propósito.
+
+    Quem autoriza é a cadeia de gates do chamador (ver `montar_runner_omniroute`
+    em cognition/relay.py): cadeado de localidade → A2 (egresso) → A3
+    (credencial) → chave do COFRE. Este objeto só transporta; ele não decide.
+
+    A chave nunca vem do `.env` do OmniRoute: vem do cofre do NOMOS, passada
+    pelo construtor. Um provedor que lesse credencial de arquivo global estaria
+    fora da governança mesmo rodando dentro dela.
+    """
+
+    name = "omniroute"
+
+    def __init__(self, api_key: str, base: str = "http://127.0.0.1:20128/v1",
+                 model: str = "auto/best-free", timeout: float = 120.0):
+        if not api_key:
+            raise ValueError("OmniRoute exige chave — sem credencial não há chamada")
+        self._api_key = api_key
+        self.base = base.rstrip("/")
+        self.model = model
+        self.timeout = timeout
+
+    def __repr__(self) -> str:   # a chave jamais aparece em repr/log
+        return f"OmniRouteProvider(base={self.base!r}, model={self.model!r})"
+
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self._api_key}"}
+
+    def chat(self, messages: list[dict]) -> ChatReply:
+        payload = {"model": self.model, "messages": messages}
+        data = _post_json(f"{self.base}/chat/completions", payload,
+                          headers=self._headers(), timeout=self.timeout)
+        choices = data.get("choices") or []
+        text = (choices[0].get("message", {}) or {}).get("content", "") \
+            if choices else ""
+        if not text:
+            raise ProviderUnavailable("OmniRoute respondeu sem conteúdo "
+                                      "(sem provedor disponível para a rota?)")
+        uso = data.get("usage") or {}
+        return ChatReply(text=text, provider=self.name,
+                         model=data.get("model", self.model),
+                         tokens_prompt=uso.get("prompt_tokens"),
+                         tokens_resposta=uso.get("completion_tokens"))
+
+    def available(self) -> bool:
+        """Probe no /models. 401 conta como VIVO-porém-sem-credencial: o serviço
+        está de pé e a chave é que não serve — distinguir os dois evita anunciar
+        motor pronto quando ele recusaria a chamada."""
+        try:
+            req = _urllib.request.Request(f"{self.base}/models",
+                                          headers=self._headers())
+            with _urllib.request.urlopen(req, timeout=2.0) as r:  # noqa: S310
+                return r.status == 200
+        except Exception:
+            return False
 
 
 class OpenAICompatProvider:
