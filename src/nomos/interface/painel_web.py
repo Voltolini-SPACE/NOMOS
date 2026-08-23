@@ -1266,10 +1266,16 @@ def _bloco_atencao(d: dict, n_aprov: int) -> str:
 
 
 def _raizes_de_exemplos(home: Path) -> list[Path]:
-    """Onde procurar as skills de exemplo, da mais explícita à mais provável.
+    """Onde procurar skills prontas, da mais explícita à mais provável.
 
-    `NOMOS_EXEMPLOS` vem primeiro para que quem tem o repositório em lugar
-    incomum possa apontar, em vez de a tela adivinhar errado.
+    Eu media daqui, antes, com caminho artesanal relativo ao pacote — e
+    aquilo dependia de a instalação ser editável ou não. Agora a casa tem
+    `nomos.skills_embutidas`, que empacota as skills DENTRO de `src/nomos/`
+    (o mesmo padrão de `nomos.conectores`). Usar a API é o certo: ela sabe
+    onde as skills estão em qualquer forma de instalação, e eu não.
+
+    `NOMOS_EXEMPLOS` continua vindo primeiro, para quem mantém um conjunto
+    próprio fora do pacote.
     """
     import os
 
@@ -1277,13 +1283,12 @@ def _raizes_de_exemplos(home: Path) -> list[Path]:
     env = os.environ.get("NOMOS_EXEMPLOS")
     if env:
         raizes.append(Path(env).expanduser())
-    raizes.append(home / "examples" / "skills")
-    try:                       # rodando a partir do checkout (dev)
-        import nomos
-        raizes.append(Path(nomos.__file__).resolve().parents[2]
-                      / "examples" / "skills")
+    try:
+        from nomos import skills_embutidas as emb
+        raizes.extend(emb.origens())
     except Exception:
         pass
+    raizes.append(home / "examples" / "skills")
     return raizes
 
 
@@ -1390,15 +1395,18 @@ def _secao_skills(d: dict, skills: dict | None) -> str:
 
     prontas = sk.get("prontas") or []
     if not prontas:
+        # Esta caixa já disse que as skills "não vêm na instalação". Era
+        # verdade quando medi (viviam em examples/, fora de src/, e o wheel
+        # não as levava) e deixou de ser: agora são empacotadas em
+        # `nomos.skills_embutidas`. Texto que descreve um fato tem de morrer
+        # com o fato — senão a tela vira arqueologia.
         partes.append(
-            '<div class="card"><b>Nenhuma skill de exemplo nesta máquina</b>'
-            "<p><small>As skills de exemplo acompanham o <b>repositório</b> do "
-            "NOMOS e <b>não vêm na instalação</b> — medido nesta máquina. Por "
-            "isso a sugestão do terminal (<code>nomos skills instalar "
-            "examples/skills/…</code>) só funciona de dentro do repositório."
-            "</small></p>"
-            "<p><small>Se você tem o repositório, aponte-o e recarregue: "
-            "<code>export NOMOS_EXEMPLOS=&lt;repo&gt;/examples/skills</code>. "
+            '<div class="card"><b>Nenhuma skill pronta encontrada</b>'
+            "<p><small>O NOMOS acompanha skills prontas dentro do próprio "
+            "pacote. Não achar nenhuma aqui é incomum — pode ser instalação "
+            "incompleta.</small></p>"
+            "<p><small>Se você mantém um conjunto próprio, aponte-o e "
+            "recarregue: <code>export NOMOS_EXEMPLOS=&lt;pasta&gt;</code>. "
             "Ou crie a sua, abaixo.</small></p></div>")
     if prontas:
         itens = "".join(
