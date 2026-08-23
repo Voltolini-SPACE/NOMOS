@@ -24,15 +24,24 @@ PERSONALIDADES = {
 def listar_modelos(host: str = "http://127.0.0.1:11434", timeout: float = 1.5) -> list[str]:
     """Modelos do Ollama. Delega ao registry (fonte única, com guard de esquema
     e cache); import tardio evita ciclo com cognition.motores."""
-    from nomos.cognition.motores import modelos_ollama
-    return modelos_ollama(host)
+    # SÓ modelos que sabem gerar: um modelo de embedding entra em /api/tags
+    # como qualquer outro, mas o Ollama recusa /api/generate nele. Ver
+    # `modelos_ollama_geradores`.
+    from nomos.cognition.motores import modelos_ollama_geradores
+    return modelos_ollama_geradores(host)
 
 
 def escolher_modelo(nomes: list[str]) -> str | None:
-    """Prefere Hermes (cérebro padrão do projeto), depois llama, depois o 1º."""
+    """Escolhe o cérebro entre modelos que JÁ foram filtrados por capacidade.
+
+    A lista chega de `modelos_ollama_geradores`; aqui só se ordena preferência.
+    O `sorted(nomes)[0]` final é alfabético e por isso era perigoso enquanto a
+    lista vinha crua: com um cofre contendo `embeddinggemma`, `nomic-embed-text`
+    e `qwen3.5`, o alfabeto elegia o primeiro — um modelo que não responde.
+    """
     if not nomes:
         return None
-    for prefixo in ("hermes", "llama"):
+    for prefixo in ("qwen", "llama", "gemma", "mistral", "phi", "hermes"):
         for n in nomes:
             if n.lower().startswith(prefixo):
                 return n

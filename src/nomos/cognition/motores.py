@@ -91,6 +91,51 @@ def modelos_ollama(host: str = OLLAMA) -> list[str]:
     return _cacheado(f"ollama:{host}", 10.0, probe)
 
 
+def capacidades_ollama(nome: str, host: str = OLLAMA) -> tuple[str, ...]:
+    """Capacidades declaradas pelo próprio Ollama para um modelo.
+
+    Ex.: `qwen3.5:4b-q8_0` -> ('completion','vision','tools','thinking');
+    `embeddinggemma:300m` -> ('embedding',). Sem isto não há como distinguir
+    um modelo de conversa de um modelo só de embedding pelo NOME.
+    """
+    def probe():
+        try:
+            import urllib.request
+            req = urllib.request.Request(
+                f"{host}/api/show", data=json.dumps({"model": nome}).encode(),
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=3.0) as r:  # noqa: S310 - localhost
+                return tuple(json.loads(r.read().decode()).get("capabilities") or ())
+        except Exception:
+            return ()
+    return _cacheado(f"caps:{host}:{nome}", 60.0, probe)
+
+
+def modelos_ollama_geradores(host: str = OLLAMA) -> list[str]:
+    """Só os modelos que SABEM gerar texto.
+
+    Um modelo de embedding (`embeddinggemma`, `nomic-embed-text`) aparece em
+    `/api/tags` como qualquer outro, mas o Ollama recusa `/api/generate` nele:
+    `"embeddinggemma:300m" does not support generate`. Escolher um desses como
+    cérebro produz um agente que não responde NADA — e um check-up verde
+    mentindo "Cérebro pronto". Aconteceu em 22/08 com o cofre soberano, que só
+    tinha dois modelos de embedding e um de conversa.
+
+    Fail-safe: se o Ollama não declarar capacidades (versão antiga), cai na
+    heurística do nome — melhor excluir demais que eleger um cérebro mudo.
+    """
+    nomes = modelos_ollama(host)
+    geradores = []
+    for n in nomes:
+        caps = capacidades_ollama(n, host)
+        if caps:
+            if "completion" in caps:
+                geradores.append(n)
+        elif "embed" not in n.lower():
+            geradores.append(n)
+    return geradores
+
+
 def _melhor(nomes: list[str], prefixos: tuple[str, ...]) -> str | None:
     for p in prefixos:
         for n in nomes:
