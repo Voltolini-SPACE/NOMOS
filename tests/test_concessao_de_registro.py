@@ -128,18 +128,34 @@ def test_e_ttl_do_pedido_nao_e_o_ttl_da_concessao(ambiente):
     assert not conc.vigente(op.digest())
 
 
-def test_e2_concessao_expirada_persiste_revogada(ambiente):
+def test_e2_concessao_expirada_deixa_de_valer_e_e_varrida_na_proxima_escrita(ambiente):
+    """CONTRATO CORRIGIDO. A versão anterior deste teste exigia que a expiração
+    APAGASSE o registro durante `vigente()` — e `vigente()` roda no caminho de
+    LEITURA, a cada registro de capacidade, em processos concorrentes. Esse
+    apagar+regravar ressuscitava concessões recém-revogadas (ver
+    `test_vigente_nao_escreve_no_caminho_de_leitura`). O teste codificava o
+    defeito como requisito.
+
+    O contrato certo: expirada NÃO VALE (propriedade de segurança, imediata) e
+    é varrida do disco por quem já escreve.
+    """
     policy, audit, concessoes, tmp_path = ambiente
     relogio = {"t": 1000.0}
-    conc = RegistroConcessoes(tmp_path / "c3.json", audit=audit,
-                              clock=lambda: relogio["t"])
+    caminho = tmp_path / "c3.json"
+    conc = RegistroConcessoes(caminho, audit=audit, clock=lambda: relogio["t"])
     base = _registro(policy, audit, conc)
     op = base.operacao_de_registro(CAP, Category.WRITE_LOCAL, ORIGEM, False)
     conc.conceder(op, ttl_dias=1)
+
     relogio["t"] += 2 * 86400
-    assert not conc.vigente(op.digest())
-    assert op.digest() not in json.loads(
-        (tmp_path / "c3.json").read_text())["concessoes"]
+    antes = caminho.stat().st_mtime_ns
+    assert not conc.vigente(op.digest())            # deixa de valer NA HORA
+    assert caminho.stat().st_mtime_ns == antes      # sem escrever na leitura
+
+    outra = base.operacao_de_registro("fs-listar-teste", Category.READ_LOCAL,
+                                      ORIGEM, True)
+    conc.conceder(outra, ttl_dias=30)               # primeira escrita => varre
+    assert op.digest() not in json.loads(caminho.read_text())["concessoes"]
 
 
 # -------------------------------------------------------------------- F
