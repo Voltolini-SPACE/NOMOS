@@ -75,6 +75,13 @@ def origens() -> list[Path]:
     3. checkout do repositório — só para quem desenvolve.
     """
     achados = [diretorio_embutido()]
+    try:   # as do dono viajam no wheel também, e entram logo após as oficiais
+        from nomos import skills_do_dono as _dono
+        d = _dono.diretorio()
+        if d.is_dir():
+            achados.append(d)
+    except Exception:  # noqa: S110 — pacote ausente numa instalação parcial
+        pass           # não pode derrubar a descoberta das oficiais.
     extra = os.environ.get(VAR_EXTRA)
     if extra:
         p = Path(extra).expanduser()

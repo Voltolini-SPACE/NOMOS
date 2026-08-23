@@ -1281,16 +1281,25 @@ def cmd_skills(ctx, args) -> int:
         if semente is not None:
             from nomos.simple.erros import fmt   # import local, como no resto
             if not semente:
-                # sem PASTA: as skills que VIAJAM COM O PACOTE. É a única origem
-                # que existe numa instalação normal — `examples/` só existe
-                # dentro do checkout, e era isso que tornava a sugestão antiga
-                # um caminho morto para quem instalou o produto.
+                # sem PASTA: TODAS as origens que viajam com o pacote — as 4
+                # oficiais e as do dono. É a única origem que existe numa
+                # instalação normal: `examples/` só existe dentro do checkout,
+                # e era isso que tornava a sugestão antiga um caminho morto.
                 from nomos import skills_embutidas as emb
-                semente = str(emb.diretorio_embutido())
+                origens = emb.origens()
+                total, erros = [], []
+                for base in origens:
+                    r = reg.semear_catalogo(ctx["home"], base)
+                    total += r["adicionadas"]
+                    erros += r["erros"]
+                res = {"adicionadas": total, "erros": erros,
+                       "origem": ", ".join(str(o) for o in origens)}
+                semente = None
             # primeiro chamador de PRODUÇÃO de adicionar_ao_catalogo: sem ele o
             # catálogo tinha leitor e nenhum escritor, e nascia sempre vazio.
             try:
-                res = reg.semear_catalogo(ctx["home"], Path(semente))
+                if semente is not None:
+                    res = reg.semear_catalogo(ctx["home"], Path(semente))
             except reg.RegistroError as exc:
                 print(fmt("E004", f"não semeei: {exc}"), file=sys.stderr)
                 return EXIT_ERROR
