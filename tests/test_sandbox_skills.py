@@ -46,7 +46,11 @@ def test_rede_negada_por_padrao_ou_recusa_fail_closed():
         "s=socket.socket();s.settimeout(3);"
         "s.connect(('1.1.1.1',80));print('REDE_ABERTA')\""
     )
-    if sandbox.netns_available():
+    # Desde 23/08 o macOS também executa este ramo (seatbelt com perfil BASE,
+    # que nega network-* por deny-default) — a recusa fail-closed fica só para
+    # máquinas sem unshare E sem sandbox-exec. O critério é o mesmo que o
+    # previsor consulta, então este teste também vigia a não-divergência.
+    if sandbox.isolamento_sem_rede_disponivel():
         r = sandbox.run(probe, timeout=15)
         assert r.network_isolated is True
         assert "REDE_ABERTA" not in r.stdout

@@ -265,14 +265,30 @@ def test_modulo_python_presente_passa(nomos_home):
     assert reg.verificar_requisitos(mf, nomos_home) == []
 
 
-def test_skill_sem_rede_avisa_que_nao_executa_no_mac(nomos_home, monkeypatch):
-    """A mais segura (A0) é justamente a que não executa: o dono tem de saber."""
-    from nomos.kernel import plataforma
-    monkeypatch.setattr(plataforma, "execucao_isolada_disponivel", lambda: False)
+def test_skill_sem_rede_so_recusa_sem_garantia_de_rede_negada(nomos_home,
+                                                              monkeypatch):
+    """A INVERSÃO caiu: skill A0 executa onde há como NEGAR rede com garantia.
+
+    Este teste prendia "só-Linux por desenho" — verdade até 23/08, quando o
+    seatbelt ganhou o perfil BASE (deny default nega network-*) e o macOS
+    passou a executar o ramo sem rede COM a cerca mais forte, não sem ela.
+    A recusa fail-closed continua existindo — para máquina sem unshare E sem
+    sandbox-exec — e é o que se afirma aqui.
+    """
+    import nomos.runtime.sandbox as sb
+
+    # onde há garantia (este Mac, ou Linux com unshare): executa
+    if sb.isolamento_sem_rede_disponivel():
+        pode, _ = reg.pode_executar_aqui(
+            {"permissions": ["A0_READ_LOCAL"]}, nomos_home)
+        assert pode is True
+
+    # onde não há: recusa com o motivo novo, nunca execução sem cerca
+    monkeypatch.setattr(sb, "isolamento_sem_rede_disponivel", lambda: False)
     pode, motivo = reg.pode_executar_aqui(
         {"permissions": ["A0_READ_LOCAL"]}, nomos_home)
     assert pode is False
-    assert "só-Linux por desenho" in motivo
+    assert "garantir rede negada" in motivo
 
 
 def test_skill_com_rede_avisa_cadeado_ligado(nomos_home):
@@ -287,8 +303,9 @@ def test_skill_com_rede_avisa_cadeado_ligado(nomos_home):
 
 def test_aviso_nao_bloqueia_a_instalacao(tmp_path, nomos_home, monkeypatch):
     """Dizer a verdade não é recusar: a skill instala mesmo sem poder rodar."""
-    from nomos.kernel import plataforma
-    monkeypatch.setattr(plataforma, "execucao_isolada_disponivel", lambda: False)
+    import nomos.runtime.sandbox as sb
+
+    monkeypatch.setattr(sb, "isolamento_sem_rede_disponivel", lambda: False)
     src = _skill_em(tmp_path / "loja", "so-instala")
     engine = PolicyEngine(nomos_home / "policy.json")
     reg.instalar(src, nomos_home / "skills", engine, lambda d: True,

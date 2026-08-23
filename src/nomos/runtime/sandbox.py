@@ -98,7 +98,10 @@ def _limits(cpu_seconds: int, fsize_mb: int):
 # rc=134 e sem mensagem — falha muda, o pior modo. Ele permite LISTAR `/`, nada
 # além; os filhos seguem negados. Lição já paga por `adapters/supervisor.py`,
 # reusada aqui em vez de redescoberta.
-_PERFIL_COM_REDE = """(version 1)
+# Base SEM rede: (deny default) já nega network-*; os allows de rede moram só
+# na variante COM rede. As três permissões de suporte de rede também ficam lá
+# (configd/dnssd/system-socket): no perfil sem-rede elas seriam porta entreaberta.
+_PERFIL_BASE = """(version 1)
 (deny default)
 (allow process-fork)
 (allow process-exec)
@@ -117,12 +120,15 @@ _PERFIL_COM_REDE = """(version 1)
 (allow file-read* (literal "/dev/null"))
 (allow file-read* (literal "/dev/dtracehelper"))
 (allow mach-lookup (global-name "com.apple.system.opendirectoryd.membership"))
-(allow mach-lookup (global-name "com.apple.SystemConfiguration.configd"))
-(allow mach-lookup (global-name "com.apple.dnssd.service"))
-(allow system-socket)
 (allow file-read* (literal "/dev/urandom"))
 (allow file-write-data (literal "/dev/null"))
 (allow file-read* file-write* (subpath "{workdir}"))
+"""
+
+_PERFIL_COM_REDE = _PERFIL_BASE + """\
+(allow mach-lookup (global-name "com.apple.SystemConfiguration.configd"))
+(allow mach-lookup (global-name "com.apple.dnssd.service"))
+(allow system-socket)
 (allow network-outbound)
 (allow network-inbound)
 """
@@ -235,7 +241,22 @@ def _regras_do_interpretador(argv: list[str]) -> tuple[list[str], list[str]]:
     return [real, *argv[1:]], regras
 
 
-def _perfil_seatbelt(workdir: str, extras: list[str] | None = None) -> str:
+def isolamento_sem_rede_disponivel() -> bool:
+    """Esta máquina consegue executar NEGANDO rede com garantia?
+
+    Linux: user namespaces (`unshare -rn`). macOS: seatbelt com o perfil BASE,
+    cujo (deny default) nega network-*. É o critério que `pode_executar_aqui`
+    consulta — mora AQUI para previsor e executor lerem a mesma fonte; se
+    divergirem, o teste de não-divergência acusa.
+    """
+    if plataforma.EH_MAC:
+        sbx = shutil.which("sandbox-exec") or plataforma.SANDBOX_EXEC
+        return os.path.exists(sbx)
+    return netns_available()
+
+
+def _perfil_seatbelt(workdir: str, extras: list[str] | None = None,
+                     com_rede: bool = True) -> str:
     """O perfil com o workdir embutido — única área gravável.
 
     O caminho vai para dentro de aspas no perfil. Aspa, barra invertida ou
@@ -247,13 +268,15 @@ def _perfil_seatbelt(workdir: str, extras: list[str] | None = None) -> str:
     if any(c in real for c in ('"', "\\", "\n", "\r")):
         raise IsolationUnavailable(
             f"caminho com caractere que quebraria o perfil do sandbox: {real!r}")
-    perfil = _PERFIL_COM_REDE.replace("{workdir}", real)
+    base = _PERFIL_COM_REDE if com_rede else _PERFIL_BASE
+    perfil = base.replace("{workdir}", real)
     if extras:
         perfil += "\n".join(extras) + "\n"
     return perfil
 
 
-def _confinamento_macos(argv: list[str], workdir: str) -> tuple[list[str], bool]:
+def _confinamento_macos(argv: list[str], workdir: str,
+                        com_rede: bool = True) -> tuple[list[str], bool]:
     """Envolve `argv` em sandbox-exec no macOS. Devolve (argv, confinado).
 
     Fora do macOS, ou sem o binário, devolve o argv intacto e `False` — quem
@@ -266,7 +289,7 @@ def _confinamento_macos(argv: list[str], workdir: str) -> tuple[list[str], bool]
     if not os.path.exists(sbx):
         return argv, False
     argv, extras = _regras_do_interpretador(argv)
-    return [sbx, "-p", _perfil_seatbelt(workdir, extras), *argv], True
+    return [sbx, "-p", _perfil_seatbelt(workdir, extras, com_rede), *argv], True
 
 
 def run(
@@ -281,7 +304,25 @@ def run(
     argv = ["/bin/sh", "-c", cmd] if isinstance(cmd, str) else list(cmd)
 
     isolated = False
-    if not allow_network:
+    confinado_fs = False
+    if not allow_network and plataforma.EH_MAC:
+        # A INVERSÃO, desfeita: até 23/08 este ramo recusava no macOS ("user
+        # namespaces indisponíveis"), então a skill MAIS SEGURA (sem rede) era
+        # justamente a que não executava — enquanto a com rede rodava sob o
+        # seatbelt. Mas (deny default) já nega network-*: o perfil BASE, sem
+        # os allows de rede, dá a garantia que o unshare dava no Linux, e com
+        # cerca de arquivos junto. Só se o seatbelt não existir é que se cai
+        # na recusa fail-closed de sempre — nunca em execução sem cerca.
+        cwd = workdir or tempfile.mkdtemp(prefix="nomos-sbx-")
+        workdir = cwd
+        argv, ok = _confinamento_macos(argv, cwd, com_rede=False)
+        if not ok:
+            raise IsolationUnavailable(
+                "sandbox-exec ausente: recuso executar sem garantia de rede "
+                "negada (fail-closed).")
+        isolated = True
+        confinado_fs = True
+    elif not allow_network:
         if not netns_available():
             raise IsolationUnavailable(
                 "user namespaces indisponíveis: recuso executar com garantia de "
@@ -301,14 +342,13 @@ def run(
         isolated = True
 
     env = {"PATH": _PATH_BUSCA, "LANG": "C.UTF-8", "HOME": "/tmp"}  # nosec B108 - HOME efêmero dentro do processo isolado
-    cwd = workdir or tempfile.mkdtemp(prefix="nomos-sbx-")
+    cwd = workdir or tempfile.mkdtemp(prefix="nomos-sbx-")   # já criado no ramo mac sem-rede
 
     # Ramo COM rede: até 23/08 não tinha cerca de sistema de arquivos NENHUMA —
     # medido lendo o home do dono e o `~/.nomos/vault.json`. No macOS o
     # seatbelt fecha isso sem tirar a rede, que é o que o chamador pediu.
     # Fora do macOS o argv segue intacto: esta função não inventa isolamento
     # onde não existe, e `network_isolated` continua dizendo a verdade.
-    confinado_fs = False
     if allow_network:
         argv, confinado_fs = _confinamento_macos(argv, cwd)
 

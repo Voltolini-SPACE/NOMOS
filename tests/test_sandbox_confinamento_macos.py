@@ -113,10 +113,32 @@ def test_resultado_diz_a_verdade_nos_dois_eixos():
 
 
 @so_mac
-def test_sem_rede_continua_recusado_no_mac():
-    """Não mudei a postura só-Linux do ramo sem rede — é desenho, não defeito."""
-    with pytest.raises(sandbox.IsolationUnavailable):
-        sandbox.run(["/bin/echo", "x"], allow_network=False, timeout=15)
+def test_sem_rede_EXECUTA_no_mac_com_rede_negada_de_verdade():
+    """A postura mudou em 23/08, de propósito — este teste substitui o pino
+    "continua recusado no mac", que existia exatamente para forçar a mudança a
+    ser explícita em vez de acidental.
+
+    O que caiu: a INVERSÃO — a skill mais segura (sem rede) era a única que não
+    executava, enquanto a com rede rodava sob o seatbelt. O que entrou: o ramo
+    sem rede usa o perfil BASE do MESMO seatbelt, cujo (deny default) nega
+    network-* — garantia igual à do unshare no Linux, com cerca de arquivos
+    junto. A recusa fail-closed segue existindo para máquina sem unshare E sem
+    sandbox-exec (coberto em test_sandbox_skills, pelo mesmo critério que o
+    previsor consulta).
+    """
+    r = sandbox.run(["/bin/echo", "x"], allow_network=False, timeout=15)
+    assert r.rc == 0
+    assert r.network_isolated is True     # a garantia existe e é DECLARADA
+    assert r.fs_confinado is True         # e a cerca de arquivos veio junto
+
+    # rede negada DE FATO, não por declaração: sonda tenta e falha
+    sonda = sandbox.run(
+        ["/opt/homebrew/bin/python3", "-c",
+         "import socket\ns=socket.socket()\ns.settimeout(3)\n"
+         "s.connect(('1.1.1.1', 80))\nprint('REDE_ABERTA')"],
+        allow_network=False, timeout=15)
+    assert "REDE_ABERTA" not in sonda.stdout
+    assert sonda.rc != 0
 
 
 # ------------------------------------------------ o caminho legítimo de volta

@@ -398,15 +398,20 @@ def pode_executar_aqui(mf: dict, home: Path | None = None) -> tuple[bool, str]:
     Ou seja, no macOS com cadeado ligado NENHUMA das duas roda — e isso precisa
     ser dito, não descoberto.
     """
-    from nomos.kernel import localidade, plataforma
+    from nomos.kernel import localidade
+    from nomos.runtime.sandbox import isolamento_sem_rede_disponivel
 
     perms = mf.get("permissions") or []
     quer_rede = Category.NET_EGRESS.value in perms
     if not quer_rede:
-        if not plataforma.execucao_isolada_disponivel():
-            return False, ("instala, mas NÃO executa nesta máquina: o "
-                           "confinamento de execução é só-Linux por desenho, e "
-                           "sem ele o NOMOS recusa em vez de rodar sem cerca")
+        # Desde 23/08 o macOS também executa o ramo sem rede: o seatbelt com o
+        # perfil BASE nega network-* por (deny default) — mesma garantia que o
+        # unshare dá no Linux, com cerca de arquivos junto. O critério vem do
+        # PRÓPRIO sandbox para previsor e executor nunca divergirem.
+        if not isolamento_sem_rede_disponivel():
+            return False, ("instala, mas NÃO executa nesta máquina: não há como "
+                           "garantir rede negada aqui (sem unshare/seatbelt), e "
+                           "o NOMOS recusa em vez de rodar sem cerca")
         return True, ""
     if home is not None and localidade.esta_ligado(home):
         return False, ("instala, mas NÃO executa enquanto o modo só-local "
