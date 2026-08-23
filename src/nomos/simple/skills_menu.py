@@ -151,8 +151,11 @@ def instalar_amigavel(ctx, caminho: str, approver, confirmar_experimental) -> st
     """Fluxo de instalação usado pela CLI (mensagem amigável, gate real)."""
     trust = TrustStore(Path(ctx["home"]) / "trust.json")
     try:
+        # `home` habilita a checagem de `requires` (cofre e catálogo MCP moram
+        # nela). Sem passar, dependência de chave/MCP fica sem verificação.
         mf = reg.instalar(Path(caminho), ctx["skills"], ctx["policy"], approver,
-                          trust=trust, confirmar_experimental=confirmar_experimental)
+                          trust=trust, confirmar_experimental=confirmar_experimental,
+                          home=Path(ctx["home"]))
     except (reg.RegistroError, _skills.SkillError) as exc:
         ctx["audit"].append("skill.install.falhou", motivo=str(exc))
         return f"não instalei: {exc}"

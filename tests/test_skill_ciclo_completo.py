@@ -145,3 +145,93 @@ def test_semeado_entra_NAO_assinado(tmp_path, nomos_home):
     _, assinado, _ = reg.catalogo_info(nomos_home)
     assert assinado is False
     assert all("signature" not in s for s in reg.catalogo(nomos_home))
+
+
+# ------------------------------------------------- dependências declaradas
+def _com_requires(pasta, nome, requires):
+    d = _skill_em(pasta, nome)
+    mf = json.loads((d / "skill.json").read_text())
+    mf["requires"] = requires
+    (d / "skill.json").write_text(json.dumps(mf))
+    return d
+
+
+def test_binario_ausente_recusa_na_instalacao(tmp_path, nomos_home):
+    """O ponto do "plug-and-play": recusar AGORA, não quebrar no uso."""
+    src = _com_requires(tmp_path / "loja", "precisa-bin", [
+        {"tipo": "binario", "nome": "binario-que-nao-existe-xyz", "obrigatorio": True}])
+    engine = PolicyEngine(nomos_home / "policy.json")
+
+    with pytest.raises(reg.RegistroError, match="não existe nesta máquina"):
+        reg.instalar(src, nomos_home / "skills", engine, lambda d: True,
+                     confirmar_experimental=lambda m: True, home=nomos_home)
+    assert not (nomos_home / "skills" / "precisa-bin").exists()
+
+
+def test_binario_presente_instala(tmp_path, nomos_home):
+    src = _com_requires(tmp_path / "loja", "precisa-sh", [
+        {"tipo": "binario", "nome": "sh", "obrigatorio": True}])
+    engine = PolicyEngine(nomos_home / "policy.json")
+    reg.instalar(src, nomos_home / "skills", engine, lambda d: True,
+                 confirmar_experimental=lambda m: True, home=nomos_home)
+    assert (nomos_home / "skills" / "precisa-sh").exists()
+
+
+def test_dependencia_opcional_nao_bloqueia(tmp_path, nomos_home):
+    src = _com_requires(tmp_path / "loja", "opcional", [
+        {"tipo": "binario", "nome": "nao-existe-xyz", "obrigatorio": False}])
+    engine = PolicyEngine(nomos_home / "policy.json")
+    reg.instalar(src, nomos_home / "skills", engine, lambda d: True,
+                 confirmar_experimental=lambda m: True, home=nomos_home)
+    assert (nomos_home / "skills" / "opcional").exists()
+
+
+def test_binario_como_linha_de_comando_usa_o_primeiro_token(nomos_home):
+    """`python3 -m feedparser` não é um executável: o que existe é `python3`.
+
+    Medir a linha inteira com `which` reprovaria SEMPRE — recusa inventada.
+    """
+    mf = {"requires": [{"tipo": "binario", "nome": "sh -c algo", "obrigatorio": True}]}
+    assert reg.verificar_requisitos(mf, nomos_home) == []
+
+
+def test_nome_em_prosa_nao_vira_ausencia(nomos_home):
+    """Nome não consultável ⇒ NÃO VERIFICADO, e não bloqueia.
+
+    Bloquear por ignorância inventa impedimento e empurra o autor a apagar o
+    `requires` — o oposto do que queremos. Só evidência de ausência bloqueia.
+    """
+    mf = {"requires": [{"tipo": "chave",
+                        "nome": "token do gh (host, nao do cofre)",
+                        "obrigatorio": True}]}
+    itens = reg.verificar_requisitos(mf, nomos_home)
+    assert len(itens) == 1
+    assert itens[0]["verificado"] is False
+
+
+def test_tipo_desconhecido_avisa_sem_bloquear(tmp_path, nomos_home):
+    src = _com_requires(tmp_path / "loja", "tipo-novo", [
+        {"tipo": "coisa-que-nao-existe", "nome": "x", "obrigatorio": True}])
+    engine = PolicyEngine(nomos_home / "policy.json")
+    reg.instalar(src, nomos_home / "skills", engine, lambda d: True,
+                 confirmar_experimental=lambda m: True, home=nomos_home)
+    assert (nomos_home / "skills" / "tipo-novo").exists()
+
+
+def test_chave_ausente_no_cofre_e_evidencia_e_bloqueia(tmp_path, nomos_home):
+    """Nome CONSULTÁVEL e ausente do cofre é evidência — aí sim bloqueia."""
+    src = _com_requires(tmp_path / "loja", "precisa-chave", [
+        {"tipo": "chave", "nome": "groq_api_key", "obrigatorio": True}])
+    engine = PolicyEngine(nomos_home / "policy.json")
+    with pytest.raises(reg.RegistroError):
+        reg.instalar(src, nomos_home / "skills", engine, lambda d: True,
+                     confirmar_experimental=lambda m: True, home=nomos_home)
+
+
+def test_sem_requires_comporta_como_antes(tmp_path, nomos_home):
+    """Manifesto sem `requires` não muda de comportamento (compatibilidade)."""
+    src = _skill_em(tmp_path / "loja", "sem-requires")
+    engine = PolicyEngine(nomos_home / "policy.json")
+    reg.instalar(src, nomos_home / "skills", engine, lambda d: True,
+                 confirmar_experimental=lambda m: True, home=nomos_home)
+    assert (nomos_home / "skills" / "sem-requires").exists()

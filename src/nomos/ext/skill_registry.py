@@ -231,8 +231,100 @@ def disponiveis(home: Path, skills_dir: Path) -> list[dict]:
 
 # ------------------------- instalação v2 -------------------------
 
+TIPOS_REQUISITO = ("binario", "chave", "servidor_mcp")
+"""Os três tipos que um manifesto pode declarar em `requires`."""
+
+
+def verificar_requisitos(mf: dict, home: Path | None = None) -> list[dict]:
+    """O que o manifesto declara em `requires` e NÃO existe nesta máquina.
+
+    Por que na INSTALAÇÃO e não no uso: sem isto, uma skill que depende de um
+    binário ausente instala com sucesso e só quebra quando a pessoa tenta usá-la
+    — "plug-and-play" vira promessa falsa. Medido nos manifestos reais: 7 de 12
+    declaram binário que não existe nesta máquina.
+
+    Cada item devolvido é o requisito original acrescido de `motivo`. Só isso:
+    quem decide recusar é `instalar`, e só para os `obrigatorio: true`.
+
+    Limites que esta função NÃO finge cobrir:
+      * `chave` é verificada por NOME no cofre (`Vault.names()`), sem passphrase
+        e sem ler valor — presença do nome não prova que o valor serve;
+      * `servidor_mcp` confere registro no catálogo MCP, não que o servidor suba;
+      * requisito de tipo desconhecido conta como AUSENTE (fail-closed): melhor
+        recusar do que instalar prometendo algo que ninguém checou.
+    """
+    import shutil
+
+    faltando: list[dict] = []
+    for req in (mf.get("requires") or []):
+        if not isinstance(req, dict):
+            faltando.append({"tipo": "?", "nome": str(req), "obrigatorio": True,
+                             "motivo": "requisito malformado no manifesto"})
+            continue
+        tipo, nome = str(req.get("tipo", "")), str(req.get("nome", ""))
+        obrig = bool(req.get("obrigatorio", True))
+        motivo, verificado = None, True
+        if tipo == "binario":
+            # `nome` pode vir como linha de comando ("python3 -m feedparser");
+            # o executável é o PRIMEIRO token. Verificar a linha inteira com
+            # `which` reprovaria sempre — recusa inventada, não medida.
+            exe = nome.split()[0] if nome.split() else ""
+            if not exe:
+                motivo, verificado = "requisito 'binario' sem nome", False
+            elif not shutil.which(exe):
+                motivo = f"binário '{exe}' não está no PATH"
+        elif tipo == "chave":
+            if not _IDENT.fullmatch(nome):
+                # nome em prosa ("token do gh (host, nao do cofre)") não é
+                # consultável no cofre. Não invento ausência a partir disso.
+                motivo, verificado = (
+                    f"chave '{nome}': não é um nome consultável no cofre", False)
+            else:
+                motivo = _chave_ausente(nome, home)
+        elif tipo == "servidor_mcp":
+            motivo = _mcp_ausente(nome, home)
+        else:
+            motivo, verificado = f"tipo de requisito desconhecido: {tipo!r}", False
+        if motivo:
+            faltando.append({**req, "tipo": tipo, "nome": nome,
+                             "obrigatorio": obrig, "motivo": motivo,
+                             "verificado": verificado})
+    return faltando
+
+
+def _chave_ausente(nome: str, home: Path | None) -> str | None:
+    """Confere só o NOME no cofre. Nunca pede passphrase, nunca lê valor."""
+    if home is None:
+        return f"chave '{nome}': não sei onde procurar (home não informada)"
+    try:
+        from nomos.kernel.vault import Vault
+        v = Vault(Path(home) / "vault.json")
+        if not v.exists():
+            return f"chave '{nome}': cofre não existe (nomos vault init)"
+        return None if nome in v.names() else f"chave '{nome}' não está no cofre"
+    except Exception as exc:
+        return f"chave '{nome}': não consegui verificar ({type(exc).__name__})"
+
+
+_IDENT = __import__("re").compile(r"[A-Za-z0-9_.-]{1,64}")
+
+
+def _mcp_ausente(nome: str, home: Path | None) -> str | None:
+    if home is None:
+        return f"servidor MCP '{nome}': não sei onde procurar"
+    try:
+        from nomos.interface import mcp_catalogo as cat
+        # `listar` devolve DICT {"confiaveis": [...], "revogadas": N} — iterar o
+        # retorno direto percorreria as CHAVES e falharia em silêncio.
+        snap = cat.listar(Path(home)) or {}
+        registrados = {str(c.get("nome")) for c in snap.get("confiaveis", [])}
+        return None if nome in registrados else f"servidor MCP '{nome}' não é confiável/registrado"
+    except Exception as exc:
+        return f"servidor MCP '{nome}': não consegui verificar ({type(exc).__name__})"
+
+
 def instalar(src: Path, skills_dir: Path, engine: PolicyEngine, approver,
-             trust=None, confirmar_experimental=None) -> dict:
+             trust=None, confirmar_experimental=None, home: Path | None = None) -> dict:
     """Instala com validação v2 + regras de risco. Delega a ext.skills.install
     (checksum, assinatura, gate) — nenhum caminho novo de autorização.
 
@@ -252,6 +344,20 @@ def instalar(src: Path, skills_dir: Path, engine: PolicyEngine, approver,
     if problemas:
         raise RegistroError("manifesto inválido: " + "; ".join(problemas))
     mf = normalizar_manifesto(bruto)
+
+    # Dependência declarada e ausente RECUSA aqui, antes de copiar arquivo: é a
+    # diferença entre "instalou e quebra no uso" e uma promessa honesta.
+    # Opcional ausente não bloqueia — só o `obrigatorio: true`.
+    # Bloqueia só com EVIDÊNCIA de ausência (`verificado`). O que não deu para
+    # verificar — nome em prosa, credencial fora do cofre, tipo desconhecido —
+    # NÃO vira recusa: recusar por ignorância inventa impedimento e empurra o
+    # autor a apagar o `requires`, que é o oposto do que queremos.
+    faltam = [f for f in verificar_requisitos(mf, home)
+              if f["obrigatorio"] and f.get("verificado", True)]
+    if faltam:
+        detalhe = "; ".join(f["motivo"] for f in faltam)
+        raise RegistroError(
+            f"'{mf['name']}' precisa do que não existe nesta máquina: {detalhe}")
 
     experimental = mf["risk_level"] == "alto" or "signature" not in bruto
     if experimental:
