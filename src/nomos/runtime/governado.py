@@ -345,7 +345,8 @@ class RuntimeGovernado:
         self.registro = RegistroCapacidades(policy=self.policy,
                                             approver=aprovador,
                                             audit=self.audit,
-                                            concessoes=concessoes)
+                                            concessoes=concessoes,
+                                            escopo_dados=tuple(caminhos or ()))
         # ABSORPTION-03: adapters entram como capacidades DINÂMICAS, pelo
         # caminho governado (registrar é A5 + gate + audit). A allowlist
         # nativa de 8 ferramentas continua intocada.

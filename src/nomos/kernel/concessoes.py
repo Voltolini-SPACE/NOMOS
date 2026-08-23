@@ -40,6 +40,9 @@ em dias. Confundir os dois foi a causa raiz do serviço preso em laço.
 from __future__ import annotations
 
 import json
+import math
+import os
+import tempfile
 import time
 from pathlib import Path
 
@@ -81,12 +84,26 @@ class RegistroConcessoes:
 
     def _escrever(self, concessoes: dict) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"versao": 1, "concessoes": concessoes},
-                                  indent=2, ensure_ascii=False),
-                       encoding="utf-8")
-        chmod_privado(tmp, 0o600)
-        tmp.replace(self.path)
+        # Nome FIXO (`concessoes.tmp`) era duas falhas numa linha: dois processos
+        # concedendo em paralelo consumiam o tmp um do outro (FileNotFoundError
+        # no replace, gravação parcial), e quem plantasse `concessoes.tmp` como
+        # symlink fazia o NOMOS sobrescrever arquivo arbitrário — `write_text`
+        # segue symlink. `mkstemp` dá nome imprevisível, O_EXCL e 0600 desde a
+        # criação; o `fsync` garante que o replace publica conteúdo, não zeros.
+        fd, tmp_nome = tempfile.mkstemp(dir=str(self.path.parent),
+                                        prefix=".concessoes-", suffix=".tmp")
+        tmp = Path(tmp_nome)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump({"versao": 1, "concessoes": concessoes}, fh,
+                          indent=2, ensure_ascii=False)
+                fh.flush()
+                os.fsync(fh.fileno())
+            chmod_privado(tmp, 0o600)
+            os.replace(tmp, self.path)
+        except BaseException:
+            tmp.unlink(missing_ok=True)      # nunca deixar lixo previsível
+            raise
         chmod_privado(self.path, 0o600)
 
     def _auditar(self, evento: str, **campos) -> None:
@@ -112,8 +129,16 @@ class RegistroConcessoes:
             raise ConcessaoError(
                 f"fora de escopo: concessão só cobre alvos '{PREFIXO_ALVO}*', "
                 f"recebido {recurso!r}")
-        if ttl_dias <= 0:
-            raise ConcessaoError("TTL deve ser positivo — não há concessão perpétua")
+        if not isinstance(ttl_dias, (int, float)) or not math.isfinite(ttl_dias) \
+                or ttl_dias <= 0:
+            # `--ttl-dias inf` passava e gravava `expira_em: Infinity`: concessão
+            # PERPÉTUA, contradizendo esta própria linha. Pior, `listar` morria
+            # com OverflowError ao calcular os dias restantes — as perpétuas
+            # ficavam invisíveis no único comando de inventário, e o dono não
+            # conseguia nem ver o que revogar.
+            raise ConcessaoError(
+                "TTL deve ser um número positivo e finito — "
+                "não há concessão perpétua")
 
         digest = operacao.digest()
         agora = self.clock()
@@ -128,13 +153,26 @@ class RegistroConcessoes:
             "motivo": str(motivo),
             "dono": str(dono),
         }
-        concessoes = self._ler()
+        concessoes = self._varrer_expiradas(self._ler())
         concessoes[digest] = entrada
         self._escrever(concessoes)
         self._auditar("registro.concessao.concedida", digest=digest[:16],
                       capacidade=entrada["capacidade"], recurso=recurso,
                       expira_em=entrada["expira_em"], motivo=str(motivo))
         return dict(entrada)
+
+    def _varrer_expiradas(self, concessoes: dict) -> dict:
+        """Remove as vencidas. Só quem JÁ ia escrever chama isto."""
+        agora = self.clock()
+        vivas = {}
+        for dig, ent in concessoes.items():
+            exp = ent.get("expira_em") if isinstance(ent, dict) else None
+            if isinstance(exp, (int, float)) and math.isfinite(exp) and agora < exp:
+                vivas[dig] = ent
+            else:
+                self._auditar("registro.concessao.expirada", digest=str(dig)[:16],
+                              capacidade=(ent or {}).get("capacidade", ""))
+        return vivas
 
     def vigente(self, digest: str) -> bool:
         """Existe concessão viva para este digest? Expirada persiste revogada."""
@@ -145,13 +183,17 @@ class RegistroConcessoes:
         if not isinstance(entrada, dict):
             return False
         expira = entrada.get("expira_em")
-        if not isinstance(expira, (int, float)):
-            return False                      # sem prazo legível ⇒ não vale
+        if not isinstance(expira, (int, float)) or not math.isfinite(expira):
+            return False        # sem prazo legível OU infinito ⇒ não vale
         if self.clock() >= expira:
-            del concessoes[digest]
-            self._escrever(concessoes)
-            self._auditar("registro.concessao.expirada", digest=digest[:16],
-                          capacidade=entrada.get("capacidade", ""))
+            # NÃO escrever aqui. `vigente()` é chamado no caminho de LEITURA,
+            # a cada registro de capacidade, por processos concorrentes. Ao
+            # apagar+regravar, uma leitura do agendador ressuscitava concessões
+            # que o dono acabara de revogar: `revogar --tudo` dizia "5
+            # revogada(s)" e 4 voltavam. Revogação que mente é pior que não ter
+            # revogação. A propriedade de segurança se mantém: expirada devolve
+            # False. A varredura do disco é feita por quem já escreve
+            # (`conceder`/`revogar`/`panic`) e por `listar()`.
             return False
         return True
 

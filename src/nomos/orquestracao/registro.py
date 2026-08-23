@@ -49,7 +49,8 @@ def _risco(categoria: Category | None) -> str:
 class RegistroCapacidades:
     """Fonte única de verdade sobre QUAIS capacidades existem e QUAL risco têm."""
 
-    def __init__(self, policy=None, approver=None, audit=None, concessoes=None):
+    def __init__(self, policy=None, approver=None, audit=None, concessoes=None,
+                 escopo_dados: tuple = ()):
         self.policy = policy
         self.approver = approver
         self.audit = audit
@@ -57,6 +58,13 @@ class RegistroCapacidades:
         # None o comportamento é byte-idêntico ao anterior — toda autorização
         # vem do gate ao vivo. Ver `_autorizar`.
         self.concessoes = concessoes
+        # As RAÍZES autorizadas. Entram no digest: a CLI imprime
+        # "raízes: <...>" para o dono ler antes de aprovar, e sem isto o digest
+        # de um registro confinado a ~/dados era BYTE-IDÊNTICO ao de um com
+        # raizes=("/",). A concessão dada lendo uma coisa valia para a outra —
+        # exatamente o "a UI mostra A e o sistema assina B" que
+        # `pdp/aprovacao.py` existe para impedir.
+        self.escopo_dados = tuple(escopo_dados or ())
         self._dinamicas: dict[str, Capacidade] = {}
 
     # ---------- consulta (nunca levanta; desconhecida => fail-closed) ----------
@@ -133,6 +141,7 @@ class RegistroCapacidades:
             recurso=f"registro:{nome}",
             classe_de_risco=categoria.value,
             argumentos={"origem": origem, "idempotente": bool(idempotente)},
+            escopo_dados=self.escopo_dados,
             versao_da_politica=versao_da_politica(self.policy),
         )
 
