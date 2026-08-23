@@ -1,0 +1,13 @@
+{
+  "name": "paper-audit-core",
+  "version": "1.0.0",
+  "description": "compara claims de um paper com o codigo de um repo JA clonado; nao baixa nada",
+  "entry": "audit_core.py",
+  "permissions": ["A0_READ_LOCAL", "A1_WRITE_LOCAL"],
+  "modalities": ["texto", "arquivo"],
+  "keywords": ["paper", "reprodutibilidade", "auditoria", "codigo"],
+  "local_only_capable": true,
+  "cloud_required": false,
+  "compatible_nomos_version": ">=0.11",
+  "files": {}
+}
