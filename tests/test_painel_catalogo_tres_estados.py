@@ -29,7 +29,10 @@ def test_contrato_traz_as_empacotadas(tmp_path):
     com = sc.capacidades(tmp_path, tmp_path / "skills", incluir_do_pacote=True)
     assert sem == [], "home vazia devia ser vazia sem o parâmetro"
     assert len(com) > 0, "o pacote traz skills e elas têm de aparecer"
-    assert all(c["status"] == "vem no NOMOS" for c in com)
+    # ANTES afirmava um status unico. Virou falso quando as skills sem codigo
+    # publicado ganharam "em preparacao" — o teste congelava um fato vencido.
+    assert all("vem no NOMOS" in str(c["status"]) for c in com)
+    assert len({c["status"] for c in com}) >= 1
 
 
 def test_painel_pede_as_empacotadas(tmp_path):
@@ -49,7 +52,7 @@ def test_mostrar_nao_e_autorizar(tmp_path):
 def test_cada_estado_diz_o_que_significa(tmp_path):
     d = pw.dados_dashboard({"home": tmp_path, "skills": tmp_path / "skills"})
     html = pw.render_html(d)
-    assert "Vêm no NOMOS" in html
+    assert "vem no NOMOS" in html
     # a frase que impede a leitura errada
     assert "ainda NÃO estão instaladas" in html
     assert "não porque estejam ativas" in html
@@ -70,7 +73,9 @@ def test_estado_desconhecido_nao_some_da_tela(tmp_path):
         {"nome": "z", "status": "estado-do-futuro", "risco": "baixo",
          "descricao": "", "entrada": "", "saida": "", "permissoes": []}]
     html = pw.render_html(d)
-    assert "estado-do-futuro" in html and ">z<" in html
+    assert "estado-do-futuro" in html
+    assert ">z <span" in html          # card completo, nao nome nu
+    assert "risco" in html
 
 
 def test_contrato_antigo_nao_derruba_o_painel(tmp_path, monkeypatch):
@@ -115,19 +120,24 @@ def test_credencial_nao_promete_cofre_que_nao_governa():
     sessao de navegador, no login da Higgsfield. O numero nao muda; o que
     muda e o dono descobrir que instalar nao basta."""
     caps = [{"permissoes": ["A3_CRED_USE"]} for _ in range(19)]
-    html = pw._resumo_permissoes(caps, (9, 0))
-    assert "do cofre" not in html          # a promessa falsa nao volta
+    html = pw._resumo_permissoes(caps, (9, 0, 0))
+    # O guard proibe a AFIRMACAO falsa, nao a palavra: "usam credencial do
+    # cofre" alega que ELAS ESTAO la. Dizer "seriam do cofre — nenhuma esta
+    # la" usa as mesmas palavras para dizer o oposto, e e util. Banir o
+    # vocabulario me faria reprovar o texto certo.
+    assert "usam credencial do cofre" not in html
+    assert "está lá" in html or "está(ão)" in html
     assert "pedem credencial" in html
-    assert "nenhuma delas está no seu cofre hoje" in html
+    assert "nenhuma está lá" in html
 
 
 def test_credencial_conta_as_que_ESTAO_no_cofre():
     """Se o dono guardar algumas, a frase acompanha — o numero e amarrado ao
     fato, nao a uma constante que envelhece."""
     caps = [{"permissoes": ["A3_CRED_USE"]} for _ in range(19)]
-    html = pw._resumo_permissoes(caps, (9, 3))
-    assert "3 de 9 no seu cofre" in html
-    assert "nenhuma está" not in html
+    html = pw._resumo_permissoes(caps, (9, 3, 0))
+    assert "3 já está(ão)" in html
+    assert "nenhuma está lá" not in html
 
 
 def test_sem_dado_de_cofre_nao_inventa():
@@ -138,12 +148,27 @@ def test_sem_dado_de_cofre_nao_inventa():
     assert "cofre" not in html
 
 
-def test_contagem_le_manifesto_cru(tmp_path):
-    """20 dos 33 manifestos nao passam por `load_manifest` (files sem sha256).
-    Contar so os que carregam mediria um terco da verdade."""
-    pedidas, no_cofre = pw._credenciais_pedidas(tmp_path)
-    assert pedidas > 5, f"contou so {pedidas} — provavelmente ignorou os quebrados"
+def test_contagem_separa_chave_de_credencial_externa(tmp_path):
+    """Os manifestos distinguem `chave` (API key — o cofre E o lugar dela) de
+    `credencial_externa` (login de app, sessao de navegador — o NOMOS nao tem
+    onde guardar). Somar num numero so esconderia que metade nao tem conserto
+    pelo cofre. Este teste ja pegou uma reclassificacao real: 13 requisitos
+    mudaram de `chave` para `credencial_externa` e a minha contagem caiu
+    sozinha, revelando que eu media a coisa errada."""
+    chaves, no_cofre, externas = pw._credenciais_pedidas(tmp_path)
+    assert chaves >= 1, "nenhuma chave contada — provavelmente ignorou os cruas"
+    assert externas >= 1, "nenhuma credencial externa contada"
     assert no_cofre == 0, "home de teste nao tem cofre"
+
+
+def test_texto_nao_promete_cofre_para_login_de_app(tmp_path):
+    """Login de app nao vai para o cofre; dizer o contrario seria a mesma
+    meia-verdade do 'credencial do cofre' original."""
+    caps = [{"permissoes": ["A3_CRED_USE"]} for _ in range(17)]
+    html = pw._resumo_permissoes(caps, (3, 0, 5))
+    assert "3 seria(m) do cofre" in html
+    assert "nenhuma está lá" in html
+    assert "5 são login/sessão, que o NOMOS não guarda" in html
 
 
 def test_resumo_da_a_forma_antes_da_lista():
@@ -151,14 +176,14 @@ def test_resumo_da_a_forma_antes_da_lista():
     caps = [{"permissoes": ["A2_NET_EGRESS"]} for _ in range(26)]
     caps += [{"permissoes": ["A5_CODE_EXEC"]} for _ in range(3)]
     caps += [{"permissoes": ["A3_CRED_USE"]}]
-    html = pw._resumo_permissoes(caps, (9, 0))
+    html = pw._resumo_permissoes(caps, (9, 0, 0))
     assert "26</b> falam com a internet" in html
     assert "3</b> iniciam outros programas" in html
     # este teste guardava "1 usam credencial DO COFRE" — a frase que prometia
     # governança inexistente. Um teste que congela texto vencido defende o
     # erro com a autoridade de uma suíte verde.
     assert "1</b> pedem credencial" in html
-    assert "do cofre" not in html
+    assert "usam credencial do cofre" not in html
     # a garantia junto do número, senão o número assusta sem contexto
     assert "nada disso acontece sem você instalar e aprovar" in html
 

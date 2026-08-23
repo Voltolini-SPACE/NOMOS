@@ -1416,8 +1416,15 @@ def _permissoes_legiveis(perms) -> str:
     return " · ".join(partes)
 
 
-def _credenciais_pedidas(home: Path) -> tuple[int, int]:
-    """(quantas credenciais distintas as skills pedem, quantas estão no cofre).
+def _credenciais_pedidas(home: Path) -> tuple[int, int, int]:
+    """(chaves distintas, quantas dessas estão no cofre, credenciais externas).
+
+    Os manifestos distinguem dois tipos, e a diferença muda o que o dono pode
+    fazer: `chave` é API key — o cofre É o lugar dela, e a ausência é acionável
+    ("guarde-a lá"). `credencial_externa` é login de app ou sessão de navegador
+    (higgsfield_login, sessao_chrome_xhs, twitter_ct0): declarada, nunca
+    sondada, e o NOMOS **não tem onde guardá-la**. Somar os dois num número só
+    esconderia que metade não tem conserto pelo cofre.
 
     Lê os `skill.json` CRUS de propósito: 20 dos 33 manifestos não passam pelo
     `load_manifest` (campo `files` sem os sha256), e ignorá-los faria a conta
@@ -1435,11 +1442,12 @@ def _credenciais_pedidas(home: Path) -> tuple[int, int]:
         no_cofre = set(Vault(cofre_path).names()) if cofre_path.exists() else set()
     except Exception:
         no_cofre = set()
-    pedidas: set[str] = set()
+    chaves: set[str] = set()
+    externas: set[str] = set()
     try:
         origens = emb.listar()
     except Exception:
-        return (0, 0)
+        return (0, 0, 0)
     for d in origens:
         f = Path(d) / "skill.json"
         if not f.exists():
@@ -1449,9 +1457,13 @@ def _credenciais_pedidas(home: Path) -> tuple[int, int]:
         except Exception:
             continue
         for r in (mf.get("requires") or []):
-            if isinstance(r, dict) and r.get("tipo") == "chave" and r.get("nome"):
-                pedidas.add(str(r["nome"]))
-    return (len(pedidas), len(pedidas & no_cofre))
+            if not isinstance(r, dict) or not r.get("nome"):
+                continue
+            if r.get("tipo") == "chave":
+                chaves.add(str(r["nome"]))
+            elif r.get("tipo") == "credencial_externa":
+                externas.add(str(r["nome"]))
+    return (len(chaves), len(chaves & no_cofre), len(externas))
 
 
 def _resumo_permissoes(caps: list, creds: tuple[int, int] | None = None) -> str:
@@ -1478,11 +1490,18 @@ def _resumo_permissoes(caps: list, creds: tuple[int, int] | None = None) -> str:
         # alcance do A3. Meia-honestidade igual ao `A5_CODE_EXEC` cru: cumpre
         # a letra e falha no propósito. O número não muda; o que muda é o dono
         # descobrir que instalar não basta, falta a credencial.
-        if creds and creds[0]:
-            pedidas, no_cofre = creds
-            onde = ("nenhuma delas está no seu cofre hoje" if no_cofre == 0
-                    else f"{no_cofre} de {pedidas} no seu cofre")
-            itens.append(f"<b>{cred}</b> pedem credencial ({onde})")
+        if creds and (creds[0] or creds[2]):
+            chaves, no_cofre, externas = creds
+            partes = []
+            if chaves:
+                partes.append(f"{chaves} seria(m) do cofre — "
+                              + ("nenhuma está lá" if no_cofre == 0
+                                 else f"{no_cofre} já está(ão)"))
+            if externas:
+                partes.append(f"{externas} são login/sessão, que o NOMOS "
+                              "não guarda")
+            itens.append(f"<b>{cred}</b> pedem credencial ("
+                         + "; ".join(partes) + ")")
         else:
             itens.append(f"<b>{cred}</b> pedem credencial")
     if not itens:
@@ -2347,39 +2366,56 @@ def render_html(d: dict, refresh: int | None = None,
         #   vem no NOMOS          — veio no pacote; NÃO está registrada
         # A última é a que engana se mal escrita: "vem no NOMOS" não é
         # "está ativa". Por isso cada grupo diz o que aquele estado SIGNIFICA.
-        ORDEM = [("instalada", "Instaladas",
-                  "registradas nesta máquina — passaram pelo gate"),
-                 ("disponível no catálogo", "No catálogo",
-                  "já semeadas aqui; instalar ainda pede confirmação"),
-                 ("vem no NOMOS", "Vêm no NOMOS",
-                  "acompanham o pacote e ainda NÃO estão instaladas — "
-                  "aparecem para você escolher, não porque estejam ativas")]
+        # UM CARD COMPLETO PARA TODO STATUS, conhecido ou não.
+        # Antes eu tinha três grupos ricos e um "resto" que mostrava só o
+        # NOME. Quando surgiu "em preparação", 17 das 33 caíram no resto e o
+        # dono via metade do catálogo como lista nua. Não sumir era o mínimo;
+        # informar é o trabalho. Agora o card é o mesmo para todos e o que
+        # varia é a EXPLICAÇÃO do estado — que falta, quando o estado é novo.
+        EXPLICA = {
+            "instalada": "registradas nesta máquina — passaram pelo gate",
+            "disponível no catálogo":
+                "já semeadas aqui; instalar ainda pede confirmação",
+            "vem no NOMOS":
+                "acompanham o pacote e ainda NÃO estão instaladas — aparecem "
+                "para você escolher, não porque estejam ativas",
+        }
+
+        def _explicacao(st: str) -> str:
+            if st in EXPLICA:
+                return EXPLICA[st]
+            # casamento por trecho, não por igualdade: o texto do estado é
+            # de outro módulo e pode ser reescrito sem me avisar.
+            if "prepara" in st.lower():
+                return ("ainda não dá para instalar: o manifesto não publica "
+                        "arquivo nenhum, então não há o que verificar. Sem "
+                        "essa verificação, instalar seria aceitar código sem "
+                        "procedência")
+            return ""
+
+        ORDEM_CONHECIDA = ["instalada", "disponível no catálogo", "vem no NOMOS"]
+        presentes = {str(c.get("status") or "—") for c in caps}
+        ordenados = ([x for x in ORDEM_CONHECIDA if x in presentes]
+                     + sorted(presentes - set(ORDEM_CONHECIDA)))
         aba_capac.append(_resumo_permissoes(caps, d.get("credenciais")))
-        vistos = {c.get("status") for c in caps}
-        for chave, titulo, o_que_significa in ORDEM:
-            grupo = [c for c in caps if c.get("status") == chave]
+        for st in ordenados:
+            grupo = [c for c in caps if str(c.get("status") or "—") == st]
             if not grupo:
                 continue
-            aba_capac.append(
-                f'<h3 class="mini-h">{e(titulo)} ({len(grupo)})</h3>'
-                f'<p><small class="pendente">{e(o_que_significa)}</small></p>')
+            porque = _explicacao(st)
+            aba_capac.append(f'<h3 class="mini-h">{e(st)} ({len(grupo)})</h3>'
+                             + (f'<p><small class="pendente">{e(porque)}'
+                                "</small></p>" if porque else ""))
             for c in sorted(grupo, key=lambda x: str(x.get("nome", ""))):
                 perms = _permissoes_legiveis(c.get("permissoes"))
                 aba_capac.append(
                     f'<div class="card filtravel">{e(str(c["nome"]))} '
-                    f'<span class="pill">risco {e(str(c["risco"]))}</span><br>'
-                    f'{e(str(c["descricao"]))}<br>'
-                    f'<small>entrada: {e(str(c["entrada"]))} → '
-                    f'{e(str(c["saida"]))}</small><br>'
+                    f'<span class="pill">risco {e(str(c.get("risco", "?")))}'
+                    "</span><br>"
+                    f'{e(str(c.get("descricao", "")))}<br>'
+                    f'<small>entrada: {e(str(c.get("entrada", "")))} → '
+                    f'{e(str(c.get("saida", "")))}</small><br>'
                     f'<small class="pendente">toca: {perms}</small></div>')
-        # estado que o código não conhece não pode sumir da tela
-        for extra in sorted(vistos - {k for k, _, _ in ORDEM}):
-            grupo = [c for c in caps if c.get("status") == extra]
-            aba_capac.append(f'<h3 class="mini-h">{e(str(extra))} '
-                             f"({len(grupo)})</h3>")
-            for c in grupo:
-                aba_capac.append(f'<div class="card filtravel">'
-                                 f'{e(str(c["nome"]))}</div>')
     mcp = d.get("mcp", {})
     aba_capac.append('<h2 id="mcp">MCP — Model Context Protocol</h2>')
     aba_capac.append(f'<div class="card ok"><b>NOMOS como servidor</b> '
