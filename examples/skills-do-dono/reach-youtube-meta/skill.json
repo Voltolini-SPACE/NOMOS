@@ -1,0 +1,30 @@
+{
+  "name": "reach-youtube-meta",
+  "version": "1.0.0",
+  "description": "metadados e legendas JA EXISTENTES de video do YouTube; nao transcreve, nao pede chave",
+  "entry": "reach_youtube_meta.py",
+  "permissions": [
+    "A1_WRITE_LOCAL",
+    "A2_NET_EGRESS"
+  ],
+  "modalities": [
+    "texto",
+    "web"
+  ],
+  "keywords": [
+    "youtube",
+    "legenda",
+    "metadados"
+  ],
+  "local_only_capable": false,
+  "cloud_required": false,
+  "compatible_nomos_version": ">=0.11",
+  "requires": [
+    {
+      "tipo": "binario",
+      "nome": "yt-dlp",
+      "obrigatorio": true
+    }
+  ],
+  "files": {}
+}

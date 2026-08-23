@@ -1,0 +1,36 @@
+{
+  "name": "reach-twitter",
+  "version": "1.0.0",
+  "description": "Twitter/X via CLI de terceiro; cookies de autenticacao em texto",
+  "entry": "reach_twitter.py",
+  "permissions": [
+    "A1_WRITE_LOCAL",
+    "A2_NET_EGRESS",
+    "A3_CRED_USE",
+    "A3_CONNECTOR_USE"
+  ],
+  "modalities": [
+    "texto",
+    "web"
+  ],
+  "keywords": [
+    "twitter",
+    "x"
+  ],
+  "local_only_capable": false,
+  "cloud_required": false,
+  "compatible_nomos_version": ">=0.11",
+  "requires": [
+    {
+      "tipo": "binario",
+      "nome": "twitter",
+      "obrigatorio": true
+    },
+    {
+      "tipo": "chave",
+      "nome": "TWITTER_AUTH_TOKEN + TWITTER_CT0",
+      "obrigatorio": true
+    }
+  ],
+  "files": {}
+}

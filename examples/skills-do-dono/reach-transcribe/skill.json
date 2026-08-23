@@ -1,0 +1,38 @@
+{
+  "name": "reach-transcribe",
+  "version": "1.0.0",
+  "description": "transcreve audio por API (Groq/OpenAI); separada para que reach-youtube-meta nao arraste exigencia de chave",
+  "entry": "reach_transcribe.py",
+  "permissions": [
+    "A0_READ_LOCAL",
+    "A1_WRITE_LOCAL",
+    "A2_NET_EGRESS",
+    "A3_CRED_USE"
+  ],
+  "modalities": [
+    "texto",
+    "voz",
+    "arquivo"
+  ],
+  "keywords": [
+    "transcricao",
+    "audio",
+    "whisper"
+  ],
+  "local_only_capable": false,
+  "cloud_required": false,
+  "compatible_nomos_version": ">=0.11",
+  "requires": [
+    {
+      "tipo": "binario",
+      "nome": "ffmpeg",
+      "obrigatorio": true
+    },
+    {
+      "tipo": "chave",
+      "nome": "Groq ou OpenAI (nao verificada)",
+      "obrigatorio": true
+    }
+  ],
+  "files": {}
+}

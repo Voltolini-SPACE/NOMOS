@@ -1,0 +1,41 @@
+{
+  "name": "reach-linkedin",
+  "version": "1.0.0",
+  "description": "LinkedIn via servidor MCP scraper com estado de login proprio",
+  "entry": "reach_linkedin.py",
+  "permissions": [
+    "A1_WRITE_LOCAL",
+    "A2_NET_EGRESS",
+    "A3_CRED_USE",
+    "A3_CONNECTOR_USE"
+  ],
+  "modalities": [
+    "texto",
+    "web"
+  ],
+  "keywords": [
+    "linkedin",
+    "vagas"
+  ],
+  "local_only_capable": false,
+  "cloud_required": false,
+  "compatible_nomos_version": ">=0.11",
+  "requires": [
+    {
+      "tipo": "binario",
+      "nome": "mcporter",
+      "obrigatorio": true
+    },
+    {
+      "tipo": "servidor_mcp",
+      "nome": "linkedin-scraper",
+      "obrigatorio": true
+    },
+    {
+      "tipo": "chave",
+      "nome": "login LinkedIn",
+      "obrigatorio": true
+    }
+  ],
+  "files": {}
+}
