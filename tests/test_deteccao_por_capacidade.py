@@ -129,3 +129,77 @@ def test_detectar_expoe_say_e_ferramentas(monkeypatch, caps):
     assert "say" in ids
     visao = [m for m in d["imagem"] if m["id"] == "visao-ollama"][0]
     assert visao["disponivel"] is True, "visão por capacidade, não por nome"
+
+
+# ------------------------------------------------------- estados honestos
+def test_os_cinco_estados_existem():
+    """Um booleano não sabe dizer 'existe mas falta o modelo'."""
+    assert motores.ORDEM_ESTADOS == (
+        "ausente", "presente_sem_modelo", "configurado_nao_provado",
+        "provado", "desligado_pelo_dono")
+
+
+def test_binario_sem_modelo_tem_estado_proprio():
+    """O caso do whisper: nem ausente, nem pronto — e o conserto é um comando."""
+    m = {"id": "whisper", "disponivel": False,
+         "detalhe": "binário presente, modelo ausente — baixe um ggml-*.bin"}
+    e = motores.estado_de(m)
+    assert e["estado"] == motores.PRESENTE_SEM_MODELO
+    assert "ggml" in e["por_que"]
+
+
+def test_por_que_nao_repete_identificador():
+    """Regressão: `detalhe` é identificador, não motivo. 'ausente: nomos-mini'
+    não ensinava nada a quem lê a tela."""
+    e = motores.estado_de({"id": "embutido", "disponivel": False,
+                           "detalhe": "nomos-mini"})
+    assert e["por_que"] != "nomos-mini"
+    assert "PATH" in e["por_que"]
+
+
+def test_servico_fora_do_ar_diz_o_endereco():
+    e = motores.estado_de({"id": "sdwebui", "disponivel": False,
+                           "detalhe": "http://127.0.0.1:7860"})
+    assert e["por_que"] == "não respondeu em http://127.0.0.1:7860"
+
+
+def test_disponivel_sem_carimbo_nao_e_provado():
+    """'Deveria funcionar' não é 'funcionou'."""
+    e = motores.estado_de({"id": "say", "disponivel": True,
+                           "detalhe": "/usr/bin/say"})
+    assert e["estado"] == motores.CONFIGURADO_NAO_PROVADO
+
+
+def test_carimbo_promove_para_provado():
+    e = motores.estado_de({"id": "say", "disponivel": True, "detalhe": "x"},
+                          provados={"say": "2026-08-23T13:00:00+00:00"})
+    assert e["estado"] == motores.PROVADO
+    assert "2026-08-23" in e["por_que"]
+
+
+def test_escolha_do_dono_vence_a_deteccao():
+    e = motores.estado_de({"id": "say", "disponivel": True, "detalhe": "x"},
+                          desligados=frozenset({"say"}))
+    assert e["estado"] == motores.DESLIGADO_PELO_DONO
+
+
+def test_estado_publica_o_path_do_servico(monkeypatch):
+    """Sem isso, todo diagnóstico em Mac vira briga de versões da realidade:
+    o serviço sob launchd não tem ~/.local/bin, o terminal do dono tem."""
+    monkeypatch.setenv("PATH", "/opt/homebrew/bin:/usr/bin")
+    e = motores.estado_de({"id": "x", "disponivel": False, "detalhe": ""})
+    assert e["path_do_servico"] == "/opt/homebrew/bin:/usr/bin"
+
+
+def test_registrar_prova_persiste_e_e_lida(monkeypatch, tmp_path):
+    monkeypatch.setattr(motores.config, "nomos_home", lambda: tmp_path)
+    assert motores.provas() == {}
+    motores.registrar_prova("say", "2026-08-23T13:00:00+00:00")
+    assert motores.provas()["say"] == "2026-08-23T13:00:00+00:00"
+
+
+def test_arquivo_de_provas_corrompido_nao_prova_nada(monkeypatch, tmp_path):
+    """Fail-closed: JSON quebrado não pode virar 'todos provados'."""
+    monkeypatch.setattr(motores.config, "nomos_home", lambda: tmp_path)
+    (tmp_path / "motores_provados.json").write_text("{ isto não é json")
+    assert motores.provas() == {}

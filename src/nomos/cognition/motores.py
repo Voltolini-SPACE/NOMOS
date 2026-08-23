@@ -145,6 +145,126 @@ def _melhor(nomes: list[str], prefixos: tuple[str, ...]) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------- estados
+# Um booleano `disponivel` é incapaz de dizer a verdade. "Falso" cobre tanto
+# "não existe" quanto "existe mas falta o modelo" — e o segundo caso tem
+# conserto de um comando. Pior: quem só olha o binário marcaria "pronto" num
+# motor que morre na primeira chamada. Estes cinco estados foram desenhados a
+# partir de defeitos MEDIDOS em 23/08, não de teoria.
+AUSENTE = "ausente"
+PRESENTE_SEM_MODELO = "presente_sem_modelo"
+CONFIGURADO_NAO_PROVADO = "configurado_nao_provado"
+PROVADO = "provado"
+DESLIGADO_PELO_DONO = "desligado_pelo_dono"
+
+ORDEM_ESTADOS = (AUSENTE, PRESENTE_SEM_MODELO, CONFIGURADO_NAO_PROVADO,
+                 PROVADO, DESLIGADO_PELO_DONO)
+
+
+def path_do_processo() -> str:
+    """O PATH que ESTE processo enxerga — não o do shell de quem pergunta.
+
+    Sob launchd o PATH é /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin, sem
+    `~/.local/bin`. Um binário instalado com `pip install --user` fica
+    invisível para o serviço e visível no terminal do dono, e o diagnóstico
+    vira briga de versões da realidade. Publicar o PATH efetivo encerra a
+    discussão em uma linha.
+    """
+    import os
+    return os.environ.get("PATH", "")
+
+
+def estado_de(motor: dict, *, desligados: frozenset[str] = frozenset(),
+              provados: dict | None = None) -> dict:
+    """Traduz um motor de `detectar()` para o estado honesto + o porquê.
+
+    `desligados`: ids que o dono desligou — escolha humana vence detecção.
+    `provados`: {id: carimbo} de quem já executou de verdade alguma vez.
+    """
+    ident = motor.get("id", "")
+    if ident in desligados:
+        return {**motor, "estado": DESLIGADO_PELO_DONO,
+                "por_que": "você desligou este motor",
+                "path_do_servico": path_do_processo()}
+    if motor.get("disponivel"):
+        carimbo = (provados or {}).get(ident)
+        if carimbo:
+            return {**motor, "estado": PROVADO,
+                    "por_que": f"executou de verdade em {carimbo}",
+                    "path_do_servico": path_do_processo()}
+        return {**motor, "estado": CONFIGURADO_NAO_PROVADO,
+                "por_que": "tudo resolvido, mas nunca foi exercitado aqui",
+                "path_do_servico": path_do_processo()}
+    # Indisponível. `detalhe` é IDENTIFICADOR (modelo, caminho, endereço), não
+    # explicação — usá-lo como motivo produzia linhas inúteis do tipo
+    # "ausente: nomos-mini". Só o whisper carrega motivo fino no detalhe.
+    detalhe = str(motor.get("detalhe") or "")
+    if "modelo ausente" in detalhe or "nenhum binário" in detalhe:
+        estado = (PRESENTE_SEM_MODELO if "modelo ausente" in detalhe else AUSENTE)
+        return {**motor, "estado": estado, "por_que": detalhe,
+                "path_do_servico": path_do_processo()}
+    if detalhe.startswith(("http://", "https://")):
+        por_que = f"não respondeu em {detalhe}"
+    elif "/" in detalhe:
+        por_que = f"não pôde ser usado: {detalhe}"
+    else:
+        por_que = "não encontrado no PATH que o serviço enxerga"
+    return {**motor, "estado": AUSENTE, "por_que": por_que,
+            "path_do_servico": path_do_processo()}
+
+
+_ARQ_PROVAS = "motores_provados.json"
+
+
+def provas() -> dict:
+    """{id: carimbo ISO} dos motores que já executaram de verdade aqui.
+
+    Sem isto, `PROVADO` seria um estado que nada produz — um degrau de escada
+    que não existe. Ler e escrever é barato; o carimbo é o que separa
+    "deveria funcionar" de "funcionou".
+    """
+    try:
+        alvo = Path(config.nomos_home()) / _ARQ_PROVAS
+        return json.loads(alvo.read_text()) if alvo.is_file() else {}
+    except Exception:
+        return {}          # arquivo corrompido: ninguém provou nada (fail-closed)
+
+
+def registrar_prova(ident: str, quando: str | None = None) -> None:
+    """Carimba que `ident` executou e produziu saída válida.
+
+    Chamado por quem EXECUTA o motor, nunca por quem apenas o detecta —
+    detectar é achar, provar é ter usado.
+    """
+    import datetime
+    import os
+    import tempfile
+    try:
+        home = Path(config.nomos_home())
+        home.mkdir(parents=True, exist_ok=True)
+        atual = provas()
+        atual[ident] = quando or datetime.datetime.now(
+            datetime.timezone.utc).isoformat(timespec="seconds")
+        # escrita atômica: um carimbo pela metade não pode virar arquivo inválido
+        fd, tmp = tempfile.mkstemp(dir=str(home), prefix=".provas-")
+        with os.fdopen(fd, "w") as f:
+            json.dump(atual, f, indent=1, sort_keys=True)
+        os.replace(tmp, home / _ARQ_PROVAS)
+    except Exception:
+        pass               # carimbar é conveniência: falhar aqui não derruba nada
+
+
+def estados(hosts: dict | None = None, *,
+            desligados: frozenset[str] = frozenset(),
+            provados: dict | None = None) -> dict:
+    """`detectar()` com estado honesto em cada motor. É o que a tela deve ler."""
+    bruto = detectar(hosts)
+    provados = provas() if provados is None else provados
+    return {mod: [estado_de(m, desligados=desligados, provados=provados)
+                  for m in lista]
+            for mod, lista in bruto.items()}
+
+
 def _melhor_por_capacidade(nomes: list[str], capacidade: str,
                            host: str = OLLAMA,
                            prefixos: tuple[str, ...] = ()) -> str | None:
