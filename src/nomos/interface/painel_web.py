@@ -819,6 +819,7 @@ _ABAS_NAV: list[tuple[str, str, str]] = [
     ("chat", "❯", "chat"),
     ("cerebro", "⚙", "cérebro"),
     ("capacidades", "❖", "capacidades"),
+    ("chaves", "🔑", "chaves"),
     ("mosaic", "▦", "mosaic"),
     ("operacao", "≡", "operação"),
     ("ajuda", "?", "ajuda"),
@@ -883,6 +884,69 @@ def _bloco_atencao(d: dict, n_aprov: int) -> str:
                 "precisar de você, aparece aqui</small></div>")
     linhas = "".join(f"<li>⚠ {x}</li>" for x in itens)
     return f'<div class="card warn"><b>Precisa de você</b><ul class="lista">{linhas}</ul></div>'
+
+
+def _secao_chaves(d: dict, chaves: dict | None) -> str:
+    """Aba de chaves: cola a chave, grava no cofre, sem vazamento.
+
+    `chaves` é None quando o painel é read-only (sem token) => a aba vira
+    só a lista de nomes já guardados, sem formulário.
+    """
+    e = esc
+    partes = ['<h2 id="chaves">🔑 Chaves</h2>']
+
+    if chaves and chaves.get("gravada"):
+        partes.append(f'<div class="ok-banner">✓ chave '
+                      f'<code>{e(chaves["gravada"])}</code> gravada no cofre '
+                      "(cifrada; o valor nunca é exibido).</div>")
+
+    nomes = (chaves or {}).get("nomes", [])
+    if nomes:
+        itens = "".join(f"<li><code>{e(n)}</code></li>" for n in nomes)
+        partes.append("<p>Chaves já no cofre (só os nomes — o valor jamais "
+                      f'sai daqui):</p><ul class="lista">{itens}</ul>')
+    else:
+        partes.append("<p><small>nenhuma chave no cofre ainda.</small></p>")
+
+    if not chaves or not chaves.get("token"):
+        partes.append("<p><small>painel em modo leitura — para gravar, abra "
+                      "com <code>nomos painel</code>.</small></p>")
+        return "\n".join(partes)
+
+    if not chaves.get("cofre_existe"):
+        partes.append('<div class="aviso">O cofre ainda não foi criado. '
+                      "Rode <code>nomos vault init</code> (ou refaça o "
+                      "onboarding) e volte aqui.</div>")
+        return "\n".join(partes)
+
+    tok = e(chaves["token"])
+    exemplos = ("groq_api_key", "google_api_key", "openrouter_api_key",
+                "mistral_api_key", "omniroute_api_key")
+    datalist = "".join(f'<option value="{x}">' for x in exemplos)
+    partes.append(
+        '<form method="POST" action="chaves/gravar" autocomplete="off" '
+        'class="form-chave">'
+        f'<input type="hidden" name="token" value="{tok}">'
+        '<label>Nome da chave'
+        '<input name="nome" list="nomes-chave" required '
+        'placeholder="ex.: groq_api_key" '
+        'pattern="[a-z0-9][a-z0-9_.-]{1,63}" '
+        'autocomplete="off" autocapitalize="none" spellcheck="false"></label>'
+        f'<datalist id="nomes-chave">{datalist}</datalist>'
+        '<label>Valor da chave (colar)'
+        '<input name="valor" type="password" required '
+        'placeholder="cole aqui — fica oculto" '
+        'autocomplete="off" spellcheck="false"></label>'
+        '<label>Senha-mestra do cofre'
+        '<input name="passphrase" type="password" required '
+        'placeholder="a passphrase do seu cofre" '
+        'autocomplete="off"></label>'
+        '<button type="submit">Gravar no cofre</button>'
+        '<p><small>A chave vai cifrada para o cofre e nunca aparece na tela, '
+        'na URL nem na auditoria (que registra só o nome). Tudo local — '
+        'nada sai da máquina.</small></p>'
+        '</form>')
+    return "\n".join(partes)
 
 
 def _secao_chat(d: dict, chat: dict | None) -> str:
@@ -1143,6 +1207,7 @@ def _secao_mosaic() -> list[str]:
 def render_html(d: dict, refresh: int | None = None,
                 aprovacoes: list[dict] | None = None,
                 chat: dict | None = None,
+                chaves: dict | None = None,
                 decidido: dict | None = None) -> str:
     """Página única (abas) com todas as seções — âncoras estáveis (MC33).
 
@@ -1411,6 +1476,7 @@ def render_html(d: dict, refresh: int | None = None,
     corpo.append(_aba("chat", False, aba_chat))
     corpo.append(_aba("cerebro", False, aba_cerebro))
     corpo.append(_aba("capacidades", False, aba_capac))
+    corpo.append(_aba("chaves", False, [_secao_chaves(d, chaves)]))
     corpo.append(_aba("mosaic", False, _secao_mosaic()))
     corpo.append(_aba("operacao", False, aba_op))
     corpo.append(_aba("ajuda", False, aba_ajuda))
@@ -1838,6 +1904,11 @@ class DashboardServer:
         # puro segue read-only; `nomos painel` liga. Token CSRF por servidor.
         self.chat_habilitado = bool(chat_habilitado)
         self.chat_token = secrets.token_urlsafe(32)
+        # 3ª porta de escrita: gravar CHAVE no cofre. Token CSRF por servidor,
+        # como o chat. Nasce sempre disponível (não depende de --sem-chat): a
+        # pessoa precisa guardar chaves com ou sem chat. Fail-closed: sem cofre
+        # inicializado, a porta recusa e manda inicializar.
+        self.chaves_token = secrets.token_urlsafe(32)
         # cache opcional da coleta (dados_dashboard refaz verify() + probes a
         # cada GET; com health/ em polling isso multiplica leituras). 0 =
         # desligado (padrão: cada GET reflete o estado na hora).
@@ -1911,11 +1982,22 @@ class DashboardServer:
                     if acao_dec in ("aprovar", "negar"):
                         decidido = {"acao": acao_dec,
                                    "id": (qs.get("id") or [""])[0]}
+                    # aba de chaves: token de escrita + nomes já no cofre
+                    # (só nomes, nunca valores) + banner da última gravação.
+                    from nomos.kernel.vault import Vault
+                    _vault = Vault(Path(painel.ctx["home"]) / "vault.json")
+                    chaves = {
+                        "token": painel.chaves_token,
+                        "cofre_existe": _vault.exists(),
+                        "nomes": _vault.names(),
+                        "gravada": (qs.get("chave_gravada") or [None])[0],
+                    }
                     try:
                         corpo = render_html(_dados(),
                                             refresh=refresh,
                                             aprovacoes=self._aprovacoes(base),
                                             chat=self._chat(base, query),
+                                            chaves=chaves,
                                             decidido=decidido)
                     except Exception as exc:   # painel nunca derruba nada
                         # P2-9 da auditoria de 2026-07-17: era texto puro sem
@@ -2211,6 +2293,72 @@ class DashboardServer:
                 except UnicodeDecodeError:
                     return None, (400, "pedido inválido", "corpo não é UTF-8")
 
+            def _post_chave(self, base):
+                """3ª porta de escrita: grava uma chave no COFRE cifrado.
+
+                Sem vazamento, por construção:
+                - a chave chega por POST (nunca em URL/histórico);
+                - vai direto para `vault.set` (Fernet); em texto claro só existe
+                  na memória do request, some ao fim;
+                - a AUDITORIA registra só o NOME (`vault.set entry=...`), nunca
+                  o valor — igual ao `nomos vault set`;
+                - a resposta NUNCA devolve o valor; a listagem usa `names()`,
+                  que por contrato não expõe segredo;
+                - a passphrase do cofre também vem por POST e não é guardada:
+                  é usada para o `set` e descartada.
+                """
+                def _erro(code, titulo, msg):
+                    corpo = (f"<p>{html.escape(msg)}</p><p><a href=\"{base}/"
+                             '#chaves">← voltar ao painel</a></p>')
+                    return self._responder(code, _subpagina(titulo, corpo, base))
+
+                import hmac
+                form, err = self._corpo_post(base)
+                if err:
+                    return _erro(*err[:3])
+                token = (form.get("token") or [""])[0]
+                if not hmac.compare_digest(token, painel.chaves_token):
+                    return _erro(403, "recusado",
+                                 "token inválido (recarregue o painel)")
+                nome = (form.get("nome") or [""])[0].strip()
+                passphrase = (form.get("passphrase") or [""])[0]
+                valor = (form.get("valor") or [""])[0].strip()
+                # o nome é METADADO (vai para a auditoria em claro): restringe a
+                # um formato seguro, sem espaço nem caractere de controle.
+                import re as _re
+                if not nome or not _re.fullmatch(r"[a-z0-9][a-z0-9_.-]{1,63}", nome):
+                    return _erro(400, "nome inválido",
+                                 "use minúsculas, dígitos, _ . - (2 a 64), "
+                                 "ex.: groq_api_key")
+                if not passphrase:
+                    return _erro(400, "falta a passphrase",
+                                 "digite a senha-mestra do cofre")
+                if not valor:
+                    return _erro(400, "falta a chave", "cole o valor da chave")
+                from nomos.kernel.vault import Vault, VaultError
+                vault = Vault(Path(painel.ctx["home"]) / "vault.json")
+                if not vault.exists():
+                    return _erro(409, "cofre não existe",
+                                 "crie o cofre primeiro: nomos vault init "
+                                 "(ou no onboarding).")
+                try:
+                    vault.set(nome, valor, passphrase)
+                except VaultError as exc:
+                    # passphrase errada cai aqui — mensagem honesta, sem eco
+                    return _erro(403, "não gravou",
+                                 f"cofre recusou: {html.escape(str(exc))}")
+                painel.ctx["audit"].append("vault.set", entry=nome, via="painel")
+                # PRG: volta ao painel com confirmação (sem repost no F5). NÃO
+                # devolve o valor — só o nome, que já é metadado.
+                from urllib.parse import quote
+                self.send_response(303)
+                self.send_header("Location",
+                                 f"{base}/?chave_gravada={quote(nome)}#chaves")
+                for k, v in _HEADERS_SEGURANCA.items():
+                    self.send_header(k, v)
+                self.end_headers()
+                return None
+
             def _post_chat(self, base):
                 """2ª porta de escrita (MC38): envia uma mensagem ao motor
                 LOCAL. Token CSRF por servidor; fail-closed sem motor."""
@@ -2279,6 +2427,10 @@ class DashboardServer:
                 """
                 base = f"/d/{painel.secret}"
                 rota = self.path.rstrip("/")
+
+                # porta 3: gravar chave no cofre
+                if rota == base + "/chaves/gravar":
+                    return self._post_chave(base)
 
                 # porta 2: chat local (só se habilitado)
                 if rota == base + "/chat/enviar":

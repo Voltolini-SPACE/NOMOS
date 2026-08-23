@@ -1,0 +1,117 @@
+"""A aba de chaves grava no cofre SEM vazar o valor.
+
+Propriedades provadas fim a fim (servidor de verdade em 127.0.0.1):
+- POST /chaves/gravar com token+passphrase+valor grava no cofre cifrado;
+- o valor NUNCA aparece na resposta, na URL de redirect nem na página seguinte;
+- a auditoria registra só o NOME (via=painel), nunca o valor;
+- token errado é recusado (403); passphrase errada é recusada (403);
+- a listagem mostra só nomes.
+"""
+from __future__ import annotations
+
+import json
+import urllib.request
+from pathlib import Path
+
+import pytest
+
+from nomos.interface.painel_web import DashboardServer as Painel
+from nomos.kernel.audit import AuditLog
+from nomos.kernel.vault import Vault
+
+VALOR = "sk-SEGREDO-que-nao-pode-vazar-1234567890"
+SENHA = "senha-do-cofre-forte"
+
+
+@pytest.fixture
+def painel(tmp_path):
+    (tmp_path).mkdir(exist_ok=True)
+    Vault(tmp_path / "vault.json").init(SENHA)          # cofre pronto
+    ctx = {"home": tmp_path, "audit": AuditLog(tmp_path / "audit.jsonl")}
+    p = Painel(ctx, port=0, fila_aprovacoes=False)
+    p.start()
+    yield p
+    p._server.shutdown()
+
+
+def _post(url, campos):
+    from urllib.parse import urlencode
+    req = urllib.request.Request(url, data=urlencode(campos).encode(),
+                                 method="POST")
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    try:
+        r = urllib.request.urlopen(req)
+        return r.status, r.geturl(), r.read().decode()
+    except urllib.error.HTTPError as e:
+        return e.code, e.url, e.read().decode()
+
+
+def _base(p):
+    return f"http://127.0.0.1:{p.port}/d/{p.secret}"
+
+
+def test_grava_e_nao_vaza(painel):
+    base = _base(painel)
+    status, url_final, corpo = _post(base + "/chaves/gravar",
+                                     {"token": painel.chaves_token,
+                                      "nome": "groq_api_key",
+                                      "passphrase": SENHA, "valor": VALOR})
+    # gravou: cofre tem a entrada, com o valor certo
+    v = Vault(Path(painel.ctx["home"]) / "vault.json")
+    assert v.get("groq_api_key", SENHA) == VALOR
+    # NÃO vazou: nem na URL de redirect, nem no corpo, nem na página seguinte
+    assert VALOR not in url_final
+    assert VALOR not in corpo
+    pag = urllib.request.urlopen(base + "/?chave_gravada=groq_api_key").read().decode()
+    assert VALOR not in pag
+    assert "groq_api_key" in pag           # o NOME aparece, o valor não
+
+
+def test_auditoria_so_o_nome(painel):
+    base = _base(painel)
+    _post(base + "/chaves/gravar", {"token": painel.chaves_token,
+                                    "nome": "mistral_api_key",
+                                    "passphrase": SENHA, "valor": VALOR})
+    linhas = (Path(painel.ctx["home"]) / "audit.jsonl").read_text()
+    assert "vault.set" in linhas
+    assert "mistral_api_key" in linhas     # o nome, sim
+    assert VALOR not in linhas             # o valor, JAMAIS
+
+
+def test_token_errado_recusa(painel):
+    base = _base(painel)
+    status, _, _ = _post(base + "/chaves/gravar",
+                         {"token": "token-falso", "nome": "x_api_key",
+                          "passphrase": SENHA, "valor": VALOR})
+    assert status == 403
+    assert Vault(Path(painel.ctx["home"]) / "vault.json").names() == []
+
+
+def test_passphrase_errada_recusa_sem_vazar(painel):
+    base = _base(painel)
+    status, _, corpo = _post(base + "/chaves/gravar",
+                             {"token": painel.chaves_token, "nome": "y_api_key",
+                              "passphrase": "senha-ERRADA", "valor": VALOR})
+    assert status == 403
+    assert VALOR not in corpo
+    assert "y_api_key" not in Vault(Path(painel.ctx["home"]) / "vault.json").names()
+
+
+def test_nome_invalido_recusa(painel):
+    base = _base(painel)
+    for ruim in ("com espaço", "MAIÚSCULA", "a", "../escape", "x;drop"):
+        status, _, _ = _post(base + "/chaves/gravar",
+                             {"token": painel.chaves_token, "nome": ruim,
+                              "passphrase": SENHA, "valor": VALOR})
+        assert status == 400, f"nome ruim aceito: {ruim!r}"
+
+
+def test_get_form_nao_expoe_valor_nem_token_no_html_de_leitura(painel):
+    """A aba renderiza sem quebrar e não embute valor de chave nenhuma."""
+    base = _base(painel)
+    _post(base + "/chaves/gravar", {"token": painel.chaves_token,
+                                    "nome": "omniroute_api_key",
+                                    "passphrase": SENHA, "valor": VALOR})
+    pag = urllib.request.urlopen(base + "/#chaves").read().decode()
+    assert "omniroute_api_key" in pag
+    assert VALOR not in pag
