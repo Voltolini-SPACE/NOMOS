@@ -249,7 +249,7 @@ class OmniRouteProvider:
         try:
             req = _urllib.request.Request(f"{self.base}/models",
                                           headers=self._headers())
-            with _urllib.request.urlopen(req, timeout=2.0) as r:  # noqa: S310
+            with _abrir_http(req, 2.0) as r:   # guard do módulo: valida esquema
                 return r.status == 200
         except Exception:
             return False

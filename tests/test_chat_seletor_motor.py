@@ -61,7 +61,32 @@ def test_seletores_no_composer():
     assert "automático (local-first)" in html
     assert "qwen3.5:4b-q8_0" in html
     assert "selected" in html                       # o padrão vem marcado
-    assert "nuvem só pelo terminal" in html         # honestidade sobre a nuvem
+    # sem chave/cadeado ligado, o bloco de nuvem diz a verdade em vez de
+    # oferecer um caminho que falharia
+    assert "nuvem indisponível aqui" in html
+
+
+def test_bloco_nuvem_aparece_quando_disponivel():
+    """Cadeado desligado + chave no cofre => a opção de nuvem é oferecida."""
+    html = pw._bloco_nuvem_chat({"nuvem_disponivel": True})
+    assert 'name="nuvem"' in html
+    assert 'name="passphrase"' in html
+    assert 'type="password"' in html
+    assert "SAEM da máquina" in html          # o custo dito na cara
+    assert "não é guardada" in html
+
+
+def test_bloco_nuvem_nao_oferece_quando_indisponivel():
+    html = pw._bloco_nuvem_chat({"nuvem_disponivel": False})
+    assert 'name="passphrase"' not in html    # nada de campo que não funciona
+    assert "indisponível" in html
+
+
+def test_responder_nuvem_sem_passphrase_recusa(tmp_path):
+    """Sem senha não há egresso — e a recusa é um resultado, não exceção."""
+    txt, motivo = pw.responder_nuvem(
+        {"home": tmp_path, "audit": None, "policy": None}, [], "")
+    assert txt is None and "senha-mestra" in motivo
 
 
 def test_seletores_somem_sem_motor():

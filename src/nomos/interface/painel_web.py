@@ -269,6 +269,177 @@ _CSS = """
      padding:.28rem .7rem}
    nav.menu .badge{margin-left:.35rem}
    .sysbox{display:flex;flex-wrap:wrap;gap:.1rem .9rem}}
+
+ /* =====================================================================
+    CAMADA DE PADRONIZAÇÃO — escala única, alvo de toque, foco visível.
+    Vem por ÚLTIMO de propósito: normaliza o que cresceu aba a aba, sem
+    reescrever as regras antigas. Tudo em variáveis => os DOIS temas
+    seguem juntos; nenhuma cor literal entra aqui.
+    ===================================================================== */
+ :root{
+   --esp-1:.35rem; --esp-2:.6rem; --esp-3:1rem; --esp-4:1.5rem;
+   --r-1:6px; --r-2:10px; --r-3:14px;
+   --alvo:44px;           /* alvo de toque mínimo (WCAG 2.5.5 / HIG) */
+   --foco:2px;            /* espessura do anel de foco */
+ }
+
+ /* --- ALVOS CLICÁVEIS -------------------------------------------------
+    Antes, botões de .acoes/.aprov/.mini tinham ~24px de altura: difícil
+    de acertar no trackpad e reprovado em toque. Todo controle passa a
+    ter o alvo mínimo, SEM inchar a tipografia (padding faz o trabalho). */
+ button, .botao, input[type=submit], select,
+ input:not([type=checkbox]):not([type=radio]), textarea,
+ .acoes button, .aprov button, .copiar, .mini{
+   min-height:var(--alvo);
+   padding-inline:var(--esp-3);
+   border-radius:var(--r-1);
+   cursor:pointer;
+   touch-action:manipulation;   /* mata o atraso de 300ms no toque */
+ }
+ /* campo de texto é para digitar, não para clicar: cursor certo */
+ input:not([type=checkbox]):not([type=radio]):not([type=submit]),
+ textarea{cursor:text}
+ /* botão só-ícone continua quadrado e clicável */
+ button.icone, .copiar.icone{min-width:var(--alvo);padding-inline:var(--esp-2)}
+ /* a navegação é o caminho mais usado: linha inteira clicável */
+ .nav a, nav a{
+   display:flex; align-items:center; gap:var(--esp-2);
+   min-height:var(--alvo);
+   padding:var(--esp-1) var(--esp-3);
+   border-radius:var(--r-1);
+   text-decoration:none;
+ }
+ .nav a:hover, nav a:hover{background:var(--surface2)}
+ .nav a .ico, nav a .ico{width:1.2em;text-align:center;flex:none}
+
+ /* --- FOCO VISÍVEL ----------------------------------------------------
+    Um anel só, igual em toda parte, nos dois temas. Quem navega por
+    teclado precisa saber onde está — e :focus-visible não incomoda
+    quem usa mouse. */
+ :where(a,button,select,input,textarea,summary,[tabindex]):focus-visible{
+   outline:var(--foco) solid var(--neon);
+   outline-offset:2px;
+   border-radius:var(--r-1);
+ }
+
+ /* --- SUPERFÍCIES ------------------------------------------------------
+    Mesmo raio, mesmo respiro, mesma borda: o painel para de parecer
+    remendado de épocas diferentes. */
+ .card{border-radius:var(--r-2); padding:var(--esp-3)}
+ .card + .card{margin-top:var(--esp-3)}
+ .card h2, .card h3{margin:0 0 var(--esp-2)}
+
+ /* --- CHAT: composer organizado ---------------------------------------
+    Era uma linha flex (textarea + botão) e os controles novos ficariam
+    espremidos. Vira grade: controles em cima, mensagem embaixo. */
+ .composer{
+   display:grid;
+   grid-template-columns:1fr auto;
+   grid-template-areas:"controles controles" "texto enviar";
+   gap:var(--esp-2);
+   align-items:end;
+ }
+ .chat-controles{
+   grid-area:controles;
+   display:flex; flex-wrap:wrap; gap:var(--esp-2) var(--esp-3);
+   align-items:center;
+   padding:var(--esp-2) var(--esp-3);
+   background:var(--surface2);
+   border:1px solid var(--line);
+   border-radius:var(--r-2);
+ }
+ .chat-controles label{
+   display:flex; align-items:center; gap:var(--esp-2);
+   font-size:.78rem; color:var(--fraco);
+ }
+ .chat-controles select{
+   font:inherit; font-size:.8rem;
+   background:var(--surface); color:var(--txt);
+   border:1px solid var(--line); border-radius:var(--r-1);
+   padding-block:var(--esp-1);
+   max-width:min(46vw,22rem);
+ }
+ .chat-controles-nota{color:var(--fraco);font-size:.72rem;flex-basis:100%}
+ .composer textarea{grid-area:texto; border-radius:var(--r-2);
+   padding:var(--esp-2) var(--esp-3); min-height:var(--alvo)}
+ .composer button{grid-area:enviar; min-height:var(--alvo)}
+
+ /* nuvem: recolhida por padrão — quem não usa, não vê. */
+ /* o pai (.chat-controles) centraliza os controles em linha; dentro do
+    bloco de nuvem o conteúdo é empilhado e precisa alinhar à esquerda,
+    senão o rótulo da senha aparece centralizado (visto na tela). */
+ .chat-nuvem{flex-basis:100%; margin-top:var(--esp-1);
+   align-self:stretch; text-align:start}
+ .chat-nuvem label, .chat-nuvem summary{align-items:flex-start}
+ .chat-nuvem label.chk{align-items:center}
+ .chat-nuvem summary{
+   cursor:pointer; min-height:var(--alvo);
+   display:flex; align-items:center; gap:var(--esp-2);
+   font-size:.78rem; color:var(--ciano);
+ }
+ .chat-nuvem[open]{
+   padding:var(--esp-2) var(--esp-3);
+   border:1px dashed var(--line); border-radius:var(--r-2);
+ }
+ .chat-nuvem label{display:flex; flex-direction:column; gap:var(--esp-1);
+   margin-block:var(--esp-2)}
+ .chat-nuvem label.chk{flex-direction:row; align-items:center}
+ .chat-nuvem input[type=password]{
+   font:inherit; background:var(--surface2); color:var(--txt);
+   border:1px solid var(--line); border-radius:var(--r-1);
+   padding:var(--esp-2) var(--esp-3); min-height:var(--alvo);
+ }
+ .chat-nuvem input[type=checkbox]{width:1.15rem;height:1.15rem;accent-color:var(--neon)}
+ .chat-nuvem small{display:block;color:var(--fraco);font-size:.72rem}
+
+ /* --- BOLHAS: mais legíveis, sem virar parede de texto --------------- */
+ .bolha{border-radius:var(--r-3); line-height:1.5;
+   overflow-wrap:anywhere}          /* URL longa não estoura a caixa */
+
+ /* --- TOQUE E TELA PEQUENA -------------------------------------------- */
+ @media (pointer:coarse){
+   /* no dedo, tudo um pouco maior — inclusive o que não é <button> */
+   .chip,.pill,.badge{min-height:2rem;display:inline-flex;align-items:center}
+ }
+ @media (max-width:640px){
+   .composer{grid-template-columns:1fr;
+     grid-template-areas:"controles" "texto" "enviar"}
+   .composer button{width:100%}
+   .chat-controles select{max-width:100%;flex:1}
+   .card{padding:var(--esp-2)}
+ }
+
+ /* --- BARRA DO TOPO: seguia o tema ESCURO nos dois temas --------------
+    Medido no navegador: no tema claro a barra ficava rgba(10,15,13,.94) —
+    escura sobre página clara, com o texto ilegível. A cor era literal e não
+    tinha variante clara. Agora DERIVA de --bg: uma regra só atende os três
+    caminhos de tema (escuro, claro explícito e claro do sistema), sem
+    repetir token em três blocos e sem chance de um deles ficar para trás. */
+ .topo{
+   background:var(--bg);                                   /* base sólida */
+   background:color-mix(in srgb, var(--bg) 94%, transparent);
+ }
+
+ /* --- TÍTULO ESCONDIDO SOB O CABEÇALHO ---------------------------------
+    Medido: cabeçalho sticky com 124px de altura e scroll-margin-top de
+    5.5rem (88px) — ao clicar uma aba, o título parava 36px POR BAIXO da
+    barra. A margem passa a acompanhar a altura real (o JS mede e escreve
+    --topo-h; o valor aqui é o piso seguro se o JS não rodar). */
+ :root{--topo-h:8.5rem}
+ h2, h3, .aba, [id]{scroll-margin-top:calc(var(--topo-h) + var(--esp-2))}
+
+ /* --- <code>: fundo escuro literal nos DOIS temas ----------------------
+    Medido no navegador (tema claro): 7 elementos <code> com fundo
+    #0c1410 — pastilha preta sobre página clara, o texto sumia. A regra
+    antiga não tinha variante clara. Deriva do tema: 5.7:1 no claro e
+    6.4:1 no escuro, ambos acima de AA. */
+ code, .k, .lista.atalhos code{background:var(--surface2); color:var(--neon)}
+
+ /* --- MOVIMENTO REDUZIDO ---------------------------------------------- */
+ @media (prefers-reduced-motion:reduce){
+   *,*::before,*::after{transition-duration:.01ms !important}
+ }
+
 """
 
 # JavaScript próprio, inline, sem rede: melhoria progressiva apenas.
@@ -276,6 +447,18 @@ _JS = """
 (function(){
  'use strict';
  var app=document.querySelector('.app');
+ // ---- a barra do topo é sticky e MUDA de altura (quebra em tela estreita).
+ // Publica a altura real em --topo-h para o scroll-margin dos títulos não
+ // parar por baixo dela. Sem isto, clicar uma aba escondia o título.
+ var topo=document.querySelector('.topo');
+ function mediteTopo(){
+   if(!topo)return;
+   var h=Math.ceil(topo.getBoundingClientRect().height);
+   if(h>0)document.documentElement.style.setProperty('--topo-h',h+'px');
+ }
+ mediteTopo();
+ if(topo&&window.ResizeObserver){new ResizeObserver(mediteTopo).observe(topo);}
+ else{window.addEventListener('resize',mediteTopo);}
  // ---- tema claro/escuro: respeita o SO; escolha explícita persiste
  var root=document.documentElement;
  function temaAtual(){
@@ -468,13 +651,28 @@ def _modelo_configurado() -> str | None:
 
 def _ollama_modelos(host: str = "http://127.0.0.1:11434") -> list[str]:
     """Nomes dos modelos do Ollama (loopback). Falha => lista vazia."""
-    import urllib.request
+    # usa o guard da cognição (valida o esquema) em vez de urlopen cru — é a
+    # regra da casa e o teste de egresso a cobra.
+    from nomos.cognition.motores import _abrir_http
     try:
-        with urllib.request.urlopen(f"{host}/api/tags", timeout=1.5) as r:  # noqa: S310
+        with _abrir_http(f"{host}/api/tags", 1.5) as r:
             data = json.loads(r.read().decode())
         return [m["name"] for m in data.get("models", []) if m.get("name")]
     except Exception:
         return []
+
+
+def _nuvem_disponivel(ctx) -> bool:
+    """Nuvem no chat só se: cadeado DESLIGADO e chave omniroute no cofre."""
+    try:
+        from nomos.kernel import localidade
+        from nomos.kernel.vault import Vault
+        if localidade.esta_ligado(ctx["home"]):
+            return False
+        v = Vault(Path(ctx["home"]) / "vault.json")
+        return v.exists() and "omniroute_api_key" in v.names()
+    except Exception:
+        return False
 
 
 def motores_chat(ctx) -> list[dict]:
@@ -562,6 +760,48 @@ def responder_local(ctx, messages, motor: str | None = None,
     except Exception:
         return None
     return outcome.text if (outcome and outcome.ok) else None
+
+
+def responder_nuvem(ctx, messages, passphrase: str, *, modelo=None):
+    """Uma resposta pela NUVEM (OmniRoute), governada, a partir do painel.
+
+    A passphrase digitada no composer É o consentimento explícito desta
+    mensagem: só o dono a conhece, e sem ela a cadeia nem monta. Cada envio é
+    um egresso auditado. NADA é guardado — a passphrase serve ao `vault.get` e
+    é descartada ao fim do request.
+
+    Fail-closed em ordem (mesma de `montar_runner_omniroute`):
+      cadeado só-local desligado → A2 → A3 → chave no cofre.
+    Devolve (texto, None) em sucesso, ou (None, motivo) — nunca inventa.
+    """
+    from nomos.cognition import relay
+    from nomos.kernel.policy import PolicyEngine
+    from nomos.kernel.vault import Vault
+
+    home = ctx["home"]
+    if not passphrase:
+        return None, "sem a senha-mestra do cofre não há saída para a nuvem"
+    policy = ctx.get("policy") or PolicyEngine(Path(home) / "policy.json")
+    vault = Vault(Path(home) / "vault.json")
+    if not vault.exists():
+        return None, "cofre não criado (nomos vault init)"
+    prov, motivo = relay.montar_runner_omniroute(
+        home, policy=policy, vault=vault,
+        # o envio deste formulário, com a passphrase certa, É a aprovação:
+        # o dono está presente e prova posse do segredo. A cadeia ainda exige
+        # cadeado desligado e a chave decifrável — passphrase errada => falha.
+        approver=lambda _d: True,
+        passphrase=passphrase,
+        modelo=modelo or relay.MODELO_PADRAO)
+    if prov is None:
+        return None, motivo
+    try:
+        reply = prov.chat(messages)
+    except Exception as exc:
+        return None, f"a rota respondeu: {type(exc).__name__} "\
+                     f"(free tier saturado? tente de novo ou motor local)"
+    ctx["audit"].append("chat.painel.nuvem", modelo=reply.model, egress="omniroute")
+    return reply.text, None
 
 
 def _contexto_chat(store, conversa_id: int, texto_usuario: str) -> list[dict]:
@@ -1164,9 +1404,32 @@ def _seletores_chat(chat: dict) -> str:
         "</select></label>"
         '<label>Motor'
         f'<select name="motor">{opts}</select></label>'
-        '<small class="chat-controles-nota">nuvem só pelo terminal '
-        "(gate A2/A3)</small>"
-        "</div>")
+        + _bloco_nuvem_chat(chat)
+        + "</div>")
+
+
+def _bloco_nuvem_chat(chat: dict) -> str:
+    """Opção explícita de usar a NUVEM nesta mensagem — some se indisponível.
+
+    Aparece só quando: cadeado desligado E a chave omniroute está no cofre.
+    Marcar o checkbox + digitar a passphrase manda ESTA mensagem para a nuvem,
+    governada e auditada. Desmarcado = local, como sempre (default seguro).
+    """
+    e = esc
+    if not chat.get("nuvem_disponivel"):
+        return ('<small class="chat-controles-nota">nuvem indisponível aqui '
+                "(cadeado ligado ou sem chave no cofre — use o terminal)</small>")
+    return (
+        '<details class="chat-nuvem"><summary>☁ usar a nuvem nesta '
+        "mensagem</summary>"
+        '<label class="chk"><input type="checkbox" name="nuvem" value="1"> '
+        "enviar ESTA mensagem para a nuvem (OmniRoute · rotas grátis)</label>"
+        '<label>Senha-mestra do cofre (só para esta mensagem)'
+        '<input name="passphrase" type="password" autocomplete="off" '
+        'placeholder="a passphrase — não é guardada"></label>'
+        "<small>os dados desta mensagem SAEM da máquina; cada envio fica na "
+        "auditoria. Sem a senha, cai no motor local.</small>"
+        "</details>")
 
 
 def _bloco_ao_vivo(d: dict) -> str:
@@ -2177,7 +2440,8 @@ class DashboardServer:
                     return None
                 dados = {"habilitado": True, "token": painel.chat_token,
                          "base": base, "aberta": None, "mensagens": [],
-                         "motores": motores_chat(painel.ctx)}
+                         "motores": motores_chat(painel.ctx),
+                         "nuvem_disponivel": _nuvem_disponivel(painel.ctx)}
                 import contextlib
                 sel = (parse_qs(query).get("conversa") or [""])[0]
                 if sel and sel != "nova":
@@ -2534,8 +2798,25 @@ class DashboardServer:
                     roteamento = (form.get("roteamento") or ["auto"])[0]
                     if roteamento not in ("auto", "motor"):
                         roteamento = "auto"
-                    resposta = responder_local(painel.ctx, contexto,
-                                               motor=motor, roteamento=roteamento)
+                    quer_nuvem = (form.get("nuvem") or [""])[0] == "1"
+                    pp_nuvem = (form.get("passphrase") or [""])[0]
+                    resposta = None
+                    if quer_nuvem:
+                        # egresso governado: a passphrase é o consentimento
+                        # DESTA mensagem. Falhou? cai no local, com a nota.
+                        resposta, motivo_nuvem = responder_nuvem(
+                            painel.ctx, contexto, pp_nuvem)
+                        if resposta is None:
+                            nota_nuvem = f"[nuvem recusada: {motivo_nuvem}]"
+                    if resposta is None:
+                        resposta = responder_local(painel.ctx, contexto,
+                                                   motor=motor,
+                                                   roteamento=roteamento)
+                        if quer_nuvem and resposta:
+                            resposta = f"{nota_nuvem}\n\n{resposta}"
+                        elif quer_nuvem:
+                            resposta = nota_nuvem
+                    del pp_nuvem   # não sobrevive ao request
                     if resposta:
                         cs.add_turno(cid, "assistant", resposta)
                         painel.ctx["audit"].append("chat.painel.respondeu",

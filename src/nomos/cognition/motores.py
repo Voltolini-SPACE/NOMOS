@@ -104,7 +104,7 @@ def capacidades_ollama(nome: str, host: str = OLLAMA) -> tuple[str, ...]:
             req = urllib.request.Request(
                 f"{host}/api/show", data=json.dumps({"model": nome}).encode(),
                 headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=3.0) as r:  # noqa: S310 - localhost
+            with _abrir_http(req, 3.0) as r:   # guard do módulo: valida esquema
                 return tuple(json.loads(r.read().decode()).get("capabilities") or ())
         except Exception:
             return ()

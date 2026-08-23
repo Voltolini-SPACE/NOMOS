@@ -109,14 +109,14 @@ def descobrir_rotas(api_key: str, base: str = RELAY_BASE,
     import json
     import urllib.request
 
-    from nomos.cognition.motores import _cacheado
+    from nomos.cognition.motores import _abrir_http, _cacheado
 
     def probe():
         try:
             req = urllib.request.Request(
                 f"{base.rstrip('/')}/models",
                 headers={"Authorization": f"Bearer {api_key}"})
-            with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310
+            with _abrir_http(req, timeout) as r:   # guard: valida o esquema
                 dados = json.loads(r.read().decode())
             return [m["id"] for m in dados.get("data", []) if m.get("id")]
         except Exception:
