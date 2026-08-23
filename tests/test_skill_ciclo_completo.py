@@ -337,3 +337,44 @@ def test_aviso_de_execucao_bate_com_a_execucao_real(tmp_path, nomos_home,
 
     assert pode == (rc == 0), (
         f"previsor disse pode={pode} mas executar deu rc={rc}")
+
+
+# ------------------------------- ver o que veio na caixa, sem comando nenhum
+def test_home_vazia_ve_as_do_pacote_sem_registrar(nomos_home):
+    """Instalação nova mostra o que veio no wheel — e NÃO escreve nada.
+
+    Antes, uma home nova dizia "nenhuma skill disponível ainda" tendo 33 dentro
+    do próprio pacote: só apareciam depois de alguém rodar `--semear`. Exigir um
+    comando para ENXERGAR o que já veio na caixa é o oposto de plug-and-play.
+
+    A fronteira que este teste protege: mostrar NÃO é registrar nem autorizar.
+    """
+    caps = scat.capacidades(nomos_home, nomos_home / "skills",
+                            incluir_do_pacote=True)
+
+    assert caps, "home nova deveria enxergar as skills do pacote"
+    assert all(c["status"] == "vem no NOMOS" for c in caps)
+    assert not (nomos_home / "registry" / "catalogo.json").exists(), \
+        "listar não pode escrever no registro"
+    assert reg.catalogo(nomos_home) == []
+
+
+def test_fonte_do_pacote_e_opt_in(nomos_home):
+    """O default preserva o contrato antigo: home vazia -> lista vazia.
+
+    Duas suítes afirmam isso; mudar por baixo quebraria quem as escreveu.
+    """
+    assert scat.capacidades(nomos_home, nomos_home / "skills") == []
+
+
+def test_instalada_vence_a_do_pacote(tmp_path, nomos_home):
+    """Skill instalada não aparece duas vezes por também vir no pacote."""
+    src = _skill_em(tmp_path / "loja", "busca-arquivos")
+    engine = PolicyEngine(nomos_home / "policy.json")
+    reg.instalar(src, nomos_home / "skills", engine, lambda d: True,
+                 confirmar_experimental=lambda m: True, home=nomos_home)
+
+    caps = scat.capacidades(nomos_home, nomos_home / "skills",
+                            incluir_do_pacote=True)
+    achadas = [c for c in caps if c["nome"] == "busca-arquivos"]
+    assert len(achadas) == 1 and achadas[0]["status"] == "instalada"

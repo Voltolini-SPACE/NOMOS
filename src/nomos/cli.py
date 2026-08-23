@@ -1313,7 +1313,8 @@ def cmd_skills(ctx, args) -> int:
                 return EXIT_ERROR
             print(f"{len(res['adicionadas'])} disponível(is). "
                   "Instalar continua exigindo confirmação e o gate A5.")
-        caps = scat.capacidades(ctx["home"], ctx["skills"])
+        caps = scat.capacidades(ctx["home"], ctx["skills"],
+                                incluir_do_pacote=True)
         if getattr(args, "json", False):
             print(json.dumps({"contrato": scat.CONTRATO_CATALOGO,
                               "capacidades": caps}, ensure_ascii=False, indent=2))

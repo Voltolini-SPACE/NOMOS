@@ -57,8 +57,45 @@ def _manifestos_instalados(skills_dir: Path) -> list[dict]:
     return out
 
 
-def capacidades(home: Path, skills_dir: Path) -> list[dict]:
-    """Catálogo unificado: instaladas primeiro; disponíveis sem duplicar nome."""
+def _manifestos_do_pacote() -> list[dict]:
+    """As skills que VIAJARAM com o produto — sem depender de registro.
+
+    Antes, uma instalação nova mostrava "nenhuma skill disponível ainda" mesmo
+    tendo 33 skills dentro do próprio wheel: elas só apareciam depois de alguém
+    rodar `nomos skills catalogo --semear`. Exigir um comando para ENXERGAR o
+    que já veio na caixa é o oposto de plug-and-play.
+
+    Isto é DESCOBERTA, não autorização — a mesma fronteira que
+    `relay.descobrir_rotas` respeita: aparecer na lista não instala nada e não
+    aprova nada. Instalar continua exigindo confirmação de experimental e o
+    gate A5.
+    """
+    import json as _json
+
+    out: list[dict] = []
+    try:
+        from nomos import skills_embutidas as emb
+        origens = emb.origens()
+    except Exception:
+        return out
+    for base in origens:
+        for mf_path in sorted(Path(base).glob("*/skill.json")):
+            try:
+                out.append(_json.loads(mf_path.read_text(encoding="utf-8")))
+            except Exception:
+                continue   # manifesto ilegível some da lista, não derruba ela
+    return out
+
+
+def capacidades(home: Path, skills_dir: Path, *,
+                incluir_do_pacote: bool = False) -> list[dict]:
+    """Catálogo unificado: instaladas primeiro; disponíveis sem duplicar nome.
+
+    `incluir_do_pacote` acrescenta as skills que vieram no wheel, mesmo sem
+    registro. É OPT-IN de propósito: duas suítes afirmam que uma home vazia
+    devolve lista vazia, e mudar isso por baixo quebraria a expectativa de quem
+    escreveu esses testes. Quem quer a visão completa pede.
+    """
     itens: list[dict] = []
     vistos: set[str] = set()
     for mf in _manifestos_instalados(skills_dir):
@@ -71,5 +108,12 @@ def capacidades(home: Path, skills_dir: Path) -> list[dict]:
             continue
         itens.append(_capacidade(mf, "disponível no catálogo"))
         vistos.add(nome)
+    if incluir_do_pacote:
+        for mf in _manifestos_do_pacote():
+            nome = str(mf.get("name", "?"))
+            if nome in vistos:
+                continue
+            itens.append(_capacidade(mf, "vem no NOMOS"))
+            vistos.add(nome)
     itens.sort(key=lambda c: (c["status"] != "instalada", c["nome"]))
     return itens

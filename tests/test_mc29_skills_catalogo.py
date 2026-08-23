@@ -90,7 +90,29 @@ def test_cli_catalogo_humano_mostra_risco_e_permissoes(tmp_path):
     assert "risco" in proc.stdout and "permissões" in proc.stdout
 
 
-def test_cli_catalogo_vazio_orienta(tmp_path):
+def test_cli_catalogo_mostra_o_que_veio_no_pacote(tmp_path):
+    """Home nova NÃO diz mais "nenhuma skill": o produto traz skills no wheel.
+
+    Este teste antes exigia a frase "nenhuma skill" numa home vazia. Ela virou
+    FALSA quando as skills passaram a viajar no pacote — a home está vazia, o
+    PRODUTO não. Texto que descreve um fato tem de morrer com o fato.
+    """
     proc = _cli(["skills", "catalogo"], tmp_path)
     assert proc.returncode == 0
-    assert "nenhuma skill" in proc.stdout
+    assert "Catálogo de capacidades" in proc.stdout
+    assert "vem no NOMOS" in proc.stdout
+    assert "nenhuma skill" not in proc.stdout   # proíbe a frase antiga de voltar
+
+
+def test_cli_catalogo_orienta_quando_nao_ha_MESMO_nada(tmp_path, monkeypatch):
+    """A orientação continua existindo — para o caso em que ela é verdadeira.
+
+    Instalação sem skills empacotadas (recorte, pacote parcial): aí sim não há
+    nada, e o CLI tem de dizer o que fazer em vez de mostrar lista vazia.
+    """
+    from nomos.ext import skill_catalogo as scat
+
+    monkeypatch.setattr(scat, "_manifestos_do_pacote", lambda: [])
+    caps = scat.capacidades(tmp_path, tmp_path / "skills",
+                            incluir_do_pacote=True)
+    assert caps == []
