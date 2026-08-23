@@ -73,6 +73,10 @@ exclude = ["src/nomos/conectores/mcp/.*/servidor\\.py"]
 # sugeria instalar de um caminho que só existe dentro do checkout. Mesmo
 # padrão de `nomos.conectores` logo abaixo, que já funciona.
 "nomos.skills_embutidas" = ["*/skill.json", "*/*.py", "*/*.md"]
+# As do dono viajam igual, em pacote SEPARADO: `skills_embutidas` tem contrato
+# de "4 oficiais, risco baixo" garantido por teste, e 29 de risco misto ali
+# dentro apagariam essa promessa.
+"nomos.skills_do_dono" = ["*/skill.json", "*/*.py", "*/*.md"]
 "nomos.agents" = ["oficiais/*.json"]
 "nomos.conectores" = ["mcp/_comum.py", "mcp/*/manifesto.json", "mcp/*/servidor.py", "mcp/*/README.md"]
 
