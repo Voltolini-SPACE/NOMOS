@@ -326,6 +326,12 @@ def diagnostico_conectores(home: Path, raiz: Path | None = None) -> dict:
             interp = comando[0] if comando else ""
             itens.append({
                 "nome": manifesto["nome"],
+                # O NOME do manifesto ("calendario-ics") NÃO é aceito por
+                # `confiar`: ele resolve por DIRETÓRIO ("calendario") ou pelo
+                # caminho do manifesto. Sem expor isto aqui, quem consome o
+                # diagnóstico monta um comando que falha com "não achei" —
+                # aconteceu na 1ª versão da aba Conectores do painel.
+                "dir": mf.parent.name,
                 "nivel_padrao": manifesto["nivel_padrao"],
                 "nivel": nivel_exibicao(manifesto),   # risco real das tools
                 "status": status(home, manifesto),
