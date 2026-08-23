@@ -58,6 +58,32 @@ def extrair_texto(caminho: Path) -> tuple[str, str]:
                        f"(leio: {', '.join(sorted(FORMATOS_TEXTO))} e .pdf)")
 
 
+def _sem_marcador(linha: str) -> str:
+    """Tira UM marcador de lista/título, não um conjunto de caracteres.
+
+    `lstrip("#-*• ")` remove CARACTERES, não prefixo — e come o que vier depois
+    enquanto pertencer ao conjunto. Medido: `"- -5 graus"` virava `"5 graus"`,
+    **com o sinal invertido**, e `"* *destaque*"` virava `"destaque*"`, com a
+    ênfase desemparelhada. Numa transcrição de áudio ou num resumo de PDF isso
+    troca o sentido em silêncio — o pior tipo de erro, porque a saída continua
+    plausível.
+
+    Alerta trazido pela sessão 7f20d955, que levou dois bugs da mesma classe
+    (`.lstrip("r/")` transformava "rust" em "ust"). A classe é traiçoeira
+    porque funciona na maioria dos casos.
+    """
+    t = linha
+    if t.startswith("#"):
+        # nível de título REPETE por desenho (`###`) — aqui tirar todos é certo
+        t = t.lstrip("#")
+    else:
+        for marcador in ("-", "*", "•"):
+            if t.startswith(marcador):
+                t = t[len(marcador):]   # UM só: o segundo pode ser conteúdo
+                break
+    return t.strip()
+
+
 def extrair_pontos(texto: str, maximo: int = 8) -> list[str]:
     """Heurística LOCAL e transparente: títulos, listas e frases densas."""
     pontos: list[str] = []
@@ -66,7 +92,7 @@ def extrair_pontos(texto: str, maximo: int = 8) -> list[str]:
         if not t:
             continue
         if t.startswith("#") or (t.startswith(("-", "*", "•")) and len(t) > 8):
-            pontos.append(t.lstrip("#-*• ").strip())
+            pontos.append(_sem_marcador(t))
         elif t.endswith(":") and 10 < len(t) < 90:
             pontos.append(t.rstrip(":"))
         if len(pontos) >= maximo:
