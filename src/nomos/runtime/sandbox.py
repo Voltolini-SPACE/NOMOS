@@ -18,6 +18,7 @@ import subprocess  # nosec B404 - execução isolada é o propósito do sandbox
 import tempfile
 from types import ModuleType
 
+from nomos.kernel import plataforma
 from nomos.kernel.audit import redact_text
 from dataclasses import dataclass
 from functools import lru_cache
@@ -48,6 +49,11 @@ class SandboxResult:
     stderr: str
     timed_out: bool
     network_isolated: bool
+    # Cerca de SISTEMA DE ARQUIVOS. Separada de `network_isolated` de propósito:
+    # até 23/08 o ramo com rede tinha zero confinamento de arquivos e nada no
+    # resultado dizia isso — quem auditasse veria só `network_isolated=False`,
+    # que é o esperado para quem pediu rede, e concluiria que estava tudo certo.
+    fs_confinado: bool = False
 
 
 @lru_cache(maxsize=1)
@@ -75,6 +81,81 @@ def _limits(cpu_seconds: int, fsize_mb: int):
             )
             resource.setrlimit(resource.RLIMIT_NOFILE, (256, 256))
     return apply
+
+
+# --------------------------------------------------------------- macOS
+# Perfil seatbelt para o ramo COM REDE. Medido em 23/08: `allow_network=True`
+# rodava com acesso TOTAL ao sistema de arquivos como o usuário — listava o
+# home, enxergava `~/.nomos/vault.json` e alcançava a rede. Havia env limpo,
+# cwd temporário e rlimits; não havia cerca de arquivos.
+#
+# A inversão que isso produzia: o caso de MENOR risco (sem rede) era recusado
+# fail-closed, e o de MAIOR risco (com rede) corria com menos cerca. Este
+# perfil fecha o segundo. O primeiro continua só-Linux por desenho — ver
+# `kernel.plataforma.execucao_isolada_disponivel`.
+#
+# `(literal "/")` com file-read* é OBRIGATÓRIO: sem ele o dyld aborta tudo com
+# rc=134 e sem mensagem — falha muda, o pior modo. Ele permite LISTAR `/`, nada
+# além; os filhos seguem negados. Lição já paga por `adapters/supervisor.py`,
+# reusada aqui em vez de redescoberta.
+_PERFIL_COM_REDE = """(version 1)
+(deny default)
+(allow process-fork)
+(allow process-exec)
+(allow sysctl-read)
+(allow mach-lookup (global-name "com.apple.bsd.dirhelper"))
+(allow file-read* (literal "/"))
+(allow file-read-metadata (literal "/var"))
+(allow file-read-metadata (literal "/etc"))
+(allow file-read* (subpath "/System"))
+(allow file-read* (subpath "/usr/lib"))
+(allow file-read* (subpath "/usr/bin"))
+(allow file-read* (subpath "/bin"))
+(allow file-read* (subpath "/opt/homebrew"))
+(allow file-read* (subpath "/private/var/select"))
+(allow file-read* (subpath "/private/etc"))
+(allow file-read* (literal "/dev/null"))
+(allow file-read* (literal "/dev/dtracehelper"))
+(allow mach-lookup (global-name "com.apple.system.opendirectoryd.membership"))
+(allow mach-lookup (global-name "com.apple.SystemConfiguration.configd"))
+(allow mach-lookup (global-name "com.apple.dnssd.service"))
+(allow system-socket)
+(allow file-read* (literal "/dev/urandom"))
+(allow file-write-data (literal "/dev/null"))
+(allow file-read* file-write* (subpath "{workdir}"))
+(allow network-outbound)
+(allow network-inbound)
+"""
+
+
+def _perfil_seatbelt(workdir: str) -> str:
+    """O perfil com o workdir embutido — única área gravável.
+
+    O caminho vai para dentro de aspas no perfil. Aspa, barra invertida ou
+    quebra de linha no caminho fechariam a string e o resto viraria política
+    do atacante. Recusar é a única resposta segura: não há como escapar isso
+    de forma confiável na linguagem do seatbelt.
+    """
+    real = os.path.realpath(workdir)   # /tmp é symlink para /private/tmp
+    if any(c in real for c in ('"', "\\", "\n", "\r")):
+        raise IsolationUnavailable(
+            f"caminho com caractere que quebraria o perfil do sandbox: {real!r}")
+    return _PERFIL_COM_REDE.replace("{workdir}", real)
+
+
+def _confinamento_macos(argv: list[str], workdir: str) -> tuple[list[str], bool]:
+    """Envolve `argv` em sandbox-exec no macOS. Devolve (argv, confinado).
+
+    Fora do macOS, ou sem o binário, devolve o argv intacto e `False` — quem
+    chama decide o que fazer com a ausência de cerca. Esta função não escolhe
+    política; só oferece o confinamento quando ele existe.
+    """
+    if not plataforma.EH_MAC:
+        return argv, False
+    sbx = shutil.which("sandbox-exec") or plataforma.SANDBOX_EXEC
+    if not os.path.exists(sbx):
+        return argv, False
+    return [sbx, "-p", _perfil_seatbelt(workdir), *argv], True
 
 
 def run(
@@ -111,6 +192,15 @@ def run(
     env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8", "HOME": "/tmp"}  # nosec B108 - HOME efêmero dentro do processo isolado
     cwd = workdir or tempfile.mkdtemp(prefix="nomos-sbx-")
 
+    # Ramo COM rede: até 23/08 não tinha cerca de sistema de arquivos NENHUMA —
+    # medido lendo o home do dono e o `~/.nomos/vault.json`. No macOS o
+    # seatbelt fecha isso sem tirar a rede, que é o que o chamador pediu.
+    # Fora do macOS o argv segue intacto: esta função não inventa isolamento
+    # onde não existe, e `network_isolated` continua dizendo a verdade.
+    confinado_fs = False
+    if allow_network:
+        argv, confinado_fs = _confinamento_macos(argv, cwd)
+
     proc = subprocess.Popen(  # nosec B603 - argv construído localmente, sem shell
         argv,
         stdout=subprocess.PIPE,
@@ -142,4 +232,5 @@ def run(
         stderr=err,
         timed_out=timed_out,
         network_isolated=isolated,
+        fs_confinado=confinado_fs,
     )
