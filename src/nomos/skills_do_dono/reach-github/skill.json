@@ -35,5 +35,7 @@
       "descricao": "token do gh CLI, mora em ~/.config/gh — FORA do cofre; o A3 nao o governa"
     }
   ],
-  "files": {}
+  "files": {
+    "reach_github.py": "755c674ef3f1aa26577837df9eb21e1c8ea6ddc68b6fc70d66b9e6fe4e2e87d9"
+  }
 }
