@@ -40,6 +40,49 @@ def _extrair_host(target: str) -> str:
     return t.strip().lower()
 
 
+PORTAS_DE_RELAY = frozenset({20128})
+"""Portas de loopback que NÃO são motor local: elas ROTEIAM para a internet.
+
+A isenção de loopback (ver o cabeçalho deste módulo) assume que todo serviço
+em 127.0.0.1 é TERMINAL — Ollama, Stable Diffusion, ComfyUI, piper executam na
+máquina e param ali. Um roteador de LLM instalado em loopback quebra essa
+premissa: falar com ele é falar com a internet, com um salto de disfarce no
+meio. Sem esta lista, `bloqueia_egress` deixaria passar e a decisão cairia em
+REQUIRE_APPROVAL — e o operador leria "127.0.0.1:20128" no prompt, que parece
+um motor local.
+
+20128 = OmniRoute (instalado em 23/08/2026).
+
+LIMITE DECLARADO, não escondido: isto fecha o relay DECLARADO. Um proxy em
+porta não listada continua invisível para o cadeado, porque o modelo de egresso
+é de UM SALTO e sintático — classifica a string do primeiro destino, não o
+destino final. Fechar a classe inteira exigiria inverter o default (loopback
+isento só por allowlist de portas de motor local), o que quebra testes e portas
+customizadas: é decisão do dono, registrada como fase 2.
+"""
+
+
+def _extrair_porta(target: str) -> int | None:
+    """Porta de 'host:porta', 'http://host:porta/...' ou '[::1]:porta'."""
+    t = (target or "").strip()
+    try:
+        if "://" in t:
+            return urlparse(t).port
+        if t.startswith("[") and "]:" in t:
+            return int(t.rsplit("]:", 1)[1].split("/")[0])
+        if t.count(":") == 1:
+            return int(t.rsplit(":", 1)[1].split("/")[0])
+    except (ValueError, TypeError):
+        return None
+    return None
+
+
+def eh_relay_declarado(target: str) -> bool:
+    """True se o alvo é loopback MAS roteia para fora (ver PORTAS_DE_RELAY)."""
+    porta = _extrair_porta(target)
+    return porta in PORTAS_DE_RELAY if porta is not None else False
+
+
 def eh_loopback(target: str) -> bool:
     """True se o alvo é a própria máquina (motor local), não a internet."""
     host = _extrair_host(target)
@@ -82,5 +125,13 @@ def definir(home: Path, ligado: bool) -> bool:
 
 
 def bloqueia_egress(home: Path, target: str) -> bool:
-    """True se este egress deve ser NEGADO por causa do modo só-local."""
-    return esta_ligado(home) and not eh_loopback(target)
+    """True se este egress deve ser NEGADO por causa do modo só-local.
+
+    Relay declarado em loopback é tratado como REMOTO: falar com ele é falar
+    com a internet. Ver `PORTAS_DE_RELAY`.
+    """
+    if not esta_ligado(home):
+        return False
+    if eh_relay_declarado(target):
+        return True
+    return not eh_loopback(target)

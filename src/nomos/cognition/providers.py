@@ -35,6 +35,18 @@ def _exigir_loopback(url: str, quem: str) -> None:
     egress="nenhum"."""
     import ipaddress
     from urllib.parse import urlparse
+
+    # Loopback que ROTEIA para fora não é motor local. Sem isto, apontar
+    # NOMOS_OPENAI_COMPAT_BASE para um relay em 127.0.0.1 produziria
+    # exatamente o desfecho que esta função existe para impedir: conversa
+    # saindo com o cadeado ligado e auditoria dizendo egress="nenhum".
+    from nomos.kernel.localidade import eh_relay_declarado
+    if eh_relay_declarado(url):
+        raise ValueError(
+            f"{quem} aponta para um ROTEADOR em loopback (porta de relay) — "
+            "falar com ele é falar com a internet. Use um motor local de "
+            "verdade, ou plugue o roteador pelo caminho governado.")
+
     host = urlparse(url).hostname or ""
     if host == "localhost":
         return
