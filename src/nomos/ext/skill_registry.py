@@ -231,7 +231,7 @@ def disponiveis(home: Path, skills_dir: Path) -> list[dict]:
 
 # ------------------------- instalação v2 -------------------------
 
-TIPOS_REQUISITO = ("binario", "chave", "servidor_mcp")
+TIPOS_REQUISITO = ("binario", "modulo_python", "chave", "servidor_mcp")
 """Os três tipos que um manifesto pode declarar em `requires`."""
 
 
@@ -273,6 +273,11 @@ def verificar_requisitos(mf: dict, home: Path | None = None) -> list[dict]:
                 motivo, verificado = "requisito 'binario' sem nome", False
             elif not shutil.which(exe):
                 motivo = f"binário '{exe}' não está no PATH"
+        elif tipo == "modulo_python":
+            # `feedparser` é módulo, não executável: `which feedparser` falha e
+            # `which python3` PASSA — verificação falsa, o pior tipo, porque
+            # parece cobertura e não é. Aqui se mede o que importa: o import.
+            motivo = _modulo_ausente(nome)
         elif tipo == "chave":
             if not _IDENT.fullmatch(nome):
                 # nome em prosa ("token do gh (host, nao do cofre)") não é
@@ -290,6 +295,18 @@ def verificar_requisitos(mf: dict, home: Path | None = None) -> list[dict]:
                              "obrigatorio": obrig, "motivo": motivo,
                              "verificado": verificado})
     return faltando
+
+
+def _modulo_ausente(nome: str) -> str | None:
+    """Módulo Python importável? Usa `find_spec`, que NÃO executa o módulo."""
+    import importlib.util
+    if not _IDENT.fullmatch(nome):
+        return f"módulo '{nome}': nome não é um identificador de módulo"
+    try:
+        return None if importlib.util.find_spec(nome) else \
+            f"módulo Python '{nome}' não está instalado"
+    except Exception:
+        return f"módulo Python '{nome}' não está instalado"
 
 
 def _chave_ausente(nome: str, home: Path | None) -> str | None:
@@ -321,6 +338,40 @@ def _mcp_ausente(nome: str, home: Path | None) -> str | None:
         return None if nome in registrados else f"servidor MCP '{nome}' não é confiável/registrado"
     except Exception as exc:
         return f"servidor MCP '{nome}': não consegui verificar ({type(exc).__name__})"
+
+
+def pode_executar_aqui(mf: dict, home: Path | None = None) -> tuple[bool, str]:
+    """Esta skill CONSEGUE rodar nesta máquina? Devolve (pode, motivo).
+
+    Existe para o instalador dizer a verdade na hora certa. Sem isto, a pessoa
+    instala com sucesso e só descobre no primeiro uso que nada roda — que é o
+    pior momento possível para a promessa de "plug-and-play" quebrar.
+
+    Medido neste Mac, e o resultado é contraintuitivo:
+      * skill SEM A2_NET_EGRESS -> rc=1 "user namespaces indisponíveis": o
+        confinamento S0 é só-Linux por desenho, e sem ele o NOMOS RECUSA em vez
+        de rodar sem cerca. A postura é correta; o efeito é que a skill mais
+        segura é justamente a que não executa;
+      * skill COM A2 -> executa, MAS só se o cadeado só-local estiver desligado.
+        Numa instalação padrão (cadeado ligado) ela cai em A2 negado.
+    Ou seja, no macOS com cadeado ligado NENHUMA das duas roda — e isso precisa
+    ser dito, não descoberto.
+    """
+    from nomos.kernel import localidade, plataforma
+
+    perms = mf.get("permissions") or []
+    quer_rede = Category.NET_EGRESS.value in perms
+    if not quer_rede:
+        if not plataforma.execucao_isolada_disponivel():
+            return False, ("instala, mas NÃO executa nesta máquina: o "
+                           "confinamento de execução é só-Linux por desenho, e "
+                           "sem ele o NOMOS recusa em vez de rodar sem cerca")
+        return True, ""
+    if home is not None and localidade.esta_ligado(home):
+        return False, ("instala, mas NÃO executa enquanto o modo só-local "
+                       "estiver ligado: ela declara saída para a internet "
+                       "(A2). Para permitir: nomos local off")
+    return True, ""
 
 
 def instalar(src: Path, skills_dir: Path, engine: PolicyEngine, approver,

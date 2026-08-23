@@ -256,3 +256,52 @@ def test_semear_do_pacote_funciona_fora_do_checkout(nomos_home, monkeypatch):
     assert len(res["adicionadas"]) >= 4
     nomes = {s["name"] for s in reg.catalogo(nomos_home)}
     assert {"busca-arquivos", "lembrete", "organizador", "sistema-info"} <= nomes
+
+
+# --------------------------------------------- honestidade sobre execução
+def test_modulo_python_ausente_e_evidencia(nomos_home):
+    """`which feedparser` falha e `which python3` PASSA — verificação falsa.
+
+    Declarar o módulo faz medir o que importa: o import.
+    """
+    mf = {"requires": [{"tipo": "modulo_python", "nome": "modulo_inexistente_xyz",
+                        "obrigatorio": True}]}
+    itens = reg.verificar_requisitos(mf, nomos_home)
+    assert len(itens) == 1 and itens[0]["verificado"] is True
+
+
+def test_modulo_python_presente_passa(nomos_home):
+    mf = {"requires": [{"tipo": "modulo_python", "nome": "json",
+                        "obrigatorio": True}]}
+    assert reg.verificar_requisitos(mf, nomos_home) == []
+
+
+def test_skill_sem_rede_avisa_que_nao_executa_no_mac(nomos_home, monkeypatch):
+    """A mais segura (A0) é justamente a que não executa: o dono tem de saber."""
+    from nomos.kernel import plataforma
+    monkeypatch.setattr(plataforma, "execucao_isolada_disponivel", lambda: False)
+    pode, motivo = reg.pode_executar_aqui(
+        {"permissions": ["A0_READ_LOCAL"]}, nomos_home)
+    assert pode is False
+    assert "só-Linux por desenho" in motivo
+
+
+def test_skill_com_rede_avisa_cadeado_ligado(nomos_home):
+    """Com A2 e cadeado ligado, também não executa — e por outro motivo."""
+    from nomos.kernel import localidade
+    localidade.definir(nomos_home, ligado=True)
+    pode, motivo = reg.pode_executar_aqui(
+        {"permissions": ["A0_READ_LOCAL", "A2_NET_EGRESS"]}, nomos_home)
+    assert pode is False
+    assert "nomos local off" in motivo
+
+
+def test_aviso_nao_bloqueia_a_instalacao(tmp_path, nomos_home, monkeypatch):
+    """Dizer a verdade não é recusar: a skill instala mesmo sem poder rodar."""
+    from nomos.kernel import plataforma
+    monkeypatch.setattr(plataforma, "execucao_isolada_disponivel", lambda: False)
+    src = _skill_em(tmp_path / "loja", "so-instala")
+    engine = PolicyEngine(nomos_home / "policy.json")
+    reg.instalar(src, nomos_home / "skills", engine, lambda d: True,
+                 confirmar_experimental=lambda m: True, home=nomos_home)
+    assert (nomos_home / "skills" / "so-instala").exists()

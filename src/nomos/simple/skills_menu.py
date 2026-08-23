@@ -161,6 +161,14 @@ def instalar_amigavel(ctx, caminho: str, approver, confirmar_experimental) -> st
         return f"não instalei: {exc}"
     ctx["audit"].append("skill.instalada", name=mf["name"], version=mf["version"],
                         permissions=mf["permissions"], risco=mf["risk_level"])
-    return (f"skill {mf['name']}@{mf['version']} instalada "
-            f"(risco {mf['risk_level']}; "
-            f"{'pede aprovação a cada uso sensível' if mf['requires_approval'] else 'baixo risco'}).")
+    msg = (f"skill {mf['name']}@{mf['version']} instalada "
+           f"(risco {mf['risk_level']}; "
+           f"{'pede aprovação a cada uso sensível' if mf['requires_approval'] else 'baixo risco'}).")
+    # A verdade sobre EXECUÇÃO dita agora, não descoberta no primeiro uso — que
+    # é o pior momento para a promessa de plug-and-play quebrar.
+    pode, motivo = reg.pode_executar_aqui(mf, Path(ctx["home"]))
+    if not pode:
+        ctx["audit"].append("skill.instalada.nao_executavel", name=mf["name"],
+                            motivo=motivo)
+        msg += f"\n  ⚠ {motivo}"
+    return msg

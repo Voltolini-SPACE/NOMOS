@@ -41,11 +41,14 @@ def test_vazio_orienta_em_vez_de_parecer_erro():
     assert "Skill é uma habilidade" in html
 
 
-def test_sem_exemplos_diz_a_verdade_sobre_o_empacotamento():
-    """Não repetir a sugestão do CLI como se funcionasse fora do repo."""
+def test_sem_skills_prontas_nao_afirma_fato_vencido():
+    """A caixa já dizia "não vêm na instalação" — verdade quando medi (viviam
+    em examples/, fora de src/, e o wheel não as levava) e FALSA depois que
+    passaram a ser empacotadas. Texto que descreve um fato morre com o fato."""
     html = pw._secao_skills({}, {"instaladas": [], "prontas": [],
                                  "diagnostico": ""})
-    assert "não vêm na instalação" in html
+    assert "não vêm na instalação" not in html
+    assert "dentro do próprio pacote" in html
     assert "NOMOS_EXEMPLOS" in html
 
 
@@ -57,7 +60,7 @@ def test_lista_exemplos_quando_existem(tmp_path, monkeypatch):
                                  "diagnostico": ""})
     assert "busca-arquivos" in html
     assert "nomos skills instalar /repo/examples/skills/busca-arquivos" in html
-    assert "não vêm na instalação" not in html      # há exemplos: não alarma
+    assert "Nenhuma skill pronta" not in html       # há exemplos: não alarma
 
 
 def test_marca_a_que_ja_esta_instalada():
@@ -74,12 +77,46 @@ def test_env_aponta_os_exemplos(tmp_path, monkeypatch):
     assert raizes[0] == tmp_path / "meus", "NOMOS_EXEMPLOS tem de vir primeiro"
 
 
-def test_dados_skills_nao_estoura_sem_nada(tmp_path):
-    """Máquina limpa: sem skills, sem exemplos, sem cofre — não pode explodir."""
+def test_dados_skills_nao_estoura_sem_nada(tmp_path, monkeypatch):
+    """Máquina limpa: sem skills instaladas — não pode explodir.
+
+    DEFEITO QUE ESTE TESTE JÁ TEVE (achado por outra sessão): ele afirmava
+    `prontas == []` sem isolar a busca. Como `dados_skills` varre também as
+    skills que vêm com o NOMOS, o resultado dependia de a instalação ser
+    editável ou não, e de o diretório existir naquele instante — passava
+    aqui e falhava num clone limpo. Um teste cujo veredito muda com o
+    ambiente não prova nada; prende-se a busca e afirma-se o que se quer.
+    """
+    monkeypatch.setenv("NOMOS_EXEMPLOS", str(tmp_path / "vazio"))
+    monkeypatch.setattr(pw, "_raizes_de_exemplos",
+                        lambda home: [tmp_path / "vazio"])
     d = pw.dados_skills({"home": tmp_path})
-    assert d["instaladas"] == [] and d["prontas"] == []
+    assert d["instaladas"] == []
+    assert d["prontas"] == []
     assert d["raiz_exemplos"] is None
     assert isinstance(d["diagnostico"], str)
+
+
+def test_skills_embutidas_sao_encontradas():
+    """O contrário do de cima: sem isolar, as skills que acompanham o NOMOS
+    TÊM de aparecer. Elas passaram a ser empacotadas em
+    `nomos.skills_embutidas` — se a página deixar de achá-las, o dono vê
+    "nenhuma skill pronta" com quatro delas instaladas no pacote."""
+    from pathlib import Path as _P
+
+    raizes = pw._raizes_de_exemplos(_P("/nao/existe"))
+    try:
+        from nomos import skills_embutidas as emb
+    except Exception:                      # pragma: no cover
+        pytest.skip("nomos.skills_embutidas ausente nesta instalação")
+    assert any(r in raizes for r in emb.origens()), (
+        "a página não procura onde as skills embutidas realmente estão")
+
+
+def test_env_tem_prioridade_sobre_o_embutido(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOMOS_EXEMPLOS", str(tmp_path / "meu"))
+    raizes = pw._raizes_de_exemplos(tmp_path)
+    assert raizes[0] == tmp_path / "meu"
 
 
 def test_manifesto_invalido_nao_derruba_a_lista(tmp_path, monkeypatch):
