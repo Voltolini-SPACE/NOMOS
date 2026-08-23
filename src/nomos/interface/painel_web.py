@@ -1301,7 +1301,8 @@ def _raizes_de_exemplos(home: Path) -> list[Path]:
     return raizes
 
 
-def dados_skills(ctx) -> dict:
+def dados_skills(ctx, token: str | None = None, base: str = "",
+                 saida: dict | None = None) -> dict:
     """Retrato das skills para a tela. Só LEITURA — nada é executado aqui.
 
     O painel nunca roda skill: hoje `plataforma.execucao_isolada_disponivel()`
@@ -1376,6 +1377,7 @@ def dados_skills(ctx) -> dict:
         pass
 
     return {"instaladas": instaladas, "prontas": prontas,
+            "token": token, "base": base, "saida": saida,
             "diagnostico": diag, "dir": str(dir_skills),
             "sabe_chamar": sabe_chamar,
             "raiz_exemplos": str(raiz_achada) if raiz_achada else None}
@@ -1522,10 +1524,48 @@ def _secao_skills(d: dict, skills: dict | None) -> str:
 
     instaladas = sk.get("instaladas") or []
     if instaladas:
+        tok = sk.get("token")
+        base = sk.get("base") or ""
+
+        def _quantas_aprovacoes(inst: dict) -> int:
+            """Quantas vezes o dono terá de aprovar por UM clique.
+
+            O gate é POR PERMISSÃO: uma skill A1+A2 gera DOIS pedidos na fila.
+            Medido em home isolada com a política e o cadeado reais do dono.
+            Sem este aviso, o dono clica uma vez e vê pedidos aparecendo em
+            sequência sem entender que são do mesmo clique. A0 não conta: a
+            política diz ALLOW e o approver nem é chamado.
+            """
+            return len([x for x in (inst.get("permissions") or [])
+                        if str(x) != "A0_READ_LOCAL"])
+
+        def _botao(nome: str) -> str:
+            # A0 puro roda direto porque a POLÍTICA diz ALLOW e
+            # `preparar_execucao` nem chama o approver. Não há caso especial
+            # aqui: a fronteira mora na política, não na tela.
+            if not tok:
+                return ""
+            return (f'<form method="post" action="{base}/skills/rodar" '
+                    'class="rodar">'
+                    f'<input type="hidden" name="token" value="{e(tok)}">'
+                    f'<input type="hidden" name="nome" value="{e(nome)}">'
+                    "<button type=\"submit\">▶ executar</button></form>")
+
+        def _aviso(inst: dict) -> str:
+            n = _quantas_aprovacoes(inst)
+            if not n:
+                return ('<small class="pendente">roda direto: só lê arquivos '
+                        "seus, e a política permite</small>")
+            vezes = "1 aprovação" if n == 1 else f"{n} aprovações"
+            return ('<small class="pendente">vai pedir <b>' + vezes +
+                    "</b> na aba Aprovações — o gate pergunta por permissão, "
+                    "e todas são deste mesmo clique</small>")
+
         linhas = "".join(
             f'<li><b>{e(str(i.get("name","?")))}</b>'
             f'<small> — {e(str(i.get("description","") or "sem descrição"))}</small>'
-            f'<br><small>versão {e(str(i.get("version","?")))}</small></li>'
+            f'<br><small>versão {e(str(i.get("version","?")))}</small>'
+            f'<br>{_aviso(i)}{_botao(str(i.get("name","")))}</li>'
             for i in instaladas)
         partes.append(f'<div class="card"><b>Suas skills '
                       f'({len(instaladas)})</b><ul class="lista">{linhas}</ul>'
@@ -1544,6 +1584,14 @@ def _secao_skills(d: dict, skills: dict | None) -> str:
             "um script com um manifesto declarando o que ele pode tocar."
             "</small></p>"
             + capaz + "</div>")
+
+    saida = sk.get("saida")
+    if saida:
+        cor = "ok-banner" if saida.get("rc") == 0 else "card"
+        partes.append(
+            f'<div class="{cor}"><b>{e(str(saida.get("nome","?")))}</b> '
+            f'— rc={e(str(saida.get("rc")))}<br>'
+            f'<pre>{e(str(saida.get("texto",""))[:2000])}</pre></div>')
 
     prontas = sk.get("prontas") or []
     if not prontas:
@@ -2977,6 +3025,12 @@ class DashboardServer:
         # pessoa precisa guardar chaves com ou sem chat. Fail-closed: sem cofre
         # inicializado, a porta recusa e manda inicializar.
         self.chaves_token = secrets.token_urlsafe(32)
+        self.skills_token = secrets.token_urlsafe(32)
+        # Última saída de execução, entregue UMA vez ao próximo GET (padrão
+        # PRG: o POST não renderiza, redireciona). Fica em memória e não em
+        # query string porque a saída é a saída da SKILL — pode ser grande e
+        # pode conter caminho do disco; URL vaza para histórico e Referer.
+        self._saida_skill: dict | None = None
         # cache opcional da coleta (dados_dashboard refaz verify() + probes a
         # cada GET; com health/ em polling isso multiplica leituras). 0 =
         # desligado (padrão: cada GET reflete o estado na hora).
@@ -3069,13 +3123,18 @@ class DashboardServer:
                         "nomes": _vault.names(),
                         "gravada": (qs.get("chave_gravada") or [None])[0],
                     }
+                    saida_skill, painel._saida_skill = painel._saida_skill, None
                     try:
                         corpo = render_html(_dados(),
                                             refresh=refresh,
                                             aprovacoes=self._aprovacoes(base),
                                             chat=self._chat(base, query),
                                             chaves=chaves,
-                                            skills=dados_skills(painel.ctx),
+                                            skills=dados_skills(
+                                                painel.ctx,
+                                                token=painel.skills_token,
+                                                base=base,
+                                                saida=saida_skill),
                                             decidido=decidido)
                     except Exception as exc:   # painel nunca derruba nada
                         # P2-9 da auditoria de 2026-07-17: era texto puro sem
@@ -3373,6 +3432,78 @@ class DashboardServer:
                 except UnicodeDecodeError:
                     return None, (400, "pedido inválido", "corpo não é UTF-8")
 
+            def _post_rodar_skill(self, base):
+                """Executa uma skill INSTALADA, pelo caminho governado.
+
+                Reusa `panel_approver` — o mesmo approver que o serviço usa.
+                Não invento consentimento: ele ENFILEIRA e espera decisão
+                humana na aba Aprovações. Como o servidor é
+                ThreadingHTTPServer, esta thread espera sem travar o painel,
+                então o dono consegue aprovar noutra aba.
+
+                A0 puro nunca chega ao approver: a POLÍTICA diz ALLOW e
+                `preparar_execucao` pula. Medido em home isolada — a tela não
+                classifica skill nenhuma, a fronteira mora na política.
+                """
+                import hmac        # local, como nas outras portas
+                form, err = self._ler_form()
+                if err:
+                    return self._erro_simples(base, *err)
+                token = (form.get("token") or [""])[0]
+                if not hmac.compare_digest(token, painel.skills_token):
+                    return self._erro_simples(
+                        base, 403, "recusado",
+                        "token inválido (recarregue o painel)")
+                nome = (form.get("nome") or [""])[0].strip()
+                import re as _re
+                if not nome or not _re.fullmatch(r"[A-Za-z0-9][\w.-]{0,63}",
+                                                 nome):
+                    return self._erro_simples(base, 400, "nome inválido",
+                                              "skill não identificada")
+                dir_skills = Path(painel.ctx.get("skills")
+                                  or Path(painel.ctx["home"]) / "skills")
+                from nomos.ext import skill_registry as _reg
+                from nomos.kernel.approvals import panel_approver
+                from nomos.kernel.policy import PolicyEngine
+                engine = (painel.ctx.get("policy")
+                          or PolicyEngine(Path(painel.ctx["home"])
+                                          / "policy.json"))
+                aprovador = (panel_approver(painel.fila,
+                                            announce=lambda *_a: None)
+                             if painel.fila is not None
+                             else (lambda _d: False))
+                try:
+                    rc, dados_json, texto = _reg.executar_json(
+                        nome, dir_skills, engine, aprovador,
+                        audit=painel.ctx.get("audit"))
+                except Exception as exc:
+                    rc, dados_json, texto = 1, None, (
+                        f"{type(exc).__name__}: {exc}")
+                painel._saida_skill = {
+                    "nome": nome, "rc": rc,
+                    "texto": texto or (json.dumps(dados_json, indent=1,
+                                                  ensure_ascii=False)
+                                       if dados_json is not None else "")}
+                self.send_response(303)
+                self.send_header("Location", f"{base}/#skills")
+                self.end_headers()
+                return None
+
+            def _ler_form(self):
+                """Corpo do POST -> (form, erro). Limite igual ao das outras
+                portas: um POST de painel local não tem por que ser grande."""
+                tam = int(self.headers.get("Content-Length") or 0)
+                if tam <= 0 or tam > 64 * 1024:
+                    return None, (400, "corpo inválido", "requisição vazia "
+                                  "ou grande demais")
+                bruto = self.rfile.read(tam).decode("utf-8", "replace")
+                return parse_qs(bruto), None
+
+            def _erro_simples(self, base, code, titulo, msg):
+                corpo = (f"<p>{html.escape(msg)}</p>"
+                         f'<p><a href="{base}/#skills">← voltar</a></p>')
+                return self._responder(code, _subpagina(titulo, corpo, base))
+
             def _post_chave(self, base):
                 """3ª porta de escrita: grava uma chave no COFRE cifrado.
 
@@ -3543,6 +3674,10 @@ class DashboardServer:
                     return
                 base = f"/d/{painel.secret}"
                 rota = self.path.rstrip("/")
+
+                # porta 4: EXECUTAR uma skill instalada.
+                if rota == f"{base}/skills/rodar":
+                    return self._post_rodar_skill(base)
 
                 # porta 3: gravar chave no cofre
                 if rota == base + "/chaves/gravar":
