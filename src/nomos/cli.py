@@ -1277,6 +1277,26 @@ def cmd_skills(ctx, args) -> int:
         sub = "menu" if interativo else "listar"
     if sub == "catalogo":
         from nomos.ext import skill_catalogo as scat
+        semente = getattr(args, "semear", None)
+        if semente:
+            from nomos.simple.erros import fmt   # import local, como no resto
+            # primeiro chamador de PRODUÇÃO de adicionar_ao_catalogo: sem ele o
+            # catálogo tinha leitor e nenhum escritor, e nascia sempre vazio.
+            try:
+                res = reg.semear_catalogo(ctx["home"], Path(semente))
+            except reg.RegistroError as exc:
+                print(fmt("E004", f"não semeei: {exc}"), file=sys.stderr)
+                return EXIT_ERROR
+            for nome in res["adicionadas"]:
+                print(f"  + {nome} disponível no catálogo (não assinada)")
+            for pasta, motivo in res["erros"]:
+                print(f"  ! {pasta}: {motivo}", file=sys.stderr)
+            if not res["adicionadas"]:
+                print(fmt("E004", f"nenhum skill.json válido em {semente}"),
+                      file=sys.stderr)
+                return EXIT_ERROR
+            print(f"{len(res['adicionadas'])} disponível(is). "
+                  "Instalar continua exigindo confirmação e o gate A5.")
         caps = scat.capacidades(ctx["home"], ctx["skills"])
         if getattr(args, "json", False):
             print(json.dumps({"contrato": scat.CONTRATO_CATALOGO,
@@ -3371,6 +3391,10 @@ def build_parser() -> argparse.ArgumentParser:
     s_cat = skssub.add_parser("catalogo")
     s_cat.add_argument("--json", action="store_true",
                        help="catálogo de capacidades em JSON estável")
+    s_cat.add_argument("--semear", metavar="PASTA",
+                       help="registra como DISPONÍVEIS as skills de uma pasta "
+                            "(entram NÃO assinadas; instalar segue passando "
+                            "pelo gate)")
     s_cat.set_defaults(fn=cmd_skills)
     s_i = skssub.add_parser("instalar")
     s_i.add_argument("caminho")

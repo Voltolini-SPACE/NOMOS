@@ -181,6 +181,48 @@ def adicionar_ao_catalogo(home: Path, entrada: dict) -> dict:
     return normalizar_manifesto(entrada)
 
 
+def semear_catalogo(home: Path, origem: Path) -> dict:
+    """Popula o catálogo local a partir de uma PASTA de skills no disco.
+
+    Por que isto existe: `catalogo_info` foi desenhado para consumir um catálogo
+    que chega de fora, ASSINADO por um publicador do trust store — por isso
+    `adicionar_ao_catalogo` nunca teve chamador de produção. O efeito colateral
+    é que, sem nenhum catálogo distribuído, a lista de "skills disponíveis para
+    instalar" nasce VAZIA e não há caminho para enchê-la.
+
+    Esta função é esse caminho, e não afrouxa nada:
+      * as entradas entram NÃO ASSINADAS — `catalogo_info` continua reportando
+        "catálogo local NÃO assinado", que já é um estado de primeira classe;
+      * constar no catálogo é só ficar VISÍVEL. Instalar continua passando pelas
+        duas barreiras de sempre: confirmação de experimental e o gate
+        A5_SKILL_INSTALL;
+      * manifesto inválido não entra e não derruba o resto — vai para `erros`.
+
+    Devolve {"adicionadas": [...], "erros": [(pasta, motivo)], "origem": str}.
+    """
+    origem = Path(origem)
+    if not origem.is_dir():
+        raise RegistroError(f"origem não é uma pasta: {origem}")
+    adicionadas: list[str] = []
+    erros: list[tuple[str, str]] = []
+    for filho in sorted(origem.iterdir()):
+        mf_path = filho / "skill.json"
+        if not mf_path.is_file():
+            continue
+        try:
+            bruto = json.loads(mf_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            erros.append((filho.name, f"manifesto ilegível: {exc}"))
+            continue
+        try:
+            adicionar_ao_catalogo(home, bruto)
+        except RegistroError as exc:
+            erros.append((filho.name, str(exc)))
+            continue
+        adicionadas.append(str(bruto.get("name", filho.name)))
+    return {"adicionadas": adicionadas, "erros": erros, "origem": str(origem)}
+
+
 def disponiveis(home: Path, skills_dir: Path) -> list[dict]:
     """Catálogo menos as já instaladas."""
     instaladas = {i["name"] for i in _skills.list_installed(Path(skills_dir))}
