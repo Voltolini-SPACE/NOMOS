@@ -259,17 +259,6 @@ def test_semear_do_pacote_funciona_fora_do_checkout(nomos_home, monkeypatch):
 
 
 # --------------------------------------------- honestidade sobre execução
-def test_modulo_python_ausente_e_evidencia(nomos_home):
-    """`which feedparser` falha e `which python3` PASSA — verificação falsa.
-
-    Declarar o módulo faz medir o que importa: o import.
-    """
-    mf = {"requires": [{"tipo": "modulo_python", "nome": "modulo_inexistente_xyz",
-                        "obrigatorio": True}]}
-    itens = reg.verificar_requisitos(mf, nomos_home)
-    assert len(itens) == 1 and itens[0]["verificado"] is True
-
-
 def test_modulo_python_presente_passa(nomos_home):
     mf = {"requires": [{"tipo": "modulo_python", "nome": "json",
                         "obrigatorio": True}]}
@@ -386,42 +375,36 @@ def test_instalada_vence_a_do_pacote(tmp_path, nomos_home):
 
 
 
-def test_modulo_e_checado_no_interpretador_que_vai_rodar(nomos_home):
-    """Módulo tem de ser procurado onde a skill VAI rodar, não onde o NOMOS roda.
+def test_modulo_confirma_presenca_mas_nao_bloqueia_por_ausencia(nomos_home):
+    """Assimetria deliberada, e ela decide o comportamento.
 
-    Defeito real que isto trava: a primeira versão usava `find_spec` no processo
-    atual. Medido — `feedparser` está em `/opt/homebrew/bin/python3` (6.0.12), que
-    é o interpretador que a cerca resolve, e NÃO no venv onde o NOMOS roda. A
-    checagem antiga recusava `reach-rss` por "módulo ausente" com o módulo
-    presente onde importa: recusa FALSA, o oposto de "bloqueia por evidência".
+    Binário se acha por caminho, então ausência é EVIDÊNCIA e bloqueia. Módulo
+    não: saber se existe no interpretador que a cerca usa exigiria RODAR aquele
+    interpretador. Duas saídas foram descartadas — `find_spec` no processo atual
+    mede o interpretador ERRADO (recusou `reach-rss` com feedparser presente em
+    /opt/homebrew/bin/python3), e sondar por `subprocess` poria geração de
+    processo no NÚCLEO, fora do supervisor, que é garantia estrutural do produto.
     """
-    import shutil
-
-    from nomos.runtime.sandbox import _PATH_BUSCA
-
-    exe = shutil.which("python3", path=_PATH_BUSCA)
-    if not exe:
-        pytest.skip("sem python3 no PATH da cerca nesta máquina")
-
-    # `json` existe em qualquer interpretador: não pode ser acusado de ausente
+    # presente aqui => evidência de presença, não bloqueia
     assert reg.verificar_requisitos(
         {"requires": [{"tipo": "modulo_python", "nome": "json",
                        "obrigatorio": True}]}, nomos_home) == []
 
-    # e um inexistente TEM de ser detectado, com o interpretador no motivo
+    # ausente aqui => NÃO VERIFICÁVEL, aparece como aviso e não bloqueia
     faltam = reg.verificar_requisitos(
         {"requires": [{"tipo": "modulo_python", "nome": "modulo_zzz_inexistente",
                        "obrigatorio": True}]}, nomos_home)
     assert len(faltam) == 1
-    assert faltam[0]["verificado"] is True
-    assert exe in faltam[0]["motivo"]
+    assert faltam[0]["verificado"] is False
+    assert "outro interpretador" in faltam[0]["motivo"]
 
 
-def test_interpretador_irresolvivel_nao_bloqueia(nomos_home, monkeypatch):
-    """Sem interpretador não há evidência — e ausência de evidência não bloqueia."""
-    import shutil as _sh
-
-    monkeypatch.setattr(_sh, "which", lambda *a, **k: None)
-    assert reg.verificar_requisitos(
-        {"requires": [{"tipo": "modulo_python", "nome": "qualquer_coisa",
-                       "obrigatorio": True}]}, nomos_home) == []
+def test_modulo_ausente_nao_impede_instalacao(tmp_path, nomos_home):
+    """O caso real: `reach-rss` era RECUSADA por feedparser "ausente"."""
+    src = _com_requires(tmp_path / "loja", "usa-modulo", [
+        {"tipo": "modulo_python", "nome": "modulo_zzz_inexistente",
+         "obrigatorio": True}])
+    engine = PolicyEngine(nomos_home / "policy.json")
+    reg.instalar(src, nomos_home / "skills", engine, lambda d: True,
+                 confirmar_experimental=lambda m: True, home=nomos_home)
+    assert (nomos_home / "skills" / "usa-modulo").exists()

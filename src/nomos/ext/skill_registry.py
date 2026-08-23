@@ -274,6 +274,7 @@ def verificar_requisitos(mf: dict, home: Path | None = None) -> list[dict]:
             elif not shutil.which(exe):
                 motivo = f"binário '{exe}' não está no PATH"
         elif tipo == "modulo_python":
+            verificado = False   # só confirma presença; ausência não é provável
             # `feedparser` é módulo, não executável: `which feedparser` falha e
             # `which python3` PASSA — verificação falsa, o pior tipo, porque
             # parece cobertura e não é. Aqui se mede o que importa: o import.
@@ -298,43 +299,42 @@ def verificar_requisitos(mf: dict, home: Path | None = None) -> list[dict]:
 
 
 def _modulo_ausente(nome: str) -> str | None:
-    """Módulo importável NO INTERPRETADOR QUE VAI RODAR A SKILL.
+    """Módulo Python: confirma PRESENÇA; não consegue provar ausência.
 
-    Erro que eu cometi e que esta função corrige: a primeira versão usava
-    `importlib.util.find_spec` no processo ATUAL. Só que a skill roda sob o
-    `python3` que a cerca resolve pelo PATH dela — outro interpretador.
-    Medido: `feedparser` está em `/opt/homebrew/bin/python3` (6.0.12) e NÃO no
-    venv onde o NOMOS roda. A checagem antiga recusava `reach-rss` por
-    "módulo ausente" com o módulo presente onde importa — recusa FALSA, que é
-    exatamente o que o princípio "bloqueia por evidência, não por ignorância"
-    existe para impedir.
+    A assimetria é real e vale escrita, porque ela decide o comportamento:
+    binário se acha por caminho (`shutil.which`), então ausência de binário é
+    EVIDÊNCIA e bloqueia. Módulo não: descobrir se `feedparser` existe no
+    interpretador que a cerca vai usar exigiria RODAR aquele interpretador.
 
-    Reusa `_PATH_BUSCA` da cerca como fonte da verdade: duplicar o literal aqui
-    faria as duas divergirem no primeiro conserto de uma delas.
+    Duas saídas foram descartadas, e o motivo importa:
 
-    Se o interpretador não puder ser resolvido, devolve None — sem
-    interpretador não há evidência de ausência, e ausência de evidência não
-    bloqueia.
+    * `find_spec` no processo atual, que foi minha primeira versão — mede o
+      interpretador ERRADO. Medido: `feedparser` está em
+      `/opt/homebrew/bin/python3` (6.0.12) e não no venv onde o NOMOS roda; a
+      checagem recusava `reach-rss` com o módulo presente onde importa. Recusa
+      FALSA, o oposto de "bloqueia por evidência";
+    * `subprocess` sondando o outro interpretador — mede certo, mas acrescenta
+      geração de processo no NÚCLEO, fora do supervisor. O guard
+      `test_p1_o_legado_com_subprocess_nao_cresceu` pegou isso em mim, e ele
+      está certo: o supervisor ser o gargalo único é garantia estrutural do
+      produto inteiro. Não se abre exceção nela por conveniência de uma
+      verificação de dependência.
+
+    Então: achou no processo atual => PRESENTE (evidência, não bloqueia).
+    Não achou => NÃO VERIFICÁVEL (`verificado: False`), some do bloqueio e
+    aparece ao dono como aviso. Nunca bloqueia por ignorância.
     """
-    import shutil
-    import subprocess
+    import importlib.util
 
     if not _IDENT.fullmatch(nome):
         return f"módulo '{nome}': nome não é um identificador de módulo"
     try:
-        from nomos.runtime.sandbox import _PATH_BUSCA
-        exe = shutil.which("python3", path=_PATH_BUSCA)
-    except Exception:
-        exe = None
-    if not exe:
-        return None   # não sei onde olhar: não invento ausência
-    try:
-        r = subprocess.run([exe, "-c", f"import {nome}"],  # noqa: S603
-                           capture_output=True, timeout=10)
-    except Exception:
-        return None
-    return None if r.returncode == 0 else \
-        f"módulo Python '{nome}' não está instalado em {exe}"
+        if importlib.util.find_spec(nome):
+            return None
+    except Exception:  # noqa: S110 — find_spec estoura em pacote quebrado;
+        pass           # isso não é evidência de ausência, cai em não-verificável.
+    return (f"módulo Python '{nome}': não verificável daqui — quem roda a skill "
+            "é outro interpretador (o da cerca)")
 
 
 def _chave_ausente(nome: str, home: Path | None) -> str | None:

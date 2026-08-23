@@ -124,8 +124,50 @@ def test_p1_o_legado_com_subprocess_nao_cresceu():
              if p.name != "supervisor.py"
              and ("subprocess.Popen" in p.read_text()
                   or "subprocess.run" in p.read_text())}
-    novos = atual - LEGADO_COM_SUBPROCESS - EXCECOES_GOVERNADAS_COM_SUBPROCESS
-    assert novos == set(), f"execução de processo NOVA fora do supervisor: {novos}"
+    novos = (atual - LEGADO_COM_SUBPROCESS - EXCECOES_GOVERNADAS_COM_SUBPROCESS
+             - _skills_que_DECLARAM_execucao(atual))
+    assert novos == set(), (
+        "execução de processo NOVA fora do supervisor: " + str(novos)
+        + "\n(se for corpo de SKILL, o caminho é declarar A5_CODE_EXEC no "
+          "skill.json dela — a isenção se GANHA declarando, não pela pasta)")
+
+
+def _skills_que_DECLARAM_execucao(candidatos: set[str]) -> set[str]:
+    """Corpo de skill que DECLAROU `A5_CODE_EXEC` no manifesto.
+
+    Por que skills não entram em `EXCECOES_GOVERNADAS_COM_SUBPROCESS`: o
+    critério daquela lista exige argv LITERAL de constantes, e o de
+    `reach-v2ex` carrega a `url` que vem dos argumentos. Não se qualifica, e
+    forçar a entrada lá corromperia o critério para as entradas que o cumprem.
+
+    Por que também NÃO se isenta a pasta inteira: seria trocar uma garantia por
+    um endereço. Aqui a isenção é GANHA — a skill declara que executa processo,
+    o manifesto passa a dizer a verdade, o gate A5 vê e o dono lê antes de
+    instalar. Skill que gera processo SEM declarar continua reprovando, que é
+    o caso que interessa pegar.
+
+    Contexto medido: o guard é sobre ESTRUTURA do código (o supervisor é o
+    gargalo do núcleo). Corpo de skill roda dentro da cerca seatbelt, cujo
+    perfil tem `(allow process-exec)` — o `curl` roda confinado. É dívida de
+    declaração, não brecha de execução.
+    """
+    import json as _json
+
+    ok: set[str] = set()
+    for rel in candidatos:
+        partes = Path(rel).parts
+        if not ({"skills_do_dono", "skills_embutidas"} & set(partes)):
+            continue
+        manifesto = RAIZ / Path(rel).parent / "skill.json"
+        if not manifesto.is_file():
+            continue          # .py sem manifesto não é skill: segue reprovando
+        try:
+            perms = _json.loads(manifesto.read_text()).get("permissions", [])
+        except Exception:
+            continue
+        if "A5_CODE_EXEC" in perms:
+            ok.add(rel)
+    return ok
 
 
 def test_p1_todo_adapter_git_usa_o_supervisor():
