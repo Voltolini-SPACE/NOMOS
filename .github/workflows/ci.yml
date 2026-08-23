@@ -55,6 +55,9 @@ jobs:
       - name: "Gate read-only: saúde do git (git agent)"
         run: python tools/nomos_git_agent.py --check --json
 
+      - name: "Gate read-only: índice de skills reflete o catálogo"
+        run: python tools/gerar_indice_skills.py --check
+
   # Achado P2-4 da auditoria de 2026-07-17: este job se chamava
   # "cobertura (informativa)", mas SEMPRE se comportou como bloqueante —
   # `--cov-fail-under=80`/`=90` abaixo fazem `pytest` sair com código != 0,
