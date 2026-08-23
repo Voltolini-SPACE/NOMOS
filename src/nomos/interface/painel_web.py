@@ -1171,6 +1171,7 @@ _ABAS_NAV: list[tuple[str, str, str]] = [
     ("cerebro", "⚙", "cérebro"),
     ("capacidades", "❖", "capacidades"),
     ("chaves", "🔑", "chaves"),
+    ("skills", "🧩", "skills"),
     ("mosaic", "▦", "mosaic"),
     ("operacao", "≡", "operação"),
     ("ajuda", "?", "ajuda"),
@@ -1235,6 +1236,162 @@ def _bloco_atencao(d: dict, n_aprov: int) -> str:
                 "precisar de você, aparece aqui</small></div>")
     linhas = "".join(f"<li>⚠ {x}</li>" for x in itens)
     return f'<div class="card warn"><b>Precisa de você</b><ul class="lista">{linhas}</ul></div>'
+
+
+def _raizes_de_exemplos(home: Path) -> list[Path]:
+    """Onde procurar as skills de exemplo, da mais explícita à mais provável.
+
+    `NOMOS_EXEMPLOS` vem primeiro para que quem tem o repositório em lugar
+    incomum possa apontar, em vez de a tela adivinhar errado.
+    """
+    import os
+
+    raizes: list[Path] = []
+    env = os.environ.get("NOMOS_EXEMPLOS")
+    if env:
+        raizes.append(Path(env).expanduser())
+    raizes.append(home / "examples" / "skills")
+    try:                       # rodando a partir do checkout (dev)
+        import nomos
+        raizes.append(Path(nomos.__file__).resolve().parents[2]
+                      / "examples" / "skills")
+    except Exception:
+        pass
+    return raizes
+
+
+def dados_skills(ctx) -> dict:
+    """Retrato das skills para a tela. Só LEITURA — nada é executado aqui.
+
+    O painel nunca roda skill: hoje `plataforma.execucao_isolada_disponivel()`
+    é False no macOS, e o ramo com rede roda SEM cerca. Um botão "rodar" na
+    tela prometeria execução que ou é recusada ou acontece sem isolamento —
+    as duas mentiras. A execução segue só no terminal, com o gate.
+    """
+    from nomos.ext import skills as sk
+
+    home = Path(ctx["home"])
+    dir_skills = Path(ctx.get("skills") or (home / "skills"))
+    try:
+        instaladas = sk.list_installed(dir_skills)
+    except Exception:
+        instaladas = []
+
+    # MEDIDO: os exemplos NÃO são empacotados no wheel — só existem no
+    # checkout do repositório. Quem instalou pelo instalador não tem nenhum,
+    # e o próprio CLI sugere `nomos skills instalar examples/skills/…`, um
+    # caminho que nessa máquina não existe. A tela não pode repetir a
+    # sugestão como se ela funcionasse; ela procura e diz o que achou.
+    prontas: list[dict] = []
+    raiz_achada: Path | None = None
+    for raiz in _raizes_de_exemplos(home):
+        if not raiz.is_dir():
+            continue
+        raiz_achada = raiz
+        for d_ex in sorted(raiz.iterdir()):
+            if not d_ex.is_dir():
+                continue
+            try:
+                man = sk.load_manifest(d_ex)
+            except Exception:
+                continue          # diretório que não é skill: ignora em silêncio
+            prontas.append({
+                "nome": man.get("name") or d_ex.name,
+                "descricao": man.get("description") or "",
+                "caminho": str(d_ex),
+                "instalada": any((i.get("name") or "") == (man.get("name") or "")
+                                 for i in instaladas)})
+        break
+
+    diag = ""
+    try:
+        from nomos.simple import skills_menu as sm
+        diag = sm.diagnostico_texto(home, dir_skills)
+    except Exception as exc:
+        diag = f"diagnóstico indisponível: {type(exc).__name__}"
+
+    return {"instaladas": instaladas, "prontas": prontas,
+            "diagnostico": diag, "dir": str(dir_skills),
+            "raiz_exemplos": str(raiz_achada) if raiz_achada else None}
+
+
+def _secao_skills(d: dict, skills: dict | None) -> str:
+    """Aba Skills — listar, ver, diagnosticar e aprender a criar.
+
+    Deliberadamente SEM botão de executar (ver `dados_skills`).
+    """
+    e = esc
+    sk = skills or {}
+    partes = ['<h2 id="skills">🧩 Skills</h2>']
+
+    instaladas = sk.get("instaladas") or []
+    if instaladas:
+        linhas = "".join(
+            f'<li><b>{e(str(i.get("name","?")))}</b>'
+            f'<small> — {e(str(i.get("description","") or "sem descrição"))}</small>'
+            f'<br><small>versão {e(str(i.get("version","?")))}</small></li>'
+            for i in instaladas)
+        partes.append(f'<div class="card"><b>Suas skills '
+                      f'({len(instaladas)})</b><ul class="lista">{linhas}</ul>'
+                      "</div>")
+    else:
+        # vazio é ORIENTAÇÃO, não erro: a pessoa acabou de chegar aqui
+        partes.append(
+            '<div class="card"><b>Você ainda não tem skills</b>'
+            "<p><small>Skill é uma habilidade que você acrescenta ao NOMOS — "
+            "um script com um manifesto declarando o que ele pode tocar. "
+            "Abaixo estão as que já vêm com o NOMOS, prontas para instalar."
+            "</small></p></div>")
+
+    prontas = sk.get("prontas") or []
+    if not prontas:
+        partes.append(
+            '<div class="card"><b>Nenhuma skill de exemplo nesta máquina</b>'
+            "<p><small>As skills de exemplo acompanham o <b>repositório</b> do "
+            "NOMOS e <b>não vêm na instalação</b> — medido nesta máquina. Por "
+            "isso a sugestão do terminal (<code>nomos skills instalar "
+            "examples/skills/…</code>) só funciona de dentro do repositório."
+            "</small></p>"
+            "<p><small>Se você tem o repositório, aponte-o e recarregue: "
+            "<code>export NOMOS_EXEMPLOS=&lt;repo&gt;/examples/skills</code>. "
+            "Ou crie a sua, abaixo.</small></p></div>")
+    if prontas:
+        itens = "".join(
+            f'<li><b>{e(p["nome"])}</b>'
+            + (' <span class="chip ok">instalada</span>' if p["instalada"] else "")
+            + f'<small> — {e(p["descricao"] or "sem descrição")}</small>'
+            f"<br><small>instale no terminal: "
+            f'<code>nomos skills instalar {e(p["caminho"])}</code></small></li>'
+            for p in prontas)
+        partes.append('<div class="card"><b>Prontas para instalar</b>'
+                      f'<ul class="lista">{itens}</ul>'
+                      "<small>A instalação passa pelo gate: o manifesto declara "
+                      "o que a skill toca, e você aprova antes.</small></div>")
+
+    partes.append(
+        '<details class="card"><summary>Criar uma skill nova</summary>'
+        "<p><small>O NOMOS já tem o fluxo pronto — ele pergunta o nome, o que "
+        "a skill faz e o que precisa tocar, e escreve o manifesto por você:"
+        "</small></p>"
+        "<p><code>nomos skills criar</code></p>"
+        "<p><small>Depois de criar, instale com <code>nomos skills instalar "
+        "&lt;caminho&gt;</code>. O manifesto é o contrato: o que não estiver "
+        "declarado nele, a skill não alcança.</small></p></details>")
+
+    diag = sk.get("diagnostico") or ""
+    if diag:
+        partes.append('<details class="card"><summary>Diagnóstico de '
+                      f"segurança</summary><pre>{e(diag)}</pre></details>")
+
+    # a honestidade que sustenta a página inteira
+    partes.append(
+        '<div class="card"><small><b>Por que não há botão de executar aqui.</b> '
+        "Rodar skill exige isolamento, e no macOS ele ainda não está fechado: "
+        "medido, skill sem rede é recusada e skill com rede roda sem cerca. "
+        "Enquanto for assim, a execução fica no terminal, onde o gate pergunta "
+        "antes. Um botão aqui prometeria o que o sistema não entrega."
+        "</small></div>")
+    return "".join(partes)
 
 
 def _secao_chaves(d: dict, chaves: dict | None) -> str:
@@ -1706,6 +1863,7 @@ def render_html(d: dict, refresh: int | None = None,
                 aprovacoes: list[dict] | None = None,
                 chat: dict | None = None,
                 chaves: dict | None = None,
+                skills: dict | None = None,
                 decidido: dict | None = None) -> str:
     """Página única (abas) com todas as seções — âncoras estáveis (MC33).
 
@@ -1975,6 +2133,7 @@ def render_html(d: dict, refresh: int | None = None,
     corpo.append(_aba("cerebro", False, aba_cerebro))
     corpo.append(_aba("capacidades", False, aba_capac))
     corpo.append(_aba("chaves", False, [_secao_chaves(d, chaves)]))
+    corpo.append(_aba("skills", False, [_secao_skills(d, skills)]))
     corpo.append(_aba("mosaic", False, _secao_mosaic()))
     corpo.append(_aba("operacao", False, aba_op))
     corpo.append(_aba("ajuda", False, aba_ajuda))
@@ -2505,6 +2664,7 @@ class DashboardServer:
                                             aprovacoes=self._aprovacoes(base),
                                             chat=self._chat(base, query),
                                             chaves=chaves,
+                                            skills=dados_skills(painel.ctx),
                                             decidido=decidido)
                     except Exception as exc:   # painel nunca derruba nada
                         # P2-9 da auditoria de 2026-07-17: era texto puro sem
