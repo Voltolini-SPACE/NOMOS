@@ -28,8 +28,9 @@
     },
     {
       "tipo": "chave",
-      "nome": "sessao logada no Chrome",
-      "obrigatorio": true
+      "nome": "sessao_chrome_xhs",
+      "obrigatorio": true,
+      "descricao": "sessao logada no Chrome — NAO e chave de cofre"
     }
   ],
   "files": {}

@@ -29,8 +29,9 @@
     },
     {
       "tipo": "chave",
-      "nome": "Groq ou OpenAI (nao verificada)",
-      "obrigatorio": true
+      "nome": "groq_api_key",
+      "obrigatorio": true,
+      "descricao": "chave da Groq; alternativa: openai_api_key"
     },
     {
       "tipo": "binario",

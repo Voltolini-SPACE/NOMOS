@@ -28,8 +28,9 @@
     },
     {
       "tipo": "chave",
-      "nome": "login da conta Higgsfield (hoje: Not authenticated)",
-      "obrigatorio": true
+      "nome": "higgsfield_login",
+      "obrigatorio": true,
+      "descricao": "login da conta Higgsfield; hoje 'Not authenticated'"
     }
   ],
   "files": {}

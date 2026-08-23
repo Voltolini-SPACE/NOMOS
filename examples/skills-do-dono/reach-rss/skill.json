@@ -26,9 +26,10 @@
       "obrigatorio": true
     },
     {
-      "tipo": "binario",
-      "nome": "python3 -m feedparser",
-      "obrigatorio": true
+      "tipo": "modulo_python",
+      "nome": "feedparser",
+      "obrigatorio": true,
+      "descricao": "modulo, nao binario: `which feedparser` reprova sempre; verifique por import"
     }
   ],
   "files": {}

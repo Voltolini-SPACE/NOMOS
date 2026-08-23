@@ -28,8 +28,15 @@
     },
     {
       "tipo": "chave",
-      "nome": "TWITTER_AUTH_TOKEN + TWITTER_CT0",
-      "obrigatorio": true
+      "nome": "twitter_auth_token",
+      "obrigatorio": true,
+      "descricao": "cookie de autenticacao do Twitter/X"
+    },
+    {
+      "tipo": "chave",
+      "nome": "twitter_ct0",
+      "obrigatorio": true,
+      "descricao": "cookie CSRF do Twitter/X"
     }
   ],
   "files": {}

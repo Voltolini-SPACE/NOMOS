@@ -27,8 +27,9 @@
     },
     {
       "tipo": "chave",
-      "nome": "sessao logada",
-      "obrigatorio": true
+      "nome": "sessao_navegador",
+      "obrigatorio": true,
+      "descricao": "sessao logada no navegador — NAO e chave de cofre"
     }
   ],
   "files": {}

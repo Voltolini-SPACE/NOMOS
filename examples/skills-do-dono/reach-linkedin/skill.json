@@ -33,8 +33,9 @@
     },
     {
       "tipo": "chave",
-      "nome": "login LinkedIn",
-      "obrigatorio": true
+      "nome": "linkedin_login",
+      "obrigatorio": true,
+      "descricao": "estado de login do scraper LinkedIn"
     }
   ],
   "files": {}

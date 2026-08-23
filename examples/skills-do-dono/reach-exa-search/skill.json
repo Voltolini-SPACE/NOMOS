@@ -34,8 +34,9 @@
     },
     {
       "tipo": "chave",
-      "nome": "Exa (nao verificada)",
-      "obrigatorio": true
+      "nome": "exa_api_key",
+      "obrigatorio": true,
+      "descricao": "chave da Exa"
     }
   ],
   "files": {}
