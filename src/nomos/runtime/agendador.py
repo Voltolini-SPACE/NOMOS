@@ -290,7 +290,17 @@ class AgendadorGovernado:
             raise RuntimeError("chame `preparar()` antes de montar o ticker")
         extra = {} if dormir is None else {"dormir": dormir}
         from nomos.kernel import pausa
+        # A trava é montada AQUI, e não é opcional no caminho de produção:
+        # quem chama `agendador.ticker()` recebe a garantia de instância única
+        # sem precisar pedir. É a mesma doutrina que tornou o `autorizador`
+        # obrigatório logo abaixo — invariante que se desliga por omissão não
+        # é invariante. Reusa `TravaInstancia` do serviço (flock + anti-troca
+        # de inode) em vez de duplicar: a autoridade é o LOCK, o conteúdo do
+        # arquivo é diagnóstico e nenhuma decisão o lê.
+        from nomos.runtime.servico import TravaInstancia
+        trava = TravaInstancia(Path(self.ctx["home"]) / "scheduler" / "ticker.lock")
         return Ticker(self.scheduler, self.autorizador, audit=self.audit,
+                      trava=trava,
                       alert_sink=AuditAlertSink(self.audit) if self.audit else None,
                       catchup=self.config.catchup,
                       catchup_max=self.config.catchup_max,

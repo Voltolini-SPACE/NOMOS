@@ -62,6 +62,12 @@ class ResultadoTick:
     negadas: int = 0
 
 
+class TickerJaRodando(RuntimeError):
+    """Recusa de segunda instância. É ERRO, não aviso: seguir em frente
+    executaria toda ocorrência agendada em dobro, e job que envia, cobra ou
+    publica não tem desfazer."""
+
+
 class Ticker:
     """Uma passada = `tick()`. Um loop com pausa = `rodar_ate()`."""
 
@@ -69,13 +75,14 @@ class Ticker:
                  alert_sink=None, catchup: CatchUp = CatchUp.RUN_ONCE,
                  catchup_max: int = 10, intervalo_s: float = 1.0,
                  agora_fn=lambda: datetime.now(timezone.utc),
-                 dormir=time.sleep, pausado_fn=None):
+                 dormir=time.sleep, pausado_fn=None, trava=None):
         # FAIL-CLOSED (achado do censo independente): `autorizador` era
         # opcional e o default `None` fazia o ticker executar o efeito com
         # `credencial=None`. "Autorização por ocorrência" virava opt-in — e
         # invariante que se pode desligar por omissão não é invariante.
         # Agora é posicional e obrigatório; quem realmente não quer autoridade
         # tem de dizer isso em voz alta com `SEM_AUTORIZACAO`.
+        self._trava = trava
         if autorizador is None:
             raise ValueError(
                 "Ticker exige `autorizador`. Para rodar sem autoridade "
@@ -141,8 +148,29 @@ class Ticker:
         Sempre dorme entre passadas — inclusive quando não houve trabalho. É o
         que impede o busy-loop, e é observável: o teste conta as pausas.
         """
+        # UMA INSTÂNCIA SÓ. Medido em 23/08: `runtime/agendador.py` e
+        # `adapters/scheduler.py` somavam 1074 linhas com ZERO flock — dois
+        # `nomos scheduler rodar` simultâneos disparavam a MESMA ocorrência
+        # duas vezes. Job idempotente aguenta; job que envia, cobra ou publica,
+        # não. A trava vem de `agendador.ticker()`, que a monta a partir do
+        # NOMOS_HOME — o caminho de produção não consegue omiti-la.
+        if self._trava is not None and not self._trava.adquirir():
+            dono = getattr(self._trava, "dono", lambda: None)() or {}
+            raise TickerJaRodando(
+                "já há um ticker rodando neste NOMOS_HOME"
+                + (f" (pid {dono['pid']}, desde {dono.get('iniciado_em','?')})"
+                   if dono.get("pid") else "")
+                + " — recuso subir um segundo em vez de executar tudo em dobro")
         self._parar = False
         resultados: list[ResultadoTick] = []
+        n = 0
+        try:
+            return self._laco(condicao, max_ticks, resultados)
+        finally:
+            if self._trava is not None:
+                self._trava.liberar()
+
+    def _laco(self, condicao, max_ticks, resultados) -> list[ResultadoTick]:
         n = 0
         while not self._parar:
             if max_ticks is not None and n >= max_ticks:
