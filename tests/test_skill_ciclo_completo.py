@@ -305,3 +305,35 @@ def test_aviso_nao_bloqueia_a_instalacao(tmp_path, nomos_home, monkeypatch):
     reg.instalar(src, nomos_home / "skills", engine, lambda d: True,
                  confirmar_experimental=lambda m: True, home=nomos_home)
     assert (nomos_home / "skills" / "so-instala").exists()
+
+
+# ------------------------------- o previsor não pode divergir do executor
+@pytest.mark.parametrize("perms,cadeado", [
+    (["A0_READ_LOCAL"], False),
+    (["A0_READ_LOCAL", "A2_NET_EGRESS"], True),
+    (["A0_READ_LOCAL", "A2_NET_EGRESS"], False),
+])
+def test_aviso_de_execucao_bate_com_a_execucao_real(tmp_path, nomos_home,
+                                                    perms, cadeado):
+    """`pode_executar_aqui` promete; `executar` cumpre. Os dois têm de bater.
+
+    O aviso existe para o dono não descobrir no primeiro uso — mas um aviso que
+    diverge do executor é PIOR que nenhum: mente com autoridade. Esta asserção
+    é independente de plataforma de propósito (no Linux o ramo sem rede executa,
+    no macOS não), porque o que se afirma é a COERÊNCIA, não o resultado.
+    """
+    from nomos.kernel import localidade
+
+    localidade.definir(nomos_home, ligado=cadeado)
+    src = _skill_em(tmp_path / "loja", "coerente", permissions=perms)
+    engine = PolicyEngine(nomos_home / "policy.json")
+    reg.instalar(src, nomos_home / "skills", engine, lambda d: True,
+                 confirmar_experimental=lambda m: True, home=nomos_home)
+
+    mf = json.loads((src / "skill.json").read_text())
+    pode, _motivo = reg.pode_executar_aqui(mf, nomos_home)
+    rc, _saida = reg.executar("coerente", nomos_home / "skills", engine,
+                              lambda d: True)
+
+    assert pode == (rc == 0), (
+        f"previsor disse pode={pode} mas executar deu rc={rc}")
