@@ -62,6 +62,17 @@ class ResultadoTick:
     negadas: int = 0
 
 
+SEM_TRAVA = object()
+"""Dizer em voz alta que este ticker roda SEM exclusão de instância.
+
+Existe pelo mesmo motivo que `SEM_AUTORIZACAO`: o default `None` deixava a
+porta encostada. Um refator futuro que esquecesse de passar a trava não
+quebraria nada — e um invariante que se desliga por omissão não é invariante,
+como o próprio arquivo já dizia sobre o `autorizador`. Agora é preciso
+escolher, e escolher "sem" é visível no código de quem escolheu.
+"""
+
+
 class TickerJaRodando(RuntimeError):
     """Recusa de segunda instância. É ERRO, não aviso: seguir em frente
     executaria toda ocorrência agendada em dobro, e job que envia, cobra ou
@@ -75,14 +86,19 @@ class Ticker:
                  alert_sink=None, catchup: CatchUp = CatchUp.RUN_ONCE,
                  catchup_max: int = 10, intervalo_s: float = 1.0,
                  agora_fn=lambda: datetime.now(timezone.utc),
-                 dormir=time.sleep, pausado_fn=None, trava=None):
+                 dormir=time.sleep, pausado_fn=None, trava):
         # FAIL-CLOSED (achado do censo independente): `autorizador` era
         # opcional e o default `None` fazia o ticker executar o efeito com
         # `credencial=None`. "Autorização por ocorrência" virava opt-in — e
         # invariante que se pode desligar por omissão não é invariante.
         # Agora é posicional e obrigatório; quem realmente não quer autoridade
         # tem de dizer isso em voz alta com `SEM_AUTORIZACAO`.
-        self._trava = trava
+        if trava is None:
+            raise ValueError(
+                "Ticker exige `trava`. Passe `TravaInstancia(...)` para ter "
+                "exclusão de instância, ou `ticker.SEM_TRAVA` para dizer em "
+                "voz alta que este ticker roda sem ela (só em teste).")
+        self._trava = None if trava is SEM_TRAVA else trava
         if autorizador is None:
             raise ValueError(
                 "Ticker exige `autorizador`. Para rodar sem autoridade "

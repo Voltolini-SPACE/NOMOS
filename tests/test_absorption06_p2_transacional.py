@@ -41,7 +41,7 @@ import pytest
 
 from nomos.adapters.scheduler import (ArmazemJobs, JobInstance, JobState,
                                       Scheduler, transicao_valida)
-from nomos.adapters.ticker import CatchUp, Ticker
+from nomos.adapters.ticker import CatchUp, Ticker, SEM_TRAVA
 
 T0 = datetime(2026, 8, 10, 12, 0, tzinfo=timezone.utc)
 
@@ -74,7 +74,7 @@ def _monta(tmp_path, *, intervalo_s=None, efeitos=None):
 def _ticker(s, relogio, *, autoriza=False):
     return Ticker(s, (lambda d, i: object() if autoriza else None),
                   catchup=CatchUp.RUN_ONCE, agora_fn=relogio,
-                  dormir=lambda _x: None)
+                  dormir=lambda _x: None, trava=SEM_TRAVA)
 
 
 # ============================================ DENY terminal

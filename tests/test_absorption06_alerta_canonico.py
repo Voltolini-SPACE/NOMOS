@@ -15,7 +15,7 @@ from nomos.adapters.resultado import (
     EstadoCanonico, ResultadoOcorrencia, Severidade, canonico, de_execucao,
 )
 from nomos.adapters.scheduler import ArmazemJobs, Scheduler
-from nomos.adapters.ticker import SEM_AUTORIZACAO, Ticker
+from nomos.adapters.ticker import SEM_AUTORIZACAO, Ticker, SEM_TRAVA
 
 T0 = datetime(2026, 8, 10, 12, 0, tzinfo=timezone.utc)
 
@@ -104,7 +104,7 @@ def test_uma_ocorrencia_um_estado_zero_contradicoes(tmp_path):
                   alert_sink=sink)
     s.criar("j", "suj", "fs-listar", primeiro_em=T0)
     t = Ticker(s, SEM_AUTORIZACAO, alert_sink=sink, agora_fn=lambda: T0,
-               dormir=lambda _x: None)
+               dormir=lambda _x: None, trava=SEM_TRAVA)
     t.tick()
 
     # Ausência de contradição NÃO pode vir de um emissor calado: uma mutação
@@ -141,7 +141,7 @@ def test_negacao_de_autorizacao_e_NO_EFFECT(tmp_path):
                   agora_fn=lambda: T0)
     s.criar("j", "suj", "fs-listar", primeiro_em=T0)
     t = Ticker(s, lambda d, i: None, alert_sink=sink, agora_fn=lambda: T0,
-               dormir=lambda _x: None)
+               dormir=lambda _x: None, trava=SEM_TRAVA)
     t.tick()
     assert sink.eventos
     assert all(e.effect_state == "NO_EFFECT" for e in sink.eventos)

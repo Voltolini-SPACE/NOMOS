@@ -17,7 +17,8 @@ import time
 
 import pytest
 
-from nomos.adapters.ticker import SEM_AUTORIZACAO, Ticker, TickerJaRodando
+from nomos.adapters.ticker import (SEM_AUTORIZACAO, SEM_TRAVA, Ticker,
+                                   TickerJaRodando)
 from nomos.runtime.servico import TravaInstancia
 
 
@@ -33,7 +34,7 @@ class _SchedFake:
 def _ticker(home, sched=None, com_trava=True):
     return Ticker(sched or _SchedFake(), SEM_AUTORIZACAO, dormir=lambda s: None,
                   trava=TravaInstancia(home / "scheduler" / "ticker.lock")
-                  if com_trava else None)
+                  if com_trava else SEM_TRAVA)
 
 
 def test_segundo_ticker_no_mesmo_home_e_recusado(tmp_path):
@@ -94,6 +95,16 @@ def test_homes_diferentes_nao_se_bloqueiam(tmp_path):
         parar[0] = True
         t1.parar()
         th.join(timeout=5)
+
+
+def test_trava_e_obrigatoria_no_construtor():
+    """Default `None` deixava a porta encostada: um refator que esquecesse de
+    passar a trava não quebraria nada. Mesma doutrina do `autorizador`, no
+    mesmo arquivo — quem não quer exclusão diz `SEM_TRAVA` em voz alta."""
+    with pytest.raises(TypeError):
+        Ticker(_SchedFake(), SEM_AUTORIZACAO)          # sem `trava` nenhuma
+    with pytest.raises(ValueError, match="SEM_TRAVA"):
+        Ticker(_SchedFake(), SEM_AUTORIZACAO, trava=None)
 
 
 def test_o_caminho_de_producao_nao_consegue_omitir_a_trava():

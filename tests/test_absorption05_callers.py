@@ -15,7 +15,7 @@ import pytest
 
 from nomos.adapters.agenda import ScheduleSpec, TipoAgenda
 from nomos.adapters.scheduler import JobState
-from nomos.adapters.ticker import SEM_AUTORIZACAO, CatchUp, Ticker
+from nomos.adapters.ticker import SEM_AUTORIZACAO, CatchUp, Ticker, SEM_TRAVA
 from nomos.adapters.wiring import validar_executaveis
 from nomos.kernel.audit import AuditLog
 from nomos.kernel.policy import PolicyEngine
@@ -401,7 +401,7 @@ def test_ticker_sem_autorizador_continua_impossivel(amb):
     ag = _agendador(amb)
     ag.preparar()
     with pytest.raises(ValueError, match="autorizador"):
-        Ticker(ag.scheduler, None)
+        Ticker(ag.scheduler, None, trava=SEM_TRAVA)
 
 
 def test_agendador_nao_executa_sem_credencial(amb):

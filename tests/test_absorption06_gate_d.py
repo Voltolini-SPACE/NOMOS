@@ -20,7 +20,7 @@ import pytest
 
 from nomos.adapters.scheduler import (ArmazemJobs, JobInstance, JobState,
                                       Scheduler)
-from nomos.adapters.ticker import CatchUp, Ticker
+from nomos.adapters.ticker import CatchUp, Ticker, SEM_TRAVA
 from nomos.kernel.audit import AuditLog
 from nomos.kernel.policy import PolicyEngine
 from nomos.runtime.agendador import AgendadorGovernado, ConfigAgendador
@@ -77,7 +77,7 @@ def test_d1_skip_executa_exatamente_uma_ocorrencia(tmp_path, minutos, rotulo):
     s, efeitos, relogio = _monta(tmp_path, intervalo_s=60)
     relogio.avanca(minutes=minutos)
     t = Ticker(s, lambda d, i: object(), catchup=CatchUp.SKIP,
-               catchup_max=10, agora_fn=relogio, dormir=lambda _s: None)
+               catchup_max=10, agora_fn=relogio, dormir=lambda _s: None, trava=SEM_TRAVA)
     t.rodar_ate(max_ticks=1)
     assert len(efeitos) == 1, (
         f"{rotulo} ({minutos}min): SKIP executou {len(efeitos)} ocorrências — "
@@ -174,7 +174,7 @@ def test_d3_operacao_do_operador_durante_o_tick_nao_derruba_o_ticker(tmp_path,
                   agora_fn=relogio)
     s.criar("j", "sujeito", "fs-listar", intervalo_s=60)
     t = Ticker(s, lambda d, i: object(), catchup=CatchUp.RUN_ONCE,
-               agora_fn=relogio, dormir=lambda _s: None)
+               agora_fn=relogio, dormir=lambda _s: None, trava=SEM_TRAVA)
     try:
         t.rodar_ate(max_ticks=1)
     except Exception as exc:
@@ -241,7 +241,7 @@ def test_d6_ocorrencias_descartadas_pelo_teto_deixam_rastro(tmp_path):
     relogio.avanca(minutes=60)                     # 60 ocorrências vencidas
     t = Ticker(s, lambda d, i: object(), catchup=CatchUp.RUN_ALL_BOUNDED,
                catchup_max=10, audit=ctx_audit, agora_fn=relogio,
-               dormir=lambda _s: None)
+               dormir=lambda _s: None, trava=SEM_TRAVA)
     t.rodar_ate(max_ticks=1)
 
     assert len(efeitos) <= 10, f"teto furado: {len(efeitos)} execuções"

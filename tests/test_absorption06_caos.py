@@ -160,7 +160,7 @@ def test_relogio_para_tras_nao_reexecuta_ocorrencia_ja_feita(tmp_path):
 
 def test_relogio_para_frente_nao_dispara_tempestade_sem_limite(tmp_path):
     """Suspensão longa: ao acordar, mil ocorrências estão vencidas."""
-    from nomos.adapters.ticker import CatchUp
+    from nomos.adapters.ticker import CatchUp, SEM_TRAVA
     armazem = ArmazemJobs(tmp_path / "jobs.db")
     feitas = []
     relogio = {"t": datetime(2026, 8, 10, 12, 0, tzinfo=timezone.utc)}
@@ -175,7 +175,7 @@ def test_relogio_para_frente_nao_dispara_tempestade_sem_limite(tmp_path):
     from nomos.adapters.ticker import Ticker
     t = Ticker(s, lambda d, i: object(), catchup=CatchUp.RUN_ALL_BOUNDED,
                catchup_max=5, agora_fn=lambda: relogio["t"],
-               dormir=lambda _s: None)
+               dormir=lambda _s: None, trava=SEM_TRAVA)
     t.rodar_ate(max_ticks=1)
     assert len(feitas) <= 5, (
         f"{len(feitas)} execuções numa passada com catchup_max=5 — sem teto, "

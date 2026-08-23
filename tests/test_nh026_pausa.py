@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 from nomos import cli
 from nomos.adapters.scheduler import ArmazemJobs, Scheduler
-from nomos.adapters.ticker import SEM_AUTORIZACAO, CatchUp, Ticker
+from nomos.adapters.ticker import SEM_AUTORIZACAO, CatchUp, Ticker, SEM_TRAVA
 from nomos.kernel import pausa
 import pytest
 
@@ -88,7 +88,7 @@ def test_pausa_diretorio_no_lugar_do_arquivo_sem_crash(tmp_path):
 def test_ticker_pausado_nao_examina():
     espiao = _SchedulerEspiao()
     t = Ticker(espiao, SEM_AUTORIZACAO, agora_fn=lambda: T0,
-               dormir=lambda _s: None, pausado_fn=lambda: True)
+               dormir=lambda _s: None, pausado_fn=lambda: True, trava=SEM_TRAVA)
     r = t.tick()
     assert espiao.consultas == 0, "pausado não pode nem consultar devidos()"
     assert (r.examinados, r.executadas) == (0, 0)
@@ -97,7 +97,7 @@ def test_ticker_pausado_nao_examina():
 def test_ticker_default_none_intacto():
     espiao = _SchedulerEspiao()
     t = Ticker(espiao, SEM_AUTORIZACAO, agora_fn=lambda: T0,
-               dormir=lambda _s: None)
+               dormir=lambda _s: None, trava=SEM_TRAVA)
     t.tick()
     assert espiao.consultas == 1
 
@@ -109,7 +109,7 @@ def test_ticker_pausado_fn_excecao_e_pausado():
         raise RuntimeError("freio quebrou")
 
     t = Ticker(espiao, SEM_AUTORIZACAO, agora_fn=lambda: T0,
-               dormir=lambda _s: None, pausado_fn=quebrado)
+               dormir=lambda _s: None, pausado_fn=quebrado, trava=SEM_TRAVA)
     t.tick()
     assert espiao.consultas == 0, "freio que quebra tem de quebrar FECHADO"
 
@@ -119,7 +119,7 @@ def test_ticker_audit_por_borda_nao_por_tick():
     pausado = {"v": True}
     t = Ticker(_SchedulerEspiao(), SEM_AUTORIZACAO, audit=audit,
                agora_fn=lambda: T0, dormir=lambda _s: None,
-               pausado_fn=lambda: pausado["v"])
+               pausado_fn=lambda: pausado["v"], trava=SEM_TRAVA)
     for _ in range(5):
         t.tick()
     entrou = [e for e, _c in audit.eventos if e == "ticker.pausa.entrou"]
@@ -140,7 +140,7 @@ def test_ticker_borda_reseta_nos_dois_sentidos():
     pausado = {"v": True}
     t = Ticker(_SchedulerEspiao(), SEM_AUTORIZACAO, audit=audit,
                agora_fn=lambda: T0, dormir=lambda _s: None,
-               pausado_fn=lambda: pausado["v"])
+               pausado_fn=lambda: pausado["v"], trava=SEM_TRAVA)
     t.tick()                                   # entra pausado (1º 'entrou')
     pausado["v"] = False
     for _ in range(4):                         # 4 ticks ativos
@@ -168,7 +168,7 @@ def test_ticker_pausa_no_meio_do_catchup(tmp_path):
             primeiro_em=T0 - timedelta(seconds=120))
     t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: T0,
                dormir=lambda _s: None, catchup=CatchUp.RUN_ALL_BOUNDED,
-               pausado_fn=lambda: len(execucoes) >= 1)
+               pausado_fn=lambda: len(execucoes) >= 1, trava=SEM_TRAVA)
     t.tick()
     assert len(execucoes) == 1, (
         f"pausa no meio do catch-up: esperava 1 execução, houve {len(execucoes)}")
@@ -188,7 +188,7 @@ def test_ticker_pausa_entre_jobs_do_mesmo_tick(tmp_path):
     s.criar("b", "suj", "fs-listar", primeiro_em=T0)
     t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: T0,
                dormir=lambda _s: None,
-               pausado_fn=lambda: len(execucoes) >= 1)
+               pausado_fn=lambda: len(execucoes) >= 1, trava=SEM_TRAVA)
     t.tick()
     assert len(execucoes) == 1
 

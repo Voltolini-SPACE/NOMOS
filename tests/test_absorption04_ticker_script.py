@@ -23,7 +23,7 @@ from nomos.adapters.contrato import (
 )
 from nomos.adapters.scheduler import ArmazemJobs, Scheduler
 from nomos.adapters.script import ScriptAdapter
-from nomos.adapters.ticker import SEM_AUTORIZACAO, CatchUp, Ticker
+from nomos.adapters.ticker import SEM_AUTORIZACAO, CatchUp, Ticker, SEM_TRAVA
 from nomos.kernel.audit import AuditLog
 from nomos.kernel.policy import Category
 
@@ -58,7 +58,7 @@ def test_ticker_executa_job_devido(tmp_path):
     ef = _Efeito()
     s, rel = _sched(tmp_path, ef)
     s.criar("j", "suj", "fs-ler", primeiro_em=T0)
-    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None)
+    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None, trava=SEM_TRAVA)
     r = t.tick()
     assert r.executadas == 1
     assert len(ef.chamadas) == 1
@@ -68,7 +68,7 @@ def test_ticker_nao_executa_job_futuro(tmp_path):
     ef = _Efeito()
     s, rel = _sched(tmp_path, ef)
     s.criar("j", "suj", "fs-ler", primeiro_em=T0 + timedelta(hours=1))
-    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None)
+    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None, trava=SEM_TRAVA)
     assert t.tick().executadas == 0
     assert ef.chamadas == []
 
@@ -77,7 +77,7 @@ def test_ticker_nao_repete_ocorrencia(tmp_path):
     ef = _Efeito()
     s, rel = _sched(tmp_path, ef)
     s.criar("j", "suj", "fs-ler", primeiro_em=T0)
-    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None)
+    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None, trava=SEM_TRAVA)
     t.tick()
     t.tick()
     t.tick()
@@ -89,7 +89,7 @@ def test_ticker_nao_faz_busy_loop(tmp_path):
     pausas = []
     s, rel = _sched(tmp_path)
     t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=pausas.append,
-               intervalo_s=0.25)
+               intervalo_s=0.25, trava=SEM_TRAVA)
     t.rodar_ate(max_ticks=4)
     assert len(pausas) == 4
     assert all(p == 0.25 for p in pausas)
@@ -97,7 +97,7 @@ def test_ticker_nao_faz_busy_loop(tmp_path):
 
 def test_ticker_shutdown_limpo(tmp_path):
     s, rel = _sched(tmp_path)
-    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None)
+    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None, trava=SEM_TRAVA)
     ticks = {"n": 0}
 
     def _dormir(_s):
@@ -118,7 +118,7 @@ def test_ticker_com_cron_reagenda_no_fuso(tmp_path):
     spec = ScheduleSpec(kind=TipoAgenda.CRON, expression="0 9 * * *",
                         timezone="America/Sao_Paulo")
     s.criar("j", "suj", "fs-ler", schedule=spec, primeiro_em=T0)
-    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None)
+    t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None, trava=SEM_TRAVA)
     t.tick()
     assert len(ef.chamadas) == 1
     # 09:00 em São Paulo (UTC-3) = 12:00 UTC do dia seguinte
@@ -134,7 +134,7 @@ def _job_atrasado(tmp_path, catchup, catchup_max=10):
     s.criar("j", "suj", "fs-ler", intervalo_s=300, primeiro_em=T0)  # 5 min
     rel["t"] = T0 + timedelta(hours=5)                              # downtime
     t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"], dormir=lambda _s: None,
-               catchup=catchup, catchup_max=catchup_max)
+               catchup=catchup, catchup_max=catchup_max, trava=SEM_TRAVA)
     t.tick()
     return ef
 
@@ -173,7 +173,7 @@ def test_autorizador_e_chamado_por_ocorrencia(tmp_path):
         return {"token": f"fresco-{len(pedidos)}"}
 
     t = Ticker(s, autorizador=_autorizador, agora_fn=lambda: rel["t"],
-               dormir=lambda _s: None)
+               dormir=lambda _s: None, trava=SEM_TRAVA)
     t.tick()
     rel["t"] = T0 + timedelta(seconds=60)
     t.tick()
@@ -190,7 +190,7 @@ def test_autorizacao_negada_no_instante_da_execucao(tmp_path):
     s.criar("j", "suj", "fs-ler", primeiro_em=T0)
     politica = {"permite": False}                       # mudou depois da criação
     t = Ticker(s, autorizador=lambda d, i: {"ok": 1} if politica["permite"] else None,
-               agora_fn=lambda: rel["t"], dormir=lambda _s: None)
+               agora_fn=lambda: rel["t"], dormir=lambda _s: None, trava=SEM_TRAVA)
     t.tick()
     assert ef.chamadas == []                            # nenhum efeito
 
@@ -206,7 +206,7 @@ def test_autorizador_que_explode_nao_produz_efeito(tmp_path):
 
     sink = SinkDeTeste()
     t = Ticker(s, autorizador=_quebrado, alert_sink=sink,
-               agora_fn=lambda: rel["t"], dormir=lambda _s: None)
+               agora_fn=lambda: rel["t"], dormir=lambda _s: None, trava=SEM_TRAVA)
     t.tick()
     assert ef.chamadas == []
     assert sink.eventos and sink.eventos[0].effect_state == "NO_EFFECT"
@@ -220,7 +220,7 @@ def test_job_nao_persiste_credencial(tmp_path):
     s, _ = _sched(tmp_path, ef, rel)
     s.criar("j", "suj", "fs-ler", primeiro_em=T0)
     t = Ticker(s, autorizador=lambda d, i: {"segredo": "TOKEN-SUPER-SECRETO"},
-               agora_fn=lambda: rel["t"], dormir=lambda _s: None)
+               agora_fn=lambda: rel["t"], dormir=lambda _s: None, trava=SEM_TRAVA)
     t.tick()
     with sqlite3.connect(tmp_path / "j.db") as c:
         dump = "\n".join(str(r) for tabela in ("jobs", "ocorrencias")
@@ -436,7 +436,7 @@ def test_falha_de_execucao_emite_evento(tmp_path):
     s.criar("j", "suj", "fs-ler", primeiro_em=T0)
     sink = SinkDeTeste()
     t = Ticker(s, SEM_AUTORIZACAO, alert_sink=sink, agora_fn=lambda: rel["t"],
-               dormir=lambda _s: None)
+               dormir=lambda _s: None, trava=SEM_TRAVA)
     t.tick()
     assert len(sink.eventos) == 1
     ev = sink.eventos[0]
@@ -560,9 +560,9 @@ def test_ticker_sem_autorizador_e_fail_closed(tmp_path):
     ef = _Efeito()
     s, rel = _sched(tmp_path, ef)
     with pytest.raises(ValueError, match="autorizador"):
-        Ticker(s, None, agora_fn=lambda: rel["t"])
+        Ticker(s, None, agora_fn=lambda: rel["t"], trava=SEM_TRAVA)
     with pytest.raises(TypeError):
-        Ticker(s)                       # nem posicionalmente é opcional
+        Ticker(s, trava=SEM_TRAVA)                       # nem posicionalmente é opcional
 
 
 def test_rodar_sem_autoridade_exige_dizer_em_voz_alta(tmp_path):
@@ -571,7 +571,7 @@ def test_rodar_sem_autoridade_exige_dizer_em_voz_alta(tmp_path):
     s, rel = _sched(tmp_path, ef)
     s.criar("j", "suj", "fs-ler", primeiro_em=T0)
     t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"],
-               dormir=lambda _s: None)
+               dormir=lambda _s: None, trava=SEM_TRAVA)
     assert t.tick().executadas == 1
     assert t.autorizador is None
 
@@ -588,7 +588,7 @@ def test_catchup_skip_roda_a_MAIS_RECENTE_nao_uma_velha(tmp_path):
     s.criar("j", "suj", "fs-ler", intervalo_s=300, primeiro_em=T0)
     rel["t"] = T0 + timedelta(hours=5)          # 60 ocorrências perdidas
     t = Ticker(s, SEM_AUTORIZACAO, agora_fn=lambda: rel["t"],
-               dormir=lambda _s: None, catchup=CatchUp.SKIP, catchup_max=10)
+               dormir=lambda _s: None, catchup=CatchUp.SKIP, catchup_max=10, trava=SEM_TRAVA)
     t.tick()
     assert len(ef.chamadas) == 1
     executada = datetime.fromisoformat(ef.chamadas[0].split("@", 1)[1])
