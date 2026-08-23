@@ -2630,8 +2630,21 @@ def cmd_mcp(ctx, args) -> int:
         # confiar pela FILA DO PAINEL (single-use, TTL) em vez do TTY: a decisão
         # segue 100% humana — só muda a porta pela qual você aprova.
         if getattr(args, "panel", False):
+            # As DUAS portas de aprovação têm de mostrar a MESMA informação.
+            # A porta TTY (abaixo) imprime `nivel_padrao` e as tools declaradas
+            # antes de pedir "CONFIO"; a fila do painel mostrava só o NOME —
+            # a mesma decisão, por outra porta, com menos informação.
+            # O piso importa porque `mcp_client.nivel_da_tool` devolve
+            # `nivel_padrao` para toda tool NÃO declarada: medido, manifesto que
+            # omite o campo => tool desconhecida vira A5 (fail-closed), e um que
+            # declara "A0" => tool desconhecida roda SEM aprovação. É o dado
+            # que decide o consentimento, então vai no alvo que o dono lê.
+            _piso = manifesto["nivel_padrao"]
+            _n_tools = len(manifesto.get("tools") or {})
             decision = ctx["policy"].decide(
-                Category.SKILL_INSTALL, target=f"mcp:confiar:{manifesto['nome']}")
+                Category.SKILL_INSTALL,
+                target=(f"mcp:confiar:{manifesto['nome']}"
+                        f":piso={_piso}:tools_declaradas={_n_tools}"))
             if not gate(decision, _approver_for(ctx, args)):
                 ctx["audit"].append("mcp.confiar.negado_fila",
                                     server=manifesto["nome"])
