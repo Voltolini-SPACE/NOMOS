@@ -108,17 +108,59 @@ def test_sem_permissao_diz_travessao():
     assert pw._permissoes_legiveis(None) == "—"
 
 
+def test_credencial_nao_promete_cofre_que_nao_governa():
+    """A frase era "usam credencial DO COFRE" e prometia governanca que o
+    NOMOS nao da. Medido: o cofre tem 1 chave (omniroute_api_key) e a
+    intersecao com as 9 que as skills pedem e VAZIA — elas moram no `gh`, em
+    sessao de navegador, no login da Higgsfield. O numero nao muda; o que
+    muda e o dono descobrir que instalar nao basta."""
+    caps = [{"permissoes": ["A3_CRED_USE"]} for _ in range(19)]
+    html = pw._resumo_permissoes(caps, (9, 0))
+    assert "do cofre" not in html          # a promessa falsa nao volta
+    assert "pedem credencial" in html
+    assert "nenhuma delas está no seu cofre hoje" in html
+
+
+def test_credencial_conta_as_que_ESTAO_no_cofre():
+    """Se o dono guardar algumas, a frase acompanha — o numero e amarrado ao
+    fato, nao a uma constante que envelhece."""
+    caps = [{"permissoes": ["A3_CRED_USE"]} for _ in range(19)]
+    html = pw._resumo_permissoes(caps, (9, 3))
+    assert "3 de 9 no seu cofre" in html
+    assert "nenhuma está" not in html
+
+
+def test_sem_dado_de_cofre_nao_inventa():
+    """Sem a medicao, diz so o que sabe — nao chuta 'nenhuma'."""
+    caps = [{"permissoes": ["A3_CRED_USE"]}]
+    html = pw._resumo_permissoes(caps, None)
+    assert "pedem credencial" in html
+    assert "cofre" not in html
+
+
+def test_contagem_le_manifesto_cru(tmp_path):
+    """20 dos 33 manifestos nao passam por `load_manifest` (files sem sha256).
+    Contar so os que carregam mediria um terco da verdade."""
+    pedidas, no_cofre = pw._credenciais_pedidas(tmp_path)
+    assert pedidas > 5, f"contou so {pedidas} — provavelmente ignorou os quebrados"
+    assert no_cofre == 0, "home de teste nao tem cofre"
+
+
 def test_resumo_da_a_forma_antes_da_lista():
     """33 fichas em sequência não respondem 'o que entrou em casa?'."""
     caps = [{"permissoes": ["A2_NET_EGRESS"]} for _ in range(26)]
     caps += [{"permissoes": ["A5_CODE_EXEC"]} for _ in range(3)]
     caps += [{"permissoes": ["A3_CRED_USE"]}]
-    html = pw._resumo_permissoes(caps)
+    html = pw._resumo_permissoes(caps, (9, 0))
     assert "26</b> falam com a internet" in html
     assert "3</b> iniciam outros programas" in html
-    assert "1</b> usam credencial do cofre" in html
+    # este teste guardava "1 usam credencial DO COFRE" — a frase que prometia
+    # governança inexistente. Um teste que congela texto vencido defende o
+    # erro com a autoridade de uma suíte verde.
+    assert "1</b> pedem credencial" in html
+    assert "do cofre" not in html
     # a garantia junto do número, senão o número assusta sem contexto
-    assert "nenhuma age sem você instalar e aprovar" in html
+    assert "nada disso acontece sem você instalar e aprovar" in html
 
 
 def test_resumo_omite_o_que_e_zero():

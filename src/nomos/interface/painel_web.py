@@ -1178,6 +1178,7 @@ def dados_dashboard(ctx) -> dict:
         "evidencias": evidencias,
         "politica": politica,
         "capacidades": capacidades,
+        "credenciais": _credenciais_pedidas(home),
         "motores": motores_tab,
         "auditoria": {"cadeia_integra": cadeia_ok, "eventos_total": cadeia_n},
         "memoria": memoria,
@@ -1388,7 +1389,10 @@ _PERMISSAO_EM_PORTUGUES = {
     "A0_READ_LOCAL": "lê arquivos seus",
     "A1_WRITE_LOCAL": "escreve arquivos",
     "A2_NET_EGRESS": "fala com a internet",
-    "A3_CRED_USE": "usa uma credencial do cofre",
+    # NÃO diga "do cofre": medido, nenhuma das credenciais que as skills pedem
+    # está no cofre — elas moram no `gh`, em sessão de navegador, no login do
+    # provedor. O A3 governa o USO declarado, não a guarda da credencial.
+    "A3_CRED_USE": "usa uma credencial sua",
     "A4_PROC_SPAWN": "inicia outros programas",
     "A5_CODE_EXEC": "inicia outros programas",
     "A6_SYSTEM": "mexe em ajustes do sistema",
@@ -1412,7 +1416,45 @@ def _permissoes_legiveis(perms) -> str:
     return " · ".join(partes)
 
 
-def _resumo_permissoes(caps: list) -> str:
+def _credenciais_pedidas(home: Path) -> tuple[int, int]:
+    """(quantas credenciais distintas as skills pedem, quantas estão no cofre).
+
+    Lê os `skill.json` CRUS de propósito: 20 dos 33 manifestos não passam pelo
+    `load_manifest` (campo `files` sem os sha256), e ignorá-los faria a conta
+    contar só um terço da verdade. Aqui não se instala nada — só se conta.
+    """
+    import json
+
+    try:
+        from nomos import skills_embutidas as emb
+        from nomos.kernel.vault import Vault
+    except Exception:
+        return (0, 0)
+    try:
+        cofre_path = Path(home) / "vault.json"
+        no_cofre = set(Vault(cofre_path).names()) if cofre_path.exists() else set()
+    except Exception:
+        no_cofre = set()
+    pedidas: set[str] = set()
+    try:
+        origens = emb.listar()
+    except Exception:
+        return (0, 0)
+    for d in origens:
+        f = Path(d) / "skill.json"
+        if not f.exists():
+            continue
+        try:
+            mf = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        for r in (mf.get("requires") or []):
+            if isinstance(r, dict) and r.get("tipo") == "chave" and r.get("nome"):
+                pedidas.add(str(r["nome"]))
+    return (len(pedidas), len(pedidas & no_cofre))
+
+
+def _resumo_permissoes(caps: list, creds: tuple[int, int] | None = None) -> str:
     """A forma do conjunto antes da lista: quantas tocam o quê.
 
     Trinta e três fichas em sequência não respondem "o que eu acabei de
@@ -1429,11 +1471,25 @@ def _resumo_permissoes(caps: list) -> str:
     if exec_:
         itens.append(f"<b>{exec_}</b> iniciam outros programas")
     if cred:
-        itens.append(f"<b>{cred}</b> usam credencial do cofre")
+        # ERA "usam credencial DO COFRE" — e isso prometia que o NOMOS governa
+        # essas credenciais. Medido: o cofre tem 1 chave (omniroute_api_key) e
+        # a interseção com as 9 que as skills pedem é VAZIA. Elas moram no
+        # `gh`, em sessão de navegador, no login da Higgsfield — fora do
+        # alcance do A3. Meia-honestidade igual ao `A5_CODE_EXEC` cru: cumpre
+        # a letra e falha no propósito. O número não muda; o que muda é o dono
+        # descobrir que instalar não basta, falta a credencial.
+        if creds and creds[0]:
+            pedidas, no_cofre = creds
+            onde = ("nenhuma delas está no seu cofre hoje" if no_cofre == 0
+                    else f"{no_cofre} de {pedidas} no seu cofre")
+            itens.append(f"<b>{cred}</b> pedem credencial ({onde})")
+        else:
+            itens.append(f"<b>{cred}</b> pedem credencial")
     if not itens:
         return ""
     return (f'<p><small>De {len(caps)}: ' + " · ".join(itens)
-            + " — nenhuma age sem você instalar e aprovar.</small></p>")
+            + " · nada disso acontece sem você instalar e aprovar."
+            "</small></p>")
 
 
 def _secao_skills(d: dict, skills: dict | None) -> str:
@@ -2298,7 +2354,7 @@ def render_html(d: dict, refresh: int | None = None,
                  ("vem no NOMOS", "Vêm no NOMOS",
                   "acompanham o pacote e ainda NÃO estão instaladas — "
                   "aparecem para você escolher, não porque estejam ativas")]
-        aba_capac.append(_resumo_permissoes(caps))
+        aba_capac.append(_resumo_permissoes(caps, d.get("credenciais")))
         vistos = {c.get("status") for c in caps}
         for chave, titulo, o_que_significa in ORDEM:
             grupo = [c for c in caps if c.get("status") == chave]
