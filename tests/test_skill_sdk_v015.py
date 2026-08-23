@@ -147,8 +147,13 @@ def test_atualizacoes_disponiveis_e_cli(tmp_path, nomos_home, capsys):
 # ---------------- skills oficiais de exemplo ----------------
 
 def test_exemplos_oficiais_validos_e_baixo_risco():
-    base = RAIZ / "examples" / "skills"
-    pastas = sorted(p for p in base.iterdir() if p.is_dir())
+    from nomos import skills_embutidas as _se
+    base = _se.diretorio_embutido()
+    # Agora que as skills moram DENTRO do pacote, o Python cria __pycache__ aqui.
+    # Contar diretório cru passou a contar lixo de build — o critério certo é
+    # "tem manifesto", que é o que define uma skill.
+    pastas = sorted(p for p in base.iterdir()
+                    if p.is_dir() and (p / "skill.json").is_file())
     assert len(pastas) == 4   # v1.2: + busca-arquivos
     for pasta in pastas:
         mf = json.loads((pasta / "skill.json").read_text())
@@ -162,7 +167,8 @@ def test_exemplo_organizador_roda_de_verdade(tmp_path):
     (tmp_path / "b.md").write_text("y")
     args = tmp_path / "args.json"
     args.write_text(json.dumps({"pasta": str(tmp_path)}))
-    main = RAIZ / "examples" / "skills" / "organizador" / "main.py"
+    from nomos import skills_embutidas as _se
+    main = _se.achar("organizador") / "main.py"
     r = subprocess.run([sys.executable, str(main), str(args)],
                        capture_output=True, text=True, timeout=30)
     saida = json.loads(r.stdout.strip())

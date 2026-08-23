@@ -121,6 +121,14 @@ _CSS = """
  .chip.ok{background:rgba(90,247,142,.15);color:var(--neon)}
  .chip.warn{background:rgba(242,193,78,.15);color:var(--amarelo)}
  .chip.err{background:rgba(255,92,87,.15);color:var(--vermelho)}
+ /* conectores: chip NEUTRO (não configurado) — sem alarme, mas legível.
+    Sem esta regra o estado "NÃO CONFIGURADO" herdava a cor do texto e
+    sumia ao lado do nome, dando a impressão de que TODOS estavam prontos. */
+ .chip.neutro{background:rgba(127,127,127,.16);color:var(--fraco)}
+ .grid-conectores{display:grid;gap:.6rem;
+   grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+ .card.conector ul.lista{margin:.35rem 0}
+ .card.conector summary{cursor:pointer}
  /* P2-10 (auditoria de 2026-07-17): o `background` de .chip.ok/.warn/.err
     é um rgba(...) LITERAL fixo (os valores RGB do tema ESCURO — não usa
     var(), então não muda com o tema); só `color` usa var(--neon/
@@ -1188,6 +1196,7 @@ _ABAS_NAV: list[tuple[str, str, str]] = [
     ("chat", "❯", "chat"),
     ("cerebro", "⚙", "cérebro"),
     ("capacidades", "❖", "capacidades"),
+    ("conectores", "🔌", "conectores"),
     ("chaves", "🔑", "chaves"),
     ("skills", "🧩", "skills"),
     ("mosaic", "▦", "mosaic"),
@@ -1428,6 +1437,119 @@ def _secao_skills(d: dict, skills: dict | None) -> str:
         "antes. Um botão aqui prometeria o que o sistema não entrega."
         "</small></div>")
     return "".join(partes)
+
+
+# ---------------------------------------------------------------------------
+# Conectores: uma ficha por ferramenta, com o estado MEDIDO do ambiente.
+# ---------------------------------------------------------------------------
+# (id, ícone, rótulo, sentido, o-que-faz, [(env, obrigatória?)], como-conectar)
+_CONECTORES: list = [
+    ("telegram", "✈", "Telegram", "entra e sai",
+     "lê o que chegou no seu bot e envia o briefing por ele",
+     [("NOMOS_TELEGRAM_TOKEN", True), ("NOMOS_TELEGRAM_API", False)],
+     ["fale com o @BotFather no Telegram e mande /newbot",
+      "copie o token que ele devolve (formato 123456:ABC-...)",
+      'exporte: export NOMOS_TELEGRAM_TOKEN="123456:ABC-..."',
+      "teste: nomos entrada telegram"]),
+    ("email-imap", "✉", "E-mail · entrada (IMAP)", "só entra",
+     "lê a sua caixa por IMAP, sem webhook público",
+     [("NOMOS_IMAP_HOST", True), ("NOMOS_IMAP_USER", True),
+      ("NOMOS_IMAP_PASSWORD", True), ("NOMOS_IMAP_PORT", False),
+      ("NOMOS_IMAP_MAILBOX", False)],
+     ["no provedor, gere uma SENHA DE APLICATIVO (nunca a senha da conta)",
+      "descubra o host IMAP do provedor (ex.: imap.gmail.com)",
+      "exporte HOST, USER e PASSWORD; PORT (993) e MAILBOX (INBOX) têm padrão",
+      "teste: nomos entrada email"]),
+    ("email-smtp", "📤", "E-mail · saída (SMTP)", "só sai",
+     "envia pelo SEU servidor SMTP — nada passa por terceiro",
+     [("NOMOS_SMTP_HOST", True), ("NOMOS_SMTP_FROM", True),
+      ("NOMOS_SMTP_USER", False), ("NOMOS_SMTP_PASSWORD", False),
+      ("NOMOS_SMTP_PORT", False)],
+     ["mesmo provedor do IMAP; porta 587 (STARTTLS) na maioria",
+      "exporte HOST e FROM; USER/PASSWORD só se o servidor exigir",
+      "NOMOS_SMTP_INSECURE existe para servidor LOCAL sem TLS — nunca na internet"]),
+    ("calendario", "📅", "Agenda (.ics local)", "só entra",
+     "lê um .ics que VOCÊ exportou — nenhuma conta, nenhuma nuvem",
+     [("NOMOS_ICS_PATH", True)],
+     ["exporte a agenda do seu app como arquivo .ics",
+      'exporte: export NOMOS_ICS_PATH="$HOME/Documents/agenda.ics"',
+      "teste: nomos entrada calendario"]),
+    ("slack", "#", "Slack", "só sai",
+     "publica via Incoming Webhook oficial",
+     [("NOMOS_SLACK_WEBHOOK", True)],
+     ["crie um Incoming Webhook no app do seu workspace",
+      'exporte: export NOMOS_SLACK_WEBHOOK="https://hooks.slack.com/services/..."']),
+    ("signal", "◈", "Signal", "só sai",
+     "usa o signal-cli LOCAL — a conta já autenticada na sua máquina",
+     [("NOMOS_SIGNAL_CLI", True), ("NOMOS_SIGNAL_NUMBER", True)],
+     ["instale e registre o signal-cli separadamente (ele guarda a sessão)",
+      "exporte o caminho do binário e o seu número em formato +55...",
+      "AUTENTICAÇÃO AUTOMÁTICA: não há token aqui — quem autentica é o signal-cli"]),
+    ("whatsapp-cloud", "◐", "WhatsApp Business", "só sai",
+     "Cloud API oficial da Meta — nunca o WhatsApp pessoal",
+     [("NOMOS_WHATSAPP_TOKEN", True), ("NOMOS_WHATSAPP_PHONE_ID", True),
+      ("NOMOS_WHATSAPP_API", False)],
+     ["crie um app no Meta for Developers e ative o produto WhatsApp",
+      "copie o token permanente e o Phone Number ID",
+      "exporte NOMOS_WHATSAPP_TOKEN e NOMOS_WHATSAPP_PHONE_ID"]),
+]
+
+
+def _secao_conectores(d: dict) -> str:
+    """Uma ficha por ferramenta: ícone, o que faz, estado MEDIDO e como ligar.
+
+    O estado não é adivinhado: cada variável é lida do ambiente deste processo.
+    E a página diz na cara a pegadinha que faria alguém perder uma tarde — o
+    serviço do launchd NÃO herda o que se exporta no terminal.
+    """
+    import os as _os
+
+    e = esc
+    partes = ['<h2 id="conectores">🔌 Conectores</h2>']
+    partes.append(
+        '<div class="card"><b>Como a credencial chega aqui</b>'
+        "<p><small>Todo conector lê a credencial de <b>variável de ambiente</b>, "
+        "nunca de arquivo — decisão de projeto: token em disco vaza em backup, "
+        "em sync e em log. Por isso <b>não existe campo de colar token nesta "
+        "página</b>: um formulário que gravasse no cofre não ligaria nada, e "
+        "prometer o contrário seria mentira.</small></p>"
+        "<p><small><b>Pegadinha que custa uma tarde:</b> o serviço do launchd "
+        "<b>não herda</b> o que você exporta no terminal. Exportar liga o "
+        "<code>nomos entrada</code> que você roda na mão; para o serviço "
+        "agendado enxergar, a variável tem de entrar no plist "
+        "(<code>EnvironmentVariables</code>) — e isso passa pelo gate A5."
+        "</small></p></div>")
+
+    cartoes = []
+    for cid, ico, rotulo, sentido, oque, envs, passos in _CONECTORES:
+        faltando = [v for v, obrig in envs if obrig and not _os.environ.get(v)]
+        presentes = [v for v, _o in envs if _os.environ.get(v)]
+        if not faltando:
+            chip = '<span class="chip ok">PRONTO</span>'
+        elif presentes:
+            chip = '<span class="chip warn">INCOMPLETO</span>'
+        else:
+            chip = '<span class="chip neutro">NÃO CONFIGURADO</span>'
+        linhas_env = "".join(
+            f"<li><code>{e(v)}</code>"
+            + ("" if obrig else " <small>(opcional)</small>")
+            + (" ✓" if _os.environ.get(v) else " —")
+            + "</li>"
+            for v, obrig in envs)
+        cartoes.append(
+            f'<div class="card conector" id="conector-{e(cid)}">'
+            f'<b><span aria-hidden="true">{ico}</span> {e(rotulo)}</b> {chip}'
+            f"<div><small>{e(sentido)} · {e(oque)}</small></div>"
+            f'<ul class="lista">{linhas_env}</ul>'
+            "<details><summary>como conectar</summary><ol class=\"lista\">"
+            + "".join(f"<li><small>{e(p)}</small></li>" for p in passos)
+            + "</ol></details></div>")
+    partes.append('<div class="grid-conectores">' + "".join(cartoes) + "</div>")
+    partes.append(
+        '<div class="card"><small>Nenhum conector age sozinho: ler é governado '
+        "(A0/A3) e enviar exige a sua aprovação a cada vez. Ver o que chegou: "
+        "<code>nomos entrada telegram|email|calendario</code>.</small></div>")
+    return "\n".join(partes)
 
 
 def _secao_chaves(d: dict, chaves: dict | None) -> str:
@@ -2176,6 +2298,7 @@ def render_html(d: dict, refresh: int | None = None,
     corpo.append(_aba("chat", False, aba_chat))
     corpo.append(_aba("cerebro", False, aba_cerebro))
     corpo.append(_aba("capacidades", False, aba_capac))
+    corpo.append(_aba("conectores", False, [_secao_conectores(d)]))
     corpo.append(_aba("chaves", False, [_secao_chaves(d, chaves)]))
     corpo.append(_aba("skills", False, [_secao_skills(d, skills)]))
     corpo.append(_aba("mosaic", False, _secao_mosaic()))

@@ -180,7 +180,8 @@ def test_busca_arquivos_por_nome_e_conteudo(tmp_path):
     (tmp_path / "foto.bin").write_bytes(b"\x00\x01")
     args = tmp_path / "args.json"
     args.write_text(json.dumps({"pasta": str(tmp_path), "termo": "contrato"}))
-    main = RAIZ / "examples" / "skills" / "busca-arquivos" / "main.py"
+    from nomos import skills_embutidas as _se
+    main = _se.achar("busca-arquivos") / "main.py"
     r = subprocess.run([sys.executable, str(main), str(args)],
                        capture_output=True, text=True, timeout=30)
     saida = json.loads(r.stdout.strip())
@@ -194,7 +195,8 @@ def test_busca_arquivos_por_nome_e_conteudo(tmp_path):
 def test_busca_arquivos_sem_termo_erro_honesto(tmp_path):
     args = tmp_path / "args.json"
     args.write_text(json.dumps({"pasta": str(tmp_path)}))
-    main = RAIZ / "examples" / "skills" / "busca-arquivos" / "main.py"
+    from nomos import skills_embutidas as _se
+    main = _se.achar("busca-arquivos") / "main.py"
     r = subprocess.run([sys.executable, str(main), str(args)],
                        capture_output=True, text=True, timeout=30)
     saida = json.loads(r.stdout.strip())

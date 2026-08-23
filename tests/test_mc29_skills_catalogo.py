@@ -14,7 +14,8 @@ from nomos.ext import skill_catalogo as scat
 from _cli_env import cli_env
 
 ROOT = Path(__file__).resolve().parent.parent
-EXEMPLO = ROOT / "examples" / "skills" / "busca-arquivos"
+from nomos import skills_embutidas as _se
+EXEMPLO = _se.achar("busca-arquivos")   # empacotada, não mais em examples/
 
 
 def _instalar_exemplo(home: Path, nome="busca-arquivos") -> Path:

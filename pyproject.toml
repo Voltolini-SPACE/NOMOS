@@ -68,6 +68,11 @@ ignore_missing_imports = true
 exclude = ["src/nomos/conectores/mcp/.*/servidor\\.py"]
 
 [tool.setuptools.package-data]
+# As skills base VIAJAM COM O WHEEL. Sem esta linha elas ficavam em
+# `examples/` — fora de `src/`, logo inalcançáveis por package-data — e o CLI
+# sugeria instalar de um caminho que só existe dentro do checkout. Mesmo
+# padrão de `nomos.conectores` logo abaixo, que já funciona.
+"nomos.skills_embutidas" = ["*/skill.json", "*/*.py", "*/*.md"]
 "nomos.agents" = ["oficiais/*.json"]
 "nomos.conectores" = ["mcp/_comum.py", "mcp/*/manifesto.json", "mcp/*/servidor.py", "mcp/*/README.md"]
 

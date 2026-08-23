@@ -78,7 +78,8 @@ def test_sem_evidencias_orienta_comando(nomos_home):
 # 4b. MC30-A4: catálogo de capacidades no painel + auto-refresh opt-in
 def test_painel_mostra_capacidades_do_catalogo(nomos_home):
     import shutil
-    exemplo = Path(__file__).resolve().parent.parent / "examples/skills/busca-arquivos"
+    from nomos import skills_embutidas as _se
+    exemplo = _se.achar("busca-arquivos")   # empacotada: vale em qualquer instalação
     destino = nomos_home / "skills" / "busca-arquivos"
     destino.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(exemplo, destino)

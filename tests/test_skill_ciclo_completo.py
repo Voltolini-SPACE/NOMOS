@@ -235,3 +235,24 @@ def test_sem_requires_comporta_como_antes(tmp_path, nomos_home):
     reg.instalar(src, nomos_home / "skills", engine, lambda d: True,
                  confirmar_experimental=lambda m: True, home=nomos_home)
     assert (nomos_home / "skills" / "sem-requires").exists()
+
+
+# ------------------------------------------------ origem que sempre existe
+def test_semear_do_pacote_funciona_fora_do_checkout(nomos_home, monkeypatch):
+    """O `--semear` sem PASTA usa as skills EMBUTIDAS no pacote.
+
+    Antes, o CLI sugeria `nomos skills instalar examples/skills/busca-arquivos`
+    — caminho que só existe dentro do checkout. Medido no pacote instalado do
+    dono: `(pacote)/examples` → False. Numa instalação normal não havia de onde
+    instalar nada: o "plug-and-play" não tinha origem.
+    """
+    from nomos import skills_embutidas as emb
+
+    embutido = emb.diretorio_embutido()
+    assert (embutido / "busca-arquivos" / "skill.json").is_file()
+
+    res = reg.semear_catalogo(nomos_home, embutido)
+
+    assert len(res["adicionadas"]) >= 4
+    nomes = {s["name"] for s in reg.catalogo(nomos_home)}
+    assert {"busca-arquivos", "lembrete", "organizador", "sistema-info"} <= nomes
