@@ -16,6 +16,7 @@ import os
 import shutil
 import time
 import urllib.request
+from pathlib import Path
 
 from nomos.kernel import config, localidade
 from nomos.cognition import embutido as _emb
@@ -196,8 +197,6 @@ def whisper_disponivel() -> tuple[str | None, str | None, str]:
     Por isso esta função devolve o MODELO junto: binário sem modelo não é motor
     pronto, é promessa. Dizer "pronto" ali seria trocar uma mentira por outra.
     """
-    import os
-
     bin_ = (shutil.which("whisper-cli") or shutil.which("whisper-cpp")
             or shutil.which("whisper"))
     if not bin_:
