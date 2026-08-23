@@ -78,11 +78,11 @@ def run_onboarding(ask=input, say=print, host_ollama: str = "http://127.0.0.1:11
     from nomos.simple.marca import banner
     say(banner())
     say(c("negrito", "  Bem-vindo(a) ao NOMOS — seu agente pessoal"))
-    say("Vamos deixar tudo pronto em 4 passinhos. Nada sai do seu computador")
-    say("sem a sua permissão — essa é a regra da casa.\n")
+    say("Vamos deixar tudo pronto em 5 passinhos. Você decide onde seus dados")
+    say("ficam — e nada sai daqui sem a sua permissão.\n")
 
     # 1) nome
-    say(c("negrito", "1/4 · Como seu agente vai se chamar?"))
+    say(c("negrito", "1/5 · Como seu agente vai se chamar?"))
     say(c("fraco", "   (2-32 letras/números, começando por letra — ex.: Atlas, Luna, Jarbas)"))
     while True:
         try:
@@ -94,7 +94,7 @@ def run_onboarding(ask=input, say=print, host_ollama: str = "http://127.0.0.1:11
 
     # 2) personalidade
     say("")
-    say(c("negrito", f"2/4 · Que jeito o(a) {nome} deve ter?"))
+    say(c("negrito", f"2/5 · Que jeito o(a) {nome} deve ter?"))
     for k, (_, desc) in PERSONALIDADES.items():
         say(f"   {k}) {desc}")
     escolha = ask("escolha [1]> ").strip() or "1"
@@ -102,7 +102,7 @@ def run_onboarding(ask=input, say=print, host_ollama: str = "http://127.0.0.1:11
 
     # 3) cérebro
     say("")
-    say(c("negrito", "3/4 · Procurando um cérebro local (Ollama)…"))
+    say(c("negrito", "3/5 · Procurando um cérebro local (Ollama)…"))
     modelos = listar_modelos(host_ollama)
     modelo = escolher_modelo(modelos)
     if modelo:
@@ -119,9 +119,31 @@ def run_onboarding(ask=input, say=print, host_ollama: str = "http://127.0.0.1:11
         say("   guardo suas anotações, mas não invento respostas de IA.")
         modo, modelo = "demo", None
 
-    # 4) senha-mestra (opcional)
+    # 4) localidade — DECISÃO da pessoa, não regra da casa
+    #
+    # Antes deste passo o cadeado simplesmente nascia LIGADO e o assunto nunca
+    # era levantado: na prática, uma regra imposta em silêncio. Agora é uma
+    # pergunta. Quem apertar Enter continua protegido (o default segue LIGADO,
+    # fail-closed a favor da privacidade) — a diferença é que passou a ser uma
+    # escolha declarada, e não uma imposição invisível.
     say("")
-    say(c("negrito", "4/4 · Cofre de chaves (opcional)"))
+    say(c("negrito", "4/5 · Onde seus dados podem ir?"))
+    say(c("fraco", "   1) só nesta máquina — nenhum dado sai daqui (recomendado)"))
+    say(c("fraco", "   2) posso usar a nuvem — cada saída ainda pede sua aprovação"))
+    escolha_local = ask("escolha [1]> ").strip() or "1"
+    so_local = escolha_local != "2"
+    from nomos.kernel import localidade as _loc
+    _loc.definir(config.nomos_home(), ligado=so_local)
+    if so_local:
+        say(c("verde", "   trancado nesta máquina. Muda quando quiser: nomos local off"))
+    else:
+        say(c("amarelo", "   nuvem liberada — mas o gate continua: toda saída para a"))
+        say(c("amarelo", "   internet pede aprovação explícita, uma a uma."))
+        say(c("fraco", "   Volta atrás quando quiser: nomos local on"))
+
+    # 5) senha-mestra (opcional)
+    say("")
+    say(c("negrito", "5/5 · Cofre de chaves (opcional)"))
     vault = Vault(config.nomos_home() / "vault.json")
     if vault.exists():
         # cofre pré-existente: NÃO pedir senha aqui — qualquer coisa digitada
@@ -160,7 +182,7 @@ def run_onboarding(ask=input, say=print, host_ollama: str = "http://127.0.0.1:11
 
     perfil = salvar_perfil({
         "personalidade": persona, "modelo": modelo, "modo_cerebro": modo,
-        "cofre": cofre, "onboarding_completo": True,
+        "cofre": cofre, "so_local": so_local, "onboarding_completo": True,
     })
 
     say("")

@@ -1008,8 +1008,9 @@ def cmd_local(ctx, args) -> int:
         ligado = localidade.esta_ligado(home)
         if ligado:
             print("Modo só-local: LIGADO 🔒")
-            print("Tudo roda na sua máquina. Nenhuma informação sai para a "
-                  "internet. Motores de nuvem estão desplugados.")
+            print("Sua escolha: tudo roda nesta máquina. Nenhuma informação sai "
+                  "para a internet; motores de nuvem estão desplugados.")
+            print("Trocar é decisão sua, a qualquer momento: nomos local off")
         else:
             print("Modo só-local: DESLIGADO 🔌")
             print("Você plugou motores externos. Saídas para a internet ainda "

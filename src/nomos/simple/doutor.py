@@ -56,8 +56,8 @@ def diagnostico(home=None) -> list[dict]:
 
     so_local = localidade.esta_ligado(home)
     itens.append(_linha(True, "Modo só-local " + ("LIGADO 🔒" if so_local else "DESLIGADO 🔌"),
-                        "tudo fica na sua máquina" if so_local
-                        else "você plugou motores externos; cada uso pede permissão"))
+                        "sua escolha: tudo fica na sua máquina" if so_local
+                        else "sua escolha: nuvem liberada; cada uso pede permissão"))
 
     if home.joinpath("vault.json").exists():
         n = len(_nomes_seguro())
@@ -175,8 +175,8 @@ def diagnostico_v011(home=None, ctx: dict | None = None) -> list[dict]:
     # localidade
     so_local = localidade.esta_ligado(home)
     itens.append(_item(True, "Modo só-local " + ("LIGADO 🔒" if so_local else "DESLIGADO 🔌"),
-                       "tudo fica na sua máquina" if so_local
-                       else "motores externos plugados; cada uso pede permissão"))
+                       "sua escolha: tudo fica na sua máquina" if so_local
+                       else "sua escolha: nuvem liberada; cada uso pede permissão"))
 
     # cofre
     cofre = home.joinpath("vault.json").exists()

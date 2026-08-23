@@ -1,10 +1,11 @@
 """NOMOS kernel.localidade — o cadeado que mantém o sistema 100% local.
 
-Princípio: o NOMOS roda inteiramente na máquina do usuário. A nuvem e
-qualquer serviço externo são MOTORES OPCIONAIS que só funcionam se o usuário
-'desplugar o cadeado' de propósito.
+Princípio: QUEM DECIDE onde os dados vão é a pessoa, não o produto. O NOMOS
+roda inteiramente na máquina por padrão, e a nuvem é um motor opcional — mas
+isso é uma ESCOLHA declarada no onboarding (passo 4/5), não uma regra imposta.
+Trocar de ideia é sempre possível, nos dois sentidos, e fica na auditoria.
 
-Modo só-local (padrão LIGADO):
+Modo só-local (padrão LIGADO para quem não escolheu):
 - toda tentativa de egress para um alvo NÃO-loopback é NEGADA já na política
   (efeito DENY), antes mesmo do gate de aprovação — não há como sair;
 - alvos loopback (127.0.0.1, ::1, localhost) continuam livres: são os motores
