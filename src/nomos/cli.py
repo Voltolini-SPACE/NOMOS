@@ -267,40 +267,74 @@ def cmd_capacidades(ctx, args) -> int:
 
 
 def cmd_panic(ctx, args) -> int:
-    # Fase 0 (higiene pós-validação): o botão de pânico só revogava
-    # consentimento de dispositivo — mais estreito do que "corta tudo"
-    # sugere. Agora também nega toda aprovação pendente (ninguém consegue
-    # aprovar depois do pânico algo que foi solicitado antes) e trava a
-    # localidade de volta a LIGADO (egress volta a ser bloqueado mesmo que
-    # você tivesse destravado antes). Continua sem gate/aprovação — pânico
-    # tem que ser instantâneo, sem fricção.
-    from nomos.kernel import pausa
-    ctx["consent"].panic()
-    # Concessões de REGISTRO também caem: pânico que deixa autorização durável
-    # de pé não é pânico. (Ver kernel/concessoes.py.)
+    """Corta tudo. Cada passo é INDEPENDENTE — um que falhe não cala os outros.
+
+    Antes isto era uma sequência linear sem tratamento: com o disco cheio (ou
+    `~` só-leitura), o 2º passo estourava e os três seguintes — negar
+    aprovações pendentes, travar a localidade, pausar a autonomia — nunca
+    rodavam. Pior, o handler genérico da CLI imprimia
+    "Algo deu errado do meu lado, mas nada foi perdido", tranquilizando o dono
+    no exato momento em que ele precisava saber que o pânico NÃO cortou nada.
+    E a trilha `panic.executado` não era gravada.
+
+    Agora: tenta TODOS, acumula as falhas, audita sempre (com o que falhou) e
+    diz na cara o que não deu. Ordem por criticidade — primeiro o que impede o
+    sistema de AGIR, depois o que revoga autoridade guardada. Continua sem
+    gate: pânico tem de ser instantâneo.
+    """
     from pathlib import Path as _Path
 
+    from nomos.kernel import pausa
     from nomos.kernel.concessoes import RegistroConcessoes
-    RegistroConcessoes(_Path(ctx["home"]) / "concessoes.json",
-                       audit=ctx["audit"]).panic()
-    negadas = _queue(ctx).deny_all()
-    localidade.definir(ctx["home"], True)
-    # NH-026: pânico também PAUSA a autonomia agendada (ticker + rotinas).
-    # `nomos retomar` religa SÓ o agendador — não desfaz o resto do pânico.
-    pausa.pausar(ctx["home"], motivo="panic", origem="panic")
-    ctx["audit"].append(
-        "panic.executado",
-        efeito="consentimentos revogados; aprovações pendentes negadas; "
-               "localidade travada; autonomia pausada",
-        aprovacoes_negadas=negadas,
-        pausa_ativada=True,
-    )
-    print(
-        "PÂNICO: microfone, câmera e tela revogados; "
-        f"{negadas} aprovação(ões) pendente(s) negada(s); modo só-local "
-        "travado; autonomia agendada PAUSADA."
-    )
-    return EXIT_OK
+
+    negadas = 0
+
+    def _negar_aprovacoes():
+        nonlocal negadas
+        negadas = _queue(ctx).deny_all()
+
+    passos = [
+        ("autonomia agendada pausada",
+         lambda: pausa.pausar(ctx["home"], motivo="panic", origem="panic")),
+        ("aprovações pendentes negadas", _negar_aprovacoes),
+        ("modo só-local travado", lambda: localidade.definir(ctx["home"], True)),
+        ("microfone/câmera/tela revogados", lambda: ctx["consent"].panic()),
+        ("concessões de registro revogadas",
+         lambda: RegistroConcessoes(_Path(ctx["home"]) / "concessoes.json",
+                                    audit=ctx["audit"]).panic()),
+    ]
+
+    feitos: list[str] = []
+    falhas: list[str] = []
+    for rotulo, acao in passos:
+        try:
+            acao()
+            feitos.append(rotulo)
+        except Exception as exc:            # nenhum passo derruba os demais
+            falhas.append(f"{rotulo} ({type(exc).__name__})")
+
+    # A trilha é gravada SEMPRE, inclusive quando houve falha — um pânico
+    # parcial é exatamente o evento que precisa ficar registrado. Se nem o
+    # audit responder, ainda assim reportamos ao dono.
+    try:
+        ctx["audit"].append(
+            "panic.executado",
+            efeito="; ".join(feitos) or "nenhum passo concluído",
+            falhou="; ".join(falhas),
+            aprovacoes_negadas=negadas,
+            completo=not falhas,
+        )
+    except Exception as exc:
+        falhas.append(f"trilha de auditoria ({type(exc).__name__})")
+
+    if not falhas:
+        print(f"PÂNICO: {'; '.join(feitos)}.")
+        return EXIT_OK
+    print(f"PÂNICO PARCIAL — feito: {'; '.join(feitos) or 'nada'}.")
+    print(f"NÃO FOI POSSÍVEL: {'; '.join(falhas)}.")
+    print("Trate como NÃO cortado o que está acima e resolva a causa "
+          "(disco cheio? permissão?) antes de confiar no estado.")
+    return EXIT_ERROR
 
 
 def cmd_pausar(ctx, args) -> int:
