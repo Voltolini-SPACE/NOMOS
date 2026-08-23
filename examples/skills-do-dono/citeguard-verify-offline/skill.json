@@ -21,7 +21,9 @@
   "local_only_capable": true,
   "cloud_required": false,
   "compatible_nomos_version": ">=0.11",
-  "files": {},
+  "files": {
+    "verify_offline.py": "b38b353290a4eb652ef260b86d507295f019470de9f8bb23b9de0caf9d3c326c"
+  },
   "requires": [
     {
       "tipo": "binario",
