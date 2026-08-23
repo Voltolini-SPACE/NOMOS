@@ -32,7 +32,7 @@
       "obrigatorio": true
     },
     {
-      "tipo": "chave",
+      "tipo": "credencial_externa",
       "nome": "linkedin_login",
       "obrigatorio": true,
       "descricao": "estado de login do scraper LinkedIn"

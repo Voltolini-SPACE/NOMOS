@@ -27,13 +27,13 @@
       "obrigatorio": true
     },
     {
-      "tipo": "chave",
+      "tipo": "credencial_externa",
       "nome": "twitter_auth_token",
       "obrigatorio": true,
       "descricao": "cookie de autenticacao do Twitter/X"
     },
     {
-      "tipo": "chave",
+      "tipo": "credencial_externa",
       "nome": "twitter_ct0",
       "obrigatorio": true,
       "descricao": "cookie CSRF do Twitter/X"

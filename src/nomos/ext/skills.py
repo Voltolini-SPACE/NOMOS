@@ -78,8 +78,16 @@ def load_manifest(src: Path) -> dict:
             raise SkillError(f"permissão desconhecida no manifesto: {perm}")
     # Anti path-traversal: entry e toda chave de files têm de ser caminhos
     # relativos seguros dentro da skill (nada de '..', absoluto ou drive).
-    if not isinstance(mf["files"], dict) or not mf["files"]:
+    if not isinstance(mf["files"], dict):
         raise SkillError("manifesto inválido: 'files' deve mapear arquivo->sha256")
+    if not mf["files"]:
+        # `files: {}` não é malformação — é skill cujo código ainda não foi
+        # publicado (manifesto convertido antes do script). A mensagem antiga
+        # ("deve mapear arquivo->sha256") fazia estado de PREPARO parecer
+        # DEFEITO, e quem lia ia caçar bug onde havia trabalho por terminar.
+        raise SkillError(
+            "skill em preparação: o manifesto ainda não publica arquivo nenhum "
+            "('files' vazio) — sem código com checksum não há o que instalar")
     for rel in list(mf["files"].keys()) + [entry_efetivo]:
         if not _rel_segura(rel):
             raise SkillError(f"caminho inseguro no manifesto (traversal/absoluto): {rel!r}")

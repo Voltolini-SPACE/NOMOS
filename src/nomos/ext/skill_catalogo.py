@@ -113,7 +113,12 @@ def capacidades(home: Path, skills_dir: Path, *,
             nome = str(mf.get("name", "?"))
             if nome in vistos:
                 continue
-            itens.append(_capacidade(mf, "vem no NOMOS"))
+            # `files` vazio = o código ainda não foi publicado. Mostrar como
+            # instalável seria mentira que só estoura na instalação; esconder
+            # seria pior. O estado aparece COMO É.
+            status = ("vem no NOMOS · em preparação (sem código publicado)"
+                      if not mf.get("files") else "vem no NOMOS")
+            itens.append(_capacidade(mf, status))
             vistos.add(nome)
     itens.sort(key=lambda c: (c["status"] != "instalada", c["nome"]))
     return itens

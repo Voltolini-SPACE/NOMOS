@@ -347,7 +347,11 @@ def test_home_vazia_ve_as_do_pacote_sem_registrar(nomos_home):
                             incluir_do_pacote=True)
 
     assert caps, "home nova deveria enxergar as skills do pacote"
-    assert all(c["status"] == "vem no NOMOS" for c in caps)
+    assert all(c["status"].startswith("vem no NOMOS") for c in caps)
+    # e as duas variantes existem: prontas E em preparação — nenhuma escondida
+    estados = {c["status"] for c in caps}
+    assert "vem no NOMOS" in estados
+    assert any("em preparação" in e for e in estados)
     assert not (nomos_home / "registry" / "catalogo.json").exists(), \
         "listar não pode escrever no registro"
     assert reg.catalogo(nomos_home) == []

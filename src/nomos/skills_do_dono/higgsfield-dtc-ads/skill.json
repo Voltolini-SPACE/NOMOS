@@ -28,7 +28,7 @@
       "obrigatorio": true
     },
     {
-      "tipo": "chave",
+      "tipo": "credencial_externa",
       "nome": "higgsfield_login",
       "obrigatorio": true,
       "descricao": "login da conta Higgsfield; hoje 'Not authenticated'"

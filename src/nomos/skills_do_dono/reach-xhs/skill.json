@@ -27,7 +27,7 @@
       "obrigatorio": true
     },
     {
-      "tipo": "chave",
+      "tipo": "credencial_externa",
       "nome": "sessao_chrome_xhs",
       "obrigatorio": true,
       "descricao": "sessao logada no Chrome — NAO e chave de cofre"
