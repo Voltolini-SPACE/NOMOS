@@ -49,7 +49,7 @@ sem nada disso, usa os padrões. Parâmetros aceitos:
     limite            int 1..50, padrão 10
     minimo_respostas  int >= 0, padrão 0 — filtra por contagem de respostas
     timeout           int 1..120 segundos, padrão 20
-    transporte        "auto" (padrão) | "urllib" | "curl"
+    transporte        "auto" (padrão) | "urllib"
 
 Saída
 -----
@@ -66,7 +66,6 @@ import json
 import os
 import select
 import shutil
-import subprocess  # nosec B404 - curl é o fallback de rede declarado no manifesto
 import sys
 import urllib.error
 import urllib.request
@@ -187,7 +186,7 @@ def normalizar(params: dict) -> dict:
 
     transporte = params.get("transporte", "auto")
     if not isinstance(transporte, str) or \
-            transporte.strip().lower() not in ("auto", "urllib", "curl"):
+            transporte.strip().lower() not in ("auto", "urllib"):
         raise ErroDeUso(
             f"transporte desconhecido: {transporte!r} (use auto, urllib ou curl)")
 
@@ -222,48 +221,23 @@ def buscar_urllib(url: str, timeout: int) -> bytes:
         return resp.read(LIMITE_CORPO + 1)
 
 
-def buscar_curl(url: str, timeout: int) -> bytes:
-    exe = shutil.which("curl") or ("/usr/bin/curl"
-                                   if os.path.exists("/usr/bin/curl") else None)
-    if not exe:
-        raise ErroDeTransporte(
-            "curl ausente no PATH — o manifesto o declara obrigatorio")
-    # `-w` cola o código HTTP na ÚLTIMA linha do stdout. É isso ou arquivo
-    # temporário; dentro da cerca do NOMOS só o workdir é gravável e /tmp não
-    # é, então escrever em disco falharia de forma dependente do ambiente.
-    # Sem `-L`: mesmo motivo do _SemRedirect acima.
-    argv = [exe, "-sS", "--proto", "=https", "--max-time", str(timeout),
-            "-H", f"User-Agent: {UA}", "-H", "Accept: application/json",
-            "-w", "\n%{http_code}", url]
-    try:
-        proc = subprocess.run(  # nosec B603 - argv fixo, sem shell, url constante
-            argv, capture_output=True, timeout=timeout + 5)
-    except subprocess.TimeoutExpired as e:
-        raise ErroDeTransporte(f"curl estourou {timeout + 5}s") from e
-    except OSError as e:
-        raise ErroDeTransporte(f"nao foi possivel executar curl: {e}") from e
-    if proc.returncode != 0:
-        detalhe = proc.stderr.decode("utf-8", "replace").strip()[:400]
-        raise ErroDeTransporte(f"curl rc={proc.returncode}: {detalhe or 'sem stderr'}")
-    corpo, _, codigo = proc.stdout.rpartition(b"\n")
-    codigo_txt = codigo.decode("ascii", "replace").strip()
-    if codigo_txt != "200":
-        raise ErroDeTransporte(f"HTTP {codigo_txt or '?'} em {url}")
-    return corpo
-
-
 def buscar(cfg: dict) -> tuple[bytes, str, list[dict]]:
     """Devolve (corpo, transporte_usado, tentativas). Cada tentativa registra o
     motivo da falha — silêncio aqui esconderia POR QUE o caminho preferido caiu."""
-    if cfg["transporte"] == "auto":
-        ordem = ["urllib", "curl"]
-    else:
-        ordem = [cfg["transporte"]]
+    # Transporte UNICO: urllib. O fallback por `curl` foi removido em 23/08 —
+    # era `subprocess.run`, ou seja execucao de processo, e o manifesto declara
+    # apenas A1_WRITE_LOCAL + A2_NET_EGRESS. O contrato do registro e explicito:
+    # permissao nao declarada nao executa. As saidas eram declarar
+    # A5_CODE_EXEC por um fallback dispensavel, ou tirar o fallback. Medido
+    # nesta maquina: urllib puro devolve HTTP 200 e os 10 topicos, entao o curl
+    # nao era necessario — inflar permissao por conveniencia seria o pior dos
+    # dois. Falha de TLS agora e reportada (rc=3), nao contornada por processo.
+    ordem = ["urllib"] if cfg["transporte"] in ("auto", "urllib") else [cfg["transporte"]]
 
     tentativas: list[dict] = []
     for nome in ordem:
         try:
-            corpo = (buscar_urllib if nome == "urllib" else buscar_curl)(
+            corpo = buscar_urllib(
                 cfg["url"], cfg["timeout"])
             if len(corpo) > LIMITE_CORPO:
                 raise ErroDeTransporte(f"corpo acima de {LIMITE_CORPO} bytes")

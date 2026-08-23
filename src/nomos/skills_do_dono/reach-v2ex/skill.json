@@ -22,11 +22,11 @@
   "requires": [
     {
       "tipo": "binario",
-      "nome": "curl",
+      "nome": "python3",
       "obrigatorio": true
     }
   ],
   "files": {
-    "reach_v2ex.py": "81fdf5f8449cdb0b50bdbfbadc2fa0d9fdfe859ff06b384afaa6617765686228"
+    "reach_v2ex.py": "7688c3b2a9a694278286cba33240e0c50e82b12e5109a78a73ad081dd3ea5d76"
   }
 }
