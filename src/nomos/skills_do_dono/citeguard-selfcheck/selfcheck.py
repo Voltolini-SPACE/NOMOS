@@ -45,7 +45,7 @@ from urllib.parse import urlparse
 # exatamente o tipo de teste que não detecta regressão nenhuma.
 # ---------------------------------------------------------------------------
 SHA256_IRMA_CALIBRADO = \
-    "b38b353290a4eb652ef260b86d507295f019470de9f8bb23b9de0caf9d3c326c"
+    "751a404e0b55bb75c292e1dec21e60b68584fb45822873193dc4041e6d3ab7bd"
 NOME_IRMA = "citeguard-verify-offline"
 ARQUIVO_IRMA = "verify_offline.py"
 
@@ -84,7 +84,13 @@ def verificar(texto: str) -> dict:
             falha("arxiv", m.group(0), f"mês inválido no id: {mm}")
     for m in URL.finditer(texto):
         u = m.group(0)
-        host = (urlparse(u).hostname or "").lower()
+        # espelha o conserto de 23/08 no verificador vivo: URL que nao da para
+        # interpretar e um ACHADO, nao um crash que derruba o gate inteiro.
+        try:
+            host = (urlparse(u).hostname or "").lower()
+        except ValueError:
+            falha("url", u, "URL malformada — não foi possível interpretar o host")
+            continue
         if any(p.lower() in u.lower() for p in PLACEHOLDER):
             falha("url", u, "placeholder, não é fonte real")
         elif host and _host_privado(host):
@@ -262,10 +268,10 @@ CASOS: list[dict] = [
      "esperado": _mau(1, ["url"], [0, 0, 1]),
      "defeito": ("a checagem e `p.lower() in u.lower()`, sem fronteira de palavra: "
                  "'todos', 'metodo', 'fixmesh' e afins caem como placeholder.")},
-    {"id": "X03", "grupo": "defeito",
-     "desc": "CRASH: URL com IPv6 entre colchetes levanta ValueError nao tratado",
+    {"id": "X03", "grupo": "controle",
+     "desc": "CORRIGIDO 23/08: IPv6 malformado vira falha declarada, nao crash",
      "texto": "http://[::1]:9000/paper",
-     "esperado": {"veredito": "EXCECAO", "excecao": "ValueError"},
+     "esperado": {"veredito": "FAIL", "n_falhas": 1, "tipos": ["url"]},
      "defeito": ("a regex de URL exclui ']', entao casa 'http://[::1' truncado; "
                  "urlparse recusa IPv6 sem fechar colchete e o ValueError sobe ate "
                  "o topo — o verificador MORRE em vez de reprovar a citacao. Um "
@@ -415,6 +421,16 @@ def main(argv: list[str]) -> int:
     elif paridade["estado"] == "DIVERGENTE":
         veredito, rc = "FAIL", 2
         motivo = "todos os casos passaram, mas o verificador mudou: harness obsoleto"
+    elif paridade["estado"] == "INACESSIVEL":
+        # Auditoria adversarial 23/08: INACESSIVEL saia com o MESMO rc do sucesso
+        # pleno. E o estado ESPERADO sob a cerca do sandbox (deny fora do
+        # workdir), entao em execucao governada a skill publicaria "46/46 PASS"
+        # com a premissa inteira nao verificada. Os casos passaram de verdade —
+        # por isso nao e FAIL — mas quem le o rc precisa saber que a paridade
+        # com o original NAO foi conferida.
+        veredito, rc = "PASS_SEM_PARIDADE", 4
+        motivo = ("casos identicos ao congelado, porem NAO foi possivel conferir "
+                  "se o porte ainda corresponde ao verificador original")
     else:
         veredito, rc = "PASS", 0
         motivo = "comportamento identico ao congelado"

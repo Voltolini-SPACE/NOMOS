@@ -5,7 +5,8 @@
   "entry": "reach_v2ex.py",
   "permissions": [
     "A1_WRITE_LOCAL",
-    "A2_NET_EGRESS"
+    "A2_NET_EGRESS",
+    "A5_CODE_EXEC"
   ],
   "modalities": [
     "texto",

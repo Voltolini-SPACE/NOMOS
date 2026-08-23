@@ -806,6 +806,10 @@ def executar(argumentos: dict) -> dict:
             # escrever arquivo, nao autoriza inventar layout no disco do dono
             problemas.append("nao gravei o relatorio: a pasta %s nao existe" % alvo.parent)
             saida["saida_escrita"] = False
+            # Auditoria adversarial 23/08: o entregavel PEDIDO nao existe e o
+            # processo dizia sucesso total. Quem chama testa `ok` e rc — os dois
+            # mentiam. Escrita pedida que falha derruba o veredito.
+            saida["ok"] = False
         else:
             try:
                 alvo.write_text(json.dumps(saida, ensure_ascii=False, indent=2),
@@ -815,6 +819,7 @@ def executar(argumentos: dict) -> dict:
             except OSError as e:
                 problemas.append("falha ao gravar relatorio em %s: %s" % (alvo, e))
                 saida["saida_escrita"] = False
+                saida["ok"] = False   # idem: escrita pedida que falha nao e sucesso
     return saida
 
 
