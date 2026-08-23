@@ -128,7 +128,81 @@ _PERFIL_COM_REDE = """(version 1)
 """
 
 
-def _perfil_seatbelt(workdir: str) -> str:
+# PATH de busca do interpretador. `/opt/homebrew/bin` é onde mora TUDO num Mac
+# Apple Silicon, e ficava de fora: dentro da cerca `command -v python3` caía em
+# `/usr/bin/python3`, que é SHIM DO XCRUN — a mesma família de landmine que já
+# custou a CI em 21/08 (`/usr/bin/git` shim, rc=71).
+_PATH_BUSCA = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+
+_PREFIXOS_LARGOS = frozenset({
+    "/", "/usr", "/opt", "/var", "/private", "/tmp", "/etc", "/bin", "/sbin",
+    "/Users", "/home", "/Applications", "/Library", "/System",
+})
+"""Prefixos que NUNCA podem virar `(subpath …)`: liberá-los é liberar o disco.
+`/bin/sh` cai em "/" pela regra de dois níveis acima — e foi assim que uma
+versão minha reabriu o home por acidente."""
+
+
+def _regras_do_interpretador(argv: list[str]) -> tuple[list[str], list[str]]:
+    """Resolve argv[0] e devolve (argv com caminho absoluto, regras do perfil).
+
+    Sem isto, NENHUMA skill Python executava — medido em 23/08, depois que a
+    cerca entrou:
+        python3 <skill>                    → xcode-select: unable to read data link
+        /opt/homebrew/bin/python3.11 <s>   → realpath: /opt/homebrew/bin/: Operation not permitted
+        <venv>/bin/python3.14 <skill>      → execvp(): denegado
+    A cerca estava fazendo o trabalho dela e fechou junto o caminho legítimo:
+    uma skill instalava, aparecia instalada e morria no uso.
+
+    A liberação é do PREFIXO DO INTERPRETADOR RESOLVIDO, não de um diretório
+    genérico: quem roda `/opt/homebrew/bin/python3.11` ganha `/opt/homebrew`;
+    quem roda o python do venv ganha o venv. O home do dono e `~/.nomos`
+    continuam fora — foi o buraco que esta cerca veio fechar.
+    """
+    if not argv:
+        return argv, []
+    exe = argv[0]
+    if not os.path.isabs(exe):
+        achado = shutil.which(exe, path=_PATH_BUSCA)
+        if achado:
+            exe = achado
+    real = os.path.realpath(exe)
+    if not os.path.exists(real):
+        return argv, []
+    prefixo = os.path.dirname(os.path.dirname(real)) or "/"
+    # O BINÁRIO EXATO sempre; o PREFIXO só quando for específico o bastante.
+    # Sem esta guarda, `/bin/sh` produzia prefixo "/" e a regra liberava o DISCO
+    # INTEIRO — medido: `ls ~` voltou a listar o home do dono, desfazendo em
+    # silêncio a cerca que este módulo existe para manter. Foi um teste antigo
+    # que pegou; por isso ele não pode ser afrouxado quando "atrapalhar".
+    regras = [f'(allow file-read* process-exec (literal "{real}"))']
+    if prefixo not in _PREFIXOS_LARGOS and prefixo.count("/") >= 3:
+        regras.append(f'(allow file-read* process-exec (subpath "{prefixo}"))')
+    # `realpath()` percorre cada componente do caminho: sem metadata nos
+    # ancestrais o interpretador não consegue nem se localizar. Mesma lição que
+    # `/var` e `/etc` impuseram ao perfil do supervisor.
+    p = os.path.dirname(prefixo)
+    while p and p != "/":
+        regras.append(f'(allow file-read-metadata (literal "{p}"))')
+        p = os.path.dirname(p)
+
+    # O SCRIPT que o interpretador vai rodar mora fora do workdir (a skill
+    # instalada fica em NOMOS_HOME/skills/<nome>/). Sem isto o Python arranca e
+    # morre em "can't open file … Operation not permitted" — medido.
+    # LEITURA apenas, e só do diretório da entrada: a skill lê os próprios
+    # arquivos e importa os próprios módulos, mas não ESCREVE onde foi
+    # instalada, e o resto do disco continua fora. Quem escolhe esse caminho é
+    # o executor (código do NOMOS), nunca o código confinado.
+    for arg in argv[1:]:
+        if isinstance(arg, str) and os.path.isfile(arg):
+            pasta = os.path.realpath(os.path.dirname(arg))
+            if '"' not in pasta and "\\" not in pasta:
+                regras.append(f'(allow file-read* (subpath "{pasta}"))')
+            break
+    return [real, *argv[1:]], regras
+
+
+def _perfil_seatbelt(workdir: str, extras: list[str] | None = None) -> str:
     """O perfil com o workdir embutido — única área gravável.
 
     O caminho vai para dentro de aspas no perfil. Aspa, barra invertida ou
@@ -140,7 +214,10 @@ def _perfil_seatbelt(workdir: str) -> str:
     if any(c in real for c in ('"', "\\", "\n", "\r")):
         raise IsolationUnavailable(
             f"caminho com caractere que quebraria o perfil do sandbox: {real!r}")
-    return _PERFIL_COM_REDE.replace("{workdir}", real)
+    perfil = _PERFIL_COM_REDE.replace("{workdir}", real)
+    if extras:
+        perfil += "\n".join(extras) + "\n"
+    return perfil
 
 
 def _confinamento_macos(argv: list[str], workdir: str) -> tuple[list[str], bool]:
@@ -155,7 +232,8 @@ def _confinamento_macos(argv: list[str], workdir: str) -> tuple[list[str], bool]
     sbx = shutil.which("sandbox-exec") or plataforma.SANDBOX_EXEC
     if not os.path.exists(sbx):
         return argv, False
-    return [sbx, "-p", _perfil_seatbelt(workdir), *argv], True
+    argv, extras = _regras_do_interpretador(argv)
+    return [sbx, "-p", _perfil_seatbelt(workdir, extras), *argv], True
 
 
 def run(
@@ -189,7 +267,7 @@ def run(
         argv = [unshare, "-rn", "--", *argv]
         isolated = True
 
-    env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8", "HOME": "/tmp"}  # nosec B108 - HOME efêmero dentro do processo isolado
+    env = {"PATH": _PATH_BUSCA, "LANG": "C.UTF-8", "HOME": "/tmp"}  # nosec B108 - HOME efêmero dentro do processo isolado
     cwd = workdir or tempfile.mkdtemp(prefix="nomos-sbx-")
 
     # Ramo COM rede: até 23/08 não tinha cerca de sistema de arquivos NENHUMA —

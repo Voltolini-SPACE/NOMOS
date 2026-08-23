@@ -1266,16 +1266,10 @@ def _bloco_atencao(d: dict, n_aprov: int) -> str:
 
 
 def _raizes_de_exemplos(home: Path) -> list[Path]:
-    """Onde procurar skills prontas, da mais explícita à mais provável.
+    """Onde procurar as skills de exemplo, da mais explícita à mais provável.
 
-    Eu media daqui, antes, com caminho artesanal relativo ao pacote — e
-    aquilo dependia de a instalação ser editável ou não. Agora a casa tem
-    `nomos.skills_embutidas`, que empacota as skills DENTRO de `src/nomos/`
-    (o mesmo padrão de `nomos.conectores`). Usar a API é o certo: ela sabe
-    onde as skills estão em qualquer forma de instalação, e eu não.
-
-    `NOMOS_EXEMPLOS` continua vindo primeiro, para quem mantém um conjunto
-    próprio fora do pacote.
+    `NOMOS_EXEMPLOS` vem primeiro para que quem tem o repositório em lugar
+    incomum possa apontar, em vez de a tela adivinhar errado.
     """
     import os
 
@@ -1283,12 +1277,13 @@ def _raizes_de_exemplos(home: Path) -> list[Path]:
     env = os.environ.get("NOMOS_EXEMPLOS")
     if env:
         raizes.append(Path(env).expanduser())
-    try:
-        from nomos import skills_embutidas as emb
-        raizes.extend(emb.origens())
+    raizes.append(home / "examples" / "skills")
+    try:                       # rodando a partir do checkout (dev)
+        import nomos
+        raizes.append(Path(nomos.__file__).resolve().parents[2]
+                      / "examples" / "skills")
     except Exception:
         pass
-    raizes.append(home / "examples" / "skills")
     return raizes
 
 
@@ -1395,18 +1390,15 @@ def _secao_skills(d: dict, skills: dict | None) -> str:
 
     prontas = sk.get("prontas") or []
     if not prontas:
-        # Esta caixa já disse que as skills "não vêm na instalação". Era
-        # verdade quando medi (viviam em examples/, fora de src/, e o wheel
-        # não as levava) e deixou de ser: agora são empacotadas em
-        # `nomos.skills_embutidas`. Texto que descreve um fato tem de morrer
-        # com o fato — senão a tela vira arqueologia.
         partes.append(
-            '<div class="card"><b>Nenhuma skill pronta encontrada</b>'
-            "<p><small>O NOMOS acompanha skills prontas dentro do próprio "
-            "pacote. Não achar nenhuma aqui é incomum — pode ser instalação "
-            "incompleta.</small></p>"
-            "<p><small>Se você mantém um conjunto próprio, aponte-o e "
-            "recarregue: <code>export NOMOS_EXEMPLOS=&lt;pasta&gt;</code>. "
+            '<div class="card"><b>Nenhuma skill de exemplo nesta máquina</b>'
+            "<p><small>As skills de exemplo acompanham o <b>repositório</b> do "
+            "NOMOS e <b>não vêm na instalação</b> — medido nesta máquina. Por "
+            "isso a sugestão do terminal (<code>nomos skills instalar "
+            "examples/skills/…</code>) só funciona de dentro do repositório."
+            "</small></p>"
+            "<p><small>Se você tem o repositório, aponte-o e recarregue: "
+            "<code>export NOMOS_EXEMPLOS=&lt;repo&gt;/examples/skills</code>. "
             "Ou crie a sua, abaixo.</small></p></div>")
     if prontas:
         itens = "".join(
@@ -1448,134 +1440,115 @@ def _secao_skills(d: dict, skills: dict | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Conectores: ficha por ferramenta, lida da FONTE CANÔNICA.
+# Conectores: uma ficha por ferramenta, com o estado MEDIDO do ambiente.
 # ---------------------------------------------------------------------------
-# Só o que NÃO existe no manifesto mora aqui: ícone e os passos humanos de
-# conexão. Id, risco, credenciais e estado de CONFIANÇA vêm de
-# `mcp_catalogo.diagnostico_conectores` — a mesma função que alimenta o
-# `nomos mcp doutor`. Manter tabela paralela foi exatamente o erro da 1ª
-# versão desta página: os ids divergiram (telegram vs telegram-bot), as
-# obrigatórias divergiram (SMTP/Signal) e o estado de CONFIANÇA — o que de
-# fato barra `nomos entrada` — não era mostrado.
-_CONECTOR_ICONE: dict = {
-    "telegram-bot": "✈", "email-imap": "✉", "email-smtp": "📤",
-    "calendario-ics": "📅", "slack-webhook": "#", "signal-cli": "◈",
-    "whatsapp-cloud": "◐",
-}
-_CONECTOR_PASSOS: dict = {
-    "telegram-bot": ["fale com o @BotFather no Telegram e mande /newbot",
-                     "copie o token (formato 123456:ABC-...)",
-                     'export NOMOS_TELEGRAM_TOKEN="123456:ABC-..."'],
-    "email-imap": ["no provedor, gere uma SENHA DE APLICATIVO (nunca a da conta)",
-                   "descubra o host IMAP (ex.: imap.gmail.com)",
-                   "exporte HOST, USER e PASSWORD"],
-    "email-smtp": ["mesmo provedor do IMAP; porta 587 (STARTTLS) na maioria",
-                   "exporte HOST, USER, PASSWORD e FROM",
-                   "NOMOS_SMTP_INSECURE só para servidor LOCAL sem TLS"],
-    "calendario-ics": ["exporte a agenda do seu app como arquivo .ics",
-                       'export NOMOS_ICS_PATH="$HOME/Documents/agenda.ics"'],
-    "slack-webhook": ["crie um Incoming Webhook no app do workspace",
-                      'export NOMOS_SLACK_WEBHOOK="https://hooks.slack.com/..."'],
-    "signal-cli": ["instale e registre o signal-cli (ele guarda a sessão)",
-                   "export NOMOS_SIGNAL_NUMBER=\"+55...\"",
-                   "AUTENTICAÇÃO AUTOMÁTICA: não há token — quem autentica é o signal-cli"],
-    "whatsapp-cloud": ["crie um app no Meta for Developers e ative o WhatsApp",
-                       "copie o token permanente e o Phone Number ID",
-                       "exporte NOMOS_WHATSAPP_TOKEN e NOMOS_WHATSAPP_PHONE_ID"],
-}
+# (id, ícone, rótulo, sentido, o-que-faz, [(env, obrigatória?)], como-conectar)
+_CONECTORES: list = [
+    ("telegram", "✈", "Telegram", "entra e sai",
+     "lê o que chegou no seu bot e envia o briefing por ele",
+     [("NOMOS_TELEGRAM_TOKEN", True), ("NOMOS_TELEGRAM_API", False)],
+     ["fale com o @BotFather no Telegram e mande /newbot",
+      "copie o token que ele devolve (formato 123456:ABC-...)",
+      'exporte: export NOMOS_TELEGRAM_TOKEN="123456:ABC-..."',
+      "teste: nomos entrada telegram"]),
+    ("email-imap", "✉", "E-mail · entrada (IMAP)", "só entra",
+     "lê a sua caixa por IMAP, sem webhook público",
+     [("NOMOS_IMAP_HOST", True), ("NOMOS_IMAP_USER", True),
+      ("NOMOS_IMAP_PASSWORD", True), ("NOMOS_IMAP_PORT", False),
+      ("NOMOS_IMAP_MAILBOX", False)],
+     ["no provedor, gere uma SENHA DE APLICATIVO (nunca a senha da conta)",
+      "descubra o host IMAP do provedor (ex.: imap.gmail.com)",
+      "exporte HOST, USER e PASSWORD; PORT (993) e MAILBOX (INBOX) têm padrão",
+      "teste: nomos entrada email"]),
+    ("email-smtp", "📤", "E-mail · saída (SMTP)", "só sai",
+     "envia pelo SEU servidor SMTP — nada passa por terceiro",
+     [("NOMOS_SMTP_HOST", True), ("NOMOS_SMTP_FROM", True),
+      ("NOMOS_SMTP_USER", False), ("NOMOS_SMTP_PASSWORD", False),
+      ("NOMOS_SMTP_PORT", False)],
+     ["mesmo provedor do IMAP; porta 587 (STARTTLS) na maioria",
+      "exporte HOST e FROM; USER/PASSWORD só se o servidor exigir",
+      "NOMOS_SMTP_INSECURE existe para servidor LOCAL sem TLS — nunca na internet"]),
+    ("calendario", "📅", "Agenda (.ics local)", "só entra",
+     "lê um .ics que VOCÊ exportou — nenhuma conta, nenhuma nuvem",
+     [("NOMOS_ICS_PATH", True)],
+     ["exporte a agenda do seu app como arquivo .ics",
+      'exporte: export NOMOS_ICS_PATH="$HOME/Documents/agenda.ics"',
+      "teste: nomos entrada calendario"]),
+    ("slack", "#", "Slack", "só sai",
+     "publica via Incoming Webhook oficial",
+     [("NOMOS_SLACK_WEBHOOK", True)],
+     ["crie um Incoming Webhook no app do seu workspace",
+      'exporte: export NOMOS_SLACK_WEBHOOK="https://hooks.slack.com/services/..."']),
+    ("signal", "◈", "Signal", "só sai",
+     "usa o signal-cli LOCAL — a conta já autenticada na sua máquina",
+     [("NOMOS_SIGNAL_CLI", True), ("NOMOS_SIGNAL_NUMBER", True)],
+     ["instale e registre o signal-cli separadamente (ele guarda a sessão)",
+      "exporte o caminho do binário e o seu número em formato +55...",
+      "AUTENTICAÇÃO AUTOMÁTICA: não há token aqui — quem autentica é o signal-cli"]),
+    ("whatsapp-cloud", "◐", "WhatsApp Business", "só sai",
+     "Cloud API oficial da Meta — nunca o WhatsApp pessoal",
+     [("NOMOS_WHATSAPP_TOKEN", True), ("NOMOS_WHATSAPP_PHONE_ID", True),
+      ("NOMOS_WHATSAPP_API", False)],
+     ["crie um app no Meta for Developers e ative o produto WhatsApp",
+      "copie o token permanente e o Phone Number ID",
+      "exporte NOMOS_WHATSAPP_TOKEN e NOMOS_WHATSAPP_PHONE_ID"]),
+]
 
 
 def _secao_conectores(d: dict) -> str:
-    """Ficha por ferramenta: ícone, risco, credenciais e CONFIANÇA — medidos.
+    """Uma ficha por ferramenta: ícone, o que faz, estado MEDIDO e como ligar.
 
-    São DUAS travas independentes, e mostrar só uma engana: sem a credencial o
-    conector não tem o que ler; sem CONFIANÇA o `nomos entrada` recusa antes de
-    tentar. A 1ª versão desta página mostrava apenas a credencial e mandava
-    "teste: nomos entrada calendario" — que falhava com
-    `'calendario-ics' não é confiável`.
+    O estado não é adivinhado: cada variável é lida do ambiente deste processo.
+    E a página diz na cara a pegadinha que faria alguém perder uma tarde — o
+    serviço do launchd NÃO herda o que se exporta no terminal.
     """
-    from pathlib import Path as _Path
-
-    from nomos.interface import mcp_catalogo as _cat
-    from nomos.kernel import config as _cfg
+    import os as _os
 
     e = esc
     partes = ['<h2 id="conectores">🔌 Conectores</h2>']
     partes.append(
-        '<div class="card"><b>Duas travas, não uma</b>'
-        "<p><small><b>1 · confiança</b> — o servidor MCP precisa estar no seu "
-        "trust store: <code>nomos mcp confiar &lt;manifesto&gt;</code> (passa "
-        "pelo gate). Sem isso, ler a entrada é recusado antes de qualquer "
-        "conexão.<br><b>2 · credencial</b> — vem de <b>variável de ambiente</b>, "
-        "nunca de arquivo: token em disco vaza em backup, sync e log. Por isso "
-        "<b>não há campo de colar token aqui</b> — um formulário que gravasse "
-        "no cofre não ligaria nada.</small></p>"
-        "<p><small><b>Pegadinha:</b> o serviço do launchd <b>não herda</b> o "
-        "que você exporta no terminal. Exportar liga o <code>nomos entrada</code> "
-        "rodado à mão; para o serviço agendado enxergar, a variável tem de "
-        "entrar no plist (<code>EnvironmentVariables</code>) — gate A5."
+        '<div class="card"><b>Como a credencial chega aqui</b>'
+        "<p><small>Todo conector lê a credencial de <b>variável de ambiente</b>, "
+        "nunca de arquivo — decisão de projeto: token em disco vaza em backup, "
+        "em sync e em log. Por isso <b>não existe campo de colar token nesta "
+        "página</b>: um formulário que gravasse no cofre não ligaria nada, e "
+        "prometer o contrário seria mentira.</small></p>"
+        "<p><small><b>Pegadinha que custa uma tarde:</b> o serviço do launchd "
+        "<b>não herda</b> o que você exporta no terminal. Exportar liga o "
+        "<code>nomos entrada</code> que você roda na mão; para o serviço "
+        "agendado enxergar, a variável tem de entrar no plist "
+        "(<code>EnvironmentVariables</code>) — e isso passa pelo gate A5."
         "</small></p></div>")
 
-    try:
-        diag = _cat.diagnostico_conectores(_Path(_cfg.nomos_home()))
-    except Exception as exc:                       # nunca derruba o painel
-        return "\n".join(partes + [
-            '<div class="card"><small>não consegui ler o catálogo de '
-            f"conectores agora ({e(type(exc).__name__)}). Use "
-            "<code>nomos mcp doutor</code>.</small></div>"])
-
-    itens = diag.get("conectores") or []
-    if not itens:
-        return "\n".join(partes + [
-            '<div class="card"><small>nenhum conector de exemplo encontrado '
-            "nesta instalação.</small></div>"])
-
     cartoes = []
-    for c in itens:
-        nome = str(c.get("nome", "?"))
-        confiavel = c.get("status") == "confiavel"
-        revogado = c.get("status") == "revogado"
-        creds_ok = bool(c.get("credenciais_ok"))
-        envs = c.get("env") or []
-        faltando = set(c.get("env_faltando") or [])
-
-        if revogado:
-            chip = '<span class="chip err">REVOGADO</span>'
-        elif confiavel and creds_ok:
+    for cid, ico, rotulo, sentido, oque, envs, passos in _CONECTORES:
+        faltando = [v for v, obrig in envs if obrig and not _os.environ.get(v)]
+        presentes = [v for v, _o in envs if _os.environ.get(v)]
+        if not faltando:
             chip = '<span class="chip ok">PRONTO</span>'
-        elif confiavel or creds_ok or (envs and len(faltando) < len(envs)):
+        elif presentes:
             chip = '<span class="chip warn">INCOMPLETO</span>'
         else:
             chip = '<span class="chip neutro">NÃO CONFIGURADO</span>'
-
-        # as duas travas, sempre visíveis — inclusive quando uma já passou
-        travas = (
-            f'<li>confiança: {"✓ confiável" if confiavel else "— não confiável"}'
-            f'{" (REVOGADO)" if revogado else ""}</li>'
-            f'<li>interpretador: {"✓" if c.get("interpretador_ok") else "—"} '
-            f'<code>{e(str(c.get("interpretador", "")))}</code></li>')
         linhas_env = "".join(
-            f'<li><code>{e(v)}</code> {"—" if v in faltando else "✓"}</li>'
-            for v in envs) or "<li><small>não exige credencial</small></li>"
-
-        passos = list(_CONECTOR_PASSOS.get(nome, []))
-        passos.insert(0, f"confie no servidor: nomos mcp confiar {nome}")
+            f"<li><code>{e(v)}</code>"
+            + ("" if obrig else " <small>(opcional)</small>")
+            + (" ✓" if _os.environ.get(v) else " —")
+            + "</li>"
+            for v, obrig in envs)
         cartoes.append(
-            f'<div class="card conector" id="conector-{e(nome)}">'
-            f'<b><span aria-hidden="true">{_CONECTOR_ICONE.get(nome, "◆")}</span> '
-            f"{e(nome)}</b> {chip} "
-            f'<span class="chip">{e(str(c.get("nivel", "?")))}</span>'
-            f'<div><small>{e(str(c.get("descricao", "")))}</small></div>'
-            f'<ul class="lista">{travas}{linhas_env}</ul>'
-            '<details><summary>como conectar</summary><ol class="lista">'
+            f'<div class="card conector" id="conector-{e(cid)}">'
+            f'<b><span aria-hidden="true">{ico}</span> {e(rotulo)}</b> {chip}'
+            f"<div><small>{e(sentido)} · {e(oque)}</small></div>"
+            f'<ul class="lista">{linhas_env}</ul>'
+            "<details><summary>como conectar</summary><ol class=\"lista\">"
             + "".join(f"<li><small>{e(p)}</small></li>" for p in passos)
             + "</ol></details></div>")
     partes.append('<div class="grid-conectores">' + "".join(cartoes) + "</div>")
     partes.append(
-        f'<div class="card"><small>trust store: '
-        f'<b>{diag.get("confiaveis", 0)}</b> confiável(is). '
-        "Ler é governado (A0/A3) e enviar exige a sua aprovação a cada vez. "
-        "Check-up no terminal: <code>nomos mcp doutor</code>.</small></div>")
+        '<div class="card"><small>Nenhum conector age sozinho: ler é governado '
+        "(A0/A3) e enviar exige a sua aprovação a cada vez. Ver o que chegou: "
+        "<code>nomos entrada telegram|email|calendario</code>.</small></div>")
     return "\n".join(partes)
 
 
