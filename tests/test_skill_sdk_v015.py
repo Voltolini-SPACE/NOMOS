@@ -154,7 +154,12 @@ def test_exemplos_oficiais_validos_e_baixo_risco():
     # "tem manifesto", que é o que define uma skill.
     pastas = sorted(p for p in base.iterdir()
                     if p.is_dir() and (p / "skill.json").is_file())
-    assert len(pastas) == 4   # v1.2: + busca-arquivos
+    assert len(pastas) == 4, (   # v1.2: + busca-arquivos
+        "`skills_embutidas/` guarda SÓ os 4 exemplos oficiais de risco baixo — "
+        "é um contrato, não uma contagem. Skill do dono vai em "
+        "`src/nomos/skills_do_dono/<nome>/`, que viaja no wheel igual e já está "
+        "declarada no pyproject. Achei: "
+        + ", ".join(p.name for p in pastas))
     for pasta in pastas:
         mf = json.loads((pasta / "skill.json").read_text())
         assert reg.validar_manifesto(mf) == [], pasta.name

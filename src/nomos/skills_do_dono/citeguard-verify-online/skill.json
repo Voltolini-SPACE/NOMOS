@@ -12,5 +12,5 @@
   "requires": [
     {"tipo": "binario", "nome": "python3", "obrigatorio": true}
   ],
-  "files": {}
+  "files": {"verify_online.py": "fb0ae2d8025824825534ed1334a06a3dc0297e9647724bf0a0b0fe62ac29ae73"}
 }
