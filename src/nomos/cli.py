@@ -293,12 +293,16 @@ def cmd_panic(ctx, args) -> int:
         nonlocal negadas
         negadas = _queue(ctx).deny_all()
 
+    # Os rótulos são CONTRATO com quem lê a tela — "PAUSADA" e
+    # "aprovação(ões) pendente(s) negada(s)" estão travados por teste desde a
+    # NH-026. Reescrevê-los quebra a promessa sem avisar ninguém.
+    APROV = "__aprovacoes__"        # substituído pela contagem depois do laço
     passos = [
-        ("autonomia agendada pausada",
+        ("autonomia agendada PAUSADA",
          lambda: pausa.pausar(ctx["home"], motivo="panic", origem="panic")),
-        ("aprovações pendentes negadas", _negar_aprovacoes),
+        (APROV, _negar_aprovacoes),
         ("modo só-local travado", lambda: localidade.definir(ctx["home"], True)),
-        ("microfone/câmera/tela revogados", lambda: ctx["consent"].panic()),
+        ("microfone, câmera e tela revogados", lambda: ctx["consent"].panic()),
         ("concessões de registro revogadas",
          lambda: RegistroConcessoes(_Path(ctx["home"]) / "concessoes.json",
                                     audit=ctx["audit"]).panic()),
@@ -312,6 +316,14 @@ def cmd_panic(ctx, args) -> int:
             feitos.append(rotulo)
         except Exception as exc:            # nenhum passo derruba os demais
             falhas.append(f"{rotulo} ({type(exc).__name__})")
+
+    def _rotular(r: str) -> str:
+        if r.startswith(APROV):
+            resto = r[len(APROV):]
+            return f"{negadas} aprovação(ões) pendente(s) negada(s){resto}"
+        return r
+    feitos = [_rotular(r) for r in feitos]
+    falhas = [_rotular(r) for r in falhas]
 
     # A trilha é gravada SEMPRE, inclusive quando houve falha — um pânico
     # parcial é exatamente o evento que precisa ficar registrado. Se nem o
