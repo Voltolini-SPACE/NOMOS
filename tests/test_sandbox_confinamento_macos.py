@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -185,5 +187,68 @@ def test_a_cerca_continua_fechada_com_o_interpretador_liberado(tmp_path):
         "    except PermissionError: print(nome, 'bloqueado')\n")
     r = sandbox.run([sys.executable, str(script)], allow_network=True, timeout=30)
     assert r.rc == 0, r.stderr
+    assert "ABERTO" not in (r.stdout or ""), r.stdout
+    assert (r.stdout or "").count("bloqueado") == 3
+
+
+# ------------------------------------------------- symlink no caminho (23/08)
+def test_metadata_nos_ancestrais_da_pasta_do_script(tmp_path):
+    """Abrir arquivo percorre o caminho componente a componente.
+
+    No macOS `/tmp` e `/var` são SYMLINK. Sem `file-read-metadata` em cada
+    ancestral, `/tmp/x/s.py` era negado com `[Errno 1] Operation not
+    permitted` MESMO com `/private/tmp/x` liberado — medido. Era a mesma lição
+    que `/var` e `/etc` já tinham imposto ao perfil base; `/tmp` era o terceiro.
+    """
+    script = tmp_path / "sub" / "s.py"
+    script.parent.mkdir()
+    script.write_text("pass")
+    _, regras = sandbox._regras_do_interpretador(["/bin/echo", str(script)])
+    texto = "\n".join(regras)
+    assert f'subpath "{script.parent}"' in texto
+    assert "file-read-metadata" in texto
+    assert f'literal "{script.parent.parent}"' in texto
+
+
+def test_emite_as_duas_formas_do_caminho(monkeypatch, tmp_path):
+    """Caminho pode chegar resolvido ou não; as duas formas são o MESMO
+    diretório, então emitir ambas não alarga a cerca."""
+    script = tmp_path / "s.py"
+    script.write_text("pass")
+    _, regras = sandbox._regras_do_interpretador(["/bin/echo", str(script)])
+    pastas = [r for r in regras if "subpath" in r]
+    assert pastas, "sem regra de pasta a skill não abre o próprio arquivo"
+
+
+@so_mac
+def test_script_sob_tmp_executa(tmp_path):
+    """O defeito reportado, preso: mesmo arquivo, `/tmp` falhava e
+    `/private/tmp` rodava."""
+    import os
+    script = Path("/tmp") / f"nomos_t_{os.getpid()}" / "s.py"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text("print('OK')\n")
+    try:
+        r = sandbox.run([sys.executable, str(script)],
+                        allow_network=True, timeout=30)
+        assert r.rc == 0 and "OK" in (r.stdout or ""), r.stderr
+    finally:
+        script.unlink(missing_ok=True)
+        script.parent.rmdir()
+
+
+@so_mac
+def test_o_cofre_continua_fechado_por_caminho_absoluto(tmp_path):
+    """Sonda honesta: dentro da cerca `HOME=/tmp`, então `~/.nomos` não é o
+    cofre real — a prova precisa do caminho absoluto."""
+    import os
+    real = os.path.expanduser("~")
+    script = tmp_path / "sonda.py"
+    script.write_text(
+        "import os\n"
+        f"for a in ({real!r}, {real + '/.nomos'!r}, {real + '/.ssh'!r}):\n"
+        "    try: os.stat(a); print('ABERTO', a)\n"
+        "    except PermissionError: print('bloqueado')\n")
+    r = sandbox.run([sys.executable, str(script)], allow_network=True, timeout=30)
     assert "ABERTO" not in (r.stdout or ""), r.stdout
     assert (r.stdout or "").count("bloqueado") == 3

@@ -169,6 +169,8 @@ def _regras_do_interpretador(argv: list[str]) -> tuple[list[str], list[str]]:
     real = os.path.realpath(exe)
     if not os.path.exists(real):
         return argv, []
+    # o binário pode ser alcançado pelo nome original (symlink) — libera os dois
+    alias = [c for c in dict.fromkeys((exe, real)) if c != real]
     prefixo = os.path.dirname(os.path.dirname(real)) or "/"
     # O BINÁRIO EXATO sempre; o PREFIXO só quando for específico o bastante.
     # Sem esta guarda, `/bin/sh` produzia prefixo "/" e a regra liberava o DISCO
@@ -176,6 +178,8 @@ def _regras_do_interpretador(argv: list[str]) -> tuple[list[str], list[str]]:
     # silêncio a cerca que este módulo existe para manter. Foi um teste antigo
     # que pegou; por isso ele não pode ser afrouxado quando "atrapalhar".
     regras = [f'(allow file-read* process-exec (literal "{real}"))']
+    regras += [f'(allow file-read* process-exec (literal "{a}"))'
+               for a in alias if '"' not in a]
     if prefixo not in _PREFIXOS_LARGOS and prefixo.count("/") >= 3:
         regras.append(f'(allow file-read* process-exec (subpath "{prefixo}"))')
     # `realpath()` percorre cada componente do caminho: sem metadata nos
@@ -195,9 +199,32 @@ def _regras_do_interpretador(argv: list[str]) -> tuple[list[str], list[str]]:
     # o executor (código do NOMOS), nunca o código confinado.
     for arg in argv[1:]:
         if isinstance(arg, str) and os.path.isfile(arg):
-            pasta = os.path.realpath(os.path.dirname(arg))
-            if '"' not in pasta and "\\" not in pasta:
+            # AS DUAS FORMAS do caminho, e a ordem do defeito importa: eu
+            # emitia só o `realpath`, supondo que o kernel resolvesse antes de
+            # casar. Ele casa como VEIO. Medido em 23/08, mesmo arquivo:
+            #   /tmp/…/s.py          rc=2  can't open file
+            #   /private/tmp/…/s.py  rc=0  RODOU
+            # No macOS `/tmp` e `/var` são symlink, então qualquer teste que
+            # escreva em /tmp caía nisso. Emitir as duas cobre o caso venha o
+            # caminho resolvido ou não — e não alarga a cerca: são dois nomes
+            # do MESMO diretório.
+            bruto = os.path.dirname(arg)
+            for pasta in dict.fromkeys((bruto, os.path.realpath(bruto))):
+                if not pasta or '"' in pasta or "\\" in pasta:
+                    continue
                 regras.append(f'(allow file-read* (subpath "{pasta}"))')
+                # E METADATA EM CADA ANCESTRAL. Abrir um arquivo percorre o
+                # caminho componente a componente, e no macOS `/tmp` e `/var`
+                # são SYMLINK: sem metadata em `/tmp`, `/tmp/x/s.py` é negado
+                # mesmo com `/private/tmp/x` liberado — medido, `[Errno 1]
+                # Operation not permitted`. Já era a lição de `/var` e `/etc`
+                # no perfil base; `/tmp` era o terceiro e eu não tinha visto.
+                anc = os.path.dirname(pasta)
+                while anc and anc != "/":
+                    if '"' not in anc:
+                        regras.append(
+                            f'(allow file-read-metadata (literal "{anc}"))')
+                    anc = os.path.dirname(anc)
             break
     return [real, *argv[1:]], regras
 
