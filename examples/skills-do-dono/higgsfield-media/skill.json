@@ -1,0 +1,38 @@
+{
+  "name": "higgsfield-media",
+  "version": "1.0.0",
+  "description": "gera imagem/video pela API paga da Higgsfield; GASTA DINHEIRO por chamada e nao ha nivel A que cubra custo",
+  "entry": "higgsfield_media.py",
+  "permissions": [
+    "A0_READ_LOCAL",
+    "A1_WRITE_LOCAL",
+    "A2_NET_EGRESS",
+    "A3_CRED_USE"
+  ],
+  "modalities": [
+    "imagem",
+    "texto",
+    "arquivo"
+  ],
+  "keywords": [
+    "imagem",
+    "video",
+    "geracao"
+  ],
+  "local_only_capable": false,
+  "cloud_required": false,
+  "compatible_nomos_version": ">=0.11",
+  "requires": [
+    {
+      "tipo": "binario",
+      "nome": "higgsfield",
+      "obrigatorio": true
+    },
+    {
+      "tipo": "chave",
+      "nome": "login da conta Higgsfield (hoje: Not authenticated)",
+      "obrigatorio": true
+    }
+  ],
+  "files": {}
+}

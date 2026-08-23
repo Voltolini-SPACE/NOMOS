@@ -1,0 +1,36 @@
+{
+  "name": "hf-photoshoot-restyle",
+  "version": "1.0.0",
+  "description": "reestiliza imagem que JA EXISTE no seu disco — unico modo cujo insumo obrigatorio e arquivo seu",
+  "entry": "hf_photoshoot_restyle.py",
+  "permissions": [
+    "A0_READ_LOCAL",
+    "A1_WRITE_LOCAL",
+    "A2_NET_EGRESS",
+    "A3_CRED_USE"
+  ],
+  "modalities": [
+    "imagem",
+    "arquivo"
+  ],
+  "keywords": [
+    "restyle",
+    "imagem"
+  ],
+  "local_only_capable": false,
+  "cloud_required": false,
+  "compatible_nomos_version": ">=0.11",
+  "requires": [
+    {
+      "tipo": "binario",
+      "nome": "higgsfield",
+      "obrigatorio": true
+    },
+    {
+      "tipo": "chave",
+      "nome": "login da conta Higgsfield (hoje: Not authenticated)",
+      "obrigatorio": true
+    }
+  ],
+  "files": {}
+}

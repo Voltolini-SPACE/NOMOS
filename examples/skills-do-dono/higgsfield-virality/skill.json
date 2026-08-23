@@ -1,0 +1,36 @@
+{
+  "name": "higgsfield-virality",
+  "version": "1.0.0",
+  "description": "analisa viralidade: FAZ UPLOAD de video seu e devolve texto — nao gera midia, fluxo de dados invertido",
+  "entry": "higgsfield_virality.py",
+  "permissions": [
+    "A0_READ_LOCAL",
+    "A1_WRITE_LOCAL",
+    "A2_NET_EGRESS",
+    "A3_CRED_USE"
+  ],
+  "modalities": [
+    "texto",
+    "arquivo"
+  ],
+  "keywords": [
+    "viralidade",
+    "analise"
+  ],
+  "local_only_capable": false,
+  "cloud_required": false,
+  "compatible_nomos_version": ">=0.11",
+  "requires": [
+    {
+      "tipo": "binario",
+      "nome": "higgsfield",
+      "obrigatorio": true
+    },
+    {
+      "tipo": "chave",
+      "nome": "login da conta Higgsfield (hoje: Not authenticated)",
+      "obrigatorio": true
+    }
+  ],
+  "files": {}
+}

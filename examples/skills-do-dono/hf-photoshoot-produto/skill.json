@@ -1,0 +1,36 @@
+{
+  "name": "hf-photoshoot-produto",
+  "version": "1.0.0",
+  "description": "fotos de produto sem rosto humano: hero, carrossel, moodboard, conceitual; GASTA DINHEIRO",
+  "entry": "hf_photoshoot_produto.py",
+  "permissions": [
+    "A0_READ_LOCAL",
+    "A1_WRITE_LOCAL",
+    "A2_NET_EGRESS",
+    "A3_CRED_USE"
+  ],
+  "modalities": [
+    "imagem"
+  ],
+  "keywords": [
+    "produto",
+    "foto",
+    "ecommerce"
+  ],
+  "local_only_capable": false,
+  "cloud_required": false,
+  "compatible_nomos_version": ">=0.11",
+  "requires": [
+    {
+      "tipo": "binario",
+      "nome": "higgsfield",
+      "obrigatorio": true
+    },
+    {
+      "tipo": "chave",
+      "nome": "login da conta Higgsfield (hoje: Not authenticated)",
+      "obrigatorio": true
+    }
+  ],
+  "files": {}
+}

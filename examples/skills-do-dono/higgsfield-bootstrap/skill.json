@@ -1,0 +1,36 @@
+{
+  "name": "higgsfield-bootstrap",
+  "version": "1.0.0",
+  "description": "instala o CLI da Higgsfield via 'curl | sh' SEM CHECKSUM — autorize UMA vez, aqui, em vez de 4 portas",
+  "entry": "higgsfield_bootstrap.py",
+  "permissions": [
+    "A1_WRITE_LOCAL",
+    "A2_NET_EGRESS",
+    "A5_CODE_EXEC",
+    "A5_SKILL_INSTALL"
+  ],
+  "modalities": [
+    "texto"
+  ],
+  "keywords": [
+    "higgsfield",
+    "instalar",
+    "bootstrap"
+  ],
+  "local_only_capable": false,
+  "cloud_required": false,
+  "compatible_nomos_version": ">=0.11",
+  "requires": [
+    {
+      "tipo": "binario",
+      "nome": "curl",
+      "obrigatorio": true
+    },
+    {
+      "tipo": "binario",
+      "nome": "sh",
+      "obrigatorio": true
+    }
+  ],
+  "files": {}
+}

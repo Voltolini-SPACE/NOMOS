@@ -1,0 +1,36 @@
+{
+  "name": "hf-photoshoot-pessoa",
+  "version": "1.0.0",
+  "description": "poe SEMELHANCA DE PESSOA em peca paga (modelo vestindo, closeup com maos); instale so se aceitar isso",
+  "entry": "hf_photoshoot_pessoa.py",
+  "permissions": [
+    "A0_READ_LOCAL",
+    "A1_WRITE_LOCAL",
+    "A2_NET_EGRESS",
+    "A3_CRED_USE"
+  ],
+  "modalities": [
+    "imagem"
+  ],
+  "keywords": [
+    "pessoa",
+    "modelo",
+    "try-on"
+  ],
+  "local_only_capable": false,
+  "cloud_required": false,
+  "compatible_nomos_version": ">=0.11",
+  "requires": [
+    {
+      "tipo": "binario",
+      "nome": "higgsfield",
+      "obrigatorio": true
+    },
+    {
+      "tipo": "chave",
+      "nome": "login da conta Higgsfield (hoje: Not authenticated)",
+      "obrigatorio": true
+    }
+  ],
+  "files": {}
+}

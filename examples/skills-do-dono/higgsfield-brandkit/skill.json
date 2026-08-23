@@ -1,0 +1,37 @@
+{
+  "name": "higgsfield-brandkit",
+  "version": "1.0.0",
+  "description": "importa identidade de marca de URL ARBITRARIA de terceiro e a persiste na conta; colide com a LEI DA MARCA (exige brand-resolve --require-official rc=0)",
+  "entry": "higgsfield_brandkit.py",
+  "permissions": [
+    "A1_WRITE_LOCAL",
+    "A2_NET_EGRESS",
+    "A3_CRED_USE"
+  ],
+  "modalities": [
+    "imagem",
+    "texto",
+    "web"
+  ],
+  "keywords": [
+    "marca",
+    "brandkit",
+    "identidade"
+  ],
+  "local_only_capable": false,
+  "cloud_required": false,
+  "compatible_nomos_version": ">=0.11",
+  "requires": [
+    {
+      "tipo": "binario",
+      "nome": "higgsfield",
+      "obrigatorio": true
+    },
+    {
+      "tipo": "chave",
+      "nome": "login da conta Higgsfield (hoje: Not authenticated)",
+      "obrigatorio": true
+    }
+  ],
+  "files": {}
+}

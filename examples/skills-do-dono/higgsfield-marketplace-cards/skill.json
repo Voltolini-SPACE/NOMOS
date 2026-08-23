@@ -1,0 +1,36 @@
+{
+  "name": "higgsfield-marketplace-cards",
+  "version": "1.0.0",
+  "description": "cards de marketplace; um comando so, nao ha o que separar; GASTA DINHEIRO",
+  "entry": "higgsfield_marketplace_cards.py",
+  "permissions": [
+    "A0_READ_LOCAL",
+    "A1_WRITE_LOCAL",
+    "A2_NET_EGRESS",
+    "A3_CRED_USE"
+  ],
+  "modalities": [
+    "imagem"
+  ],
+  "keywords": [
+    "marketplace",
+    "card",
+    "listagem"
+  ],
+  "local_only_capable": false,
+  "cloud_required": false,
+  "compatible_nomos_version": ">=0.11",
+  "requires": [
+    {
+      "tipo": "binario",
+      "nome": "higgsfield",
+      "obrigatorio": true
+    },
+    {
+      "tipo": "chave",
+      "nome": "login da conta Higgsfield (hoje: Not authenticated)",
+      "obrigatorio": true
+    }
+  ],
+  "files": {}
+}

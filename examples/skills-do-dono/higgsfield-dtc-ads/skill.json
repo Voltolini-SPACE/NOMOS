@@ -1,0 +1,37 @@
+{
+  "name": "higgsfield-dtc-ads",
+  "version": "1.0.0",
+  "description": "Marketing Studio: anuncios e UGC; GASTA DINHEIRO por chamada",
+  "entry": "higgsfield_dtc_ads.py",
+  "permissions": [
+    "A0_READ_LOCAL",
+    "A1_WRITE_LOCAL",
+    "A2_NET_EGRESS",
+    "A3_CRED_USE"
+  ],
+  "modalities": [
+    "imagem",
+    "texto"
+  ],
+  "keywords": [
+    "anuncio",
+    "marketing",
+    "ugc"
+  ],
+  "local_only_capable": false,
+  "cloud_required": false,
+  "compatible_nomos_version": ">=0.11",
+  "requires": [
+    {
+      "tipo": "binario",
+      "nome": "higgsfield",
+      "obrigatorio": true
+    },
+    {
+      "tipo": "chave",
+      "nome": "login da conta Higgsfield (hoje: Not authenticated)",
+      "obrigatorio": true
+    }
+  ],
+  "files": {}
+}
