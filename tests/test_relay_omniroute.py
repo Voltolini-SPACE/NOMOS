@@ -161,3 +161,30 @@ def test_resumo_tem_o_que_o_operador_precisa(monkeypatch):
     r = relay.resumo_descoberta("k")
     assert r == {"total": 2, "gratuitas": 1,
                  "rotas_gratuitas": ["auto/best-free"], "disponivel": True}
+
+
+# --------------------------------------------- integração com o catálogo
+def test_omniroute_no_catalogo_e_cloud_e_gated(tmp_path):
+    """O motor aparece, é tratado como nuvem e só fica PRONTO com cadeado off."""
+    from nomos.cognition import engine_catalog as cat
+    from nomos.kernel import localidade
+
+    localidade.definir(tmp_path, ligado=True)   # só-local
+    c = cat.construir(home=tmp_path)
+    omni = next((m for m in c.motores if m.id == "omniroute"), None)
+    assert omni is not None, "motor omniroute não está no catálogo"
+    assert omni.local is False and omni.tipo == "cloud"
+    assert omni.requer_chave and omni.requer_aprovacao
+    assert omni.pronto is False, "com cadeado LIGADO, não pode estar pronto"
+
+    localidade.definir(tmp_path, ligado=False)  # nuvem liberada
+    c2 = cat.construir(home=tmp_path)
+    omni2 = next(m for m in c2.motores if m.id == "omniroute")
+    assert omni2.pronto is True, "com cadeado desligado, fica disponível"
+
+
+def test_omniroute_declara_saida_de_dados(tmp_path):
+    """A privacidade tem de dizer a verdade: dados SAEM da máquina."""
+    from nomos.cognition import engine_catalog as cat
+    omni = next(m for m in cat.construir(home=tmp_path).motores if m.id == "omniroute")
+    assert "saem da máquina" in omni.privacidade

@@ -143,6 +143,22 @@ def construir(home=None, mapa: dict | None = None) -> Catalogo:
         status=bloqueio or "opt-in: exige aprovação A2+A3 e chave no cofre",
         detalhe="api.anthropic.com"))
 
+    # OmniRoute: roteador em loopback que SAI para a internet (free tiers +
+    # fallback). Governado como qualquer nuvem — o alvo do gate é a fronteira
+    # de saída (cognition/relay.RELAY_TARGET), nunca o socket 20128. `pronto`
+    # segue o mesmo criterio do anthropic: so quando o cadeado esta desligado.
+    itens.append(Motor(
+        id="omniroute", rotulo="OmniRoute (rotas grátis + fallback)",
+        modalidades=("texto", "codigo", "raciocinio", "resumo"), tipo="cloud",
+        local=False, instalado=True, pronto=not so_local,
+        custo="grátis nas rotas free (auto/best-free); pago nas demais",
+        privacidade="dados saem da máquina (roteador local → internet)",
+        velocidade="depende da internet", qualidade="varia por rota",
+        requer_chave=True, requer_aprovacao=True,
+        status=bloqueio or "opt-in: exige aprovação A2+A3 e chave "
+                           "'omniroute_api_key' no cofre",
+        detalhe="127.0.0.1:20128 → free tiers / 160+ provedores"))
+
     # --- imagem / visão ---
     itens.append(Motor(
         id="sdwebui", rotulo="Stable Diffusion WebUI (gerar imagens)",
