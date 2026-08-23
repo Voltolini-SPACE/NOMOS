@@ -462,6 +462,10 @@ _CSS = """
     6.4:1 no escuro, ambos acima de AA. */
  code, .k, .lista.atalhos code{background:var(--surface2); color:var(--neon)}
 
+ /* motor conhecido porém NÃO pronto: presente, mas visivelmente secundário
+    — some seria mentir por omissão; destacar seria alarmar sem motivo. */
+ .pendente{color:var(--fraco)}
+
  /* --- MOVIMENTO REDUZIDO ---------------------------------------------- */
  @media (prefers-reduced-motion:reduce){
    *,*::before,*::after{transition-duration:.01ms !important}
@@ -881,6 +885,19 @@ def dados_dashboard(ctx) -> dict:
     cat = cat_mod.construir(home)
     modalidades = {m: [x.id for x in cat.prontos(m)]
                    for m in cat_mod.MODALIDADES_V011}
+    # Meia-verdade que isto evita: `ferramentas` fica "pronto" por causa do
+    # function-calling enquanto há ZERO skills instaladas — a tela diria
+    # "sei chamar ferramenta" e omitiria "não tenho nenhuma". Guardamos os
+    # NÃO-prontos à parte (a forma de `modalidades` é consumida em 4 lugares
+    # e não pode mudar) para a tabela contar a verdade inteira.
+    faltantes = {}
+    for m in cat_mod.MODALIDADES_V011:
+        pendentes = [x for x in cat.por_modalidade(m) if not x.pronto]
+        if pendentes:
+            faltantes[m] = [{"id": x.id,
+                             "status": str(getattr(x, "status", "") or ""),
+                             "detalhe": str(getattr(x, "detalhe", "") or "")}
+                            for x in pendentes]
     eventos = []
     trilha = home / "logs" / "audit.jsonl"
     if trilha.exists():
@@ -1138,6 +1155,7 @@ def dados_dashboard(ctx) -> dict:
         "proximo_passo": doutor_mod.proximo_passo(itens),
         "checkup": itens,
         "modalidades": modalidades,
+        "faltantes": faltantes,
         "skills": st.status_todas(home, home / "skills"),
         "rotinas": rot.listar(home),
         "eventos": list(reversed(eventos)),
@@ -1310,8 +1328,20 @@ def dados_skills(ctx) -> dict:
     except Exception as exc:
         diag = f"diagnóstico indisponível: {type(exc).__name__}"
 
+    # o motor de `ferramentas`: separa "sei chamar" de "tenho instalada"
+    sabe_chamar = None
+    try:
+        from nomos.cognition import engine_catalog as ec
+        for m in ec.construir(home).prontos("ferramentas"):
+            if m.id == "function-calling":
+                sabe_chamar = getattr(m, "detalhe", None) or m.rotulo
+                break
+    except Exception:
+        pass
+
     return {"instaladas": instaladas, "prontas": prontas,
             "diagnostico": diag, "dir": str(dir_skills),
+            "sabe_chamar": sabe_chamar,
             "raiz_exemplos": str(raiz_achada) if raiz_achada else None}
 
 
@@ -1335,13 +1365,19 @@ def _secao_skills(d: dict, skills: dict | None) -> str:
                       f'({len(instaladas)})</b><ul class="lista">{linhas}</ul>'
                       "</div>")
     else:
-        # vazio é ORIENTAÇÃO, não erro: a pessoa acabou de chegar aqui
+        # vazio é ORIENTAÇÃO, não erro: a pessoa acabou de chegar aqui.
+        # E diz a metade que costuma sumir: o modelo SABE chamar ferramenta
+        # (function-calling pronto) — o que falta é ter alguma instalada.
+        sabe = sk.get("sabe_chamar")
+        capaz = ("<p><small>O seu cérebro <b>já sabe chamar ferramentas</b> "
+                 f"({e(str(sabe))}) — o que falta é ter alguma instalada."
+                 "</small></p>") if sabe else ""
         partes.append(
             '<div class="card"><b>Você ainda não tem skills</b>'
             "<p><small>Skill é uma habilidade que você acrescenta ao NOMOS — "
-            "um script com um manifesto declarando o que ele pode tocar. "
-            "Abaixo estão as que já vêm com o NOMOS, prontas para instalar."
-            "</small></p></div>")
+            "um script com um manifesto declarando o que ele pode tocar."
+            "</small></p>"
+            + capaz + "</div>")
 
     prontas = sk.get("prontas") or []
     if not prontas:
@@ -1945,8 +1981,16 @@ def render_html(d: dict, refresh: int | None = None,
                        "<table><tr><th scope='col'>modalidade</th>"
                        "<th scope='col'>motores</th></tr>")
     for mod, ms in d["modalidades"].items():
+        pend = (d.get("faltantes") or {}).get(mod) or []
+        nota = ""
+        if pend:
+            nota = "<br>" + " · ".join(
+                f'<small class="pendente">{e(x["id"])}: '
+                f'{e(x["detalhe"] or x["status"] or "não pronto")}</small>'
+                for x in pend)
         aba_cerebro.append(f'<tr class="filtravel"><td>{e(mod)}</td>'
-                           f"<td>{e(', '.join(ms)) if ms else '—'}</td></tr>")
+                           f"<td>{e(', '.join(ms)) if ms else '—'}{nota}</td>"
+                           "</tr>")
     aba_cerebro.append("</table>")
     aba_cerebro.append('<details class="mais"><summary>catálogo completo de '
                        "motores</summary><table>"

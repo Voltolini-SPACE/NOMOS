@@ -91,3 +91,21 @@ def test_manifesto_invalido_nao_derruba_a_lista(tmp_path, monkeypatch):
     d = pw.dados_skills({"home": tmp_path})
     assert d["prontas"] == []          # ignorado em silêncio
     assert d["raiz_exemplos"] == str(raiz)
+
+
+def test_vazio_separa_sei_chamar_de_tenho_instalada():
+    """A meia-verdade que isto evita: `ferramentas` conta como PRONTO por
+    causa do function-calling, com ZERO skills instaladas. Quem lê "pronto"
+    e não lê "nenhuma instalada" entende errado."""
+    html = pw._secao_skills({}, {"instaladas": [], "prontas": [],
+                                 "diagnostico": "",
+                                 "sabe_chamar": "qwen3.5:4b-q8_0"})
+    assert "já sabe chamar ferramentas" in html
+    assert "qwen3.5:4b-q8_0" in html
+    assert "falta é ter alguma instalada" in html
+
+
+def test_sem_function_calling_nao_inventa_a_frase():
+    html = pw._secao_skills({}, {"instaladas": [], "prontas": [],
+                                 "diagnostico": "", "sabe_chamar": None})
+    assert "já sabe chamar ferramentas" not in html
