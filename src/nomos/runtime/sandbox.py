@@ -44,6 +44,18 @@ class IsolationUnavailable(Exception):
 
 @dataclass(frozen=True)
 class SandboxResult:
+    # CONTRATO DOS FLAGS DE ISOLAMENTO — leia antes de confiar neles.
+    # `network_isolated` e `fs_confinado` são asserções POR EIXO: cada um
+    # afirma UMA fronteira (rede; sistema de arquivos). Eles NÃO somam a
+    # "confinado". A bateria adversarial de 23/08 provou por que a distinção
+    # importa: uma skill sem rede lia o environment de ~219 processos por
+    # `KERN_PROCARGS2` (canal de sysctl, terceiro eixo) enquanto os dois flags
+    # diziam True. O furo foi fechado (`deny sysctl-read`), mas a lição de
+    # contrato fica: **ausência de flag não é ausência de risco.** Um quarto
+    # eixo que ninguém enumerou pode existir. Não lemos estes booleanos como
+    # "seguro"; lemos cada um como a fronteira específica que ele nomeia. Por
+    # isso NÃO há um `process_info_isolated`: mais um booleano só reforçaria a
+    # falsa-completude-por-omissão que este comentário existe para negar.
     rc: int
     stdout: str
     stderr: str
