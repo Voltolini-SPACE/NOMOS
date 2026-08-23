@@ -250,8 +250,8 @@ def registrar_prova(ident: str, quando: str | None = None) -> None:
         with os.fdopen(fd, "w") as f:
             json.dump(atual, f, indent=1, sort_keys=True)
         os.replace(tmp, home / _ARQ_PROVAS)
-    except Exception:
-        pass               # carimbar é conveniência: falhar aqui não derruba nada
+    except Exception:  # noqa: S110 — carimbar é conveniência:
+        pass           # falhar aqui não pode derrubar quem só queria o estado.
 
 
 def estados(hosts: dict | None = None, *,
