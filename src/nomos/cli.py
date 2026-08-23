@@ -213,9 +213,22 @@ def cmd_capacidades(ctx, args) -> int:
             # O executor não entra no digest, então a sonda não precisa de um
             # scheduler real.
             if not args.sem_scheduler:
-                from nomos.adapters.wiring import registrar_scheduler
+                from nomos.adapters.wiring import (registrar_notas_job,
+                                                   registrar_scheduler)
                 nomes += list(registrar_scheduler(
                     sonda, None, apenas_leitura=bool(args.apenas_leitura)))
+                # E as capacidades de NOTA do job. Elas só nascem quando
+                # `_runtime(job_id=...)` é construído — ou seja, DENTRO de uma
+                # ocorrência. Nenhuma sonda estática as revelava, e por isso a
+                # primeira prova por ocorrência real parou pedindo aprovação
+                # para `registro:job-nota-ler` com 15 concessões já gravadas.
+                # `armazem=None` é seguro aqui: registrar não desreferencia o
+                # armazém (ele só é capturado na closure do executor, que não
+                # roda). O `job_id` também não entra na identidade do registro
+                # — a origem é fixa (`adapters.scheduler.notas`) —, então UMA
+                # concessão vale para qualquer job. Isso não afrouxa posse: o
+                # `job_id` fica CRAVADO na closure, e a execução continua no PDP.
+                nomes += list(registrar_notas_job(sonda, None, "sonda-concessao"))
         except Exception as exc:
             print(f"não foi possível descobrir as capacidades: {exc}")
             return EXIT_ERROR

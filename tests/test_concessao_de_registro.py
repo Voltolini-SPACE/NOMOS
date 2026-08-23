@@ -356,6 +356,52 @@ def test_panic_revoga_concessoes(tmp_path, monkeypatch):
     assert RegistroConcessoes(home / "concessoes.json").listar() == []
 
 
+def test_concedidas_cobrem_o_conjunto_da_OCORRENCIA(tmp_path, monkeypatch, capsys):
+    """`concedidas ⊇ capacidades_requeridas_da_ocorrência` — a asserção que faltava.
+
+    A versão anterior deste teste comparava o conjunto concedido com o conjunto do
+    SERVIÇO (filesystem + scheduler = 15) e passava. Mas a ocorrência de job
+    constrói `_runtime(job_id=...)`, que chama TAMBÉM `registrar_notas_job` —
+    `job-nota-ler` e `job-nota-escrever`, que só existem dentro de um job. O
+    conjunto real da ocorrência é 17.
+
+    Com 15 concedidas, a primeira prova por ocorrência REAL parou pedindo
+    aprovação humana para `registro:job-nota-ler` (22/08 21:04:24, desfecho A).
+    Nenhuma sonda estática exporia isso: por isso a referência aqui é a
+    OCORRÊNCIA, não o serviço. Qualquer diferença falha ANTES de conceder.
+    """
+    from nomos import cli
+    from nomos.adapters.wiring import (registrar_filesystem, registrar_notas_job,
+                                       registrar_scheduler)
+    from nomos.kernel.concessoes import RegistroConcessoes
+
+    home = tmp_path / "home"
+    (home / "dados").mkdir(parents=True)
+    monkeypatch.setenv("NOMOS_HOME", str(home))
+    monkeypatch.setattr(cli, "interactive_approver", lambda _d: True)
+    assert cli.main(["capacidades", "conceder", "--raiz", str(home / "dados")]) == 0
+    capsys.readouterr()
+
+    concedidas = {e["capacidade"]
+                  for e in RegistroConcessoes(home / "concessoes.json").listar()}
+
+    # O conjunto EXATO que uma ocorrência de job registra, pelo mesmo wiring:
+    espelho = RegistroCapacidades(policy=PolicyEngine(home / "policy.json"),
+                                  approver=lambda _d: True, audit=None)
+    requeridas = set(registrar_filesystem(espelho, raizes=(str(home / "dados"),),
+                                          audit=None, apenas_leitura=False,
+                                          destrutivas=False))
+    requeridas |= set(registrar_scheduler(espelho, None))
+    requeridas |= set(registrar_notas_job(espelho, None, "job-de-teste"))
+
+    faltando = requeridas - concedidas
+    assert not faltando, (
+        f"a ocorrência exige capacidades NÃO concedidas: {sorted(faltando)} — "
+        "com este conjunto o job para pedindo aprovação humana")
+    assert {"job-nota-ler", "job-nota-escrever"} <= concedidas
+    assert len(requeridas) == 17, f"conjunto da ocorrência mudou: {len(requeridas)}"
+
+
 def test_conjunto_concedido_cobre_o_que_o_servico_registra(tmp_path, monkeypatch, capsys):
     """O conjunto de `conceder` tem de casar com o que o RUNTIME registra.
 
