@@ -1439,6 +1439,49 @@ def _secao_chat(d: dict, chat: dict | None) -> str:
     return "\n".join(corpo)
 
 
+HOSTS_ACEITOS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
+"""Nomes por que o painel aceita ser chamado.
+
+O socket já é loopback, mas isso NÃO impede DNS rebinding: um site hostil faz
+`evil.com` resolver para 127.0.0.1 e o navegador da vítima entrega a
+requisição AQUI, com `Host: evil.com` — e a resposta fica legível ao script
+dele, porque para o navegador a origem é evil.com. Medido antes do conserto:
+`Host: evil.example.com` devolvia 200, igual ao Host legítimo.
+"""
+
+
+def _host_aceito(cabecalho: str | None) -> bool:
+    """True se o `Host:` for um nome de loopback (porta é indiferente)."""
+    if not cabecalho:
+        return False                      # HTTP/1.1 sem Host: recusa
+    nome = cabecalho.strip()
+    if nome.startswith("["):              # IPv6 literal: [::1]:8795
+        fim = nome.find("]")
+        nome = nome[:fim + 1] if fim > 0 else nome
+    else:
+        nome = nome.rsplit(":", 1)[0] if nome.count(":") == 1 else nome
+    return nome.lower() in HOSTS_ACEITOS
+
+
+def _origem_aceita(origin: str | None, referer: str | None) -> bool:
+    """True se a requisição NÃO vier de outro site.
+
+    Ausência de Origin/Referer é ACEITA de propósito: quem não manda esses
+    cabeçalhos é cliente não-navegador (curl, script do dono), que não é vetor
+    de CSRF — uma página hostil não consegue omitir o Origin do navegador.
+    O que se recusa é o Origin PRESENTE e de outra origem.
+    """
+    from urllib.parse import urlparse
+    bruto = origin or referer
+    if not bruto or bruto == "null":
+        return True
+    try:
+        u = urlparse(bruto)
+    except Exception:
+        return False
+    return _host_aceito(u.netloc)
+
+
 def _seletores_chat(chat: dict) -> str:
     """Dois controles simples no composer: ROTEAMENTO e MOTOR.
 
@@ -2411,6 +2454,15 @@ class DashboardServer:
 
             # ---------------- GET ----------------
             def do_GET(self):
+                # DNS rebinding: o socket ser loopback não basta (ver
+                # HOSTS_ACEITOS). Recusa antes de olhar o caminho — assim nem
+                # o 404 do segredo vaza para um Host forjado.
+                if not _host_aceito(self.headers.get("Host")):
+                    self.send_response(421)   # Misdirected Request
+                    self.send_header("Content-Type", "text/plain; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(b"host nao aceito (painel e local)\n")
+                    return
                 caminho, _, query = self.path.partition("?")
                 base = f"/d/{painel.secret}"
                 if caminho == base:
@@ -2904,6 +2956,20 @@ class DashboardServer:
                 single-use, TTL) e chat/enviar (token CSRF, motor local,
                 fail-closed). Qualquer outra coisa = 405.
                 """
+                if not _host_aceito(self.headers.get("Host")):
+                    self.send_response(421)
+                    self.end_headers()
+                    return
+                # escrita exige, além do token CSRF, que a requisição não venha
+                # de outro site: o token sai no HTML da própria página, então
+                # ele sozinho não distingue origem.
+                if not _origem_aceita(self.headers.get("Origin"),
+                                      self.headers.get("Referer")):
+                    self.send_response(403)
+                    self.send_header("Content-Type", "text/plain; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(b"origem cruzada recusada\n")
+                    return
                 base = f"/d/{painel.secret}"
                 rota = self.path.rstrip("/")
 
