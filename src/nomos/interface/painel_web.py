@@ -1327,10 +1327,23 @@ def dados_skills(ctx) -> dict:
                 man = sk.load_manifest(d_ex)
             except Exception:
                 continue          # diretório que não é skill: ignora em silêncio
+            # `pode_executar_aqui` é o MESMO critério do executor (a outra
+            # sessão travou um teste garantindo que não divergem). Dizer aqui
+            # o que a máquina fará evita a surpresa de instalar e descobrir
+            # depois que não roda.
+            motivo_aqui = ""
+            try:
+                from nomos.ext import skill_registry as _reg
+                pode, motivo = _reg.pode_executar_aqui(man, home)
+                if not pode:
+                    motivo_aqui = (motivo or "").split(":")[-1].strip()[:80]
+            except Exception:
+                pass
             prontas.append({
                 "nome": man.get("name") or d_ex.name,
                 "descricao": man.get("description") or "",
                 "caminho": str(d_ex),
+                "motivo_aqui": motivo_aqui,
                 "instalada": any((i.get("name") or "") == (man.get("name") or "")
                                  for i in instaladas)})
         break
@@ -1412,6 +1425,8 @@ def _secao_skills(d: dict, skills: dict | None) -> str:
         itens = "".join(
             f'<li><b>{e(p["nome"])}</b>'
             + (' <span class="chip ok">instalada</span>' if p["instalada"] else "")
+            + (f' <small class="pendente">não roda neste Mac: '
+               f'{e(p["motivo_aqui"])}</small>' if p.get("motivo_aqui") else "")
             + f'<small> — {e(p["descricao"] or "sem descrição")}</small>'
             f"<br><small>instale no terminal: "
             f'<code>nomos skills instalar {e(p["caminho"])}</code></small></li>'
@@ -1436,14 +1451,22 @@ def _secao_skills(d: dict, skills: dict | None) -> str:
         partes.append('<details class="card"><summary>Diagnóstico de '
                       f"segurança</summary><pre>{e(diag)}</pre></details>")
 
-    # a honestidade que sustenta a página inteira
+    # A HONESTIDADE QUE SUSTENTA A PÁGINA — e que já precisou ser reescrita.
+    # A versão anterior dizia "skill com rede roda SEM cerca". Era verdade
+    # quando medi e DEIXOU de ser: outra sessão fechou a cerca, e eu provei
+    # agora — o mesmo programa lê `~/.nomos/vault.json` sem confinamento e
+    # NÃO lê sob `sandbox-exec` (rc=1, saída vazia). Texto que descreve um
+    # fato tem de morrer com o fato; manter o antigo seria caluniar o
+    # sistema em vez de descrevê-lo.
     partes.append(
-        '<div class="card"><small><b>Por que não há botão de executar aqui.</b> '
-        "Rodar skill exige isolamento, e no macOS ele ainda não está fechado: "
-        "medido, skill sem rede é recusada e skill com rede roda sem cerca. "
-        "Enquanto for assim, a execução fica no terminal, onde o gate pergunta "
-        "antes. Um botão aqui prometeria o que o sistema não entrega."
-        "</small></div>")
+        '<div class="card"><small><b>Por que a execução fica no terminal.</b> '
+        "Uma skill com acesso à rede <b>roda confinada</b> aqui — medido: sob "
+        "o confinamento ela não enxerga o cofre. Já uma skill <i>sem</i> rede "
+        "não executa neste Mac: o confinamento desse caminho é só-Linux. "
+        "Enquanto essa inversão existir (a de risco menor é a que não roda), "
+        "a execução continua no terminal, onde o gate pergunta antes de cada "
+        "uma — em vez de um botão que funciona para umas e não para outras "
+        "sem explicar por quê.</small></div>")
     return "".join(partes)
 
 

@@ -27,11 +27,39 @@ def test_pagina_nao_tem_botao_de_executar():
         assert proibido not in baixo, f"a aba Skills ganhou {proibido!r}"
 
 
-def test_explica_por_que_nao_executa():
+def test_explica_por_que_nao_executa_com_o_fato_ATUAL():
+    """Este teste já guardou a frase "skill com rede roda SEM cerca". Era
+    verdade quando medi e deixou de ser — outra sessão fechou a cerca, e
+    provei: o mesmo programa lê ~/.nomos/vault.json sem confinamento e NÃO lê
+    sob sandbox-exec. Um teste que congela um fato vencido transforma a
+    própria suíte em guardiã de uma calúnia. Agora ele prende o fato ATUAL e
+    PROÍBE o antigo."""
     html = pw._secao_skills({}, {"instaladas": [], "prontas": [],
                                  "diagnostico": ""})
-    assert "Por que não há botão de executar" in html
-    assert "sem cerca" in html          # diz o fato medido, não um genérico
+    assert "Por que a execução fica no terminal" in html
+    assert "roda confinada" in html
+    assert "não enxerga o cofre" in html      # o fato medido, não um genérico
+    assert "sem cerca" not in html            # a calúnia não volta
+    assert "só-Linux" in html                 # a inversão que resta, dita
+
+
+def test_diz_por_skill_se_roda_aqui():
+    """Instalar e só depois descobrir que não roda é surpresa evitável."""
+    prontas = [{"nome": "x", "descricao": "", "caminho": "/x",
+                "instalada": False,
+                "motivo_aqui": "o confinamento desse caminho é só-Linux"}]
+    html = pw._secao_skills({}, {"instaladas": [], "prontas": prontas,
+                                 "diagnostico": ""})
+    assert "não roda neste Mac" in html
+    assert "só-Linux" in html
+
+
+def test_skill_que_roda_nao_ganha_aviso():
+    prontas = [{"nome": "y", "descricao": "", "caminho": "/y",
+                "instalada": False, "motivo_aqui": ""}]
+    html = pw._secao_skills({}, {"instaladas": [], "prontas": prontas,
+                                 "diagnostico": ""})
+    assert "não roda neste Mac" not in html
 
 
 def test_vazio_orienta_em_vez_de_parecer_erro():
