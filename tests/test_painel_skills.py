@@ -27,20 +27,24 @@ def test_pagina_nao_tem_botao_de_executar():
         assert proibido not in baixo, f"a aba Skills ganhou {proibido!r}"
 
 
-def test_explica_por_que_nao_executa_com_o_fato_ATUAL():
-    """Este teste já guardou a frase "skill com rede roda SEM cerca". Era
-    verdade quando medi e deixou de ser — outra sessão fechou a cerca, e
-    provei: o mesmo programa lê ~/.nomos/vault.json sem confinamento e NÃO lê
-    sob sandbox-exec. Um teste que congela um fato vencido transforma a
-    própria suíte em guardiã de uma calúnia. Agora ele prende o fato ATUAL e
-    PROÍBE o antigo."""
+def test_explica_a_execucao_com_o_fato_ATUAL():
+    """Este teste já congelou DUAS frases vencidas, e as duas eram minhas:
+      v1 "skill com rede roda SEM cerca"  -> caiu quando fecharam a cerca
+      v2 "skill sem rede NÃO executa aqui" -> caiu quando o perfil base chegou
+    Guardar texto que descreve um fato é guardar o fato: quando ele muda, o
+    teste vira defensor do erro com autoridade de suíte verde. Aqui ele prende
+    o fato ATUAL e proíbe explicitamente os dois anteriores."""
     html = pw._secao_skills({}, {"instaladas": [], "prontas": [],
                                  "diagnostico": ""})
-    assert "Por que a execução fica no terminal" in html
-    assert "roda confinada" in html
-    assert "não enxerga o cofre" in html      # o fato medido, não um genérico
-    assert "sem cerca" not in html            # a calúnia não volta
-    assert "só-Linux" in html                 # a inversão que resta, dita
+    assert "Como a execução acontece" in html
+    # o fato medido POR EFEITO — PermissionError distingue negação de timeout
+    assert "PermissionError" in html
+    assert "nega rede" in html
+    assert "não enxerga o seu cofre" in html
+    # as duas frases vencidas não voltam
+    assert "sem cerca" not in html
+    assert "só-Linux" not in html
+    assert "não executa neste Mac" not in html
 
 
 def test_diz_por_skill_se_roda_aqui():

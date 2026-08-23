@@ -1590,22 +1590,21 @@ def _secao_skills(d: dict, skills: dict | None) -> str:
         partes.append('<details class="card"><summary>Diagnóstico de '
                       f"segurança</summary><pre>{e(diag)}</pre></details>")
 
-    # A HONESTIDADE QUE SUSTENTA A PÁGINA — e que já precisou ser reescrita.
-    # A versão anterior dizia "skill com rede roda SEM cerca". Era verdade
-    # quando medi e DEIXOU de ser: outra sessão fechou a cerca, e eu provei
-    # agora — o mesmo programa lê `~/.nomos/vault.json` sem confinamento e
-    # NÃO lê sob `sandbox-exec` (rc=1, saída vazia). Texto que descreve um
-    # fato tem de morrer com o fato; manter o antigo seria caluniar o
-    # sistema em vez de descrevê-lo.
+    # A HONESTIDADE QUE SUSTENTA A PÁGINA — reescrita PELA SEGUNDA VEZ.
+    # v1 dizia "skill com rede roda SEM cerca": caiu quando fecharam a cerca.
+    # v2 dizia "skill SEM rede não executa aqui — confinamento só-Linux":
+    # caiu agora. Medi por EFEITO antes de reescrever, e a diferença entre os
+    # dois erros é a prova: sob o perfil sem rede o socket devolve
+    # PermissionError (a cerca NEGOU); sob o perfil com rede devolve
+    # TimeoutError (a rede foi permitida e só não respondeu). Hoje as 16
+    # skills com código executam neste Mac — não há mais inversão.
     partes.append(
-        '<div class="card"><small><b>Por que a execução fica no terminal.</b> '
-        "Uma skill com acesso à rede <b>roda confinada</b> aqui — medido: sob "
-        "o confinamento ela não enxerga o cofre. Já uma skill <i>sem</i> rede "
-        "não executa neste Mac: o confinamento desse caminho é só-Linux. "
-        "Enquanto essa inversão existir (a de risco menor é a que não roda), "
-        "a execução continua no terminal, onde o gate pergunta antes de cada "
-        "uma — em vez de um botão que funciona para umas e não para outras "
-        "sem explicar por quê.</small></div>")
+        '<div class="card"><small><b>Como a execução acontece.</b> '
+        "Skill sem acesso à rede roda numa cerca que <b>nega rede</b> — "
+        "medido: a conexão morre com <code>PermissionError</code>, não por "
+        "timeout. Skill com rede roda confinada do mesmo jeito no resto: sob "
+        "o confinamento ela não enxerga o seu cofre. Toda execução passa pelo "
+        "gate, que pergunta antes.</small></div>")
     return "".join(partes)
 
 
