@@ -144,6 +144,91 @@ def _melhor(nomes: list[str], prefixos: tuple[str, ...]) -> str | None:
     return None
 
 
+def _melhor_por_capacidade(nomes: list[str], capacidade: str,
+                           host: str = OLLAMA,
+                           prefixos: tuple[str, ...] = ()) -> str | None:
+    """O primeiro modelo que DECLARA a capacidade — não o que parece declarar.
+
+    Casar o NOME do modelo ("llava", "vl", "vision") é um bug de classe: todo
+    modelo novo entra como "sem motor" até alguém lembrar de acrescentar o
+    prefixo. Medido em 23/08: `qwen3.5:4b-q8_0` responde
+    `capabilities: ['completion','vision','tools','thinking']` no /api/show e
+    descreveu uma imagem corretamente — enquanto o painel dizia "sem motor de
+    visão", porque o nome não casava com nenhum prefixo.
+
+    Fail-safe: Ollama antigo não devolve `capabilities`. Aí, e SÓ aí, cai na
+    heurística do nome — melhor um palpite velho que nenhuma resposta.
+    """
+    declarados = [n for n in nomes if capacidade in capacidades_ollama(n, host)]
+    if declarados:
+        return declarados[0]
+    # nenhum declarou: foi porque não sabem, ou porque o Ollama não conta?
+    if any(capacidades_ollama(n, host) for n in nomes):
+        return None                      # o Ollama conta, e a resposta é não
+    return _melhor(nomes, prefixos) if prefixos else None
+
+
+# Onde um modelo do whisper.cpp costuma estar. Lista FECHADA de propósito:
+# varrer o disco inteiro levou mais de 10 minutos numa medição.
+_DIRS_WHISPER = (
+    "~/.nomos/models/whisper",
+    "~/.cache/whisper",
+    "/opt/homebrew/share/whisper-cpp",
+    "/usr/local/share/whisper-cpp",
+    "~/Desktop/Pantheon AI/pantheon-core/runtime/models/whisper",
+)
+
+
+def whisper_disponivel() -> tuple[str | None, str | None, str]:
+    """(binário, modelo, motivo) — a verdade sobre transcrever nesta máquina.
+
+    Três defeitos moravam aqui, e consertar um só piora o conjunto:
+
+    1. procurava `whisper`/`whisper-cpp` e ignorava `whisper-cli`, que é o nome
+       atual do whisper.cpp no Homebrew — o único presente neste Mac;
+    2. `"whisper-cli"` não contém a substring `"whisper-cpp"`, então quem só
+       acrescenta o nome faz o binário cair no ramo de flags do openai-whisper.
+       Medido: ele imprime o HELP e sai com **EXIT=0**, sem transcrever nada —
+       um rc mentiroso que vira "transcrição vazia" com a causa errada;
+    3. o ramo whisper.cpp nunca passava `-m`, e o binário morre em
+       `failed to open 'models/ggml-base.en.bin'`.
+
+    Por isso esta função devolve o MODELO junto: binário sem modelo não é motor
+    pronto, é promessa. Dizer "pronto" ali seria trocar uma mentira por outra.
+    """
+    import os
+
+    bin_ = (shutil.which("whisper-cli") or shutil.which("whisper-cpp")
+            or shutil.which("whisper"))
+    if not bin_:
+        return None, None, "nenhum binário de whisper no PATH do serviço"
+    # o openai-whisper baixa o modelo sozinho na primeira execução
+    if Path(bin_).name == "whisper":
+        return bin_, None, "openai-whisper (baixa o modelo na 1ª execução)"
+    env = os.environ.get("NOMOS_WHISPER_MODEL")
+    candidatos = [Path(env).expanduser()] if env else []
+    for d in _DIRS_WHISPER:
+        base = Path(d).expanduser()
+        if not base.is_dir():
+            continue
+        candidatos += sorted(base.glob("ggml-*.bin"))
+    for c in candidatos:
+        if c.is_file() and c.stat().st_size > 1_000_000:
+            return bin_, str(c), "pronto"
+    return bin_, None, ("binário presente, modelo ausente — baixe um ggml-*.bin "
+                        "(ex.: ggml-base.bin) ou aponte NOMOS_WHISPER_MODEL")
+
+
+def say_disponivel() -> str | None:
+    """O `say` do macOS: TTS que já existe em toda máquina, sem instalar nada.
+
+    O detector só conhecia o `piper`, que exige download. Enquanto isso
+    `/usr/bin/say` estava no PATH do próprio serviço, com 9 vozes pt-BR, e o
+    painel dizia "nenhum motor de falar".
+    """
+    return shutil.which("say")
+
+
 def _cerebro_baixado() -> bool:
     try:
         home = config.nomos_home()
@@ -158,13 +243,16 @@ def detectar(hosts: dict | None = None) -> dict:
     nomes = modelos_ollama(h["ollama"])
     texto_local = _melhor(nomes, PREFER["texto"])
     cod_local = _melhor(nomes, PREFER["codigo"])
-    visao = _melhor(nomes, PREFER["visao"])
+    # visão POR CAPACIDADE declarada; o nome vira só fail-safe de Ollama antigo
+    visao = _melhor_por_capacidade(nomes, "vision", h["ollama"], PREFER["visao"])
+    ferramentas = _melhor_por_capacidade(nomes, "tools", h["ollama"])
     sd_ok = _cacheado(f"sd:{h['sd']}", 10.0,
                       lambda: _http_ok(f"{h['sd']}/sdapi/v1/sd-models"))
     comfy_ok = _cacheado(f"comfy:{h['comfy']}", 10.0,
                          lambda: _http_ok(f"{h['comfy']}/system_stats"))
     piper = shutil.which("piper")
-    whisper = shutil.which("whisper") or shutil.which("whisper-cpp")
+    say = say_disponivel()
+    whisper_bin, whisper_modelo, whisper_motivo = whisper_disponivel()
     so_local = localidade.esta_ligado(config.nomos_home())
 
     def externo(base):
@@ -207,10 +295,22 @@ def detectar(hosts: dict | None = None) -> dict:
                  "disponivel": bool(visao), "detalhe": visao}),
         ],
         "audio": [
+            loc({"id": "say", "rotulo": "Voz do macOS (falar em voz alta → WAV)",
+                 "disponivel": bool(say), "detalhe": say}),
             loc({"id": "piper", "rotulo": "Piper (falar em voz alta → WAV)",
                  "disponivel": bool(piper), "detalhe": piper}),
+            # binário SEM modelo não é motor pronto: `disponivel` só é True com
+            # os dois, e `detalhe` diz qual das duas peças falta.
             loc({"id": "whisper", "rotulo": "Whisper (transcrever áudio)",
-                 "disponivel": bool(whisper), "detalhe": whisper}),
+                 "disponivel": bool(whisper_bin and whisper_modelo),
+                 "detalhe": whisper_modelo or whisper_motivo}),
+        ],
+        "ferramentas": [
+            # o motor SABER chamar ferramenta e HAVER skill instalada são coisas
+            # diferentes; estavam na mesma linha e o dono lia "não sei chamar".
+            loc({"id": "function-calling",
+                 "rotulo": f"Chamar ferramentas ({ferramentas or 'sem modelo'})",
+                 "disponivel": bool(ferramentas), "detalhe": ferramentas}),
         ],
     }
 

@@ -1246,6 +1246,28 @@ def _secao_chaves(d: dict, chaves: dict | None) -> str:
     e = esc
     partes = ['<h2 id="chaves">🔑 Chaves</h2>']
 
+    # QUEM REALMENTE CONSOME CHAVE, hoje, no código (medido: são os únicos
+    # nomes passados a vault.get() em todo o src/nomos):
+    #   omniroute_api_key  -> cognition/relay.py       (roteador local)
+    #   anthropic_api_key  -> cognition/arbitragem.py  (motor de nuvem)
+    #   __audit_hmac_key__ -> kernel/audit_anchor.py   (interno, não se cola)
+    # As 4 fontes gratuitas abaixo NÃO são lidas por nenhuma linha do NOMOS.
+    # Guardá-las no cofre é legítimo, mas sozinho não faz nada — a rota só
+    # existe se a chave for cadastrada NO OMNIROUTE. Dizer isso na cara é o
+    # que separa uma página útil de uma que promete e não entrega.
+    CONSUMIDAS = {"omniroute_api_key": "o roteador local (já configurada)",
+                  "anthropic_api_key": "o motor de nuvem do NOMOS"}
+    partes.append(
+        '<div class="card"><b>O que o NOMOS lê hoje</b>'
+        '<ul class="lista">'
+        + "".join(f"<li><code>{e(n)}</code> — {e(oq)}</li>"
+                  for n, oq in CONSUMIDAS.items())
+        + "</ul><small>Qualquer outro nome fica guardado e cifrado, mas "
+        "<b>nenhuma parte do NOMOS o lê</b>. Para uma chave de Groq/Google/"
+        "OpenRouter/Mistral virar rota de verdade, ela precisa ser cadastrada "
+        "no painel do OmniRoute (<code>http://127.0.0.1:20128/dashboard</code>)"
+        " — colar aqui sozinho não liga nada.</small></div>")
+
     # onde pegar cada chave gratuita — nome sugerido + site do provedor.
     # (nome, rótulo, url, dica). Abrem em nova aba; rel protege a origem.
     FONTES = [
@@ -1267,10 +1289,11 @@ def _secao_chaves(d: dict, chaves: dict | None) -> str:
         '<details class="fontes-chave" open><summary>Onde conseguir chaves '
         "gratuitas</summary>"
         f'<ul class="lista">{linhas}</ul>'
-        "<p><small>Crie a conta no site, gere a chave lá e volte para colar "
-        "aqui. <b>Não cole a chave em chat de IA</b> — cole só neste campo, "
-        "que é local e cifrado. As rotas grátis compartilhadas do OmniRoute "
-        "são instáveis; uma conta própria (Groq/Google) dá cota confiável."
+        "<p><small>Crie a conta no site e gere a chave lá. <b>Não cole a "
+        "chave em chat de IA.</b> Guardar aqui deixa a chave cifrada e à mão, "
+        "mas <b>quem roteia é o OmniRoute</b>: cadastre-a também no painel "
+        "dele para a rota passar a existir. As rotas grátis compartilhadas "
+        "são instáveis (medido: HTTP 429); conta própria dá cota confiável."
         "</small></p></details>")
 
     if chaves and chaves.get("gravada"):

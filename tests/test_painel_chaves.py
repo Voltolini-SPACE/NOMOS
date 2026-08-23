@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from nomos.interface import painel_web as pw
 from nomos.interface.painel_web import DashboardServer as Painel
 from nomos.kernel.audit import AuditLog
 from nomos.kernel.vault import Vault
@@ -128,3 +129,41 @@ def test_aba_traz_links_das_fontes_gratuitas(painel):
     assert "Não cole a chave em chat" in pag        # a advertência de segurança
     # o nome sugerido aparece para orientar o campo
     assert "groq_api_key" in pag
+
+
+# --------------------------------------------------------------------------
+# A página não pode prometer o que o código não cumpre
+# --------------------------------------------------------------------------
+def test_pagina_declara_o_que_o_nomos_realmente_le():
+    """Medido: os únicos nomes passados a vault.get() em src/nomos são
+    omniroute_api_key, anthropic_api_key e __audit_hmac_key__. A página
+    oferecia 4 chaves gratuitas que NENHUMA linha lê — e não oferecia a de
+    nuvem que é lida. Convite a colar chave que não liga nada."""
+    html = pw._secao_chaves({}, {"token": "T", "base": "/d/x", "nomes": []})
+    assert "O que o NOMOS lê hoje" in html
+    assert "omniroute_api_key" in html
+    assert "anthropic_api_key" in html
+    # e diz, sem rodeio, que as outras não são lidas
+    assert "nenhuma parte do NOMOS o lê" in html
+    assert "OmniRoute" in html
+
+
+def test_fontes_gratuitas_nao_prometem_ligar_sozinhas():
+    html = pw._secao_chaves({}, {"token": "T", "base": "/d/x", "nomes": []})
+    assert "quem roteia é o OmniRoute" in html
+    # a frase antiga dizia só "volte para colar aqui", sugerindo que bastava
+    assert "volte para colar aqui" not in html
+
+
+def test_o_conjunto_lido_bate_com_o_codigo():
+    """Se alguém passar a ler uma chave nova (ou parar de ler uma), este teste
+    quebra e a página tem de ser atualizada junto."""
+    import re
+    from pathlib import Path
+    raiz = Path(pw.__file__).resolve().parents[1]
+    nomes: set[str] = set()
+    for f in raiz.rglob("*.py"):
+        for m in re.finditer(r"vault\.get\(\s*([A-Za-z_][\w.]*)", f.read_text()):
+            nomes.add(m.group(1).split(".")[-1])
+    assert nomes <= {"CLOUD_KEY_NAME", "RELAY_KEY_NAME", "CHAVE_COFRE"}, (
+        f"chave nova sendo lida: {nomes} — atualize a aba Chaves")
