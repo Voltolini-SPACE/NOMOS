@@ -105,7 +105,18 @@ _PERFIL_BASE = """(version 1)
 (deny default)
 (allow process-fork)
 (allow process-exec)
-(allow sysctl-read)
+(deny sysctl-read)
+;; ANTES: `(allow sysctl-read)` amplo. Medido em 23/08 (bateria adversarial,
+;; confirmado por sonda benigna própria): de DENTRO da cerca, uma skill lia
+;; `KERN_PROCARGS2` de ~219 processos do mesmo uid — o argv E o environment de
+;; cada um, ~3100 entradas. Serviços do host guardam tokens vivos em env, então
+;; era exfiltração de segredo por um canal que NEM `network_isolated` NEM
+;; `fs_confinado` cobrem: os dois ficavam True enquanto isso vazava.
+;; `deny` por NOME não fecha — procargs2 é lido por NÚMERO de MIB e escapa do
+;; filtro `sysctl-name`. Só o deny do domínio inteiro fecha. Custo medido: as
+;; 16 skills com código continuam rodando (nenhuma usa sysctl); `os.cpu_count()`
+;; passa a devolver None (degradação graciosa, não erro) e `ctypes.util.
+;; find_library` deixa de resolver — nenhuma skill atual usa nem um nem outro.
 (allow mach-lookup (global-name "com.apple.bsd.dirhelper"))
 (allow file-read* (literal "/"))
 (allow file-read-metadata (literal "/var"))

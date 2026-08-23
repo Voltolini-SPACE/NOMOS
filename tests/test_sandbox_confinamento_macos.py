@@ -274,3 +274,52 @@ def test_o_cofre_continua_fechado_por_caminho_absoluto(tmp_path):
     r = sandbox.run([sys.executable, str(script)], allow_network=True, timeout=30)
     assert "ABERTO" not in (r.stdout or ""), r.stdout
     assert (r.stdout or "").count("bloqueado") == 3
+
+
+# ------------------------------------------ procargs2: env de processos irmãos
+@so_mac
+def test_nao_le_procargs_de_outros_processos():
+    """Bateria adversarial (23/08): o perfil BASE tinha `(allow sysctl-read)`
+    amplo, e de dentro da cerca uma skill lia `KERN_PROCARGS2` de ~219
+    processos do mesmo uid — argv E environment de cada um. Serviços do host
+    guardam tokens vivos em env, então era exfiltração de segredo por um canal
+    que nem `network_isolated` nem `fs_confinado` cobrem.
+
+    `deny` por NOME não fecha: procargs2 é lido por NÚMERO de MIB e escapa do
+    filtro `sysctl-name`. Só o deny do domínio inteiro fecha — este teste
+    prende isso.
+    """
+    sonda = (
+        "import ctypes\n"
+        "libc = ctypes.CDLL('/usr/lib/libSystem.dylib')\n"
+        "def pa(pid):\n"
+        "    mib = (ctypes.c_int*3)(1, 49, pid)\n"
+        "    n = ctypes.c_size_t(0)\n"
+        "    return libc.sysctl(mib, 3, None, ctypes.byref(n), None, 0)\n"
+        "# 0 = leu; -1 = negado. Conta quantos PIDs alheios cederam procargs.\n"
+        "vivos = sum(1 for pid in range(1, 4000)\n"
+        "            if pid != __import__('os').getpid() and pa(pid) == 0)\n"
+        "print('LIDOS=%d' % vivos)\n")
+    import tempfile
+    d = tempfile.mkdtemp()
+    script = Path(d) / "sonda.py"
+    script.write_text(sonda)
+    r = sandbox.run([sys.executable, str(script)], allow_network=False, timeout=30)
+    # ou o processo lê ZERO procargs alheios, ou a própria sysctl é negada
+    if r.rc == 0:
+        assert "LIDOS=0" in (r.stdout or ""), r.stdout
+    else:
+        assert "not permitted" in (r.stderr or "").lower() \
+            or "PermissionError" in (r.stderr or ""), r.stderr
+
+
+@so_mac
+def test_deny_sysctl_nao_impede_a_skill_de_rodar():
+    """O custo do deny é medido e aceitável: skill roda, `os.cpu_count()`
+    degrada para None (não crash). Nenhuma das 16 skills usa sysctl."""
+    import tempfile
+    d = tempfile.mkdtemp()
+    s = Path(d) / "s.py"
+    s.write_text("import os, json, pathlib\nprint('OK', os.cpu_count())\n")
+    r = sandbox.run([sys.executable, str(s)], allow_network=False, timeout=25)
+    assert r.rc == 0 and "OK" in (r.stdout or ""), r.stderr
