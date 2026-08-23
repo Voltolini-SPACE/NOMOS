@@ -85,3 +85,54 @@ def test_contrato_antigo_nao_derruba_o_painel(tmp_path, monkeypatch):
     monkeypatch.setattr(sc, "capacidades", so_antigo)
     d = pw.dados_dashboard({"home": tmp_path, "skills": tmp_path / "skills"})
     assert d["capacidades"] == []
+
+
+# --------------------------------------------------------------------------
+# Permissão em código é honesta e ilegível — o que na prática é meia-honestidade
+# --------------------------------------------------------------------------
+def test_permissao_ganha_texto_em_portugues():
+    html = pw._permissoes_legiveis(["A2_NET_EGRESS", "A5_CODE_EXEC"])
+    assert "fala com a internet" in html
+    assert "inicia outros programas" in html
+    assert "A2_NET_EGRESS" in html      # o código continua, para quem o usa
+
+
+def test_permissao_desconhecida_nao_some():
+    """Sumir esconderia justamente a permissão que o vocabulário não previu."""
+    html = pw._permissoes_legiveis(["A9_ALGO_NOVO"])
+    assert "A9_ALGO_NOVO" in html
+
+
+def test_sem_permissao_diz_travessao():
+    assert pw._permissoes_legiveis([]) == "—"
+    assert pw._permissoes_legiveis(None) == "—"
+
+
+def test_resumo_da_a_forma_antes_da_lista():
+    """33 fichas em sequência não respondem 'o que entrou em casa?'."""
+    caps = [{"permissoes": ["A2_NET_EGRESS"]} for _ in range(26)]
+    caps += [{"permissoes": ["A5_CODE_EXEC"]} for _ in range(3)]
+    caps += [{"permissoes": ["A3_CRED_USE"]}]
+    html = pw._resumo_permissoes(caps)
+    assert "26</b> falam com a internet" in html
+    assert "3</b> iniciam outros programas" in html
+    assert "1</b> usam credencial do cofre" in html
+    # a garantia junto do número, senão o número assusta sem contexto
+    assert "nenhuma age sem você instalar e aprovar" in html
+
+
+def test_resumo_omite_o_que_e_zero():
+    html = pw._resumo_permissoes([{"permissoes": ["A2_NET_EGRESS"]}])
+    assert "falam com a internet" in html
+    assert "iniciam outros programas" not in html
+
+
+def test_resumo_vazio_nao_polui():
+    assert pw._resumo_permissoes([]) == ""
+    assert pw._resumo_permissoes([{"permissoes": []}]) == ""
+
+
+def test_a5_e_a4_contam_juntos():
+    """Duas grafias para a mesma ideia; o dono lê UMA contagem."""
+    caps = [{"permissoes": ["A4_PROC_SPAWN"]}, {"permissoes": ["A5_CODE_EXEC"]}]
+    assert "2</b> iniciam outros programas" in pw._resumo_permissoes(caps)

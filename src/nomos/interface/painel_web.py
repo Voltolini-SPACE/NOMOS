@@ -1380,6 +1380,62 @@ def dados_skills(ctx) -> dict:
             "raiz_exemplos": str(raiz_achada) if raiz_achada else None}
 
 
+# O que cada permissão SIGNIFICA, em português de gente. A tela mostrava
+# `A5_CODE_EXEC` cru: honesto e ilegível, o que na prática é meia-honestidade
+# — quem não conhece o código não sabe que a skill inicia outros programas.
+# O código continua ao lado, para quem o usa e para poder ser buscado.
+_PERMISSAO_EM_PORTUGUES = {
+    "A0_READ_LOCAL": "lê arquivos seus",
+    "A1_WRITE_LOCAL": "escreve arquivos",
+    "A2_NET_EGRESS": "fala com a internet",
+    "A3_CRED_USE": "usa uma credencial do cofre",
+    "A4_PROC_SPAWN": "inicia outros programas",
+    "A5_CODE_EXEC": "inicia outros programas",
+    "A6_SYSTEM": "mexe em ajustes do sistema",
+}
+
+
+def _permissoes_legiveis(perms) -> str:
+    """`['A2_NET_EGRESS']` -> 'fala com a internet (A2_NET_EGRESS)'.
+
+    Código desconhecido NÃO some: aparece cru. Sumir seria esconder a
+    permissão mais interessante — a que o vocabulário ainda não previu.
+    """
+    e = esc
+    if not perms:
+        return "—"
+    partes = []
+    for cod in perms:
+        texto = _PERMISSAO_EM_PORTUGUES.get(str(cod))
+        partes.append(f"{e(texto)} <small>({e(str(cod))})</small>"
+                      if texto else f"<small>{e(str(cod))}</small>")
+    return " · ".join(partes)
+
+
+def _resumo_permissoes(caps: list) -> str:
+    """A forma do conjunto antes da lista: quantas tocam o quê.
+
+    Trinta e três fichas em sequência não respondem "o que eu acabei de
+    deixar entrar em casa?". Duas contagens respondem.
+    """
+    if not caps:
+        return ""
+    def conta(cod):
+        return sum(1 for c in caps if cod in (c.get("permissoes") or []))
+    rede = conta("A2_NET_EGRESS")
+    exec_ = conta("A5_CODE_EXEC") + conta("A4_PROC_SPAWN")
+    cred = conta("A3_CRED_USE")
+    itens = [f"<b>{rede}</b> falam com a internet"] if rede else []
+    if exec_:
+        itens.append(f"<b>{exec_}</b> iniciam outros programas")
+    if cred:
+        itens.append(f"<b>{cred}</b> usam credencial do cofre")
+    if not itens:
+        return ""
+    return (f'<p><small>De {len(caps)}: ' + " · ".join(itens)
+            + " — nenhuma age sem você instalar e aprovar.</small></p>")
+
+
 def _secao_skills(d: dict, skills: dict | None) -> str:
     """Aba Skills — listar, ver, diagnosticar e aprender a criar.
 
@@ -2242,6 +2298,7 @@ def render_html(d: dict, refresh: int | None = None,
                  ("vem no NOMOS", "Vêm no NOMOS",
                   "acompanham o pacote e ainda NÃO estão instaladas — "
                   "aparecem para você escolher, não porque estejam ativas")]
+        aba_capac.append(_resumo_permissoes(caps))
         vistos = {c.get("status") for c in caps}
         for chave, titulo, o_que_significa in ORDEM:
             grupo = [c for c in caps if c.get("status") == chave]
@@ -2251,14 +2308,14 @@ def render_html(d: dict, refresh: int | None = None,
                 f'<h3 class="mini-h">{e(titulo)} ({len(grupo)})</h3>'
                 f'<p><small class="pendente">{e(o_que_significa)}</small></p>')
             for c in sorted(grupo, key=lambda x: str(x.get("nome", ""))):
-                perms = ", ".join(c.get("permissoes") or []) or "—"
+                perms = _permissoes_legiveis(c.get("permissoes"))
                 aba_capac.append(
                     f'<div class="card filtravel">{e(str(c["nome"]))} '
                     f'<span class="pill">risco {e(str(c["risco"]))}</span><br>'
                     f'{e(str(c["descricao"]))}<br>'
                     f'<small>entrada: {e(str(c["entrada"]))} → '
                     f'{e(str(c["saida"]))}</small><br>'
-                    f'<small class="pendente">toca: {e(perms)}</small></div>')
+                    f'<small class="pendente">toca: {perms}</small></div>')
         # estado que o código não conhece não pode sumir da tela
         for extra in sorted(vistos - {k for k, _, _ in ORDEM}):
             grupo = [c for c in caps if c.get("status") == extra]
