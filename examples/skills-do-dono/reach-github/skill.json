@@ -1,0 +1,17 @@
+{
+  "name": "reach-github",
+  "version": "1.0.0",
+  "description": "busca codigo e repositorios pelo gh CLI; usa o token do host (escopo repo+workflow)",
+  "entry": "reach_github.py",
+  "permissions": ["A0_READ_LOCAL", "A1_WRITE_LOCAL", "A2_NET_EGRESS", "A3_CRED_USE"],
+  "modalities": ["texto", "web"],
+  "keywords": ["github", "busca", "codigo", "repositorio"],
+  "local_only_capable": false,
+  "cloud_required": false,
+  "compatible_nomos_version": ">=0.11",
+  "requires": [
+    {"tipo": "binario", "nome": "gh", "obrigatorio": true},
+    {"tipo": "chave", "nome": "token do gh (host, nao do cofre)", "obrigatorio": true}
+  ],
+  "files": {}
+}

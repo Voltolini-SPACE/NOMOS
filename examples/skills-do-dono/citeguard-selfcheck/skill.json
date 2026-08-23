@@ -3,11 +3,27 @@
   "version": "1.0.0",
   "description": "roda o harness golden-master do citeguard (46 casos) sem tocar a rede",
   "entry": "selfcheck.py",
-  "permissions": ["A0_READ_LOCAL", "A1_WRITE_LOCAL"],
-  "modalities": ["texto"],
-  "keywords": ["teste", "autoteste", "citeguard"],
+  "permissions": [
+    "A0_READ_LOCAL",
+    "A1_WRITE_LOCAL"
+  ],
+  "modalities": [
+    "texto"
+  ],
+  "keywords": [
+    "teste",
+    "autoteste",
+    "citeguard"
+  ],
   "local_only_capable": true,
   "cloud_required": false,
   "compatible_nomos_version": ">=0.11",
-  "files": {}
+  "files": {},
+  "requires": [
+    {
+      "tipo": "binario",
+      "nome": "python3",
+      "obrigatorio": true
+    }
+  ]
 }

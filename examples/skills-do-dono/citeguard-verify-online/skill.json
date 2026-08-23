@@ -1,0 +1,16 @@
+{
+  "name": "citeguard-verify-online",
+  "version": "1.0.0",
+  "description": "resolve DOI no Crossref e arXiv id no export.arxiv.org; manda cada DOI citado para terceiros",
+  "entry": "verify_online.py",
+  "permissions": ["A0_READ_LOCAL", "A1_WRITE_LOCAL", "A2_NET_EGRESS"],
+  "modalities": ["texto", "arquivo", "web"],
+  "keywords": ["citacao", "doi", "crossref", "arxiv", "online"],
+  "local_only_capable": false,
+  "cloud_required": false,
+  "compatible_nomos_version": ">=0.11",
+  "requires": [
+    {"tipo": "binario", "nome": "python3", "obrigatorio": true}
+  ],
+  "files": {}
+}
