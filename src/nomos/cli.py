@@ -1278,8 +1278,15 @@ def cmd_skills(ctx, args) -> int:
     if sub == "catalogo":
         from nomos.ext import skill_catalogo as scat
         semente = getattr(args, "semear", None)
-        if semente:
+        if semente is not None:
             from nomos.simple.erros import fmt   # import local, como no resto
+            if not semente:
+                # sem PASTA: as skills que VIAJAM COM O PACOTE. É a única origem
+                # que existe numa instalação normal — `examples/` só existe
+                # dentro do checkout, e era isso que tornava a sugestão antiga
+                # um caminho morto para quem instalou o produto.
+                from nomos import skills_embutidas as emb
+                semente = str(emb.diretorio_embutido())
             # primeiro chamador de PRODUÇÃO de adicionar_ao_catalogo: sem ele o
             # catálogo tinha leitor e nenhum escritor, e nascia sempre vazio.
             try:
@@ -1304,8 +1311,9 @@ def cmd_skills(ctx, args) -> int:
             return EXIT_OK
         if not caps:
             print("nenhuma skill instalada ou disponível ainda.")
-            print("  para experimentar: nomos skills instalar "
-                  "examples/skills/busca-arquivos")
+            print("  para começar: nomos skills catalogo --semear")
+            print("  (registra as skills que vieram no pacote; instalar depois "
+                  "continua pedindo sua confirmação)")
             return EXIT_OK
         print(f"Catálogo de capacidades ({len(caps)}):\n")
         for c in caps:
@@ -3391,10 +3399,10 @@ def build_parser() -> argparse.ArgumentParser:
     s_cat = skssub.add_parser("catalogo")
     s_cat.add_argument("--json", action="store_true",
                        help="catálogo de capacidades em JSON estável")
-    s_cat.add_argument("--semear", metavar="PASTA",
-                       help="registra como DISPONÍVEIS as skills de uma pasta "
-                            "(entram NÃO assinadas; instalar segue passando "
-                            "pelo gate)")
+    s_cat.add_argument("--semear", metavar="PASTA", nargs="?", const="",
+                       help="registra como DISPONÍVEIS as skills de uma pasta; "
+                            "sem PASTA usa as que vieram no pacote (entram NÃO "
+                            "assinadas; instalar segue passando pelo gate)")
     s_cat.set_defaults(fn=cmd_skills)
     s_i = skssub.add_parser("instalar")
     s_i.add_argument("caminho")
