@@ -321,6 +321,11 @@ def test_aviso_de_execucao_bate_com_a_execucao_real(tmp_path, nomos_home,
     diverge do executor é PIOR que nenhum: mente com autoridade. Esta asserção
     é independente de plataforma de propósito (no Linux o ramo sem rede executa,
     no macOS não), porque o que se afirma é a COERÊNCIA, não o resultado.
+
+    PRECISÃO: `pode_executar_aqui` responde "a PLATAFORMA deixa rodar?", não
+    "a skill vai dar certo". Por isso a skill usada aqui sempre sai com 0 —
+    uma que falhe por conta própria (argumento faltando, por exemplo) daria
+    rc≠0 com `pode=True` sem que houvesse divergência nenhuma.
     """
     from nomos.kernel import localidade
 
@@ -378,3 +383,45 @@ def test_instalada_vence_a_do_pacote(tmp_path, nomos_home):
                             incluir_do_pacote=True)
     achadas = [c for c in caps if c["nome"] == "busca-arquivos"]
     assert len(achadas) == 1 and achadas[0]["status"] == "instalada"
+
+
+
+def test_modulo_e_checado_no_interpretador_que_vai_rodar(nomos_home):
+    """Módulo tem de ser procurado onde a skill VAI rodar, não onde o NOMOS roda.
+
+    Defeito real que isto trava: a primeira versão usava `find_spec` no processo
+    atual. Medido — `feedparser` está em `/opt/homebrew/bin/python3` (6.0.12), que
+    é o interpretador que a cerca resolve, e NÃO no venv onde o NOMOS roda. A
+    checagem antiga recusava `reach-rss` por "módulo ausente" com o módulo
+    presente onde importa: recusa FALSA, o oposto de "bloqueia por evidência".
+    """
+    import shutil
+
+    from nomos.runtime.sandbox import _PATH_BUSCA
+
+    exe = shutil.which("python3", path=_PATH_BUSCA)
+    if not exe:
+        pytest.skip("sem python3 no PATH da cerca nesta máquina")
+
+    # `json` existe em qualquer interpretador: não pode ser acusado de ausente
+    assert reg.verificar_requisitos(
+        {"requires": [{"tipo": "modulo_python", "nome": "json",
+                       "obrigatorio": True}]}, nomos_home) == []
+
+    # e um inexistente TEM de ser detectado, com o interpretador no motivo
+    faltam = reg.verificar_requisitos(
+        {"requires": [{"tipo": "modulo_python", "nome": "modulo_zzz_inexistente",
+                       "obrigatorio": True}]}, nomos_home)
+    assert len(faltam) == 1
+    assert faltam[0]["verificado"] is True
+    assert exe in faltam[0]["motivo"]
+
+
+def test_interpretador_irresolvivel_nao_bloqueia(nomos_home, monkeypatch):
+    """Sem interpretador não há evidência — e ausência de evidência não bloqueia."""
+    import shutil as _sh
+
+    monkeypatch.setattr(_sh, "which", lambda *a, **k: None)
+    assert reg.verificar_requisitos(
+        {"requires": [{"tipo": "modulo_python", "nome": "qualquer_coisa",
+                       "obrigatorio": True}]}, nomos_home) == []

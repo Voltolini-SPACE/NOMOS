@@ -298,15 +298,43 @@ def verificar_requisitos(mf: dict, home: Path | None = None) -> list[dict]:
 
 
 def _modulo_ausente(nome: str) -> str | None:
-    """Módulo Python importável? Usa `find_spec`, que NÃO executa o módulo."""
-    import importlib.util
+    """Módulo importável NO INTERPRETADOR QUE VAI RODAR A SKILL.
+
+    Erro que eu cometi e que esta função corrige: a primeira versão usava
+    `importlib.util.find_spec` no processo ATUAL. Só que a skill roda sob o
+    `python3` que a cerca resolve pelo PATH dela — outro interpretador.
+    Medido: `feedparser` está em `/opt/homebrew/bin/python3` (6.0.12) e NÃO no
+    venv onde o NOMOS roda. A checagem antiga recusava `reach-rss` por
+    "módulo ausente" com o módulo presente onde importa — recusa FALSA, que é
+    exatamente o que o princípio "bloqueia por evidência, não por ignorância"
+    existe para impedir.
+
+    Reusa `_PATH_BUSCA` da cerca como fonte da verdade: duplicar o literal aqui
+    faria as duas divergirem no primeiro conserto de uma delas.
+
+    Se o interpretador não puder ser resolvido, devolve None — sem
+    interpretador não há evidência de ausência, e ausência de evidência não
+    bloqueia.
+    """
+    import shutil
+    import subprocess
+
     if not _IDENT.fullmatch(nome):
         return f"módulo '{nome}': nome não é um identificador de módulo"
     try:
-        return None if importlib.util.find_spec(nome) else \
-            f"módulo Python '{nome}' não está instalado"
+        from nomos.runtime.sandbox import _PATH_BUSCA
+        exe = shutil.which("python3", path=_PATH_BUSCA)
     except Exception:
-        return f"módulo Python '{nome}' não está instalado"
+        exe = None
+    if not exe:
+        return None   # não sei onde olhar: não invento ausência
+    try:
+        r = subprocess.run([exe, "-c", f"import {nome}"],  # noqa: S603
+                           capture_output=True, timeout=10)
+    except Exception:
+        return None
+    return None if r.returncode == 0 else \
+        f"módulo Python '{nome}' não está instalado em {exe}"
 
 
 def _chave_ausente(nome: str, home: Path | None) -> str | None:
