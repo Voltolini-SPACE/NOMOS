@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import pathlib
 import re
 import sys
 from urllib.parse import urlparse
@@ -59,7 +60,13 @@ def verificar(texto: str) -> dict:
             falha("arxiv", m.group(0), f"mês inválido no id: {mm}")
     for m in URL.finditer(texto):
         u = m.group(0)
-        host = (urlparse(u).hostname or "").lower()
+        try:
+            host = (urlparse(u).hostname or "").lower()
+        except ValueError:
+            # URL malformada (ex.: IPv6 sem colchetes) derrubava o gate inteiro
+            # com ValueError. Não conseguir parsear é um achado, não um crash.
+            falha("url", u, "URL malformada — não foi possível interpretar o host")
+            continue
         if any(p.lower() in u.lower() for p in PLACEHOLDER):
             falha("url", u, "placeholder, não é fonte real")
         elif host and _host_privado(host):
@@ -77,22 +84,48 @@ def verificar(texto: str) -> dict:
     }
 
 
+def _erro(msg: str, **extra) -> int:
+    """Falha explícita. Um gate que não conseguiu LER não pode dizer PASS."""
+    print(json.dumps({"veredito": "ERRO", "erro": msg, **extra},
+                     ensure_ascii=False, indent=2))
+    return 2
+
+
 def main(argv: list[str]) -> int:
-    alvo = None
+    """DEFEITO CORRIGIDO (auditoria adversarial, 23/08): a versão anterior caía
+    do arquivo para o próprio CAMINHO quando o open falhava. Um typo no nome
+    fazia o verificador analisar a string "/caminho/que/nao/existe.md", não
+    achar citação nenhuma e devolver PASS com rc=0 — o gate aprovava um
+    relatório que nunca leu. Agora: pediu arquivo e não deu para abrir => ERRO.
+    """
+    pedido_arquivo = None
+    texto = None
     if len(argv) > 1:
+        bruto = argv[1]
         try:
-            args = json.loads(open(argv[1], encoding="utf-8").read())
-            alvo = args.get("arquivo") or args.get("texto")
-        except Exception:
-            alvo = argv[1]
-    texto = ""
-    if alvo and len(alvo) < 4096:
+            args = json.loads(pathlib.Path(bruto).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            # não é args.json: trata o próprio argumento como caminho a ler
+            pedido_arquivo = bruto
+        else:
+            if not isinstance(args, dict):
+                return _erro("args.json não é um objeto JSON")
+            pedido_arquivo = args.get("arquivo")
+            texto = args.get("texto")
+            if pedido_arquivo and texto:
+                return _erro("informe 'arquivo' OU 'texto', não os dois")
+    if pedido_arquivo:
         try:
-            texto = open(alvo, encoding="utf-8", errors="replace").read()
-        except OSError:
-            texto = alvo
-    else:
-        texto = alvo or sys.stdin.read()
+            texto = pathlib.Path(pedido_arquivo).read_text(
+                encoding="utf-8", errors="replace")
+        except OSError as exc:
+            # NUNCA cair para o caminho como texto: ver docstring acima.
+            return _erro(f"não consegui ler o arquivo: {type(exc).__name__}",
+                         arquivo=pedido_arquivo)
+    if texto is None:
+        texto = sys.stdin.read()
+    if not texto.strip():
+        return _erro("nada para verificar (entrada vazia)")
     r = verificar(texto)
     print(json.dumps(r, ensure_ascii=False, indent=2))
     return 1 if r["veredito"] == "FAIL" else 0

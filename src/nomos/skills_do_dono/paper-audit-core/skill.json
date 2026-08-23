@@ -20,7 +20,9 @@
   "local_only_capable": true,
   "cloud_required": false,
   "compatible_nomos_version": ">=0.11",
-  "files": {},
+  "files": {
+    "audit_core.py": "90c9c0fc47a2f0971b906ca774a5fd47e5a996011d56ebb8445e446d9bc29aac"
+  },
   "requires": [
     {
       "tipo": "binario",

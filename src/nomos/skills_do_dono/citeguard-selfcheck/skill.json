@@ -18,7 +18,9 @@
   "local_only_capable": true,
   "cloud_required": false,
   "compatible_nomos_version": ">=0.11",
-  "files": {},
+  "files": {
+    "selfcheck.py": "e207422b78e4262dda8117a508d54ec63c8146986d890cc6602ada837a7bd37d"
+  },
   "requires": [
     {
       "tipo": "binario",

@@ -25,5 +25,7 @@
       "obrigatorio": true
     }
   ],
-  "files": {}
+  "files": {
+    "reach_v2ex.py": "81fdf5f8449cdb0b50bdbfbadc2fa0d9fdfe859ff06b384afaa6617765686228"
+  }
 }

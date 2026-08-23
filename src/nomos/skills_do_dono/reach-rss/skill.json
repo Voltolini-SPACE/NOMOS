@@ -32,5 +32,7 @@
       "descricao": "modulo, nao binario: `which feedparser` reprova sempre; verifique por import"
     }
   ],
-  "files": {}
+  "files": {
+    "reach_rss.py": "84fd4a675a5de70e02004c1562ecfd3a3191445fa2855a4ed8dd15056c6b7a8b"
+  }
 }

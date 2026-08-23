@@ -26,5 +26,7 @@
       "obrigatorio": true
     }
   ],
-  "files": {}
+  "files": {
+    "citeguard_retractions_sync.py": "ccfb9a2985b1481a1dc5d740f478ba1732cd154fec4350e599187216ce31d671"
+  }
 }

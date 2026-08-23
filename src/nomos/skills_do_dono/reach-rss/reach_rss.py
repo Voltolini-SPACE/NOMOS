@@ -176,7 +176,14 @@ def buscar(url: str, timeout: float, max_bytes: int) -> tuple[dict | None, dict]
             # cortado passando por feed valido, que e o tipo de silencio que
             # esta skill nao pode produzir.
             bruto = resp.read(max_bytes + 1)
-            cabecalhos = dict(resp.headers.items())
+            # Cabecalhos lidos AQUI, do HTTPMessage, que compara nome SEM
+            # diferenciar maiuscula. Converter para dict antes tornaria a busca
+            # sensivel a caixa, e servidor real manda "Content-type" com t
+            # minusculo (o http.server da propria stdlib manda assim). O efeito
+            # seria mudo e grave: Content-encoding: gzip nao detectado e bytes
+            # comprimidos entregues ao parser como se fossem XML.
+            content_type = resp.headers.get("Content-Type", "") or ""
+            content_encoding = resp.headers.get("Content-Encoding", "") or ""
             status = getattr(resp, "status", None) or resp.getcode()
             url_final = resp.geturl()
     except urllib.error.HTTPError as exc:
@@ -195,9 +202,9 @@ def buscar(url: str, timeout: float, max_bytes: int) -> tuple[dict | None, dict]
                                    "Nao entrego XML cortado como se fosse o feed "
                                    "inteiro; aumente 'max_bytes' se quiser mesmo")}
 
-    corpo, aviso = _descomprime(bruto, cabecalhos.get("Content-Encoding", ""))
+    corpo, aviso = _descomprime(bruto, content_encoding)
     return {"bytes": corpo, "status": status, "url_final": url_final,
-            "content_type": cabecalhos.get("Content-Type", ""),
+            "content_type": content_type,
             "bytes_recebidos": len(bruto),
             "aviso": aviso}, {}
 
@@ -525,8 +532,28 @@ def executar(argumentos: dict) -> dict:
                 "aviso_modo": aviso_modo,
                 "itens": []}
 
+    # XML bem-formado NAO quer dizer feed. Uma pagina HTML servida como XHTML
+    # atravessa o parser inteiro sem excecao e sairia com ok=true, feed vazio e
+    # so um recado no meio da lista de problemas — verde falso, exatamente o
+    # silencio que parece sucesso. Raiz nao reconhecida E zero itens = nao e
+    # feed, e isso e falha. Raiz reconhecida com zero itens continua sucesso:
+    # feed legitimamente vazio existe, e confundir os dois seria o erro oposto.
+    formato = str(cabecalho.get("formato") or "")
+    raiz_reconhecida = bool(formato) and not formato.startswith("desconhecido")
+    if total == 0 and not raiz_reconhecida:
+        return {"ok": False, "skill": NOME_SKILL, "url_pedida": url,
+                "url_final": resposta["url_final"],
+                "erro_categoria": "parse",
+                "erro": (f"o documento e XML valido mas nao e um feed RSS/Atom "
+                         f"(raiz/formato: {formato or 'indeterminado'}, zero itens)"),
+                "content_type": resposta["content_type"],
+                "bytes_recebidos": resposta["bytes_recebidos"],
+                "modo": "degradado_stdlib" if degradado else "feedparser",
+                "aviso_modo": aviso_modo,
+                "problemas": problemas,
+                "itens": []}
     if total == 0:
-        problemas.append("o documento foi lido mas nao tem nenhum item/entry")
+        problemas.append("feed reconhecido, porem sem nenhum item/entry no momento")
 
     escrita = {"pedida": bool(salvar_em), "ok": None, "caminho": None, "motivo": None}
 
