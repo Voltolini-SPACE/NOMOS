@@ -181,6 +181,18 @@ def construir(home=None, mapa: dict | None = None) -> Catalogo:
 
     # --- voz ---
     itens.append(Motor(
+        # `/usr/bin/say` existe em TODO Mac, com vozes pt-BR e sem download.
+        # Faltava aqui: `detectar()` já o reportava disponível, mas o painel lê
+        # o CATÁLOGO, não o `detectar()` — então o motor existia e não aparecia.
+        # Exatamente o cenário que eu havia avisado a outra sessão para evitar.
+        id="say", rotulo="Voz do macOS (falar em voz alta → WAV)",
+        modalidades=("voz_tts",), tipo="conector", local=True,
+        instalado=d("say"), pronto=d("say"), requer_aprovacao=True,
+        velocidade="alta", qualidade="boa",
+        status=_status(d("say"), d("say")) if d("say")
+        else "só no macOS (/usr/bin/say)",
+        detalhe=str(d("say", "detalhe", ""))))
+    itens.append(Motor(
         id="piper", rotulo="Piper (falar em voz alta → WAV)",
         modalidades=("voz_tts",), tipo="conector", local=True,
         instalado=d("piper"), pronto=d("piper"), requer_aprovacao=True,
@@ -205,6 +217,18 @@ def construir(home=None, mapa: dict | None = None) -> Catalogo:
 
     # --- ferramentas (skills instaladas) ---
     n_skills = _contar_skills(home)
+    itens.append(Motor(
+        # "o motor SABE chamar ferramenta" e "há skill instalada" são coisas
+        # diferentes, e estavam fundidas numa linha só: o dono lia "não sei
+        # chamar ferramentas" enquanto o function calling funcionava. São duas
+        # entradas na MESMA modalidade, e cada uma diz a sua verdade.
+        id="function-calling",
+        rotulo=f"Chamar ferramentas ({d('function-calling', 'detalhe', '') or 'sem modelo'})",
+        modalidades=("ferramentas",), tipo="ollama", local=True,
+        instalado=d("function-calling"), pronto=d("function-calling"),
+        velocidade="alta", qualidade="alta",
+        status=_status(d("function-calling"), d("function-calling")),
+        detalhe=str(d("function-calling", "detalhe", ""))))
     itens.append(Motor(
         id="skills", rotulo=f"Skills instaladas ({n_skills})",
         modalidades=("ferramentas",), tipo="skill", local=True,

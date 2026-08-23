@@ -203,3 +203,60 @@ def test_arquivo_de_provas_corrompido_nao_prova_nada(monkeypatch, tmp_path):
     monkeypatch.setattr(motores.config, "nomos_home", lambda: tmp_path)
     (tmp_path / "motores_provados.json").write_text("{ isto não é json")
     assert motores.provas() == {}
+
+
+# ------------------------------------------- o catálogo, que é o que a tela lê
+def _mapa_falso(**disp):
+    """Um retorno de `detectar()` mínimo, com os ids que interessam."""
+    def m(i, ok, det=""):
+        return {"id": i, "disponivel": ok, "detalhe": det, "local": True}
+    return {
+        "texto": [m("ollama", False)],
+        "codigo": [m("ollama-coder", False)],
+        "imagem": [m("sdwebui", False), m("comfyui", False),
+                   m("visao-ollama", disp.get("visao", False), "qwen3.5:4b-q8_0")],
+        "audio": [m("say", disp.get("say", False), "/usr/bin/say"),
+                  m("piper", False),
+                  m("whisper", disp.get("whisper", False), "/x/ggml-base.bin")],
+        "ferramentas": [m("function-calling", disp.get("tools", False),
+                          "qwen3.5:4b-q8_0")],
+    }
+
+
+def test_catalogo_registra_o_say_em_voz_tts(tmp_path):
+    """A lacuna real: `detectar()` dizia say=True e `cat.prontos('voz_tts')`
+    voltava VAZIO — o painel lê o CATÁLOGO, não o detectar(). Motor existia e
+    não aparecia."""
+    from nomos.cognition import engine_catalog as ec
+    cat = ec.construir(tmp_path, mapa=_mapa_falso(say=True))
+    assert [m.id for m in cat.prontos("voz_tts")] == ["say"]
+
+
+def test_catalogo_registra_function_calling_em_ferramentas(tmp_path):
+    from nomos.cognition import engine_catalog as ec
+    cat = ec.construir(tmp_path, mapa=_mapa_falso(tools=True))
+    assert "function-calling" in [m.id for m in cat.prontos("ferramentas")]
+
+
+def test_say_ausente_nao_finge_pronto(tmp_path):
+    from nomos.cognition import engine_catalog as ec
+    cat = ec.construir(tmp_path, mapa=_mapa_falso(say=False))
+    assert cat.prontos("voz_tts") == []
+
+
+def test_visao_nao_conta_como_geracao_de_imagem(tmp_path):
+    """Entender imagem e gerar imagem são funções opostas. `imagem` vazio com
+    visão pronta está CERTO — não é bug a ser 'consertado'."""
+    from nomos.cognition import engine_catalog as ec
+    cat = ec.construir(tmp_path, mapa=_mapa_falso(visao=True))
+    assert [m.id for m in cat.prontos("visao")] == ["visao-ollama"]
+    assert cat.prontos("imagem") == []
+
+
+def test_ferramentas_separa_motor_de_skills_instaladas(tmp_path):
+    """Duas entradas na MESMA modalidade: o motor sabe chamar (pronto) e há
+    zero skills instaladas. Fundir as duas fazia o dono ler 'não sei chamar'."""
+    from nomos.cognition import engine_catalog as ec
+    cat = ec.construir(tmp_path, mapa=_mapa_falso(tools=True))
+    ids = [m.id for m in cat.por_modalidade("ferramentas")]
+    assert "function-calling" in ids and "skills" in ids
