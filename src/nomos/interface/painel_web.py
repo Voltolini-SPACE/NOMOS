@@ -453,11 +453,73 @@ def _doc(titulo: str, corpo: str, refresh: int | None = None) -> str:
 # chat local — 2ª porta de escrita (MC38). LOCAL por lei: nuvem só via
 # terminal com opt-in; sem motor pronto = fail-closed (nunca finge).
 # ---------------------------------------------------------------------------
-def responder_local(ctx, messages):
-    """Roda SÓ o motor local (o mesmo caminho de `nomos chat`, sem nuvem).
+def _modelo_configurado() -> str | None:
+    """O modelo do agente (agent.json). Fonte da verdade, não um default fixo.
 
-    Devolve o texto da resposta, ou None se nenhum motor local estiver pronto
-    — o painel então grava uma nota honesta, jamais uma resposta inventada.
+    Antes o chat do painel usava `NOMOS_OLLAMA_MODEL` com default 'llama3.2' —
+    que não estava instalado — e IGNORAVA o modelo escolhido no onboarding.
+    Resultado: o chat ficava MUDO. Agora a origem é o perfil.
+    """
+    from nomos.kernel import config
+    ag = config.load_agent() or {}
+    m = ag.get("modelo")
+    return m if m and m not in ("demo", None) else None
+
+
+def _ollama_modelos(host: str = "http://127.0.0.1:11434") -> list[str]:
+    """Nomes dos modelos do Ollama (loopback). Falha => lista vazia."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"{host}/api/tags", timeout=1.5) as r:  # noqa: S310
+            data = json.loads(r.read().decode())
+        return [m["name"] for m in data.get("models", []) if m.get("name")]
+    except Exception:
+        return []
+
+
+def motores_chat(ctx) -> list[dict]:
+    """Motores LOCAIS oferecíveis no seletor do chat: id, rótulo, pronto.
+
+    Só locais — a nuvem (anthropic/omniroute) exige A2+A3 e passphrase, que o
+    painel não conduz por mensagem; ela fica no terminal, honestamente.
+    """
+    import os
+
+    itens: list[dict] = []
+    cfg = _modelo_configurado()
+    # só modelos que SABEM gerar texto — um de embedding aparece no /api/tags
+    # como qualquer outro, mas o Ollama recusa /api/generate nele (seria um
+    # motor mudo no seletor). Mesmo filtro do onboarding.
+    try:
+        from nomos.cognition.motores import modelos_ollama_geradores
+        modelos = modelos_ollama_geradores()
+    except Exception:
+        modelos = _ollama_modelos()
+    if cfg and cfg in modelos:
+        modelos = [cfg] + [m for m in modelos if m != cfg]
+    for m in modelos:
+        itens.append({"id": f"ollama:{m}", "rotulo": f"Ollama · {m}",
+                      "pronto": True,
+                      "padrao": bool(cfg and m == cfg)})
+    # cérebro embutido, se baixado
+    try:
+        from nomos.cognition.embutido import EmbeddedProvider
+        if EmbeddedProvider(ctx["home"]).disponivel():
+            itens.append({"id": "embutido", "rotulo": "Cérebro embutido (leve)",
+                          "pronto": True, "padrao": not itens})
+    except Exception:
+        pass
+    return itens
+
+
+def responder_local(ctx, messages, motor: str | None = None,
+                    roteamento: str = "auto"):
+    """Roda um motor LOCAL. Devolve o texto, ou None se nenhum estiver pronto —
+    o painel então grava uma nota honesta, jamais uma resposta inventada.
+
+    `roteamento="auto"`: local-first, o Router escolhe entre os locais prontos.
+    `roteamento="motor"` com `motor="ollama:<modelo>"` ou `"embutido"`: usa
+    exatamente aquele. Nuvem nunca entra por aqui (gate no terminal).
     """
     import os
 
@@ -466,12 +528,25 @@ def responder_local(ctx, messages):
     from nomos.cognition.router import Router
 
     home = ctx["home"]
+    modelo = _modelo_configurado() or os.environ.get("NOMOS_OLLAMA_MODEL")
+
+    # escolha explícita de motor (seletor do chat)
+    if roteamento == "motor" and motor:
+        if motor == "embutido":
+            try:
+                out = EmbeddedProvider(home).chat(messages)
+                return out.text if out else None
+            except Exception:
+                return None
+        if motor.startswith("ollama:"):
+            modelo = motor.split(":", 1)[1] or modelo
+
     try:
         ollama = OllamaProvider(
             host=os.environ.get("NOMOS_OLLAMA_HOST", "http://127.0.0.1:11434"),
-            model=os.environ.get("NOMOS_OLLAMA_MODEL", "llama3.2"))
+            model=modelo or "qwen3.5:4b-q8_0") if modelo else None
     except ValueError:
-        ollama = None   # host não-loopback no ambiente: ignora (cadeado)
+        ollama = None   # host não-loopback: ignora (cadeado)
     try:
         oc = OpenAICompatProvider(
             base=os.environ.get("NOMOS_OPENAI_COMPAT_BASE",
@@ -1053,6 +1128,7 @@ def _secao_chat(d: dict, chat: dict | None) -> str:
         f'<form class="composer" method="post" action="{base}/chat/enviar">'
         f'<input type="hidden" name="token" value="{e(token)}">'
         f'<input type="hidden" name="conversa" value="{e(str(cid))}">'
+        f'{_seletores_chat(chat)}'
         '<textarea name="mensagem" required rows="2" '
         'placeholder="escreva sua mensagem…" aria-label="mensagem"></textarea>'
         '<button type="submit">enviar</button></form>')
@@ -1061,6 +1137,36 @@ def _secao_chat(d: dict, chat: dict | None) -> str:
                  "NOMOS avisa — nunca inventa. Cada turno fica na auditoria.</p>")
     corpo.append("</div></div>")  # fim coluna 2 + wrap
     return "\n".join(corpo)
+
+
+def _seletores_chat(chat: dict) -> str:
+    """Dois controles simples no composer: ROTEAMENTO e MOTOR.
+
+    - Roteamento: `automático` (local-first, o Router decide) ou `motor fixo`.
+    - Motor: os locais prontos (o configurado vem primeiro/selecionado).
+
+    Só motores locais — a nuvem exige o gate A2/A3 no terminal, e prometer
+    escolhê-la aqui seria falso. Se não há motor pronto, some (nada a escolher).
+    """
+    e = esc
+    motores = chat.get("motores") or []
+    if not motores:
+        return ""
+    opts = "".join(
+        f'<option value="{e(m["id"])}"{" selected" if m.get("padrao") else ""}>'
+        f'{e(m["rotulo"])}</option>' for m in motores)
+    return (
+        '<div class="chat-controles">'
+        '<label>Roteamento'
+        '<select name="roteamento">'
+        '<option value="auto" selected>automático (local-first)</option>'
+        '<option value="motor">motor fixo →</option>'
+        "</select></label>"
+        '<label>Motor'
+        f'<select name="motor">{opts}</select></label>'
+        '<small class="chat-controles-nota">nuvem só pelo terminal '
+        "(gate A2/A3)</small>"
+        "</div>")
 
 
 def _bloco_ao_vivo(d: dict) -> str:
@@ -2070,7 +2176,8 @@ class DashboardServer:
                 if not painel.chat_habilitado:
                     return None
                 dados = {"habilitado": True, "token": painel.chat_token,
-                         "base": base, "aberta": None, "mensagens": []}
+                         "base": base, "aberta": None, "mensagens": [],
+                         "motores": motores_chat(painel.ctx)}
                 import contextlib
                 sel = (parse_qs(query).get("conversa") or [""])[0]
                 if sel and sel != "nova":
@@ -2423,7 +2530,12 @@ class DashboardServer:
                     painel.ctx["audit"].append("chat.painel.enviou",
                                                conversa=cid, egress="nenhum")
                     contexto = _contexto_chat(cs, cid, msg)
-                    resposta = responder_local(painel.ctx, contexto)
+                    motor = (form.get("motor") or [""])[0] or None
+                    roteamento = (form.get("roteamento") or ["auto"])[0]
+                    if roteamento not in ("auto", "motor"):
+                        roteamento = "auto"
+                    resposta = responder_local(painel.ctx, contexto,
+                                               motor=motor, roteamento=roteamento)
                     if resposta:
                         cs.add_turno(cid, "assistant", resposta)
                         painel.ctx["audit"].append("chat.painel.respondeu",
