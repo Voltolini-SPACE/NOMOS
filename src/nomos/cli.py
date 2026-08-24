@@ -199,8 +199,15 @@ def cmd_capacidades(ctx, args) -> int:
         # SONDA: descobre o conjunto pelo wiring real. audit=None de propósito —
         # esta construção é descartável e não pode deixar na trilha registros
         # que não aconteceram operacionalmente.
+        # `escopo_dados` OBRIGATÓRIO e igual ao do serviço: o escopo entra no
+        # digest da concessão (registro.py), e o runtime consulta com
+        # `escopo_dados=raízes` (governado.py). Sonda sem escopo assina um
+        # digest que o arranque nunca encontra — o dono lê "raízes: X" abaixo,
+        # a concessão vale para escopo VAZIO, e o serviço volta ao gate ao
+        # vivo a cada subida (o laço de EXIT_DENIED no TTL de 300 s).
         sonda = RegistroCapacidades(policy=ctx["policy"],
-                                    approver=lambda _d: True, audit=None)
+                                    approver=lambda _d: True, audit=None,
+                                    escopo_dados=tuple(args.raiz))
         try:
             nomes = list(registrar_filesystem(
                 sonda, raizes=tuple(args.raiz), audit=None,
