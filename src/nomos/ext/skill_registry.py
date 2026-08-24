@@ -550,18 +550,26 @@ def executar(name: str, skills_dir: Path, engine: PolicyEngine, approver,
         sandbox_run = lambda cmd, **kw: _sb.run(cmd, **kw)
 
     # argv como LISTA (sem shell): elimina injeção via aspas/`;`/`$` num nome
-    # de entry que passe em _rel_segura mas contenha metacaracteres de shell
-    cmd = ["python3", str(entry)]
+    # de entry que passe em _rel_segura mas contenha metacaracteres de shell.
+    #
+    # Interpretador: no macOS a cerca resolve `python3` para absoluto
+    # (_regras_do_interpretador); no Windows `python3` cru cai no que o PATH
+    # der — no runner do CI (py3.10, 24/08) era o STUB da Microsoft Store,
+    # que sai rc=1 com saída VAZIA. O executável que está rodando o NOMOS é
+    # real por definição; fora do POSIX, ele é o interpretador.
+    import os
+    import sys
+    interprete = sys.executable if os.name == "nt" else "python3"
+    cmd = [interprete, str(entry)]
     args_path = None
     if argumentos is not None:
-        import os
         import time as _t
         args_dir = Path(skills_dir).parent / "sandbox"
         args_dir.mkdir(parents=True, exist_ok=True)
         args_path = args_dir / f"skill-args-{name}-{os.getpid()}-{int(_t.time())}.json"
         args_path.write_text(json.dumps(argumentos, ensure_ascii=False),
                              encoding="utf-8")
-        cmd = ["python3", str(entry), str(args_path)]
+        cmd = [interprete, str(entry), str(args_path)]
     try:
         r = sandbox_run(cmd, timeout=timeout, allow_network=quer_rede)
     except Exception as exc:
