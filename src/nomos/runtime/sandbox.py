@@ -365,6 +365,22 @@ def run(
         isolated = True
 
     env = {"PATH": _PATH_BUSCA, "LANG": "C.UTF-8", "HOME": "/tmp"}  # nosec B108 - HOME efêmero dentro do processo isolado
+    if os.name == "nt":
+        # Sem `SystemRoot` o Python filho morre no ARRANQUE no Windows
+        # (`_Py_HashRandomization_Init`: RNG do sistema; corrigido no
+        # interpretador só a partir do 3.11) — rc=1 com saída VAZIA, medido
+        # no CI de 24/08 rodando skill no py3.10. É a MESMA lição de
+        # tests/_cli_env.py (MC46.3), agora no executor. Só variáveis de
+        # bootstrap do SO — nenhuma carrega segredo — e as chaves que o
+        # sandbox define acima (PATH/LANG/HOME) não são tocadas.
+        for chave in ("SystemRoot", "SYSTEMROOT", "SystemDrive", "windir",
+                      "TEMP", "TMP", "PATHEXT", "COMSPEC",
+                      "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE",
+                      "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
+                      "PYTHONUTF8", "PYTHONIOENCODING"):
+            val = os.environ.get(chave)
+            if val is not None and chave not in env:
+                env[chave] = val
     cwd = workdir or tempfile.mkdtemp(prefix="nomos-sbx-")   # já criado no ramo mac sem-rede
 
     # Ramo COM rede: até 23/08 não tinha cerca de sistema de arquivos NENHUMA —
