@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 
 import pytest
 
@@ -432,6 +433,9 @@ def test_modulo_ausente_nao_impede_instalacao(tmp_path, nomos_home):
 
 
 # ---------------------------------------- argumentos atravessam a cerca
+@pytest.mark.skipif(os.name == "nt",
+                    reason="regras do seatbelt; caminho Windows é recusado "
+                           "pelo perfil por desenho")
 def test_regras_da_cerca_cobrem_TODOS_os_argumentos_arquivo(tmp_path):
     """Regressão do `break` que cegava o segundo argumento.
 
@@ -472,7 +476,10 @@ def test_argumentos_chegam_na_skill_de_ponta_a_ponta(tmp_path, nomos_home):
         "print(json.dumps({'ok': True, 'eco': args}))\n")
     d = tmp_path / "loja" / "eco"
     d.mkdir(parents=True)
-    (d / "main.py").write_text(corpo)
+    # newline explícito: o checksum do manifesto é sobre `corpo` com LF; no
+    # Windows o write_text padrão traduzia \n→\r\n e a instalação caía em
+    # "checksum divergente em main.py" (medido no CI de 24/08).
+    (d / "main.py").write_text(corpo, newline="\n")
     (d / "skill.json").write_text(json.dumps({
         "name": "eco", "version": "1.0.0", "entry": "main.py",
         "permissions": ["A0_READ_LOCAL", "A2_NET_EGRESS"],

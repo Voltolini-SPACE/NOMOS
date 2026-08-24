@@ -23,6 +23,13 @@ from nomos.runtime import sandbox
 
 so_mac = pytest.mark.skipif(not plataforma.EH_MAC, reason="seatbelt é do macOS")
 
+# O perfil recusa caminho Windows POR DESENHO (backslash/aspas quebrariam a
+# política — ver test_perfil_recusa_caminho_...): no Windows estes testes não
+# têm o que exercitar. Em Linux rodam e passam (o perfil é texto puro).
+sem_windows = pytest.mark.skipif(
+    os.name == "nt",
+    reason="perfil seatbelt recusa caminho Windows por desenho")
+
 
 def test_perfil_recusa_caminho_que_quebraria_a_politica():
     """Aspa no caminho fecharia a string e o resto viraria política do atacante.
@@ -33,13 +40,16 @@ def test_perfil_recusa_caminho_que_quebraria_a_politica():
         sandbox._perfil_seatbelt('/tmp/a"b')
 
 
+@so_mac
 def test_perfil_resolve_symlink_do_tmp():
     """/tmp é symlink para /private/tmp; o perfil precisa do caminho real,
-    senão a área gravável declarada não é a que o processo usa."""
+    senão a área gravável declarada não é a que o processo usa.
+    (`/private` é fato do macOS — em Linux /tmp é diretório real.)"""
     perfil = sandbox._perfil_seatbelt("/tmp")
     assert "/private/tmp" in perfil
 
 
+@so_mac
 def test_perfil_permite_rede_e_so_o_workdir_grava():
     perfil = sandbox._perfil_seatbelt("/tmp")
     assert "(deny default)" in perfil
@@ -47,6 +57,7 @@ def test_perfil_permite_rede_e_so_o_workdir_grava():
     assert 'file-write* (subpath "/private/tmp")' in perfil
 
 
+@sem_windows
 def test_perfil_tem_a_raiz_legivel():
     """`(literal "/")` é obrigatório: sem ele o dyld aborta com rc=134 e sem
     mensagem — falha muda, o pior modo. Lição já paga por adapters/supervisor."""
@@ -78,8 +89,14 @@ def test_com_rede_nao_le_mais_o_home_do_dono():
 
 
 @so_mac
-def test_com_rede_nao_enxerga_o_cofre():
-    cofre = os.path.expanduser("~/.nomos/vault.json")
+def test_com_rede_nao_enxerga_o_cofre(tmp_path):
+    """Hermético desde 24/08: o alvo é um 'cofre' criado PELO teste fora do
+    workdir — a versão anterior fazia ls do ~/.nomos/vault.json REAL e era
+    refém da máquina (no runner do CI não existe vault → 'no such file' e o
+    teste caía sem defeito algum no sandbox)."""
+    cofre = tmp_path / "cofre-fora-da-cerca" / "vault.json"
+    cofre.parent.mkdir()
+    cofre.write_text("{}")
     r = sandbox.run(["/bin/sh", "-c", f"ls -l {cofre} 2>&1 | head -1"],
                     allow_network=True, timeout=20)
     assert "not permitted" in (r.stdout or "").lower()
@@ -87,12 +104,34 @@ def test_com_rede_nao_enxerga_o_cofre():
 
 @so_mac
 def test_a_rede_pedida_continua_funcionando():
-    """Confinar arquivo não pode tirar a rede: era o que o chamador pediu."""
-    r = sandbox.run(["/bin/sh", "-c",
-                     "curl -s -o /dev/null -w '%{http_code}' --max-time 5 "
-                     "http://127.0.0.1:11434/api/tags || echo sem-servico"],
-                    allow_network=True, timeout=20)
-    assert (r.stdout or "").strip() in ("200", "sem-servico"), r.stdout
+    """Confinar arquivo não pode tirar a rede: era o que o chamador pediu.
+
+    Hermético desde 24/08: o alvo é um servidor DO TESTE em porta efêmera —
+    a versão anterior batia no Ollama real (127.0.0.1:11434) e era refém do
+    daemon do operador; no runner sem serviço o curl imprimia '000' e a
+    asserção ('200' ou 'sem-servico') não previa o prefixo."""
+    import http.server
+    import threading
+
+    class _Ok(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), _Ok)
+    porta = srv.server_address[1]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        r = sandbox.run(["/bin/sh", "-c",
+                         "curl -s -o /dev/null -w '%{http_code}' --max-time 5 "
+                         f"http://127.0.0.1:{porta}/"],
+                        allow_network=True, timeout=20)
+        assert (r.stdout or "").strip() == "200", r.stdout
+    finally:
+        srv.shutdown()
 
 
 @so_mac
@@ -146,6 +185,7 @@ def test_sem_rede_EXECUTA_no_mac_com_rede_negada_de_verdade():
 # permitted"; o do venv em `execvp()` negado. Uma skill instalava, aparecia
 # instalada e quebrava no uso — a promessa falsa que se quer evitar.
 
+@sem_windows
 def test_resolve_interpretador_relativo_para_absoluto():
     """`python3` nu dentro da cerca caía em /usr/bin/python3, que é SHIM DO
     XCRUN — mesma família da landmine que custou a CI em 21/08."""
@@ -159,6 +199,7 @@ def test_path_de_busca_inclui_o_homebrew():
     assert "/opt/homebrew/bin" in sandbox._PATH_BUSCA
 
 
+@sem_windows
 def test_libera_o_prefixo_do_interpretador_e_nao_um_diretorio_generico():
     _, regras = sandbox._regras_do_interpretador(["/bin/echo", "x"])
     texto = "\n".join(regras)
@@ -166,6 +207,7 @@ def test_libera_o_prefixo_do_interpretador_e_nao_um_diretorio_generico():
     assert "/Users" not in texto, "não pode liberar o home do dono"
 
 
+@sem_windows
 def test_libera_leitura_da_pasta_da_entrada(tmp_path):
     """A skill instalada mora fora do workdir; sem isto o Python arranca e
     morre em 'can't open file … Operation not permitted'."""
@@ -212,6 +254,7 @@ def test_a_cerca_continua_fechada_com_o_interpretador_liberado(tmp_path):
 
 
 # ------------------------------------------------- symlink no caminho (23/08)
+@sem_windows
 def test_metadata_nos_ancestrais_da_pasta_do_script(tmp_path):
     """Abrir arquivo percorre o caminho componente a componente.
 
@@ -230,6 +273,7 @@ def test_metadata_nos_ancestrais_da_pasta_do_script(tmp_path):
     assert f'literal "{script.parent.parent}"' in texto
 
 
+@sem_windows
 def test_emite_as_duas_formas_do_caminho(monkeypatch, tmp_path):
     """Caminho pode chegar resolvido ou não; as duas formas são o MESMO
     diretório, então emitir ambas não alarga a cerca."""

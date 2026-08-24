@@ -12,6 +12,7 @@ diagnóstico e NENHUMA decisão o lê.
 """
 from __future__ import annotations
 
+import importlib.util
 import threading
 import time
 
@@ -20,6 +21,13 @@ import pytest
 from nomos.adapters.ticker import (SEM_AUTORIZACAO, SEM_TRAVA, Ticker,
                                    TickerJaRodando)
 from nomos.runtime.servico import TravaInstancia
+
+# Todos os testes daqui exercitam a TravaInstancia (flock POSIX). No Windows a
+# capacidade não existe — gate pelo fato medido (doutrina NH-014), não por
+# platform.system(). Medido no CI de 24/08: 4 testes em ModuleNotFoundError.
+pytestmark = pytest.mark.skipif(
+    importlib.util.find_spec("fcntl") is None,
+    reason="TravaInstancia é flock (POSIX); nesta plataforma a capacidade não existe")
 
 
 class _SchedFake:

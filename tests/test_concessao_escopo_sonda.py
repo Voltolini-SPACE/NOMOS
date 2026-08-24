@@ -19,6 +19,7 @@ que mantém o serviço de pé.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -30,6 +31,14 @@ from nomos.kernel.audit import AuditLog
 from nomos.kernel.policy import PolicyEngine
 from nomos.runtime.agendador import AgendadorGovernado, ConfigAgendador
 from nomos.runtime.servico import ConfigServico, rodar_servico
+
+# O serviço persistente exige a TravaInstancia (flock POSIX) — no Windows a
+# capacidade NÃO existe (doutrina NH-014/plataforma: gate pelo fato medido,
+# como servico_persistente_disponivel). Medido no CI de 24/08: os dois E2E
+# morriam em ModuleNotFoundError('fcntl') cru.
+so_flock = pytest.mark.skipif(
+    importlib.util.find_spec("fcntl") is None,
+    reason="TravaInstancia é flock (POSIX); nesta plataforma a capacidade não existe")
 
 POLICY = {
     "version": 1,
@@ -108,6 +117,7 @@ def test_concessao_da_cli_cobre_o_registro_do_servico(tmp_path, monkeypatch):
         f"{pedidos_ao_vivo}")
 
 
+@so_flock
 def test_servico_sobe_e_encerra_ok_sem_humano_no_painel(tmp_path, monkeypatch):
     """E2E do laço observado em produção: com concessão dada pela CLI e
     NINGUÉM no painel, `rodar_servico` tem de subir e devolver EXIT_OK —
@@ -141,6 +151,7 @@ def _apagar(rt, alvo):
                              "params": {"alvo": str(alvo)}}])
 
 
+@so_flock
 def test_adversarial_A_boot_sem_pedido_espontaneo(tmp_path, monkeypatch):
     """A: subir o serviço com o aprovador PADRÃO (painel real) e nenhuma
     intenção destrutiva não pode gerar pedido algum na fila.
