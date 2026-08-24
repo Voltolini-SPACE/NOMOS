@@ -24,7 +24,11 @@ from nomos.kernel.policy import PolicyEngine
 
 @pytest.fixture(autouse=True)
 def _iso(nomos_home, monkeypatch):
-    # nenhum motor local pronto ⇒ o chat deve cair no fail-closed honesto
+    # nenhum motor local pronto ⇒ o chat deve cair no fail-closed honesto.
+    # NOMOS_OLLAMA_MODEL do shell do operador (ex.: mitigação em ~/.zshenv)
+    # daria um modelo ao responder_local e o Router sondaria o Ollama REAL
+    # da máquina — o teste viraria refém do ambiente. Apaga-se aqui.
+    monkeypatch.delenv("NOMOS_OLLAMA_MODEL", raising=False)
     monkeypatch.setattr(motores, "modelos_ollama", lambda *a, **k: [])
     monkeypatch.setattr(motores, "_http_ok", lambda *a, **k: False)
     monkeypatch.setattr("shutil.which", lambda *a, **k: None)

@@ -1604,11 +1604,33 @@ def cmd_approvals(ctx, args) -> int:
     return EXIT_ERROR
 
 
+def _modelo_do_perfil() -> str | None:
+    """O modelo do agente (agent.json). Fonte da verdade, não um default fixo.
+
+    Mesmo defeito que emudeceu o chat do painel (_modelo_configurado): aqui o
+    `_router()` montava o OllamaProvider só com `NOMOS_OLLAMA_MODEL` e default
+    'llama3.2' — que não estava instalado — e IGNORAVA o modelo escolhido no
+    onboarding. O /api/chat devolvia 404 → ProviderUnavailable → MODO
+    DEGRADADO com o Ollama saudável. Agora a origem é o perfil.
+    """
+    ag = config.load_agent() or {}
+    m = ag.get("modelo")
+    return m if m and m != "demo" else None
+
+
+def _modelo_ollama() -> str:
+    """Perfil primeiro; NOMOS_OLLAMA_MODEL como override sem perfil;
+    'llama3.2' só como último recurso — a mesma cadeia do painel."""
+    return (_modelo_do_perfil()
+            or os.environ.get("NOMOS_OLLAMA_MODEL")
+            or "llama3.2")
+
+
 def _router(ctx):
     from nomos.cognition.providers import OllamaProvider
     from nomos.cognition.router import Router
     host = os.environ.get("NOMOS_OLLAMA_HOST", "http://127.0.0.1:11434")
-    model = os.environ.get("NOMOS_OLLAMA_MODEL", "llama3.2")
+    model = _modelo_ollama()
     from nomos.cognition.embutido import EmbeddedProvider
     from nomos.cognition.providers import OpenAICompatProvider
     oc_base = os.environ.get("NOMOS_OPENAI_COMPAT_BASE", "http://127.0.0.1:1234/v1")
