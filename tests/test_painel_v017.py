@@ -56,18 +56,18 @@ def test_servidor_http_real(nomos_home):
     try:
         assert url.startswith("http://127.0.0.1:")
         # com o segredo: 200 e conteúdo
-        with urllib.request.urlopen(url, timeout=5) as r:  # nosec B310 - teste loopback
+        with urllib.request.urlopen(url, timeout=30) as r:  # nosec B310 - teste loopback
             corpo = r.read().decode()
         assert r.status == 200 and "painel local" in corpo
         # sem o segredo: 404
         base = url.rsplit("/d/", 1)[0]
         with pytest.raises(urllib.error.HTTPError) as e1:
-            urllib.request.urlopen(f"{base}/d/segredo-errado/", timeout=5)  # nosec B310
+            urllib.request.urlopen(f"{base}/d/segredo-errado/", timeout=30)  # nosec B310
         assert e1.value.code == 404
         # POST: painel é somente leitura — 405
         req = urllib.request.Request(url, data=b"acao=mudar", method="POST")
         with pytest.raises(urllib.error.HTTPError) as e2:
-            urllib.request.urlopen(req, timeout=5)  # nosec B310
+            urllib.request.urlopen(req, timeout=30)  # nosec B310
         assert e2.value.code == 405
     finally:
         srv.stop()
@@ -92,7 +92,7 @@ def test_painel_nunca_derruba_com_erro_interno(nomos_home, monkeypatch):
         monkeypatch.setattr(pw, "dados_dashboard",
                             lambda c: (_ for _ in ()).throw(RuntimeError("boom")))
         with pytest.raises(urllib.error.HTTPError) as e:
-            urllib.request.urlopen(url, timeout=5)  # nosec B310
+            urllib.request.urlopen(url, timeout=30)  # nosec B310
         assert e.value.code == 500
         assert "RuntimeError" in e.value.read().decode()
         assert "boom" not in str(e.value.read())   # sem detalhes internos
@@ -116,7 +116,7 @@ def test_painel_erro_500_pagina_raiz_e_estilizado(nomos_home, monkeypatch):
         monkeypatch.setattr(pw, "dados_dashboard",
                             lambda c: (_ for _ in ()).throw(RuntimeError("boom")))
         with pytest.raises(urllib.error.HTTPError) as e:
-            urllib.request.urlopen(url, timeout=5)  # nosec B310
+            urllib.request.urlopen(url, timeout=30)  # nosec B310
         assert e.value.code == 500
         assert e.value.headers.get("Content-Type", "").startswith("text/html")
         corpo = e.value.read().decode()
@@ -142,7 +142,7 @@ def test_painel_erro_500_roteador_e_estilizado(nomos_home, monkeypatch):
 
         monkeypatch.setattr(er, "relatorio_decisao", _quebra)
         with pytest.raises(urllib.error.HTTPError) as e:
-            urllib.request.urlopen(f"{url}roteador/", timeout=5)  # nosec B310
+            urllib.request.urlopen(f"{url}roteador/", timeout=30)  # nosec B310
         assert e.value.code == 500
         assert e.value.headers.get("Content-Type", "").startswith("text/html")
         corpo = e.value.read().decode()

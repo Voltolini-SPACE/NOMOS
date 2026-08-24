@@ -8,9 +8,14 @@ inalcançável por package-data.
 """
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
 
+import pytest
+
+try:
+    import tomllib
+except ModuleNotFoundError:      # stdlib só no 3.11+; no 3.10 o teste que o
+    tomllib = None               # usa declara o fato e os demais seguem vivos
 
 from nomos import skills_embutidas as se
 
@@ -25,6 +30,8 @@ def test_as_skills_base_viajam_dentro_do_pacote():
         assert n in nomes, f"{n} não está empacotada"
 
 
+@pytest.mark.skipif(tomllib is None, reason="tomllib é stdlib do 3.11+ — no "
+                    "py3.10 este contrato é coberto pelo resto da matriz")
 def test_package_data_declarado_no_pyproject():
     """Sem esta linha o diretório existe no repo e some do wheel — que era
     exatamente o defeito. O teste prende a declaração, não o arquivo."""
