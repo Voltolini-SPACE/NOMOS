@@ -1295,8 +1295,8 @@ def _raizes_de_exemplos(home: Path) -> list[Path]:
     try:
         from nomos import skills_embutidas as emb
         raizes.extend(emb.origens())
-    except Exception:
-        pass
+    except Exception:  # noqa: S110 — pacote sem embutidas só reduz as raízes;
+        pass           # a listagem de skills não pode derrubar o painel.
     raizes.append(home / "examples" / "skills")
     return raizes
 
@@ -1347,8 +1347,8 @@ def dados_skills(ctx, token: str | None = None, base: str = "",
                 pode, motivo = _reg.pode_executar_aqui(man, home)
                 if not pode:
                     motivo_aqui = (motivo or "").split(":")[-1].strip()[:80]
-            except Exception:
-                pass
+            except Exception:  # noqa: S110 — registry quebrado = sem motivo
+                pass           # extra no card; a lista continua honesta.
             prontas.append({
                 "nome": man.get("name") or d_ex.name,
                 "descricao": man.get("description") or "",
@@ -1373,8 +1373,8 @@ def dados_skills(ctx, token: str | None = None, base: str = "",
             if m.id == "function-calling":
                 sabe_chamar = getattr(m, "detalhe", None) or m.rotulo
                 break
-    except Exception:
-        pass
+    except Exception:  # noqa: S110 — catálogo indisponível só omite o selo
+        pass           # "sabe chamar função"; a página segue de pé.
 
     return {"instaladas": instaladas, "prontas": prontas,
             "token": token, "base": base, "saida": saida,

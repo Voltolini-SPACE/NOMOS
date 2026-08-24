@@ -79,7 +79,8 @@ def test_homes_diferentes_nao_se_bloqueiam(tmp_path):
     """A exclusão é por NOMOS_HOME, não global — dois NOMOS distintos na mesma
     máquina são um caso legítimo."""
     a, b = tmp_path / "a", tmp_path / "b"
-    a.mkdir(); b.mkdir()
+    a.mkdir()
+    b.mkdir()
     parar = [False]
     t1 = _ticker(a)
     th = threading.Thread(

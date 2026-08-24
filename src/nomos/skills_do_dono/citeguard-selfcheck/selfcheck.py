@@ -79,7 +79,7 @@ def verificar(texto: str) -> dict:
             falha("doi", doi, "sufixo truncado")
     for m in ARXIV.finditer(texto):
         num = m.group(1)
-        aa, mm = num.split(".")[0][:2], num.split(".")[0][2:]
+        mm = num.split(".")[0][2:]
         if not ("01" <= mm <= "12"):
             falha("arxiv", m.group(0), f"mês inválido no id: {mm}")
     for m in URL.finditer(texto):

@@ -4,3 +4,5 @@
 recursive-include examples *.py *.json *.md
 recursive-include docs *.md
 include README.md CHANGELOG.md LICENSE
+# o backend PEP 517 viaja no sdist — sem ele, wheel-a-partir-do-sdist não builda
+include _backend/empacotamento_limpo.py

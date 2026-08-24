@@ -10,15 +10,12 @@ autorizar**. "vem no NOMOS" não pode ser lido como "está ativa".
 """
 from __future__ import annotations
 
-from pathlib import Path
 
-import pytest
 
 from nomos.interface import painel_web as pw
 
 
 def _pagina(caps):
-    from nomos.interface.painel_web import dados_dashboard
     return caps
 
 

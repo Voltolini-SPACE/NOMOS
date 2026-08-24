@@ -51,6 +51,20 @@ def test_modelo_demo_nao_conta(monkeypatch, tmp_path):
     assert cli._modelo_ollama() == "llama3.2"
 
 
+def test_modelo_demo_com_env_cai_no_env(monkeypatch, tmp_path):
+    _home_com_perfil(tmp_path, monkeypatch, modelo="demo")
+    monkeypatch.setenv("NOMOS_OLLAMA_MODEL", "qwen3.5:4b-q8_0")
+    assert cli._modelo_ollama() == "qwen3.5:4b-q8_0"
+
+
+def test_perfil_sem_campo_modelo_env_decide(monkeypatch, tmp_path):
+    """agent.json existe (onboarding incompleto) mas sem 'modelo': env vale."""
+    monkeypatch.setenv("NOMOS_HOME", str(tmp_path))
+    config.save_agent("ZEUS")            # perfil sem o campo "modelo"
+    monkeypatch.setenv("NOMOS_OLLAMA_MODEL", "qwen3.5:4b-q8_0")
+    assert cli._modelo_ollama() == "qwen3.5:4b-q8_0"
+
+
 def test_router_entrega_o_modelo_do_perfil_ao_ollama(monkeypatch, tmp_path):
     """Ponta a ponta do defeito: o OllamaProvider do `_router()` nasce com o
     modelo do agent.json — era exatamente aqui que o 404 começava."""

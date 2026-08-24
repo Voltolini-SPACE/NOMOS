@@ -295,6 +295,7 @@ def test_cli_arquivo_escrever_path_traversal_negado_mesmo_aprovado(nomos_home, c
     assert not Path("/tmp/nomos-p1-traversal-teste").exists()
 
 
+@pytest.mark.usefixtures("motores_ausentes")
 def test_cli_codigo_gerar_sem_motor_configurado_e_exit_ok_com_mensagem_honesta(nomos_home, capsys):
     """codigo_gerar é A0 — não precisa de aprovador; sem Ollama/OpenAI-compat
     reais neste ambiente de teste, degrada de forma transparente (nunca

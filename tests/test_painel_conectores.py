@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import re
 
-from nomos.interface import painel_web
 from nomos.interface.painel_web import _secao_conectores
 
 

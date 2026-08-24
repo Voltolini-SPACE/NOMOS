@@ -105,6 +105,7 @@ def test_motores_listar_e_usar(monkeypatch, capsys):
     assert run("motores", "usar", "video", "x") == 1
 
 
+@pytest.mark.usefixtures("motores_ausentes")
 def test_chat_degradado_nao_interativo(capsys):
     run("init")
     rc = run("chat", "qual", "a", "capital?")
@@ -112,6 +113,7 @@ def test_chat_degradado_nao_interativo(capsys):
     assert "MODO DEGRADADO" in capsys.readouterr().out
 
 
+@pytest.mark.usefixtures("motores_ausentes")
 def test_chat_cloud_nao_interativo_nega(capsys):
     run("init")
     assert run("chat", "--cloud", "oi") == 3

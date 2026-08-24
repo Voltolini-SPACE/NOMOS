@@ -5,7 +5,6 @@ pacotes de evidências (com verificação real de integridade) e a política de
 permissões A0–A6 lida do código (contrato vivo, não cópia).
 """
 import io
-from pathlib import Path
 
 import pytest
 

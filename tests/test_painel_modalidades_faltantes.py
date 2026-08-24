@@ -8,7 +8,6 @@ meia-verdade pior que silêncio, porque soa completa.
 """
 from __future__ import annotations
 
-from pathlib import Path
 
 from nomos.interface import painel_web as pw
 

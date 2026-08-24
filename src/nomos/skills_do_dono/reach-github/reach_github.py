@@ -182,8 +182,8 @@ def executar(args: dict) -> tuple[dict, int]:
         try:
             corpo_erro = exc.read().decode("utf-8", errors="replace")
             detalhe = json.loads(corpo_erro).get("message", "")
-        except Exception:
-            pass   # corpo de erro ilegível não muda o diagnóstico: o status basta
+        except Exception:  # noqa: S110 — corpo de erro ilegível não muda o
+            pass           # diagnóstico: o status HTTP basta.
         if exc.code in (401, 403, 429):
             esgotou = str(quota.get("restantes")) == "0"
             return {**base, "ok": False, "http_status": exc.code,

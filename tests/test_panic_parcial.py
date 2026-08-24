@@ -25,7 +25,7 @@ def _trilha(home) -> list[dict]:
     p = home / "logs" / "audit.jsonl"
     if not p.exists():
         return []
-    return [json.loads(l) for l in p.read_text().splitlines() if l.strip()]
+    return [json.loads(ln) for ln in p.read_text().splitlines() if ln.strip()]
 
 
 def _evento_panico(home) -> dict | None:
@@ -61,7 +61,7 @@ def test_um_passo_que_falha_nao_impede_os_outros(home, monkeypatch, capsys):
         "jamais tranquilizar quando o corte não aconteceu"
 
     # os outros 4 passos rodaram mesmo assim
-    from nomos.kernel import localidade, pausa
+    from nomos.kernel import pausa
     assert pausa.esta_pausado(home) if hasattr(pausa, "esta_pausado") else True
     ev = _evento_panico(home)
     assert ev is not None, "a trilha tem de existir MESMO com falha"

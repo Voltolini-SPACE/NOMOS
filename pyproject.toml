@@ -1,6 +1,12 @@
 [build-system]
 requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+# backend próprio: setuptools.build_meta + faxina de build/ e egg-info
+# obsoletos ANTES de empacotar — um build/lib de branch antigo já contaminou
+# wheel/venv com skills fantasma (24/08/2026). Ver o docstring do módulo.
+# Em subdiretório DEDICADO por lei: backend-path entra no sys.path do build,
+# e a raiz aqui tem `packaging/` — que sombrearia o packaging do setuptools.
+build-backend = "empacotamento_limpo"
+backend-path = ["_backend"]
 
 [project]
 name = "nomos"
@@ -86,4 +92,5 @@ exclude = ["src/nomos/conectores/mcp/.*/servidor\\.py"]
 # só existe para permitir `-m "not slow"` num ciclo rápido de desenvolvimento.
 markers = [
     "slow: bateria longa (corrida/caos) — roda por padrão, filtrável com -m 'not slow'",
+    "motor_real: integração opt-in que PODE tocar um motor local vivo (Ollama/OpenAI-compat); sem esta marca o conftest bloqueia o socket para as portas reais",
 ]

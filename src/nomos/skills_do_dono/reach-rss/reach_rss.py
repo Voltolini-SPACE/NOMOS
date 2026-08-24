@@ -269,8 +269,8 @@ def _data_iso(bruta: str | None) -> str | None:
         d = parsedate_to_datetime(bruta)
         if d is not None:
             return d.isoformat()
-    except Exception:
-        pass
+    except Exception:  # noqa: S110 — data RFC-2822 ilegível: tenta ISO abaixo
+        pass           # antes de desistir; feed ruim não derruba o leitor.
     try:
         return datetime.fromisoformat(bruta.replace("Z", "+00:00")).isoformat()
     except Exception:

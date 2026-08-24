@@ -179,7 +179,6 @@ class Ticker:
                 + " — recuso subir um segundo em vez de executar tudo em dobro")
         self._parar = False
         resultados: list[ResultadoTick] = []
-        n = 0
         try:
             return self._laco(condicao, max_ticks, resultados)
         finally:

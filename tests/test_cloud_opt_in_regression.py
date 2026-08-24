@@ -68,6 +68,7 @@ def test_cloud_negada_sem_aprovador_fail_closed(nomos_home):
     assert out.ok is False
 
 
+@pytest.mark.usefixtures("motores_ausentes")
 def test_cli_chat_cloud_nao_interativo_nega(capsys):
     assert cli.main(["init"]) == 0
     rc = cli.main(["chat", "--cloud", "qual a previsão?"])

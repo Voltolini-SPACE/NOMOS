@@ -598,18 +598,18 @@ def _verificar_valor(repo: dict, claim: dict) -> dict:
             notas.append("valor lido na mesma linha, mas nao logo apos o nome")
         notas += [n for *_, n in batem if n]
         return {"status": "ENCONTRADO", "confianca": conf, "nota": "; ".join(notas),
-                "evidencias": [_evidencia(repo, f, l, v, n)
-                               for f, l, v, _, n in batem[:MAX_EVIDENCIAS]]}
+                "evidencias": [_evidencia(repo, f, ln, v, n)
+                               for f, ln, v, _, n in batem[:MAX_EVIDENCIAS]]}
     if divergem:
         return {"status": "DIVERGENTE", "confianca": "alta" if completo else "media",
                 "nota": "nome existe no repositorio com valor diferente do paper" + corte,
-                "evidencias": [_evidencia(repo, f, l, v)
-                               for f, l, v, _ in divergem[:MAX_EVIDENCIAS]]}
+                "evidencias": [_evidencia(repo, f, ln, v)
+                               for f, ln, v, _ in divergem[:MAX_EVIDENCIAS]]}
     return {"status": "NAO_ENCONTRADO", "confianca": "baixa",
             "nota": ("nome aparece em %d linha(s), mas sem numero legivel ao lado"
                      " — o VALOR do paper nao pode ser confirmado nem negado"
                      % len(so_nome)) + corte,
-            "evidencias": [_evidencia(repo, f, l) for f, l in so_nome[:MAX_EVIDENCIAS]]}
+            "evidencias": [_evidencia(repo, f, ln) for f, ln in so_nome[:MAX_EVIDENCIAS]]}
 
 
 _RE_DEF = r"(?:def|class|fn|func|function|struct|impl|type|interface|procedure|sub)"
@@ -646,18 +646,18 @@ def _verificar_nome(repo: dict, claim: dict) -> dict:
     if defs:
         return {"status": "ENCONTRADO", "confianca": "alta",
                 "nota": "definicao localizada no codigo",
-                "evidencias": [_evidencia(repo, f, l, None, n)
-                               for f, l, n in defs[:MAX_EVIDENCIAS]]}
+                "evidencias": [_evidencia(repo, f, ln, None, n)
+                               for f, ln, n in defs[:MAX_EVIDENCIAS]]}
     if usos_codigo:
         return {"status": "ENCONTRADO", "confianca": "media",
                 "nota": ("aparece em codigo apenas como uso/mencao; nao achei "
                          "def/class com esse nome (pode ser import de terceiro)"),
-                "evidencias": [_evidencia(repo, f, l)
-                               for f, l in usos_codigo[:MAX_EVIDENCIAS]]}
+                "evidencias": [_evidencia(repo, f, ln)
+                               for f, ln in usos_codigo[:MAX_EVIDENCIAS]]}
     return {"status": "DIVERGENTE", "confianca": "alta" if completo else "media",
             "nota": ("citado como codigo no paper, mas no repo so aparece em "
                      "documentacao/config — nao ha implementacao com esse nome") + corte,
-            "evidencias": [_evidencia(repo, f, l) for f, l in fora[:MAX_EVIDENCIAS]]}
+            "evidencias": [_evidencia(repo, f, ln) for f, ln in fora[:MAX_EVIDENCIAS]]}
 
 
 # ================================================== entrada e relatorio
@@ -828,8 +828,8 @@ def _imprimir(obj: dict) -> None:
     # trecho de codigo derrubaria a skill inteira na hora do print.
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+    except Exception:  # noqa: S110 — stdout sem reconfigure (pipe exótico)
+        pass           # ainda imprime; perder acento < perder a skill.
     try:
         print(json.dumps(obj, ensure_ascii=False))
     except UnicodeEncodeError:
