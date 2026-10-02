@@ -4,6 +4,103 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Tests (MC65 — ponto de plugue `nomos reversa` travado)
+- **`tests/test_mc65_plugue_reversa.py`** (6 testes): trava o contrato do
+  plugue do componente extraído. Prova que o subcomando existe e se anuncia;
+  que, com o componente instalado, o comando mapeia e **não executa nem altera o
+  alvo**; que, **sem** o componente instalado, o comando **avisa com a linha de
+  instalação em vez de estourar traceback** (caso antes só verificado à mão); e
+  que o plugue não expõe nenhuma flag de mutação.
+
+### Changed (MC65 — NOMOS Action Pins extraído para repositório próprio)
+- **`tools/verify_action_pins.py` saiu do monorepo.** Conforme a regra do
+  ecossistema, virou o repositório independente `nomos-action-pins` (nome de
+  exibição «NOMOS Action Pins»), com licença MIT, console script
+  `nomos-action-pins` e **16 testes** — o script original não tinha nenhum.
+- **Ganhos na extração:** a raiz do repositório deixou de ser adivinhada
+  (`Path(__file__).parents[1]`, que só funcionava estando em `tools/`) e passou a
+  ser explícita por `--repo DIR` (padrão: diretório atual); foi exposta API
+  (`verificar`) além da linha de comando; e o resultado ganhou **JSON
+  determinístico** com contrato de segurança (`read_only`, `mutations_enabled`).
+- **Contrato de segurança provado por teste:** não escreve nada; rede só quando
+  pedida (`--offline` não toca a rede); falha de rede é informativa e não
+  bloqueia build; divergência de SHA bloqueia (saída 1); `--strict` converte
+  WARN em bloqueio (saída 2). Segue **stdlib-only** de propósito — ferramenta de
+  supply-chain não deve virar vetor de supply-chain.
+- **Validação real:** audita os 25 pins de Actions do próprio NOMOS — todos
+  fixados por SHA de 40 hex com comentário de versão, sem ref mutável.
+- **Não foi ligado no CI ainda:** o gate depende de o pacote estar publicado, e
+  publicação é decisão humana. Quando o repositório for publicado, o passo é
+  `nomos-action-pins --repo . --strict`.
+
+### Changed (MC65 — NOMOS Reversa extraído para repositório próprio)
+- **O componente saiu do monorepo.** Conforme a regra do ecossistema — toda
+  ferramenta nossa carrega o nome NOMOS, tem **repositório git próprio** e
+  licença **MIT** — o mapeador passou a viver em repositório independente
+  (`nomos-reversa`, nome de exibição «NOMOS Reversa»), com a suíte própria
+  (39 testes) e licença MIT declarada.
+- **`nomos reversa <alvo>` continua funcionando** como ponto de plugue do
+  ecossistema: o comando importa o componente instalado e, quando ele não está
+  presente, **avisa com o comando de instalação** em vez de estourar traceback.
+- **`tools/make_sbom.py --gate-licenca`** passou a importar
+  `nomos_reversa.classificar_licenca` (sem `sys.path` artificial). O teste do
+  gate fica no NOMOS — ele exercita uma ferramenta DESTE repositório — e é
+  **pulado de forma limpa** onde o componente não estiver instalado, para o CI
+  não reprovar por falta de régua.
+- Removidos do monorepo: `src/nomos/reversa/`, `tools/nomos_reversa.py` e
+  `tests/test_mc65_reversa.py` (39 testes migraram para o repositório do
+  componente; 2 testes do gate de SBOM ficaram aqui, em
+  `tests/test_mc65_sbom_gate.py`).
+
+### Added (MC65 — NOMOS Reversa: mapeamento de ferramentas de terceiros)
+- **`nomos reversa <alvo>`** (componente `nomos.reversa`): mapeia uma
+  ferramenta de terceiros — repositório git, pasta de skills, binário ou
+  arquivo — **sem executá-la**. Devolve origem (remote/branch/HEAD), inventário,
+  pontos de entrada, dependências, licença, assinaturas por skill, **achados
+  classificados** (`execucao` · `rede` · `credencial` · `injecao` ·
+  `empacotamento` · `licenca` · `git` · `skill`), risco consolidado e um
+  **blueprint de reimplementação**. É a ferramenta própria que a regra do
+  proprietário de 02/10/2026 exige: mapear a ferramenta desejada antes de
+  adotá-la.
+- **Licença de verdade, não do primeiro arquivo**: o mapa lê **todos** os
+  arquivos de licença — código, `docs/`/`LICENSES/` e o manifesto do pacote —
+  e separa o rótulo das **restrições**. Detecta cláusula restritiva
+  (`Commons Clause`, uso não comercial), copyleft forte (AGPL/GPL) e fraca
+  (LGPL/MPL), distingue `GPL-3.0-only` de `or-later`, e entende expressões
+  SPDX compostas do `License-Expression` (PEP 639): em `A OR B` vale a menos
+  restritiva, em `A AND B` valem todas. É a correção de um **falso negativo
+  medido em alvo real**: um projeto com `LICENSE.md` "Apache + Commons Clause"
+  e `docs/LICENSE.md` AGPL era resumido como "Apache-2.0, risco médio, zero
+  achados". Agora são quatro achados altos, incluindo a divergência entre a
+  licença do código e a da **documentação** — que inviabiliza clean-room por ela.
+- **Gate de licença no SBOM** (`tools/make_sbom.py --gate-licenca`): cada
+  componente passa a declarar a licença no CycloneDX e o gate **reprova**
+  (saída 3) quem tenha copyleft forte ou cláusula restritiva, usando a MESMA
+  `classificar_licenca` do mapeador — uma regra só, sem duas verdades sobre
+  licença no NOMOS.
+- **Contrato de segurança verificável**: o alvo nunca é executado nem
+  importado; nada é escrito dentro dele; links simbólicos não são seguidos;
+  `git` só é consultado por allowlist de leitura (`rev-parse`, `remote`, `log`,
+  `describe`, `symbolic-ref`) com `core.hooksPath` e `core.fsmonitor`
+  neutralizados por `-c`, para que repositório hostil não ganhe execução. Hook
+  git é tratado como **código**, não configuração — inclusive `hooksPath`
+  customizado e filtros `clean`/`smudge`. Não existe flag de mutação ou
+  publicação: por construção o agente é incapaz de mutar o alvo.
+- **Fail-closed**: alvo inexistente, alvo que é link e manifesto ilegível viram
+  risco alto, não silêncio. Skill **sem assinatura** é achado registrado.
+  Saída determinística (mesma entrada, mesmo JSON) para gate de CI.
+- **`tools/nomos_reversa.py`**: agente autônomo no padrão MC29, com `--json` e
+  `--saida DIR` como única escrita explícita (fora do alvo).
+- **Dogfooding**: no marketplace de terceiros `HKUDS/CLI-Anything` (1.869
+  arquivos) o mapa classificou **risco alto** — 3 `pipe-para-shell` (incluindo
+  `curl … | bash` de domínio de terceiro) e 151 skills sem assinatura; nas
+  skills NVIDIA instaladas reconheceu `skill.oms.sig` numa e marcou a outra como
+  `AUSENTE`, reproduzindo de forma independente a auditoria manual.
+- 41 testes de contrato em `tests/test_mc65_reversa.py`, incluindo os casos de
+  licença medidos em alvos reais (vectorbt, freqtrade, mortdeus) como
+  regressão. Relatório da missão em
+  `docs/missions/MC65_REVERSA_MAPEAMENTO.md`.
+
 ### Added (Missão C — ORQUESTRA-02: NH-015 + NH-021 + NH-009)
 - **Execução paralela de nós independentes** (NH-015): `nomos orquestrar
   --paralelo N` — ondas com gate SERIAL (o humano nunca recebe duas

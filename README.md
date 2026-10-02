@@ -87,6 +87,7 @@ macOS e Windows, em Python 3.10 a 3.13. Você não precisa confiar; pode
 | Cofre e backup | Chaves com senha-mestra; seu NOMOS inteiro num arquivo cifrado. | `nomos chaves` |
 | Skills governadas | Habilidades instaláveis e assinadas que só fazem o que declaram. | `nomos skills` |
 | Agentes com escopo | Agentes oficiais e próprios, com ferramentas, motores e risco máximo definidos. | `nomos agentes` |
+| Mapeie antes de adotar (Reversa) | Mapeia ferramenta de terceiros sem executá-la: origem, dependências, licença real (código, documentação e restrições) e blueprint de reimplementação. | `nomos reversa <alvo>` |
 | Auditoria com âncora | Trilha com âncora HMAC — evidência que não muda em silêncio. | `nomos logs` |
 | Painel web local + chat | Status, motores, evidências, política viva e chat local — só 127.0.0.1. | `nomos painel` |
 | Conectores MCP oficiais | Telegram, WhatsApp, e-mail (SMTP/IMAP), Slack, Signal e calendário .ics — governados (A3/A0). | `nomos mcp` |
