@@ -4,6 +4,14 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Tests (MC65 — ponto de plugue `nomos reversa` travado)
+- **`tests/test_mc65_plugue_reversa.py`** (6 testes): trava o contrato do
+  plugue do componente extraído. Prova que o subcomando existe e se anuncia;
+  que, com o componente instalado, o comando mapeia e **não executa nem altera o
+  alvo**; que, **sem** o componente instalado, o comando **avisa com a linha de
+  instalação em vez de estourar traceback** (caso antes só verificado à mão); e
+  que o plugue não expõe nenhuma flag de mutação.
+
 ### Changed (MC65 — NOMOS Action Pins extraído para repositório próprio)
 - **`tools/verify_action_pins.py` saiu do monorepo.** Conforme a regra do
   ecossistema, virou o repositório independente `nomos-action-pins` (nome de
