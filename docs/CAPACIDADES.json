@@ -17,6 +17,7 @@
     {"id": "cofre", "nome": "Cofre e backup", "resumo": "Chaves com senha-mestra; seu NOMOS inteiro num arquivo cifrado.", "area": "segurança", "comando": "nomos chaves"},
     {"id": "skills", "nome": "Skills governadas", "resumo": "Habilidades instaláveis e assinadas que só fazem o que declaram.", "area": "extensão", "comando": "nomos skills"},
     {"id": "agentes", "nome": "Agentes com escopo", "resumo": "Agentes oficiais e próprios, com ferramentas, motores e risco máximo definidos.", "area": "extensão", "comando": "nomos agentes"},
+    {"id": "reversa", "nome": "Mapeie antes de adotar (Reversa)", "resumo": "Mapeia ferramenta de terceiros sem executá-la: origem, dependências, licença real (código, documentação e restrições) e blueprint de reimplementação.", "area": "segurança", "comando": "nomos reversa <alvo>"},
     {"id": "auditoria", "nome": "Auditoria com âncora", "resumo": "Trilha com âncora HMAC — evidência que não muda em silêncio.", "area": "governança", "comando": "nomos logs"},
     {"id": "painel", "nome": "Painel web local + chat", "resumo": "Status, motores, evidências, política viva e chat local — só 127.0.0.1.", "area": "painel", "comando": "nomos painel"},
     {"id": "conectores", "nome": "Conectores MCP oficiais", "resumo": "Telegram, WhatsApp, e-mail (SMTP/IMAP), Slack, Signal e calendário .ics — governados (A3/A0).", "area": "conexões", "comando": "nomos mcp"},
