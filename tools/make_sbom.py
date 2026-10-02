@@ -9,8 +9,9 @@ Com artefatos: adiciona `externalReferences[type=distribution]` com o sha256
 de cada arquivo (wheel/sdist) — amarra o SBOM ao artefato distribuível.
 Com `--gate-licenca`: além de gravar o SBOM, REPROVA (saída 3) se alguma
 dependência tiver copyleft forte (AGPL/GPL) ou cláusula restritiva — o NOMOS é
-MIT e a regra inviolável nº 6 proíbe linkar AGPL. A classificação é a MESMA do
-`nomos.reversa` (`classificar_licenca`), para não haver duas verdades.
+MIT e a regra inviolável nº 6 proíbe linkar AGPL. A classificação vem do
+componente «NOMOS Reversa» (`nomos_reversa.classificar_licenca`), que vive em
+repositório próprio, para não haver duas verdades.
 
 Determinismo: quando `SOURCE_DATE_EPOCH` estiver no ambiente (padrão
 reproducible-builds.org), timestamp e serialNumber são derivados dele em
@@ -28,9 +29,8 @@ from datetime import datetime, timezone
 from importlib import metadata
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 try:
-    from nomos.reversa import classificar_licenca  # noqa: E402
+    from nomos_reversa import classificar_licenca
 except ImportError:  # o SBOM continua útil sem o gate
     classificar_licenca = None  # type: ignore[assignment]
 

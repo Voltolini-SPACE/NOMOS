@@ -4,11 +4,18 @@
 
 ```
 STATUS_FINAL=PASS_MC65_REVERSA_MAPEAMENTO
-TESTES=31 passed
+TESTES=41 passed (39 no repositorio do componente + 2 do gate de SBOM aqui)
 RUFF=All checks passed
 BRANCH=mc65-reversa-mapeamento
 PUSH=nao (decisao humana)
+COMPONENTE=extraido para o repositorio proprio nomos-reversa
 ```
+
+> **Atualização (02/10/2026):** o componente foi **extraído do monorepo** para o
+> repositório próprio `nomos-reversa` («NOMOS Reversa»), com licença MIT,
+> conforme a regra do ecossistema. O que este documento descreve como
+> `src/nomos/reversa/` passou a viver lá; `nomos reversa` continua funcionando
+> como ponto de plugue. Ver a seção 10.
 
 ## 2. Motivação (regra do proprietário, 02/10/2026)
 
@@ -170,3 +177,51 @@ preservada intacta — a menção ao `reversa` na página é a pendência MC33 a
    o material distribuído. Se um dia for preciso, será missão própria, com
    ambiente isolado e autorização — as ferramentas não estão instaladas
    (nem no Mac, nem na Spark).
+
+## 9. Estado das pendências acima (após a extração)
+
+| # | Pendência | Situação |
+|---|---|---|
+| 1 | Push humano | **aberta** — dois commits locais prontos, nenhum push feito |
+| 2 | REGRA MC33 (site) | **em curso por outra sessão** (`site/index.html` alterado, preservado) |
+| 3 | REGRA MC35 (dogfooding) | **resolvida** — `README.md` e `docs/CAPACIDADES.json` já anunciam «NOMOS Reversa» (outra sessão, commit `6705033`) |
+| 4 | Sincronização Mac ↔ Spark | **aberta** |
+| 5 | Engenharia reversa de binário | **aberta** — fora de escopo por decisão |
+
+## 10. Extração para repositório próprio
+
+Conforme a regra do ecossistema («toda ferramenta nossa carrega o nome NOMOS,
+tem repositório git próprio e licença MIT»), o componente foi extraído:
+
+| Antes (monorepo) | Depois |
+|---|---|
+| `src/nomos/reversa/` | repositório `nomos-reversa`, pacote `nomos_reversa` |
+| `tools/nomos_reversa.py` | console script `nomos-reversa` (`nomos_reversa.cli:main`) |
+| `tests/test_mc65_reversa.py` (41) | `tests/test_reversa.py` (39) no repositório novo |
+| — | `tests/test_mc65_sbom_gate.py` (2) **ficou aqui** |
+
+**Local:** `~/Projects/nomos-reversa/` · **licença:** MIT · **commit inicial:**
+`29f0a37` · **dependências:** nenhuma além da biblioteca padrão.
+
+**Por que 2 testes ficaram no NOMOS:** eles exercitam `tools/make_sbom.py`, uma
+ferramenta DESTE repositório, não o mapeador. O gate de licença continua usando
+a **mesma** `classificar_licenca`, agora importada de `nomos_reversa`, para não
+haver duas verdades.
+
+**Integração:** `nomos reversa <alvo>` continua funcionando. Quando o componente
+não está instalado, o comando **avisa com a linha de instalação** em vez de
+estourar traceback. O teste do gate é pulado de forma limpa onde o pacote não
+existe, para o CI não reprovar por falta de régua.
+
+**Extração feita com a sessão concorrente parada:** o vigia confirmou
+quiescência (301 s sem escrita) antes de tocar em qualquer arquivo, e os hashes
+do componente foram conferidos contra a cópia — sem divergência.
+
+### Achado menor registrado (não corrigido)
+
+O mapeador marca `licenca-ausente` como risco **alto** para uma pasta de skills
+que declara a licença no frontmatter do `SKILL.md` (caso real das skills NVIDIA:
+`license: Apache-2.0`). Ele procura por arquivo `LICENSE`. É decisão de desenho
+da classificação de licença (outra sessão), e fica registrada como possível
+falso-positivo a revisar — não foi alterada aqui para não misturar escopos.
+

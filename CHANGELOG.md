@@ -4,6 +4,25 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Changed (MC65 — NOMOS Reversa extraído para repositório próprio)
+- **O componente saiu do monorepo.** Conforme a regra do ecossistema — toda
+  ferramenta nossa carrega o nome NOMOS, tem **repositório git próprio** e
+  licença **MIT** — o mapeador passou a viver em repositório independente
+  (`nomos-reversa`, nome de exibição «NOMOS Reversa»), com a suíte própria
+  (39 testes) e licença MIT declarada.
+- **`nomos reversa <alvo>` continua funcionando** como ponto de plugue do
+  ecossistema: o comando importa o componente instalado e, quando ele não está
+  presente, **avisa com o comando de instalação** em vez de estourar traceback.
+- **`tools/make_sbom.py --gate-licenca`** passou a importar
+  `nomos_reversa.classificar_licenca` (sem `sys.path` artificial). O teste do
+  gate fica no NOMOS — ele exercita uma ferramenta DESTE repositório — e é
+  **pulado de forma limpa** onde o componente não estiver instalado, para o CI
+  não reprovar por falta de régua.
+- Removidos do monorepo: `src/nomos/reversa/`, `tools/nomos_reversa.py` e
+  `tests/test_mc65_reversa.py` (39 testes migraram para o repositório do
+  componente; 2 testes do gate de SBOM ficaram aqui, em
+  `tests/test_mc65_sbom_gate.py`).
+
 ### Added (MC65 — NOMOS Reversa: mapeamento de ferramentas de terceiros)
 - **`nomos reversa <alvo>`** (componente `nomos.reversa`): mapeia uma
   ferramenta de terceiros — repositório git, pasta de skills, binário ou

@@ -878,11 +878,17 @@ def cmd_arquivo(ctx, args) -> int:
 
 
 def cmd_reversa(ctx, args) -> int:
-    """Mapeia uma ferramenta de terceiros SEM executá-la (NOMOS Reversa, MC65)."""
+    """Mapeia uma ferramenta de terceiros SEM executá-la (NOMOS Reversa)."""
     import json as _json
     from pathlib import Path as _Path
 
-    from nomos.reversa import mapear, para_dict, relatorio
+    # Componente do ecossistema, em repositório próprio (`nomos-reversa`).
+    try:
+        from nomos_reversa import mapear, para_dict, relatorio
+    except ImportError:
+        print("O componente «NOMOS Reversa» não está instalado.\n"
+              "Instale com:  pip install nomos-reversa", file=sys.stderr)
+        return EXIT_ERROR
 
     mapa = mapear(args.alvo)
     saida = getattr(args, "saida", None)
