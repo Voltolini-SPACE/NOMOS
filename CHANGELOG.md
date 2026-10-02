@@ -4,6 +4,27 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Datas em U
 
 ## [Unreleased]
 
+### Changed (MC65 — NOMOS Action Pins extraído para repositório próprio)
+- **`tools/verify_action_pins.py` saiu do monorepo.** Conforme a regra do
+  ecossistema, virou o repositório independente `nomos-action-pins` (nome de
+  exibição «NOMOS Action Pins»), com licença MIT, console script
+  `nomos-action-pins` e **16 testes** — o script original não tinha nenhum.
+- **Ganhos na extração:** a raiz do repositório deixou de ser adivinhada
+  (`Path(__file__).parents[1]`, que só funcionava estando em `tools/`) e passou a
+  ser explícita por `--repo DIR` (padrão: diretório atual); foi exposta API
+  (`verificar`) além da linha de comando; e o resultado ganhou **JSON
+  determinístico** com contrato de segurança (`read_only`, `mutations_enabled`).
+- **Contrato de segurança provado por teste:** não escreve nada; rede só quando
+  pedida (`--offline` não toca a rede); falha de rede é informativa e não
+  bloqueia build; divergência de SHA bloqueia (saída 1); `--strict` converte
+  WARN em bloqueio (saída 2). Segue **stdlib-only** de propósito — ferramenta de
+  supply-chain não deve virar vetor de supply-chain.
+- **Validação real:** audita os 25 pins de Actions do próprio NOMOS — todos
+  fixados por SHA de 40 hex com comentário de versão, sem ref mutável.
+- **Não foi ligado no CI ainda:** o gate depende de o pacote estar publicado, e
+  publicação é decisão humana. Quando o repositório for publicado, o passo é
+  `nomos-action-pins --repo . --strict`.
+
 ### Changed (MC65 — NOMOS Reversa extraído para repositório próprio)
 - **O componente saiu do monorepo.** Conforme a regra do ecossistema — toda
   ferramenta nossa carrega o nome NOMOS, tem **repositório git próprio** e
