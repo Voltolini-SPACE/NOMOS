@@ -2,11 +2,15 @@
 """Gera SBOM CycloneDX 1.5 (JSON) para o NOMOS a partir dos metadados instalados.
 
 Uso:
-    make_sbom.py <out_path> [<artefato>...]
+    make_sbom.py <out_path> [<artefato>...] [--gate-licenca]
 
 Sem argumentos extras: SBOM com root + deps declaradas.
 Com artefatos: adiciona `externalReferences[type=distribution]` com o sha256
 de cada arquivo (wheel/sdist) — amarra o SBOM ao artefato distribuível.
+Com `--gate-licenca`: além de gravar o SBOM, REPROVA (saída 3) se alguma
+dependência tiver copyleft forte (AGPL/GPL) ou cláusula restritiva — o NOMOS é
+MIT e a regra inviolável nº 6 proíbe linkar AGPL. A classificação é a MESMA do
+`nomos.reversa` (`classificar_licenca`), para não haver duas verdades.
 
 Determinismo: quando `SOURCE_DATE_EPOCH` estiver no ambiente (padrão
 reproducible-builds.org), timestamp e serialNumber são derivados dele em
@@ -24,6 +28,12 @@ from datetime import datetime, timezone
 from importlib import metadata
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+try:
+    from nomos.reversa import classificar_licenca  # noqa: E402
+except ImportError:  # o SBOM continua útil sem o gate
+    classificar_licenca = None  # type: ignore[assignment]
+
 ROOT = "nomos"
 DEPS = ["cryptography", "cffi", "pycparser", "argon2-cffi", "argon2-cffi-bindings"]  # árvore real
 
@@ -33,19 +43,54 @@ DEPS = ["cryptography", "cffi", "pycparser", "argon2-cffi", "argon2-cffi-binding
 _NOMOS_SBOM_NAMESPACE = uuid.UUID("6b6f0f8e-1a2b-5c7d-8e9f-abcdef012345")
 
 
+def licenca_do_componente(dist) -> str | None:
+    """Licença declarada no metadado da dependência instalada."""
+    if classificar_licenca is None:
+        return None
+    meta = dist.metadata
+    texto = " ".join(filter(None, [
+        meta.get("License") or "",
+        meta.get("License-Expression") or "",   # PEP 639 (pacotes modernos)
+        " ".join(meta.get_all("Classifier") or []),
+    ]))
+    if not texto.strip():
+        return None
+    ident, _, _ = classificar_licenca(texto)
+    return ident
+
+
+def problemas_de_licenca(comps: list) -> list:
+    """Componentes cuja licença impede distribuir o NOMOS sob MIT."""
+    problemas = []
+    if classificar_licenca is None:
+        return problemas
+    for c in comps:
+        ident = ((c.get("licenses") or [{}])[0].get("license") or {}).get("id")
+        if not ident:
+            continue
+        _, copyleft, restricoes = classificar_licenca(ident)
+        if copyleft == "forte" or restricoes:
+            problemas.append((c["name"], ident, copyleft, list(restricoes)))
+    return problemas
+
+
 def component(name: str, ctype: str = "library") -> dict | None:
     try:
         dist = metadata.distribution(name)
     except metadata.PackageNotFoundError:
         return None
     version = dist.version
-    return {
+    comp = {
         "type": ctype,
         "bom-ref": f"pkg:pypi/{name}@{version}",
         "name": name,
         "version": version,
         "purl": f"pkg:pypi/{name}@{version}",
     }
+    licenca = licenca_do_componente(dist)
+    if licenca:
+        comp["licenses"] = [{"license": {"id": licenca}}]
+    return comp
 
 
 def _sha256_file(path: Path) -> str:
@@ -81,7 +126,8 @@ def _artifact_reference(path: Path) -> dict:
     }
 
 
-def main(out_path: str, artifacts: list[str] | None = None) -> int:
+def main(out_path: str, artifacts: list[str] | None = None,
+         gate: bool = False) -> int:
     root = component(ROOT, "application")
     if root is None:
         print("FALHA: pacote nomos não está instalado.", file=sys.stderr)
@@ -119,10 +165,28 @@ def main(out_path: str, artifacts: list[str] | None = None) -> int:
         f"SBOM gravado: {out_path} "
         f"({1 + len(comps)} componentes, {n_refs} artefato(s) referenciado(s))"
     )
+
+    if gate:
+        problemas = problemas_de_licenca(comps)
+        for nome, ident, copyleft, restricoes in problemas:
+            detalhe = ", ".join(filter(None, [
+                f"copyleft {copyleft}" if copyleft else "",
+                "restrições: " + ", ".join(restricoes) if restricoes else "",
+            ]))
+            print(f"REPROVADO: {nome} — {ident} ({detalhe})", file=sys.stderr)
+        if problemas:
+            print(f"GATE DE LICENÇA: reprovado ({len(problemas)} de {len(comps)})",
+                  file=sys.stderr)
+            return 3
+        print(f"GATE DE LICENÇA: aprovado ({len(comps)} dependências, "
+              "nenhum copyleft forte ou cláusula restritiva)")
     return 0
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        raise SystemExit(main("sbom.cdx.json"))
-    raise SystemExit(main(sys.argv[1], list(sys.argv[2:])))
+    argv = sys.argv[1:]
+    gate = "--gate-licenca" in argv
+    argv = [a for a in argv if a != "--gate-licenca"]
+    if not argv:
+        raise SystemExit(main("sbom.cdx.json", gate=gate))
+    raise SystemExit(main(argv[0], list(argv[1:]), gate=gate))

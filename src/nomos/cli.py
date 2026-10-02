@@ -877,6 +877,36 @@ def cmd_arquivo(ctx, args) -> int:
     return EXIT_OK
 
 
+def cmd_reversa(ctx, args) -> int:
+    """Mapeia uma ferramenta de terceiros SEM executá-la (NOMOS Reversa, MC65)."""
+    import json as _json
+    from pathlib import Path as _Path
+
+    from nomos.reversa import mapear, para_dict, relatorio
+
+    mapa = mapear(args.alvo)
+    saida = getattr(args, "saida", None)
+
+    if saida:
+        destino = _Path(saida).expanduser()
+        destino.mkdir(parents=True, exist_ok=True)
+        (destino / "mapa.md").write_text(relatorio(mapa) + "\n", encoding="utf-8")
+        (destino / "mapa.json").write_text(
+            _json.dumps(para_dict(mapa), ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print(f"mapa gravado em {destino}", file=sys.stderr)
+
+    if getattr(args, "json", False):
+        print(_json.dumps(para_dict(mapa), ensure_ascii=False, indent=2))
+    elif not saida:
+        print(relatorio(mapa))
+
+    print(f"\nrisco: {mapa.risco} · achados: {len(mapa.achados)} · "
+          "o alvo NAO foi executado.", file=sys.stderr)
+    return EXIT_OK
+
+
 def cmd_local(ctx, args) -> int:
     home = ctx["home"]
     sub = getattr(args, "local_cmd", None)
@@ -2919,6 +2949,14 @@ def build_parser() -> argparse.ArgumentParser:
                     help="só extração heurística, sem chamar o cérebro")
     aq.add_argument("--panel", action="store_true")
     aq.set_defaults(fn=cmd_arquivo)
+    rv = sub.add_parser("reversa",
+                        help="mapeia uma ferramenta de terceiros SEM executá-la")
+    rv.add_argument("alvo", help="diretório, repositório git, skill ou arquivo")
+    rv.add_argument("--json", action="store_true",
+                    help="mapa em JSON determinístico (contrato estável)")
+    rv.add_argument("--saida", metavar="DIR",
+                    help="grava mapa.md e mapa.json em DIR (única escrita)")
+    rv.set_defaults(fn=cmd_reversa)
     te = sub.add_parser("tema", help="personalizar as cores do NOMOS")
     tesub = te.add_subparsers(dest="tema_cmd")
     tp = tesub.add_parser("paleta")
